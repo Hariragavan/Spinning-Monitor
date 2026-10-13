@@ -4,6 +4,7 @@ import { calculateIncentive, getGaiterIncentive, parseUniversalDateParts, parseU
 import { Calendar, User, Search, Printer, Coins, Tv, Monitor, ChevronRight, Activity, Award, Download, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
+import { CalendarMonthPicker } from './CalendarPickers';
 
 interface SiderMonthlyPerformanceProps {
   history: DailyReport[];
@@ -374,31 +375,16 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
               <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100/50 flex items-center justify-center text-emerald-700">
                 <Calendar size={18} />
               </div>
-              <div className="flex-1 md:flex-initial flex gap-2">
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => {
-                    setSelectedMonth(Number(e.target.value));
-                    setSelectedWorkerId(''); // Reset selector
-                  }}
-                  className="px-3 py-2 border-2 border-stone-200 focus:border-stone-400 rounded-xl font-bold text-stone-800 text-sm outline-none cursor-pointer"
-                >
-                  {monthOptions.map(m => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => {
-                    setSelectedYear(Number(e.target.value));
+              <div className="flex-1 md:flex-initial">
+                <CalendarMonthPicker
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onChange={(m, y) => {
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
                     setSelectedWorkerId('');
                   }}
-                  className="px-3 py-2 border-2 border-stone-200 focus:border-stone-400 rounded-xl font-bold text-stone-800 text-sm outline-none cursor-pointer"
-                >
-                  <option value={2025}>2025</option>
-                  <option value={2026}>2026</option>
-                  <option value={2027}>2027</option>
-                </select>
+                />
               </div>
             </div>
 

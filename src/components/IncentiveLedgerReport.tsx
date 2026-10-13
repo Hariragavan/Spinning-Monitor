@@ -1456,6 +1456,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                 <input
                   type="date"
                   value={fromDate}
+                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                   onChange={e => setFromDate(e.target.value)}
                   className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
                 />
@@ -1467,6 +1468,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                 <input
                   type="date"
                   value={toDate}
+                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                   onChange={e => setToDate(e.target.value)}
                   className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
                 />
@@ -2207,6 +2209,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                 <input
                   type="date"
                   value={fromDate}
+                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                   onChange={e => setFromDate(e.target.value)}
                   className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
                 />
@@ -2218,6 +2221,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                 <input
                   type="date"
                   value={toDate}
+                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                   onChange={e => setToDate(e.target.value)}
                   className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
                 />
@@ -2435,6 +2439,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                 <input
                   type="date"
                   value={fromDate}
+                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                   onChange={e => setFromDate(e.target.value)}
                   className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
                 />
@@ -2446,6 +2451,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                 <input
                   type="date"
                   value={toDate}
+                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                   onChange={e => setToDate(e.target.value)}
                   className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
                 />

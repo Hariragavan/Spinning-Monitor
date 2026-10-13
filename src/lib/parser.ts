@@ -38,6 +38,7 @@ export const normalizeDateValue = (val: any): string => {
 export const getShedMachines = (shed?: string): string[] => {
   if (shed === 'Shed 2') return ['K07', 'K08', 'K09', 'K10', 'K11', 'K12'];
   if (shed === 'Shed 3') return ['K13', 'K14', 'K15', 'K16', 'K17', 'K18'];
+  if (shed === 'KTTM') return ['KT01', 'KT02', 'KT03', 'KT04', 'KT05', 'KT06'];
   return ['K01', 'K02', 'K03', 'K04', 'K05', 'K06'];
 };
 

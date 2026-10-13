@@ -22,6 +22,7 @@ import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
 import { parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 
 interface OperatorEmFormatProps {
   history: DailyReport[];
@@ -1074,31 +1075,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
               {/* Month/Year selector */}
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Month</label>
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    {monthsList.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Year</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    {yearsList.map(y => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
+                <CalendarMonthPicker
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onChange={(m, y) => {
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
+                  }}
+                />
 
                 <button
                   onClick={exportGridToExcel}
@@ -1293,25 +1277,17 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
               {/* Date Filters */}
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">From Date</label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
+                <CalendarDatePicker
+                  label="From Date"
+                  value={fromDate}
+                  onChange={(_, iso) => setFromDate(iso || fromDate)}
+                />
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">To Date</label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
+                <CalendarDatePicker
+                  label="To Date"
+                  value={toDate}
+                  onChange={(_, iso) => setToDate(iso || toDate)}
+                />
 
                 <button
                   onClick={exportLedgerToExcel}
@@ -1407,31 +1383,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
               {/* Month/Year selector */}
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Month</label>
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    {monthsList.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Year</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    {yearsList.map(y => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
+                <CalendarMonthPicker
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onChange={(m, y) => {
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
+                  }}
+                />
 
                 <button
                   onClick={exportAbstractToExcel}
@@ -1500,31 +1459,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
               {/* Controls */}
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Month</label>
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    {monthsList.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Year</label>
-                  <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-                    className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  >
-                    {yearsList.map(y => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
+                <CalendarMonthPicker
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onChange={(m, y) => {
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
+                  }}
+                />
 
                 <div className="flex flex-col gap-1 min-w-[200px]">
                   <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Search Operator</label>

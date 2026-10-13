@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { DailyReport } from '@/types';
-import { ensureSixMachines, mockData, getTodayUniversalDate } from '@/lib/parser';
+import { ensureSixMachines, mockData, getTodayUniversalDate, createDefaultReportForShed } from '@/lib/parser';
 import { parseUniversalDate } from '@/lib/utils';
 
 export async function GET(req: Request) {
@@ -36,26 +36,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, data: ensureSixMachines(todayReport, shed) });
     }
 
-    // Otherwise find latest report for this shed sorted by actual calendar date descending
-    const allReports = await db.collection<DailyReport>('reports')
-      .find(shedFilter, { projection: { _id: 0 } })
-      .toArray();
-
-    if (allReports.length > 0) {
-      allReports.sort((a, b) => {
-        const timeA = parseUniversalDate(a.date).getTime();
-        const timeB = parseUniversalDate(b.date).getTime();
-        if (timeA !== timeB) return timeB - timeA;
-        return (b.timestamp || 0) - (a.timestamp || 0);
-      });
-      return NextResponse.json({ success: true, data: ensureSixMachines(allReports[0], shed) });
-    }
-
-    // Seed mock data for this shed if no report exists
-    const initialReport = ensureSixMachines(mockData, shed);
-    await db.collection('reports').insertOne({ ...initialReport, shed, timestamp: Date.now() });
-
-    return NextResponse.json({ success: true, data: initialReport });
+    // Fresh day: return fresh blank report for today for this shed
+    const freshReport = createDefaultReportForShed(shed, todayStr);
+    return NextResponse.json({ success: true, data: freshReport });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch report' }, { status: 500 });
   }

@@ -412,6 +412,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                 type="date"
                 className="w-full bg-white px-3 py-1.5 text-center whitespace-nowrap tabular-nums text-xs md:text-sm font-bold outline-none focus:bg-stone-50 transition-colors cursor-pointer no-print"
                 value={dateForInput}
+                onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
                 onChange={(e) => handleDateChange(e.target.value)}
               />
               <div className="hidden print-only absolute inset-0 bg-white items-center justify-center font-black flex text-xs">

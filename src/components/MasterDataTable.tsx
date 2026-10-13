@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { cn, calculateIncentive, resolveWorker } from '../lib/utils';
 import * as XLSX from 'xlsx';
+import { CalendarDatePicker } from './CalendarPickers';
 
 interface MasterDataTableProps {
   report: DailyReport;
@@ -488,20 +489,15 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
 
           {!isTvMode && (
             <div className="flex flex-wrap items-center gap-2 ml-auto lg:ml-0 no-print">
-              {availableDates && availableDates.length > 0 && onSelectDate && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 rounded-2xl border border-stone-200 shadow-2xs">
-                  <Calendar size={13} className="text-emerald-600" />
-                  <span className="text-[10px] font-black text-stone-400 uppercase tracking-wider">Date:</span>
-                  <select
-                    value={report.date}
-                    onChange={(e) => onSelectDate(e.target.value)}
-                    className="bg-transparent text-xs font-black text-stone-800 uppercase outline-none cursor-pointer"
-                  >
-                    {availableDates.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
+              {onSelectDate && (
+                <CalendarDatePicker
+                  value={report.date}
+                  onChange={(d) => {
+                    if (d && d !== report.date) {
+                      onSelectDate(d);
+                    }
+                  }}
+                />
               )}
               <button
                 onClick={() => window.print()}

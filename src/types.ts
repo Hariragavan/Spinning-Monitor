@@ -5,13 +5,15 @@
 
 export type Shift = 'I' | 'II' | 'III';
 
+export type Shed = 'Shed 1' | 'Shed 2' | 'Shed 3' | 'KTTM';
+
 export interface Sider {
   id: string;
   name: string;
   tNo: string; // Ticket Number
   photoUrl?: string;
   department?: string; // Optional department (e.g. 'Sider', 'Gaiter', 'AI Linkconer')
-  shed?: string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3'
+  shed?: Shed | string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'
   assignedMachine?: string; // e.g. 'SP023'
 }
 
@@ -117,7 +119,7 @@ export interface CountConversion {
 
 export interface DailyReport {
   date: string;
-  shed?: string; // 'Shed 1' | 'Shed 2' | 'Shed 3'
+  shed?: Shed | string; // 'Shed 1' | 'Shed 2' | 'Shed 3' | 'KTTM'
   entries: ProductionEntry[];
   summaries: FrameDailySummary[];
   gaiters?: Record<Shift, string[]>; // Map of shift to array of worker IDs

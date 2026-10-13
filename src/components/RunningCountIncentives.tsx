@@ -4,6 +4,7 @@ import { Coins, HelpCircle, FileText, Printer, CheckCircle, Info, ChevronDown, D
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import * as XLSX from 'xlsx';
+import { CalendarDatePicker } from './CalendarPickers';
 
 interface RunningCountIncentivesProps {
   rules: IncentiveRule[];
@@ -215,22 +216,18 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
       {/* Control Panel: Date Picker & Filter Toggle */}
       {!isTvMode && (
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-stone-50 border border-stone-200 rounded-[2.5rem] p-6 no-print">
-          {/* Left Side: Date Select */}
-          {history && history.length > 0 && onSelectDate && report && (
+          {/* Left Side: Date Calendar Picker */}
+          {onSelectDate && report && (
             <div className="flex items-center gap-3">
               <span className="text-xs font-black text-stone-500 uppercase tracking-wider">Active Statement Date:</span>
-              <div className="relative">
-                <select
-                  value={report.date}
-                  onChange={(e) => onSelectDate(e.target.value)}
-                  className="appearance-none bg-white border border-stone-300 rounded-xl pl-4 pr-10 py-2.5 text-xs font-black text-stone-800 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
-                >
-                  {Array.from(new Set([report.date, ...history.map(h => h.date)])).map((date) => (
-                    <option key={date} value={date}>{date}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" size={14} />
-              </div>
+              <CalendarDatePicker
+                value={report.date}
+                onChange={(d) => {
+                  if (d && d !== report.date) {
+                    onSelectDate(d);
+                  }
+                }}
+              />
             </div>
           )}
 

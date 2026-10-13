@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, Shift, FrozenMonthRecord } from '../types';
-import { Calendar, Printer, BarChart3, Coins, Percent, Lock, Unlock, Download, FileSpreadsheet } from 'lucide-react';
+import { Calendar, Printer, BarChart3, Coins, Percent, Lock, Unlock, Download, FileSpreadsheet, Sparkles, Users, Award } from 'lucide-react';
 import { cn, parseUniversalDateParts } from '../lib/utils';
 import { getMonthKey } from '../lib/frozenMonths';
+import { CalendarMonthPicker } from './CalendarPickers';
 import * as XLSX from 'xlsx';
 
 interface AiMonthlyGridProps {
@@ -35,15 +36,15 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
   const monthKey = getMonthKey(selectedMonth, selectedYear);
   const frozenRecord = frozenMonths?.[monthKey];
   const isFrozen = !!frozenRecord;
-  const [metricType, setMetricType] = React.useState<'incentive' | 'utility'>('incentive');
+  const [metricType, setMetricType] = useState<'incentive' | 'utility'>('incentive');
 
-  // Generate days for the selected month
+  // Days for the selected month
   const gridDays = useMemo(() => {
     const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
     return Array.from({ length: lastDay }, (_, i) => i + 1);
   }, [selectedMonth, selectedYear]);
 
-  // Find the last day with data/reports in the selected month
+  // Last active day with reports
   const lastActiveDay = useMemo(() => {
     let maxDay = 0;
     history.forEach(report => {
@@ -58,19 +59,12 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
     const isCurrentMonthYear = today.getMonth() + 1 === selectedMonth && today.getFullYear() === selectedYear;
 
     if (isCurrentMonthYear) {
-      // If we are looking at the current month/year, we should show up to today's date (or maxDay if there's somehow a future report)
       return Math.max(maxDay, today.getDate());
     } else {
-      // If looking at a past/future month, use maxDay if we have reports, otherwise default to the last day of that month
-      if (maxDay > 0) {
-        return maxDay;
-      } else {
-        return new Date(selectedYear, selectedMonth, 0).getDate();
-      }
+      return maxDay > 0 ? maxDay : new Date(selectedYear, selectedMonth, 0).getDate();
     }
   }, [history, selectedMonth, selectedYear]);
 
-  // TV mode only wants last 10 days of reports to increase readability
   const displayedDays = useMemo(() => {
     if (isTvMode) {
       const start = Math.max(1, lastActiveDay - 9);
@@ -87,16 +81,7 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
     return new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
   }, [selectedMonth, selectedYear]);
 
-  const months = [
-    { value: 1, label: 'January' }, { value: 2, label: 'February' }, { value: 3, label: 'March' },
-    { value: 4, label: 'April' }, { value: 5, label: 'May' }, { value: 6, label: 'June' },
-    { value: 7, label: 'July' }, { value: 8, label: 'August' }, { value: 9, label: 'September' },
-    { value: 10, label: 'October' }, { value: 11, label: 'November' }, { value: 12, label: 'December' }
-  ];
-
-  const years = [2025, 2026, 2027];
-
-  // AI Linkconer workers list (from Worker Master or dynamically resolved from active monthly assignments)
+  // AI Linkconer workers list
   const aiWorkers = useMemo(() => {
     const masterAi = workers.filter(w => w.department === 'AI Linkconer');
     const assignedIds = new Set<string>();
@@ -135,7 +120,7 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
     });
   }, [workers, history, selectedMonth, selectedYear]);
 
-  // Metric calculation for a single AI worker, day helper
+  // Metric calculation for a single AI worker
   const getAiMetricByDay = (day: number, workerId: string, tNo: string) => {
     const targetWorker = workers.find(w => w.id === workerId || w.tNo === workerId);
     if (!targetWorker) return null;
@@ -164,7 +149,6 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
         hasData = true;
         workedShiftsCount++;
 
-        // Compute shift average utility
         const shiftEntries = report.entries.filter(e => e.shift === shift);
         const aiFrameNos = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6'];
         const utilEntries = shiftEntries.filter(e => {
@@ -217,7 +201,7 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
     }
   };
 
-  // Process rows with totals for rendering
+  // Process rows with totals
   const rowsWithTotals = useMemo(() => {
     const mapped = aiWorkers.map(row => {
       let total = 0;
@@ -231,7 +215,8 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
       });
       return {
         ...row,
-        total: metricType === 'incentive' ? total : (count > 0 ? total / count : 0)
+        total: metricType === 'incentive' ? total : (count > 0 ? total / count : 0),
+        activeDuties: count
       };
     });
 
@@ -251,27 +236,51 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
     }
   }, [rowsWithTotals, metricType]);
 
+  const topPerformer = useMemo(() => {
+    if (rowsWithTotals.length === 0) return null;
+    const sorted = [...rowsWithTotals].sort((a, b) => b.total - a.total);
+    return sorted[0]?.total > 0 ? sorted[0] : null;
+  }, [rowsWithTotals]);
+
   return (
-    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700 w-full overflow-hidden monthly-incentive-grid">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 border-2 border-purple-800 rounded-sm no-print">
-        <div className="flex gap-4">
-          <select 
-            value={selectedMonth}
-            onChange={(e) => onMonthChange(Number(e.target.value))}
-            className="bg-white border-2 border-purple-800 px-4 py-2 rounded-md font-bold text-purple-900 focus:outline-none"
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-500 w-full overflow-hidden">
+      {/* Top Controls Bar */}
+      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-white p-4 rounded-2xl border border-stone-200/90 shadow-xs no-print">
+        <div className="flex flex-wrap items-center gap-3">
+          <CalendarMonthPicker
+            month={selectedMonth}
+            year={selectedYear}
+            onChange={(m, y) => {
+              onMonthChange(m);
+              onYearChange(y);
+            }}
+          />
+
+          {/* Metric Type Switcher */}
+          <button
+            onClick={() => setMetricType(metricType === 'incentive' ? 'utility' : 'incentive')}
+            className={cn(
+              "px-3.5 py-1.5 rounded-xl font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer border",
+              metricType === 'incentive'
+                ? "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+                : "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+            )}
           >
-            {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-          <select 
-            value={selectedYear}
-            onChange={(e) => onYearChange(Number(e.target.value))}
-            className="bg-white border-2 border-purple-800 px-4 py-2 rounded-md font-bold text-purple-900 focus:outline-none"
-          >
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+            {metricType === 'incentive' ? (
+              <>
+                <Percent size={13} />
+                <span>Show Utilisation %</span>
+              </>
+            ) : (
+              <>
+                <Coins size={13} />
+                <span>Show Incentives ₹</span>
+              </>
+            )}
+          </button>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isTvMode && (
             <button
               onClick={() => {
@@ -286,42 +295,27 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
                 }
               }}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 font-bold rounded-md uppercase text-xs transition-all shadow-md cursor-pointer",
+                "flex items-center gap-1.5 px-3 py-1.5 font-bold rounded-xl uppercase text-xs transition-all shadow-xs cursor-pointer border",
                 isFrozen 
-                  ? "bg-amber-600 hover:bg-amber-700 text-white"
-                  : "bg-purple-800 hover:bg-purple-900 text-white"
+                  ? "bg-amber-500 hover:bg-amber-600 text-white border-amber-600"
+                  : "bg-stone-100 hover:bg-stone-200 text-stone-700 border-stone-200"
               )}
             >
-              {isFrozen ? <Unlock size={16} /> : <Lock size={16} />}
-              {isFrozen ? "Unfreeze Month" : "Freeze Month (Accounts)"}
+              {isFrozen ? <Unlock size={14} /> : <Lock size={14} />}
+              <span>{isFrozen ? "Unfreeze" : "Freeze Accounts"}</span>
             </button>
           )}
-
-          {/* Metric Type Switcher */}
-          <button
-            onClick={() => setMetricType(metricType === 'incentive' ? 'utility' : 'incentive')}
-            className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-900 font-extrabold rounded-md uppercase text-xs flex items-center gap-1.5 transition-colors border border-purple-300"
-          >
-            {metricType === 'incentive' ? (
-              <>
-                <Percent size={14} /> Show Utilisation (U%)
-              </>
-            ) : (
-              <>
-                <Coins size={14} /> Show Incentives (₹)
-              </>
-            )}
-          </button>
 
           {!isTvMode && (
             <>
               <button 
                 onClick={() => window.print()}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 text-white font-bold rounded-md uppercase text-xs hover:bg-black transition-all shadow-md cursor-pointer active:scale-95"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-stone-900 text-white font-bold rounded-xl uppercase text-xs hover:bg-black transition-all shadow-xs cursor-pointer active:scale-95"
               >
-                <Printer size={15} />
-                Print Report
+                <Printer size={14} />
+                <span>Print</span>
               </button>
+
               <button 
                 onClick={() => {
                   const wb = XLSX.utils.book_new();
@@ -342,68 +336,96 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
                   XLSX.utils.book_append_sheet(wb, ws, 'AI Monthly Grid');
                   XLSX.writeFile(wb, `AI_Monthly_Grid_${selectedMonth}_${selectedYear}.xlsx`);
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-md uppercase text-xs transition-all shadow-md cursor-pointer active:scale-95"
-                title="Download as Excel (.xlsx)"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 font-bold rounded-xl uppercase text-xs transition-all shadow-xs cursor-pointer active:scale-95"
+                title="Download as Excel"
               >
-                <FileSpreadsheet size={15} />
-                Export Excel
-              </button>
-              <button 
-                onClick={() => {
-                  let csv = `SPINMONITOR AI - AI MONTHLY INCENTIVE GRID (${selectedMonth}/${selectedYear})\n\n`;
-                  csv += `TK No,Operator Name,` + displayedDays.map(d => `Day ${d}`).join(',') + `,Total\n`;
-
-                  rowsWithTotals.forEach(row => {
-                    const dayValues = displayedDays.map(day => {
-                      const val = getAiMetricByDay(day, row.id, row.tNo);
-                      return val !== null ? Math.round(val) : '';
-                    }).join(',');
-                    csv += `"${row.tNo}","${row.name}",${dayValues},${Math.round(row.total)}\n`;
-                  });
-
-                  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-                  const url = URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.download = `AI_Monthly_Grid_${selectedMonth}_${selectedYear}.csv`;
-                  link.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 font-bold rounded-md uppercase text-xs transition-all shadow-xs cursor-pointer active:scale-95"
-                title="Download as CSV"
-              >
-                <Download size={15} />
-                Export CSV
+                <FileSpreadsheet size={14} />
+                <span>Export Excel</span>
               </button>
             </>
           )}
         </div>
       </div>
 
-      <div className="text-center py-4 bg-white border-b-2 border-stone-200 flex flex-col items-center justify-center gap-2">
-        {isFrozen && frozenRecord && (
-          <div className="w-full max-w-4xl mx-auto my-1 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-900 text-xs font-bold no-print">
-            <Lock size={16} className="text-amber-600" />
-            <span>
-              🔒 AI Incentive Data Frozen for Accounts Submission (Snapshot saved on {frozenRecord.frozenAt})
-            </span>
+      {/* KPI Stats Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 no-print">
+        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+            <Users size={16} />
           </div>
-        )}
-        <h2 className="text-2xl md:text-3xl font-black text-purple-950 uppercase tracking-tight">
-          AI Cone Linkconer Incentive Report — {dataMonthDisplay} {isTvMode && "(Last 10 Days TV View)"}
-        </h2>
-        <p className="text-xs text-stone-500 font-bold uppercase tracking-widest mt-1">
-          Showing {metricType === 'incentive' ? 'Daily Incentives (₹)' : 'Daily Utilisation Average (U%)'}
-        </p>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Active Personnel</p>
+            <p className="text-lg font-black text-stone-900 tabular-nums mt-0.5">{aiWorkers.length}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <Coins size={16} />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">
+              {metricType === 'incentive' ? 'Total AI Payout' : 'Average Utility'}
+            </p>
+            <p className="text-lg font-black text-stone-900 tabular-nums mt-0.5">
+              {metricType === 'incentive' ? `₹${Math.round(grandTotalOrAvg).toLocaleString()}` : `${Math.round(grandTotalOrAvg)}%`}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <BarChart3 size={16} />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Selected Month</p>
+            <p className="text-xs font-black text-stone-900 uppercase tracking-tight mt-0.5">{dataMonthDisplay}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+            <Award size={16} />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Top Performer</p>
+            <p className="text-xs font-black text-stone-900 truncate mt-0.5">
+              {topPerformer ? `${topPerformer.name} (₹${Math.round(topPerformer.total).toLocaleString()})` : 'None'}
+            </p>
+          </div>
+        </div>
       </div>
 
-      <div className="bg-white overflow-hidden shadow-inner">
-        <div className="overflow-x-auto overflow-y-auto max-h-[50vh]">
-          <table className={cn("w-full text-center border-collapse table-fixed border border-purple-800", isTvMode ? "min-w-full" : "min-w-[2000px]")}>
+      {/* Main Table Card */}
+      <div className="bg-white rounded-2xl border border-stone-200/90 shadow-xs overflow-hidden">
+        {/* Card Header */}
+        <div className="p-4 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
+              <h3 className="text-sm font-black text-stone-900 uppercase tracking-tight">
+                AI Cone Linkconer Incentive Ledger
+              </h3>
+            </div>
+            <p className="text-[11px] text-stone-400 font-bold uppercase tracking-wider mt-0.5">
+              {dataMonthDisplay} • Showing {metricType === 'incentive' ? 'Daily Incentives (₹)' : 'Daily Utilisation Average (U%)'}
+            </p>
+          </div>
+          {isFrozen && frozenRecord && (
+            <div className="px-3 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto">
+              <Lock size={12} className="text-amber-600" />
+              <span>Locked for Accounts</span>
+            </div>
+          )}
+        </div>
+
+        {/* Scrollable Table */}
+        <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
+          <table className="w-full text-center border-collapse text-xs">
             <thead>
-              <tr className="bg-purple-50/50 border-b border-purple-800 h-[72px] text-[22px] text-purple-950 uppercase tracking-wider font-extrabold">
-                <th className="w-20 px-1 py-1 sticky left-0 z-20 bg-purple-50 border-r border-purple-800 text-[22px]">TK No</th>
-                <th className="w-48 px-2 py-1 sticky left-20 z-20 bg-purple-50 border-r border-purple-800 text-left text-[22px]">Name</th>
+              <tr className="bg-stone-50 border-b border-stone-200 text-stone-600 font-black uppercase tracking-wider text-[11px] h-10 sticky top-0 z-30">
+                <th className="w-16 px-2 py-1 sticky left-0 z-40 bg-stone-50 border-r border-stone-200">TK No</th>
+                <th className="w-40 px-3 py-1 sticky left-16 z-40 bg-stone-50 border-r border-stone-200 text-left">Operator Name</th>
                 {displayedDays.map(day => (
                   <th 
                     key={day} 
@@ -414,121 +436,74 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
                       }
                     }}
                     className={cn(
-                      "px-0.5 py-1 border-r border-purple-800 hover:bg-purple-100 transition-colors group text-[22px]",
+                      "px-1.5 py-1 border-r border-stone-200/80 hover:bg-stone-100 transition-colors w-12",
                       !isTvMode && "cursor-pointer"
                     )}
+                    title={!isTvMode ? `Jump to ${day}/${selectedMonth}/${selectedYear}` : undefined}
                   >
-                    <div className="group-hover:scale-110 group-hover:text-purple-700 transition-all font-black">{day}</div>
+                    <span className="hover:text-emerald-700 transition-colors">{day}</span>
                   </th>
                 ))}
-                <th className="w-28 px-2 py-1 text-purple-950 bg-purple-50 sticky right-0 z-20 border-l border-purple-800 text-[22px]">
+                <th className="w-24 px-3 py-1 text-stone-900 bg-stone-100/90 sticky right-0 z-40 border-l border-stone-200 font-black">
                   {metricType === 'incentive' ? 'Total (₹)' : 'Avg (U%)'}
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {rowsWithTotals.map((row) => {
-                return (
-                  <tr key={row.id} className="border-b border-purple-100 h-14 hover:bg-purple-50/30 transition-colors">
-                    <td className="px-1 py-0.5 text-[22px] font-extrabold text-stone-950 sticky left-0 z-10 border-r border-purple-200 bg-white">
-                      {row.tNo}
-                    </td>
-                    <td className="px-2 py-0.5 text-[22px] font-bold text-stone-900 sticky left-20 z-10 border-r border-purple-200 uppercase truncate text-left bg-white">
-                      {row.name}
-                    </td>
-                    {displayedDays.map(day => {
-                      const val = getAiMetricByDay(day, row.id, row.tNo);
-                      return (
-                        <td key={day} className="px-0.5 py-0.5 text-[22px] border-r border-purple-100 tabular-nums text-stone-700 font-semibold">
-                          {val !== null ? (
-                            metricType === 'incentive' ? (
-                              Math.round(val).toLocaleString()
-                            ) : (
-                              `${Math.round(val)}%`
-                            )
-                          ) : '-'}
-                        </td>
-                      );
-                    })}
-                    <td className="px-2 py-0.5 text-[22px] font-black text-purple-900 bg-purple-50/20 sticky right-0 z-10 border-l border-purple-300 tabular-nums">
-                      {row.total > 0 ? (
-                        metricType === 'incentive' ? (
-                          `₹${Math.round(row.total).toLocaleString()}`
-                        ) : (
-                          `${Math.round(row.total)}%`
-                        )
-                      ) : '-'}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {rowsWithTotals.length === 0 && (
-                <tr>
-                  <td colSpan={displayedDays.length + 3} className="py-12 text-center text-[22px] font-semibold text-stone-400 uppercase tracking-widest">
-                    No active AI Linkconer workers found in Master list
+            <tbody className="divide-y divide-stone-100">
+              {rowsWithTotals.map((row) => (
+                <tr key={row.id} className="hover:bg-purple-50/20 transition-colors h-9">
+                  <td className="px-2 py-1 text-xs font-black text-stone-900 sticky left-0 z-20 border-r border-stone-200 bg-white">
+                    {row.tNo}
                   </td>
-                </tr>
-              )}
-
-              {/* Total Row */}
-              {rowsWithTotals.length > 0 && (
-                <tr className="bg-purple-50/40 font-black border-t-2 border-purple-800 h-[72px] text-purple-950">
-                  <td colSpan={1} className="sticky left-0 z-10 bg-purple-50 border-r border-purple-800"></td>
-                  <td className="px-2 py-1 sticky left-20 z-10 border-r border-purple-800 text-left bg-purple-50 uppercase text-[22px]">
-                    Total
+                  <td className="px-3 py-1 text-xs font-bold text-stone-800 sticky left-16 z-20 border-r border-stone-200 uppercase truncate text-left bg-white">
+                    {row.name}
                   </td>
                   {displayedDays.map(day => {
-                    const values = rowsWithTotals.map(row => getAiMetricByDay(day, row.id, row.tNo)).filter(v => v !== null) as number[];
-                    const dayVal = values.length > 0
-                      ? (metricType === 'incentive'
-                          ? values.reduce((a, b) => a + b, 0)
-                          : values.reduce((a, b) => a + b, 0) / values.length)
-                      : 0;
-
+                    const val = getAiMetricByDay(day, row.id, row.tNo);
                     return (
-                      <td key={`total-${day}`} className="px-0.5 py-1 border-r border-purple-800 tabular-nums text-[22px]">
-                        {dayVal > 0 ? (
+                      <td key={day} className="px-1 py-1 border-r border-stone-100 tabular-nums text-stone-600 font-semibold text-xs">
+                        {val !== null ? (
                           metricType === 'incentive' ? (
-                            Math.round(dayVal).toLocaleString()
+                            <span className="font-bold text-stone-900">{Math.round(val).toLocaleString()}</span>
                           ) : (
-                            `${Math.round(dayVal)}%`
+                            <span className="text-blue-700 font-bold">{Math.round(val)}%</span>
                           )
-                        ) : '-'}
+                        ) : (
+                          <span className="text-stone-300">-</span>
+                        )}
                       </td>
                     );
                   })}
-                  <td className="px-2 py-1 text-[22px] font-black text-purple-950 bg-purple-50 sticky right-0 z-20 border-l border-purple-800 tabular-nums">
-                    {grandTotalOrAvg > 0 ? (
-                      metricType === 'incentive' ? (
-                        `₹${Math.round(grandTotalOrAvg).toLocaleString()}`
-                      ) : (
-                        `Avg: ${Math.round(grandTotalOrAvg)}%`
-                      )
-                    ) : '-'}
+                  <td className="px-3 py-1 font-black tabular-nums text-right bg-stone-50/70 sticky right-0 z-20 border-l border-stone-200 text-stone-900">
+                    {metricType === 'incentive' ? `₹${Math.round(row.total).toLocaleString()}` : `${Math.round(row.total)}%`}
+                  </td>
+                </tr>
+              ))}
+
+              {rowsWithTotals.length === 0 && (
+                <tr>
+                  <td colSpan={displayedDays.length + 3} className="py-12 text-center text-stone-400 font-bold uppercase tracking-widest text-xs">
+                    No active AI Linkconer duties recorded for {dataMonthDisplay}
                   </td>
                 </tr>
               )}
             </tbody>
+            {rowsWithTotals.length > 0 && (
+              <tfoot>
+                <tr className="bg-stone-50 font-black border-t-2 border-stone-200 h-10 sticky bottom-0 z-30">
+                  <td className="sticky left-0 z-40 bg-stone-50 border-r border-stone-200"></td>
+                  <td className="sticky left-16 z-40 bg-stone-50 px-3 py-1 text-left uppercase tracking-wider text-xs font-black text-stone-900 border-r border-stone-200">
+                    Consolidated Total
+                  </td>
+                  <td colSpan={displayedDays.length} className="border-r border-stone-200"></td>
+                  <td className="px-3 py-1 text-right text-xs font-black text-stone-950 bg-stone-100 sticky right-0 z-40 border-l border-stone-200 tabular-nums">
+                    {metricType === 'incentive' ? `₹${Math.round(grandTotalOrAvg).toLocaleString()}` : `${Math.round(grandTotalOrAvg)}%`}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
-      </div>
-
-      {/* Print Signature Footer Block */}
-      <div className="hidden print-signatures">
-        <div className="print-signature-box">
-          Shift Supervisor
-        </div>
-        <div className="print-signature-box">
-          Accounts Head
-        </div>
-        <div className="print-signature-box">
-          Mill General Manager
-        </div>
-      </div>
-      
-      <div className="flex justify-center items-center py-4 text-[10px] font-bold text-stone-400 uppercase tracking-widest no-print">
-        <span>SpinMonitor AI • AI Cone Linkconer Monthly Incentive Ledger</span>
       </div>
     </div>
   );

@@ -30,11 +30,12 @@ import { PerformanceChart } from '@/components/PerformanceChart';
 import { Sidebar } from '@/components/Sidebar';
 import { MasterDataTable } from '@/components/MasterDataTable';
 
-import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem } from '@/types';
+import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
 import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate } from '@/lib/parser';
+import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -185,27 +186,26 @@ export default function Home() {
   const [countConversions, setCountConversions] = useState<CountConversion[]>(DEFAULT_COUNT_CONVERSIONS);
   const [dailyReport, setDailyReport] = useState<DailyReport>(mockData);
   const [reportHistory, setReportHistory] = useState<DailyReport[]>([]);
-  const [selectedShed, setSelectedShed] = useState<'Shed 1' | 'Shed 2' | 'Shed 3'>('Shed 1');
+  const [selectedShed, setSelectedShed] = useState<Shed>('Shed 1');
 
   const currentShedHistory = useMemo(() => {
     return reportHistory.filter(r => (r.shed || 'Shed 1') === selectedShed);
   }, [reportHistory, selectedShed]);
 
   const activeDailyReport = useMemo(() => {
-    if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed) {
+    const todayStr = getTodayUniversalDate();
+    // If dailyReport is specifically for today and current shed, prioritize it
+    if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed && dailyReport.date === todayStr) {
       return dailyReport;
     }
-    const todayStr = getTodayUniversalDate();
     const todayMatch = currentShedHistory.find(r => r.date === todayStr);
     if (todayMatch) return todayMatch;
 
-    const match = currentShedHistory.find(r => r.date === dailyReport?.date);
-    if (match) return match;
-
-    if (currentShedHistory.length > 0) {
-      const sorted = [...currentShedHistory].sort((a, b) => parseUniversalDate(b.date).getTime() - parseUniversalDate(a.date).getTime());
-      return sorted[0];
+    if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed) {
+      return dailyReport;
     }
+
+    // Fresh day default: clean blank report for today for this unit
     return createDefaultReportForShed(selectedShed, todayStr);
   }, [dailyReport, selectedShed, currentShedHistory]);
 
@@ -2017,10 +2017,10 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Center Section: Horizontal Slide Bar for Shed 1, Shed 2, Shed 3 */}
+              {/* Center Section: Horizontal Slide Bar for Shed 1, Shed 2, Shed 3, KTTM */}
               <div className="flex-1 flex justify-center px-2">
                 <div className="inline-flex items-center bg-stone-100/90 p-1 rounded-2xl border border-stone-200/90 shadow-2xs">
-                  {(['Shed 1', 'Shed 2', 'Shed 3'] as const).map(shed => {
+                  {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
                     const isSelected = selectedShed === shed;
                     return (
                       <button
@@ -2134,52 +2134,48 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Floating Back to Dashboard Button & Shed Selector in TV Mode */}
+              {/* Floating Back Button & Shed Selector in TV Mode (White bg, low opacity, hover bright) */}
               {isTvMode && (
-                <>
-                  <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999] no-print">
-                    <div className="flex items-center bg-stone-900/90 p-1.5 rounded-2xl border border-stone-700/80 shadow-2xl backdrop-blur-md gap-1">
-                      {(['Shed 1', 'Shed 2', 'Shed 3'] as const).map(shed => {
-                        const isSelected = selectedShed === shed;
-                        return (
-                          <button
-                            key={shed}
-                            onClick={() => setSelectedShed(shed)}
-                            className={cn(
-                              "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2",
-                              isSelected
-                                ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 scale-105"
-                                : "text-stone-300 hover:text-white hover:bg-stone-800 font-bold"
-                            )}
-                          >
-                            <span className={cn("w-2 h-2 rounded-full", isSelected ? "bg-white" : "bg-stone-500")} />
-                            {shed}
-                          </button>
-                        );
-                      })}
-                    </div>
+                <div className="fixed top-4 right-4 z-[9999] no-print flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
+                  <div className="flex items-center bg-white/95 p-1 rounded-2xl border border-stone-200 shadow-xl backdrop-blur-md gap-1">
+                    {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
+                      const isSelected = selectedShed === shed;
+                      return (
+                        <button
+                          key={shed}
+                          onClick={() => setSelectedShed(shed)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                            isSelected
+                              ? "bg-emerald-600 text-white shadow-md scale-105"
+                              : "text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-bold"
+                          )}
+                        >
+                          <span className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-white" : "bg-stone-400")} />
+                          {shed}
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  <div className="fixed top-5 right-5 z-[9999] no-print">
-                    <button
-                      onClick={() => {
-                        setIsTvMode(false);
-                        setTvStarted(false);
-                        setActiveTab('dashboard');
-                        try {
-                          if (document.fullscreenElement) {
-                            document.exitFullscreen();
-                          }
-                        } catch {}
-                      }}
-                      className="flex items-center gap-2.5 px-5 py-3 bg-stone-900/90 hover:bg-black text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl backdrop-blur-md border border-stone-700/80 hover:scale-105 active:scale-95 transition-all cursor-pointer group"
-                      title="Exit TV Mode & Return to Dashboard"
-                    >
-                      <ArrowLeft size={16} className="text-emerald-400 group-hover:-translate-x-1 transition-transform" />
-                      <span>Back to Dashboard</span>
-                    </button>
-                  </div>
-                </>
+                  <button
+                    onClick={() => {
+                      setIsTvMode(false);
+                      setTvStarted(false);
+                      setActiveTab('dashboard');
+                      try {
+                        if (document.fullscreenElement) {
+                          document.exitFullscreen();
+                        }
+                      } catch {}
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-white/95 hover:bg-white text-stone-900 rounded-2xl font-black text-xs shadow-xl backdrop-blur-md border border-stone-200 hover:scale-105 active:scale-95 transition-all cursor-pointer group"
+                    title="Back"
+                  >
+                    <ArrowLeft size={15} className="text-stone-700 group-hover:-translate-x-0.5 transition-transform" />
+                    <span>Back</span>
+                  </button>
+                </div>
               )}
 
               <AnimatePresence mode="wait">

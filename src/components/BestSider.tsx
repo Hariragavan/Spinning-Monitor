@@ -3,6 +3,7 @@ import { DailyReport, Sider, IncentiveRule } from '../types';
 import { Trophy, Award, Coins, Calendar, Star, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn, resolveWorker, calculateIncentive, parseUniversalDateParts } from '../lib/utils';
+import { CalendarMonthPicker } from './CalendarPickers';
 
 interface BestSiderProps {
   history: DailyReport[];
@@ -217,38 +218,15 @@ export const BestSider: React.FC<BestSiderProps> = ({
 
       {/* Date Selectors for Month and Year */}
       {!isTvMode && (
-        <div className="flex flex-wrap justify-center gap-6 bg-stone-50 border border-stone-200 rounded-[2rem] p-5 max-w-xl mx-auto shadow-inner">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black text-stone-500 uppercase tracking-wider">Select Month:</span>
-            <div className="relative">
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="appearance-none bg-white border border-stone-300 rounded-xl pl-4 pr-10 py-2.5 text-xs font-black text-stone-800 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
-              >
-                {monthsList.map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" size={14} />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black text-stone-500 uppercase tracking-wider">Select Year:</span>
-            <div className="relative">
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                className="appearance-none bg-white border border-stone-300 rounded-xl pl-4 pr-10 py-2.5 text-xs font-black text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm"
-              >
-                {yearsList.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 pointer-events-none" size={14} />
-            </div>
-          </div>
+        <div className="flex justify-center bg-stone-50 border border-stone-200 rounded-[2rem] p-4 max-w-sm mx-auto shadow-inner">
+          <CalendarMonthPicker
+            month={selectedMonth}
+            year={selectedYear}
+            onChange={(m, y) => {
+              setSelectedMonth(m);
+              setSelectedYear(y);
+            }}
+          />
         </div>
       )}
 

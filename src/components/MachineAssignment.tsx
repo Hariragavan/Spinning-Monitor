@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sider, Shift, ProductionEntry, DailyReport } from '../types';
 import { UserCheck, Zap, Activity, Users, Calendar, Filter, Copy, Check, ChevronDown, ChevronUp, Smartphone, Share2, QrCode, X, ExternalLink } from 'lucide-react';
 import { cn, findDuplicatesInReport } from '../lib/utils';
+import { CalendarDatePicker } from './CalendarPickers';
 
 interface MachineAssignmentProps {
   workers: Sider[];
@@ -359,39 +360,31 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
-          {/* Target Date Dropdown */}
+          {/* Target Date Calendar Picker */}
           <div className="flex-1 sm:flex-none">
             <label className="block text-[9px] font-black text-stone-400 uppercase tracking-wider mb-1 ml-1">Sider Assigned Date</label>
             <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:flex-none">
-                <select
-                  value={selectedDate}
-                  onChange={(e) => onSelectDate(e.target.value)}
-                  className="w-full sm:w-48 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider text-stone-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all cursor-pointer appearance-none"
-                >
-                  {dates.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400">
-                  <Calendar size={14} />
-                </div>
-              </div>
+              <CalendarDatePicker
+                value={selectedDate}
+                onChange={(newDate) => {
+                  if (newDate && newDate !== selectedDate) {
+                    onSelectDate(newDate);
+                  }
+                }}
+              />
               {onChangeReportDate && (
                 <button
                   type="button"
                   onClick={() => {
                     const newDateStr = prompt("Enter new date for this report (DD/MM/YYYY):", selectedDate);
-                    if (newDateStr) {
-                      onChangeReportDate(selectedDate, newDateStr);
+                    if (newDateStr && newDateStr.trim()) {
+                      onChangeReportDate(selectedDate, newDateStr.trim());
                     }
                   }}
-                  className="px-4 py-3.5 bg-stone-900 text-white hover:bg-stone-800 rounded-xl text-[10px] font-black uppercase tracking-widest border border-stone-800 hover:border-stone-700 transition-all active:scale-95 whitespace-nowrap cursor-pointer"
+                  className="px-3 py-1.5 bg-stone-900 text-white hover:bg-stone-800 rounded-xl text-[10px] font-black uppercase tracking-wider border border-stone-800 hover:border-stone-700 transition-all active:scale-95 whitespace-nowrap cursor-pointer"
                   title="Change date of current report"
                 >
-                  Change Date
+                  Rename Date
                 </button>
               )}
             </div>

@@ -5,6 +5,7 @@ import { cn, calculateIncentive, resolveWorker, getGaiterIncentive, parseUnivers
 import { motion } from 'motion/react';
 import { getMonthKey } from '../lib/frozenMonths';
 import * as XLSX from 'xlsx';
+import { CalendarMonthPicker } from './CalendarPickers';
 
 interface MonthlyGridProps {
   history: DailyReport[];
@@ -734,22 +735,16 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
 
   return (
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700 w-full overflow-hidden monthly-incentive-grid">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 border-2 border-green-800 rounded-sm no-print">
-        <div className="flex gap-4">
-          <select 
-            value={selectedMonth}
-            onChange={(e) => onMonthChange(Number(e.target.value))}
-            className="bg-white border-2 border-green-800 px-4 py-2 rounded-md font-bold text-green-900"
-          >
-            {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-          <select 
-            value={selectedYear}
-            onChange={(e) => onYearChange(Number(e.target.value))}
-            className="bg-white border-2 border-green-800 px-4 py-2 rounded-md font-bold text-green-900"
-          >
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 border border-stone-200/90 rounded-2xl shadow-xs no-print">
+        <div className="flex items-center gap-3">
+          <CalendarMonthPicker
+            month={selectedMonth}
+            year={selectedYear}
+            onChange={(m, y) => {
+              onMonthChange(m);
+              onYearChange(y);
+            }}
+          />
         </div>
         <div className="flex gap-2">
           {!isTvMode && (

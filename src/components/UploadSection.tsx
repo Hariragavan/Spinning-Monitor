@@ -8,22 +8,23 @@ import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { parseExcelReport, parseWorkerMaster } from '../lib/parser';
 import { parseMachineEmWorkbook } from '../lib/googleSheets';
-import { DailyReport, Sider, CountConversion, ProductionEntry, FrameDailySummary, MachineEmData } from '../types';
+import { DailyReport, Sider, CountConversion, ProductionEntry, FrameDailySummary, MachineEmData, Shed } from '../types';
 import { cn, parseUniversalDateParts } from '../lib/utils';
+import { CalendarDatePicker } from './CalendarPickers';
 
 interface UploadSectionProps {
   onUploadSuccess: (report: DailyReport | DailyReport[]) => void;
   onWorkersUpdate?: (workers: Sider[]) => void;
   onMachineEmUpdate?: (data: MachineEmData) => Promise<void>;
   countConversions?: CountConversion[];
-  initialShed?: 'Shed 1' | 'Shed 2' | 'Shed 3';
+  initialShed?: Shed;
 }
 
 interface ExtractedPreview {
   category: 'daily_report' | 'incentive_report' | 'machine_em' | 'worker_master';
   categoryTitle: string;
   fileName: string;
-  shed: 'Shed 1' | 'Shed 2' | 'Shed 3';
+  shed: Shed;
   date: string;
   dailyReport?: DailyReport;
   monthlyReports?: DailyReport[];
@@ -41,7 +42,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [targetShed, setTargetShed] = useState<'Shed 1' | 'Shed 2' | 'Shed 3'>(initialShed);
+  const [targetShed, setTargetShed] = useState<Shed>(initialShed);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [pendingReports, setPendingReports] = useState<Record<string, DailyReport>>({});
   const [showSuccess, setShowSuccess] = useState(false);
@@ -815,7 +816,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           <div>
             <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500 mb-1">Upload To Shed</label>
             <div className="flex items-center gap-1 bg-stone-50 p-1 rounded-xl border border-stone-200">
-              {(['Shed 1', 'Shed 2', 'Shed 3'] as const).map(s => (
+              {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(s => (
                 <button
                   key={s}
                   type="button"
@@ -834,13 +835,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             </div>
           </div>
 
-          <div className="w-full sm:w-48">
+          <div>
             <label className="block text-[10px] font-black uppercase tracking-wider text-stone-400 mb-1">Sider Assigned Date</label>
-            <input 
-              type="date"
+            <CalendarDatePicker
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full px-3 py-1.5 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-bold text-stone-700 text-xs"
+              onChange={(_, iso) => setSelectedDate(iso || selectedDate)}
             />
           </div>
         </div>
@@ -1053,7 +1052,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     Shed No:
                   </span>
                   <div className="flex items-center bg-white p-0.5 rounded-xl border border-stone-200 shadow-2xs">
-                    {(['Shed 1', 'Shed 2', 'Shed 3'] as const).map(s => (
+                    {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(s => (
                       <button
                         key={s}
                         type="button"
