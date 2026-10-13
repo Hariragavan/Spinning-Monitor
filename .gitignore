@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Next.js build output
+/.next/
+/out/
+
+# Production
+/build
+/dist
+
+# Backups and IDE
+_vite_backup/
+.vscode/
+tsconfig.tsbuildinfo
+.DS_Store
+*.log
+
+# Env files
+.env*
+!.env.example
+

@@ -1,0 +1,8 @@
+{
+  "name": "Remix: SpinMonitor AI",
+  "description": "Textile spinning production monitoring and performance dashboard with Excel report parsing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
