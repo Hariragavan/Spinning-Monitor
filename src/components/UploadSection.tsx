@@ -929,36 +929,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto mt-4 space-y-4">
-      {/* Header & Date Picker & Shed Selector */}
-      <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* Header & Date Picker */}
+      <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-stone-900 uppercase tracking-tight">Data Ingestion Center</h2>
           <p className="text-[11px] font-bold text-stone-400 uppercase tracking-wider mt-0.5">Unified Production Telemetry Log</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          {/* Target Shed Selector */}
-          <div>
-            <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500 mb-1">Upload To Shed</label>
-            <div className="flex items-center gap-1 bg-stone-50 p-1 rounded-xl border border-stone-200">
-              {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setTargetShed(s)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                    targetShed === s
-                      ? "bg-emerald-600 text-white shadow-xs"
-                      : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/50 font-bold"
-                  )}
-                >
-                  <span className={cn("w-1.5 h-1.5 rounded-full", targetShed === s ? "bg-white" : "bg-stone-400")} />
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-
+        <div className="flex items-center gap-3">
           <div>
             <label className="block text-[10px] font-black uppercase tracking-wider text-stone-400 mb-1">Sider Assigned Date</label>
             <CalendarDatePicker

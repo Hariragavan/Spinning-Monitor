@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  Play, Pause, ChevronLeft, ChevronRight, Maximize, Minimize, X, 
-  Activity, TrendingUp, BarChart3, Users, Trophy, Gauge, Layers, 
-  Calendar, Clock, Zap, Star, AlertCircle, ArrowUpRight, ArrowDownRight
+  Play, Pause, ChevronLeft, ChevronRight, Maximize, Minimize, 
+  X, Activity, Trophy, BarChart3, Table, TrendingUp, Grid3X3, 
+  Calendar, Clock, Check, Users, Gauge, Layers, Star, Zap,
+  Award, ArrowUpRight, Sparkles, Medal, UserCheck
 } from 'lucide-react';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, Legend 
+  Tooltip, Legend, ResponsiveContainer, Cell 
 } from 'recharts';
-import { DailyReport, Sider, IncentiveRule, Shift, MachineEmData, SystemSettings } from '../types';
+import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData } from '../types';
 import { cn } from '../lib/utils';
 
 interface TvDashboardProps {
@@ -34,19 +35,25 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   settings,
   onExit
 }) => {
-  // Available slides
+  // Available slides (All in White Theme)
   const allSlides = useMemo(() => [
-    { id: 'overview', title: 'Daily Production & Efficiency Overview', icon: Activity, defaultSeconds: 15 },
-    { id: 'charts', title: 'Machine Production & Efficiency Charts', icon: BarChart3, defaultSeconds: 15 },
-    { id: 'table', title: 'Machine GPS & Performance Table', icon: Gauge, defaultSeconds: 20 },
-    { id: 'champions', title: 'Operator & Shift Champions', icon: Trophy, defaultSeconds: 15 },
-    { id: 'sheds', title: 'Shed-Wise Comparative Summary', icon: Layers, defaultSeconds: 15 },
-    { id: 'monthly', title: 'Monthly Cumulative Trends', icon: TrendingUp, defaultSeconds: 15 },
+    { id: 'overview', title: 'Daily Production & Efficiency Broadcast', icon: Activity, defaultSeconds: 15 },
+    { id: 'charts', title: 'Machine Analytics & Efficiency Charts', icon: BarChart3, defaultSeconds: 20 },
+    { id: 'table', title: 'Machine GPS & Executive Efficiency Ledger', icon: Table, defaultSeconds: 20 },
+    { id: 'top-workers', title: 'Top 5 Star Sider Champions', icon: Trophy, defaultSeconds: 15 },
+    { id: 'champions', title: 'Best Shift Award & Shift Telemetry', icon: Star, defaultSeconds: 15 },
+    { id: 'sheds', title: 'Multi-Shed Production Intelligence', icon: Grid3X3, defaultSeconds: 15 },
+    { id: 'monthly', title: 'Month-to-Date Production Volume Trends', icon: TrendingUp, defaultSeconds: 15 }
   ], []);
 
-  // Filter slides enabled by settings
+  // Filter only enabled slides
   const activeSlides = useMemo(() => {
-    return allSlides.filter(s => settings.tvSlideEnabled?.[s.id] !== false);
+    return allSlides.filter(slide => {
+      if (settings.tvSlideEnabled && settings.tvSlideEnabled[slide.id] === false) {
+        return false;
+      }
+      return true;
+    });
   }, [allSlides, settings.tvSlideEnabled]);
 
   const slidesToUse = activeSlides.length > 0 ? activeSlides : allSlides;
@@ -88,7 +95,6 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     const timer = setInterval(() => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
-          // Advance to next slide
           setCurrentSlideIndex(idx => (idx + 1) % slidesToUse.length);
           const nextIndex = (currentSlideIndex + 1) % slidesToUse.length;
           const nextSlide = slidesToUse[nextIndex];
@@ -178,58 +184,42 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       const validUtil = shiftEntries.map(e => e.utility || 0).filter(v => v > 0);
       const avgUtil = validUtil.length > 0 ? validUtil.reduce((a, b) => a + b, 0) / validUtil.length : 0;
 
-      // Calculate shift EM
-      const shiftNumStr = sh === 'I' ? '1' : sh === 'II' ? '2' : '3';
-      let emSum = 0;
-      let emCount = 0;
-      const dateEm = machineEm[dailyReport.date];
-      if (dateEm) {
-        Object.values(dateEm).forEach(mShifts => {
-          const val = mShifts[shiftNumStr];
-          if (typeof val === 'number') {
-            emSum += val;
-            emCount++;
-          }
-        });
-      }
-      const avgEm = emCount > 0 ? emSum / emCount : 0;
-
       return {
         shift: sh,
         actualKg,
         targetKg,
-        eff,
-        avgShiftGps,
+        efficiency: eff,
+        avgGps: avgShiftGps,
         avgUtil,
-        avgEm
+        activeFrames: shiftEntries.length
       };
     });
-  }, [entries, machineEm, dailyReport.date]);
+  }, [entries]);
 
-  // Machine chart data
-  const machineChartData = useMemo(() => {
-    return summaries.map(s => {
-      const eff = s.targetProd > 0 ? (s.actualProd / s.targetProd) * 100 : s.avgUtil || 0;
-      return {
-        machine: s.frameNo,
-        target: Math.round(s.targetProd),
-        actual: Math.round(s.actualProd),
-        efficiency: Math.round(eff * 10) / 10,
-        gps: Math.round((s.avgGps || 0) * 10) / 10,
-        stdGps: Math.round(s.stdGps || 0)
-      };
-    });
-  }, [summaries]);
-
-  // Best Shift Winner
+  // Best Shift
   const bestShift = useMemo(() => {
     if (shiftAggs.length === 0) return null;
-    return [...shiftAggs].sort((a, b) => b.eff - a.eff)[0];
+    return [...shiftAggs].sort((a, b) => b.efficiency - a.efficiency)[0];
   }, [shiftAggs]);
 
-  // Top Operators
+  // Machine Level Chart Data
+  const machineChartData = useMemo(() => {
+    return summaries
+      .map(s => ({
+        machine: s.frameNo,
+        count: s.count || '40s',
+        target: Math.round(s.targetProd || 0),
+        actual: Math.round(s.actualProd || 0),
+        efficiency: s.targetProd && s.targetProd > 0 ? Number(((s.actualProd / s.targetProd) * 100).toFixed(1)) : 0,
+        gps: Number((s.avgGps || 0).toFixed(1)),
+        stdGps: Number((s.stdGps || 0).toFixed(1))
+      }))
+      .sort((a, b) => a.machine.localeCompare(b.machine, undefined, { numeric: true }));
+  }, [summaries]);
+
+  // Top 5 Operators / Siders
   const topOperators = useMemo(() => {
-    const operatorMap = new Map<string, { worker: Sider; totalKg: number; duties: number; incentive: number }>();
+    const operatorMap = new Map<string, { worker: Sider; totalKg: number; duties: number; incentive: number; sumGps: number; gpsCount: number }>();
 
     entries.forEach(entry => {
       const wId = entry.siderIds?.[0] || entry.siderId;
@@ -243,10 +233,14 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       };
 
       const key = worker.tNo || worker.name;
-      const existing = operatorMap.get(key) || { worker, totalKg: 0, duties: 0, incentive: 0 };
+      const existing = operatorMap.get(key) || { worker, totalKg: 0, duties: 0, incentive: 0, sumGps: 0, gpsCount: 0 };
       existing.totalKg += entry.productionActual || 0;
       existing.duties += 1;
       existing.incentive += entry.incentiveAmount || 0;
+      if (entry.gpsActual && entry.gpsActual > 0) {
+        existing.sumGps += entry.gpsActual;
+        existing.gpsCount += 1;
+      }
       operatorMap.set(key, existing);
     });
 
@@ -255,97 +249,95 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       .slice(0, 5);
   }, [entries, workers]);
 
-  // Sheds comparative summary
-  const shedsSummary = useMemo(() => {
-    const shedNames: ('Shed 1' | 'Shed 2' | 'Shed 3' | 'KTTM')[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
-    return shedNames.map(sName => {
-      const rep = history.find(r => r.date === dailyReport.date && (r.shed || 'Shed 1') === sName) || (
-        (dailyReport.shed || 'Shed 1') === sName ? dailyReport : null
-      );
+  // Monthly 15-day trend data
+  const monthlyTrendData = useMemo(() => {
+    const currentShedHistory = history.filter(r => (r.shed || 'Shed 1') === selectedShed);
+    return currentShedHistory
+      .slice(-15)
+      .map(r => ({
+        date: r.date.split('/').slice(0, 2).join('/'),
+        fullDate: r.date,
+        target: Math.round(r.totalProductionTarget || 0),
+        actual: Math.round(r.totalProductionActual || 0),
+        efficiency: r.totalProductionTarget > 0 ? Number(((r.totalProductionActual / r.totalProductionTarget) * 100).toFixed(1)) : 0
+      }));
+  }, [history, selectedShed]);
 
-      const sTarget = rep ? (rep.totalProductionTarget || rep.summaries.reduce((a, b) => a + (b.targetProd || 0), 0)) : 0;
-      const sActual = rep ? (rep.totalProductionActual || rep.summaries.reduce((a, b) => a + (b.actualProd || 0), 0)) : 0;
-      const sEff = sTarget > 0 ? (sActual / sTarget) * 100 : 0;
-      const sAvgGps = rep && rep.summaries.length > 0 
-        ? rep.summaries.reduce((a, b) => a + (b.avgGps || 0), 0) / rep.summaries.length 
-        : 0;
-      const mCount = rep ? rep.summaries.length : 0;
+  // Multi-shed comparison
+  const shedComparison = useMemo(() => {
+    const sheds = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const;
+    return sheds.map(shedName => {
+      const reportForShed = history.find(r => r.date === dailyReport.date && (r.shed || 'Shed 1') === shedName) 
+        || (selectedShed === shedName ? dailyReport : null);
+
+      if (!reportForShed) {
+        return {
+          shed: shedName,
+          target: 0,
+          actual: 0,
+          efficiency: 0,
+          frames: 0,
+          avgGps: 0,
+          active: false
+        };
+      }
+
+      const tProd = reportForShed.totalProductionTarget || 0;
+      const aProd = reportForShed.totalProductionActual || 0;
+      const eff = tProd > 0 ? (aProd / tProd) * 100 : 0;
+      const sList = reportForShed.summaries || [];
+      const gps = sList.length > 0 ? sList.reduce((a, b) => a + (b.avgGps || 0), 0) / sList.length : 0;
 
       return {
-        shed: sName,
-        target: Math.round(sTarget),
-        actual: Math.round(sActual),
-        efficiency: Math.round(sEff * 10) / 10,
-        avgGps: Math.round(sAvgGps * 10) / 10,
-        machines: mCount,
-        isActive: sName === selectedShed
+        shed: shedName,
+        target: Math.round(tProd),
+        actual: Math.round(aProd),
+        efficiency: Number(eff.toFixed(1)),
+        frames: sList.length,
+        avgGps: Number(gps.toFixed(1)),
+        active: aProd > 0
       };
     });
   }, [history, dailyReport, selectedShed]);
 
-  // Monthly Trend Data
-  const monthlyTrendData = useMemo(() => {
-    const sorted = [...history]
-      .filter(r => (r.shed || 'Shed 1') === selectedShed)
-      .sort((a, b) => {
-        const da = a.date.split('/').reverse().join('');
-        const db = b.date.split('/').reverse().join('');
-        return da.localeCompare(db);
-      })
-      .slice(-15); // Last 15 days
-
-    return sorted.map(r => {
-      const t = r.totalProductionTarget || r.summaries.reduce((a, b) => a + (b.targetProd || 0), 0);
-      const a = r.totalProductionActual || r.summaries.reduce((a, b) => a + (b.actualProd || 0), 0);
-      const eff = t > 0 ? (a / t) * 100 : 0;
-      return {
-        date: r.date.split('/').slice(0, 2).join('/'),
-        target: Math.round(t),
-        actual: Math.round(a),
-        efficiency: Math.round(eff * 10) / 10
-      };
-    });
-  }, [history, selectedShed]);
-
-  const progressPercent = Math.min(100, Math.max(0, ((currentSlideDuration - timeRemaining) / currentSlideDuration) * 100));
-
   return (
     <div 
       onMouseMove={handleMouseMove}
-      className="fixed inset-0 z-[1000] bg-stone-950 text-white flex flex-col overflow-hidden select-none font-sans"
+      className="min-h-screen h-screen w-full bg-stone-50 text-stone-900 flex flex-col justify-between overflow-hidden select-none font-sans relative"
     >
-      {/* ---------------- TOP SLIM PROGRESS BAR ---------------- */}
-      <div className="w-full h-1.5 bg-stone-900 overflow-hidden relative">
+      {/* ---------------- TOP PROGRESS BAR ---------------- */}
+      <div className="w-full bg-stone-200 h-1.5 shrink-0 overflow-hidden">
         <div 
-          className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 transition-all duration-1000 ease-linear shadow-lg shadow-emerald-500/50"
-          style={{ width: `${progressPercent}%` }}
+          className="bg-emerald-600 h-full transition-all duration-1000 ease-linear shadow-xs"
+          style={{ width: `${((currentSlideDuration - timeRemaining) / currentSlideDuration) * 100}%` }}
         />
       </div>
 
-      {/* ---------------- TV TOP HEADER ---------------- */}
-      <header className="px-6 py-3.5 bg-stone-900/90 border-b border-stone-800 flex items-center justify-between gap-4 shrink-0 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center text-white shadow-lg shadow-emerald-900/50 font-black text-lg">
-            S
+      {/* ---------------- TOP BROADCAST HEADER (WHITE THEME) ---------------- */}
+      <header className="h-16 bg-white border-b border-stone-200/90 px-6 flex items-center justify-between z-30 shrink-0 shadow-xs">
+        {/* Left: Mill Branding & Status */}
+        <div className="flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-sm shadow-emerald-600/30">
+            <activeSlide.icon size={22} className="stroke-[2.5]" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg md:text-xl font-black uppercase tracking-tight text-white">
-                Spinning Monitor <span className="text-emerald-400">TV Dashboard</span>
+              <h1 className="text-lg md:text-xl font-black uppercase tracking-tight text-stone-900 font-serif">
+                SCM <span className="text-emerald-700 font-sans">SpinMonitor TV</span>
               </h1>
-              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Live Broadcast
               </span>
             </div>
-            <p className="text-[11px] text-stone-400 font-bold uppercase tracking-wider">
+            <p className="text-[11px] text-stone-500 font-bold uppercase tracking-wider">
               {activeSlide.title}
             </p>
           </div>
         </div>
 
         {/* Center: Shed Selector Pills */}
-        <div className="hidden md:flex items-center bg-stone-950 p-1 rounded-2xl border border-stone-800 gap-1 shadow-inner">
+        <div className="hidden md:flex items-center bg-stone-100 p-1 rounded-2xl border border-stone-200/90 gap-1 shadow-2xs">
           {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
             const isSelected = selectedShed === shed;
             return (
@@ -355,11 +347,11 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 className={cn(
                   "px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
                   isSelected
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/50 scale-105"
-                    : "text-stone-400 hover:text-white hover:bg-stone-800"
+                    ? "bg-emerald-600 text-white shadow-xs scale-105"
+                    : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 font-bold"
                 )}
               >
-                <span className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-white" : "bg-stone-600")} />
+                <span className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-white" : "bg-stone-400")} />
                 {shed}
               </button>
             );
@@ -367,20 +359,20 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         </div>
 
         {/* Right: Date, Clock & Countdown */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 bg-stone-950 px-3 py-1.5 rounded-xl border border-stone-800 text-xs font-mono font-bold text-stone-300">
-            <Calendar size={13} className="text-emerald-400" />
+        <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 bg-stone-100 px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-mono font-bold text-stone-700 shadow-2xs">
+            <Calendar size={13} className="text-emerald-600" />
             <span>{dailyReport.date}</span>
           </div>
 
-          <div className="flex items-center gap-2 bg-stone-950 px-3.5 py-1.5 rounded-xl border border-emerald-500/30 text-xs font-mono font-black text-emerald-400 shadow-inner">
-            <Clock size={13} className="animate-spin text-emerald-400" style={{ animationDuration: '6s' }} />
+          <div className="flex items-center gap-2 bg-emerald-50 px-3.5 py-1.5 rounded-xl border border-emerald-200 text-xs font-mono font-black text-emerald-800 shadow-2xs">
+            <Clock size={13} className="animate-spin text-emerald-600" style={{ animationDuration: '6s' }} />
             <span>{currentTime || '--:--:--'}</span>
           </div>
 
           <button
             onClick={onExit}
-            className="p-2 rounded-xl bg-stone-800 hover:bg-rose-950 hover:text-rose-400 text-stone-400 transition-colors border border-stone-700 cursor-pointer"
+            className="p-2 rounded-xl bg-stone-100 hover:bg-rose-50 hover:text-rose-600 text-stone-500 transition-colors border border-stone-200 cursor-pointer shadow-2xs"
             title="Exit TV Mode (Esc)"
           >
             <X size={16} />
@@ -388,59 +380,60 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         </div>
       </header>
 
-      {/* ---------------- MAIN SLIDE CONTENT ---------------- */}
+      {/* ---------------- MAIN SLIDE CONTENT (WHITE THEME) ---------------- */}
       <main className="flex-1 overflow-hidden p-6 relative flex flex-col justify-center">
-        {/* SLIDE 1: DAILY OVERVIEW */}
+        {/* ========================================================= */}
+        {/* SLIDE 1: DAILY OVERVIEW & BROADCAST                       */}
+        {/* ========================================================= */}
         {activeSlide.id === 'overview' && (
           <div className="h-full flex flex-col justify-between space-y-5 animate-in fade-in duration-500">
             {/* Top Stat Row */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-stone-900/90 rounded-2xl p-5 border border-stone-800 flex flex-col justify-between shadow-xl">
+              <div className="bg-white rounded-3xl p-5 border border-stone-200/90 flex flex-col justify-between shadow-2xs">
                 <span className="text-[11px] font-black uppercase tracking-widest text-stone-400">Target Production</span>
                 <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-3xl lg:text-4xl font-black font-mono text-white tracking-tight">
+                  <span className="text-3xl lg:text-4xl font-black font-mono text-stone-900 tracking-tight">
                     {totalTarget.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
                   </span>
                   <span className="text-xs font-bold text-stone-400 uppercase">Kg</span>
                 </div>
-                <div className="mt-3 text-[11px] font-bold text-stone-400 flex items-center gap-1">
-                  <Layers size={13} className="text-emerald-400" />
+                <div className="mt-3 text-[11px] font-bold text-stone-500 flex items-center gap-1">
+                  <Layers size={13} className="text-emerald-600" />
                   <span>Standard Shift Target</span>
                 </div>
               </div>
 
-              <div className="bg-stone-900/90 rounded-2xl p-5 border border-emerald-500/40 flex flex-col justify-between shadow-xl shadow-emerald-950/20 relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-                <span className="text-[11px] font-black uppercase tracking-widest text-emerald-400">Actual Production</span>
+              <div className="bg-white rounded-3xl p-5 border border-emerald-200 flex flex-col justify-between shadow-2xs relative overflow-hidden">
+                <span className="text-[11px] font-black uppercase tracking-widest text-emerald-700">Actual Production</span>
                 <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-3xl lg:text-4xl font-black font-mono text-emerald-400 tracking-tight">
+                  <span className="text-3xl lg:text-4xl font-black font-mono text-emerald-600 tracking-tight">
                     {totalActual.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
                   </span>
-                  <span className="text-xs font-bold text-emerald-300 uppercase">Kg</span>
+                  <span className="text-xs font-bold text-emerald-700 uppercase">Kg</span>
                 </div>
-                <div className="mt-3 text-[11px] font-bold text-emerald-400/80 flex items-center gap-1">
+                <div className="mt-3 text-[11px] font-bold text-emerald-700/80 flex items-center gap-1">
                   <TrendingUp size={13} />
                   <span>Output Delivered</span>
                 </div>
               </div>
 
-              <div className="bg-stone-900/90 rounded-2xl p-5 border border-stone-800 flex flex-col justify-between shadow-xl">
+              <div className="bg-white rounded-3xl p-5 border border-stone-200/90 flex flex-col justify-between shadow-2xs">
                 <span className="text-[11px] font-black uppercase tracking-widest text-stone-400">Plant Efficiency</span>
                 <div className="flex items-baseline justify-between mt-2">
                   <span className={cn(
                     "text-3xl lg:text-4xl font-black font-mono tracking-tight",
-                    overallEfficiency >= 95 ? "text-emerald-400" : overallEfficiency >= 90 ? "text-amber-400" : "text-rose-400"
+                    overallEfficiency >= 95 ? "text-emerald-600" : overallEfficiency >= 90 ? "text-amber-600" : "text-rose-600"
                   )}>
                     {overallEfficiency.toFixed(1)}%
                   </span>
                   <span className={cn(
-                    "text-[10px] font-black uppercase px-2 py-0.5 rounded-full",
-                    overallEfficiency >= 95 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-amber-500/20 text-amber-300"
+                    "text-[10px] font-black uppercase px-2 py-0.5 rounded-full border",
+                    overallEfficiency >= 95 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"
                   )}>
                     {overallEfficiency >= 95 ? 'EXCELLENT' : overallEfficiency >= 90 ? 'OPTIMAL' : 'REVIEW'}
                   </span>
                 </div>
-                <div className="mt-3 w-full bg-stone-800 h-2 rounded-full overflow-hidden">
+                <div className="mt-3 w-full bg-stone-100 h-2 rounded-full overflow-hidden border border-stone-200/60">
                   <div 
                     className="h-full bg-emerald-500 rounded-full transition-all duration-1000"
                     style={{ width: `${Math.min(100, overallEfficiency)}%` }}
@@ -448,421 +441,512 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="bg-stone-900/90 rounded-2xl p-5 border border-stone-800 flex flex-col justify-between shadow-xl">
-                <span className="text-[11px] font-black uppercase tracking-widest text-stone-400">Production Variance</span>
+              <div className="bg-white rounded-3xl p-5 border border-stone-200/90 flex flex-col justify-between shadow-2xs">
+                <span className="text-[11px] font-black uppercase tracking-widest text-stone-400">Average GPS / STD GPS</span>
                 <div className="flex items-baseline justify-between mt-2">
-                  <span className={cn(
-                    "text-3xl lg:text-4xl font-black font-mono tracking-tight flex items-center gap-1",
-                    variance >= 0 ? "text-emerald-400" : "text-rose-400"
-                  )}>
-                    {variance >= 0 ? <ArrowUpRight size={24} /> : <ArrowDownRight size={24} />}
-                    {Math.abs(variance).toFixed(1)}
+                  <span className="text-3xl lg:text-4xl font-black font-mono text-stone-900 tracking-tight">
+                    {avgGps.toFixed(1)}
                   </span>
-                  <span className="text-xs font-bold text-stone-400 uppercase">Kg</span>
+                  <span className="text-xs font-bold text-stone-400 font-mono">/ {stdGpsAvg.toFixed(1)} STD</span>
                 </div>
-                <div className="mt-3 text-[11px] font-bold text-stone-400 flex items-center gap-1">
-                  <span>{variance >= 0 ? "Above scheduled quota" : "Deficit to target quota"}</span>
+                <div className="mt-3 text-[11px] font-bold text-stone-500 flex items-center justify-between">
+                  <span>Variance:</span>
+                  <span className={cn("font-mono font-black", variance >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                    {variance >= 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)} Kg
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Shift Breakdown Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {shiftAggs.map(sh => (
-                <div 
-                  key={sh.shift}
-                  className="bg-stone-900/90 rounded-2xl p-6 border border-stone-800 shadow-xl flex flex-col justify-between hover:border-emerald-500/40 transition-all"
-                >
-                  <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 font-black text-sm flex items-center justify-center border border-emerald-500/30">
-                        {sh.shift}
-                      </span>
-                      <div>
-                        <h4 className="text-sm font-black uppercase tracking-wider text-white">Shift {sh.shift}</h4>
-                        <span className="text-[10px] text-stone-400 font-bold uppercase">8 Hours Operation</span>
+            {/* Middle Row: Shift Breakdown Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 flex-1 min-h-0">
+              {shiftAggs.map((shiftData) => {
+                const shiftName = shiftData.shift === 'I' ? 'Shift I (Morning)' : shiftData.shift === 'II' ? 'Shift II (Evening)' : 'Shift III (Night)';
+                const isBest = bestShift && bestShift.shift === shiftData.shift;
+
+                return (
+                  <div 
+                    key={shiftData.shift} 
+                    className={cn(
+                      "rounded-3xl p-6 border flex flex-col justify-between relative shadow-2xs transition-all",
+                      isBest 
+                        ? "bg-white border-amber-300 ring-2 ring-amber-400/20" 
+                        : "bg-white border-stone-200/90"
+                    )}
+                  >
+                    {isBest && (
+                      <div className="absolute top-4 right-4 bg-amber-100 text-amber-900 border border-amber-300 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-2xs">
+                        <Trophy size={12} className="text-amber-600 fill-amber-500" />
+                        Best Shift Today
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                        <h3 className="text-base font-black uppercase tracking-wider text-stone-900 font-serif">
+                          {shiftName}
+                        </h3>
+                      </div>
+                      <p className="text-xs text-stone-400 font-bold uppercase tracking-wider">
+                        Telemetry & Production Output
+                      </p>
+                    </div>
+
+                    <div className="my-4 space-y-3">
+                      <div className="flex items-baseline justify-between border-b border-stone-100 pb-2">
+                        <span className="text-xs font-bold text-stone-500 uppercase">Delivered Output:</span>
+                        <div className="text-right">
+                          <span className="text-2xl font-black font-mono text-stone-900">{shiftData.actualKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })}</span>
+                          <span className="text-xs font-bold text-stone-400 ml-1">/ {shiftData.targetKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })} Kg</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-baseline justify-between border-b border-stone-100 pb-2">
+                        <span className="text-xs font-bold text-stone-500 uppercase">Efficiency %:</span>
+                        <span className={cn(
+                          "text-xl font-black font-mono",
+                          shiftData.efficiency >= 95 ? "text-emerald-600" : "text-amber-600"
+                        )}>
+                          {shiftData.efficiency.toFixed(1)}%
+                        </span>
+                      </div>
+
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs font-bold text-stone-500 uppercase">Average GPS:</span>
+                        <span className="text-xl font-black font-mono text-stone-900">
+                          {shiftData.avgGps.toFixed(1)}
+                        </span>
                       </div>
                     </div>
-                    <span className={cn(
-                      "text-xs font-black font-mono px-2.5 py-1 rounded-lg",
-                      sh.eff >= 95 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" : "bg-stone-800 text-stone-300"
-                    )}>
-                      {sh.eff.toFixed(1)}% Eff
+
+                    <div className="w-full bg-stone-100 h-2.5 rounded-full overflow-hidden border border-stone-200/60">
+                      <div 
+                        className={cn("h-full rounded-full transition-all duration-1000", isBest ? "bg-amber-500" : "bg-emerald-500")}
+                        style={{ width: `${Math.min(100, shiftData.efficiency)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bottom Row: Shed Notice */}
+            <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span>Current Shed: <strong className="text-stone-900 uppercase font-black">{selectedShed}</strong></span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span>Active Frames: <strong className="text-stone-900">{summaries.length} Spinning Machines</strong></span>
+                <span>Data Freshness: <strong className="text-emerald-700">Live Cloud Verified</strong></span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 2: MACHINE ANALYTICS & CHARTS                       */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'charts' && (
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Machine Production Target vs Actual ({selectedShed})</h3>
+              </div>
+              <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Frames Production Volume (Kg)</span>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 border border-stone-200/90 flex-1 min-h-[340px] shadow-2xs">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={machineChartData} margin={{ top: 15, right: 20, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="machine" stroke="#6b7280" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#6b7280" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', color: '#111827', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }}
+                  />
+                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', textTransform: 'uppercase', paddingBottom: '16px', fontWeight: 'bold' }} />
+                  <Bar dataKey="target" name="Target (Kg)" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="actual" name="Actual (Kg)" fill="#059669" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <span>Overall Output: <strong className="text-stone-900">{totalActual.toFixed(1)} Kg</strong></span>
+              <span>Efficiency Index: <strong className="text-emerald-700 font-mono font-black">{overallEfficiency.toFixed(1)}%</strong></span>
+              <span>Showing {machineChartData.length} Spinning Machines in {selectedShed}</span>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 3: MACHINE GPS & EFFICIENCY PERFORMANCE TABLE       */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'table' && (
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <Table size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Machine GPS &amp; Efficiency Performance ({selectedShed})</h3>
+              </div>
+              <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Date: {dailyReport.date}</span>
+            </div>
+
+            <div className="bg-white rounded-3xl border border-stone-200/90 flex-1 overflow-hidden flex flex-col shadow-2xs">
+              <div className="overflow-y-auto flex-1">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-stone-100 text-stone-700 font-black text-[10px] uppercase tracking-wider sticky top-0 z-10 border-b border-stone-200">
+                      <th className="py-2.5 px-3">Frame</th>
+                      <th className="py-2.5 px-3">Count</th>
+                      <th className="py-2.5 px-3 text-right">Target (Kg)</th>
+                      <th className="py-2.5 px-3 text-right font-black text-emerald-800">Actual (Kg)</th>
+                      <th className="py-2.5 px-3 text-right">Variance</th>
+                      <th className="py-2.5 px-3 text-right">Efficiency %</th>
+                      <th className="py-2.5 px-3 text-right">STD GPS</th>
+                      <th className="py-2.5 px-3 text-right font-black text-stone-900">Avg GPS</th>
+                      <th className="py-2.5 px-3 text-right">Avg Util%</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {summaries.map((s, idx) => {
+                      const eff = s.targetProd && s.targetProd > 0 ? (s.actualProd / s.targetProd) * 100 : 0;
+                      const diff = (s.actualProd || 0) - (s.targetProd || 0);
+
+                      return (
+                        <tr key={s.frameNo || idx} className="hover:bg-emerald-50/40 transition-colors font-medium">
+                          <td className="py-2 px-3 font-black text-stone-900">{s.frameNo}</td>
+                          <td className="py-2 px-3 text-stone-700">{s.count || '40s'}</td>
+                          <td className="py-2 px-3 text-right font-mono text-stone-600">{s.targetProd?.toFixed(1) || '0.0'}</td>
+                          <td className="py-2 px-3 text-right font-mono font-black text-emerald-700">{s.actualProd?.toFixed(1) || '0.0'}</td>
+                          <td className={cn("py-2 px-3 text-right font-mono font-bold", diff >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                            {diff >= 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-bold">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-full text-[10px]",
+                              eff >= 95 ? "bg-emerald-100 text-emerald-800 font-black" : "bg-stone-100 text-stone-700"
+                            )}>
+                              {eff.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-stone-500">{s.stdGps?.toFixed(1) || '—'}</td>
+                          <td className="py-2 px-3 text-right font-mono font-black text-stone-900">{s.avgGps?.toFixed(1) || '—'}</td>
+                          <td className="py-2 px-3 text-right font-mono text-stone-700">{s.avgUtil ? `${s.avgUtil.toFixed(1)}%` : '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 bg-stone-900 text-white font-black text-xs z-10">
+                    <tr>
+                      <td className="py-2.5 px-3 uppercase tracking-wider" colSpan={2}>Grand Total ({summaries.length} M/C)</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-amber-300">{totalTarget.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-emerald-300">{totalActual.toFixed(1)}</td>
+                      <td className={cn("py-2.5 px-3 text-right font-mono", variance >= 0 ? "text-emerald-300" : "text-rose-300")}>
+                        {variance >= 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono text-emerald-300">{overallEfficiency.toFixed(1)}%</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-stone-400">{stdGpsAvg.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-amber-300">{avgGps.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-stone-400">—</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 4: TOP 5 WORKERS / STAR PERFORMERS (NEW DEDICATED)  */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'top-workers' && (
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            {/* Header Banner */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-stone-200 gap-2">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-300 flex items-center justify-center text-amber-700 shadow-2xs">
+                  <Trophy size={22} className="text-amber-600 fill-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black uppercase tracking-wider text-stone-900 font-serif">
+                    Top 5 Star Siders &amp; Operator Champions
+                  </h3>
+                  <p className="text-xs text-stone-400 font-bold uppercase tracking-wider">
+                    Highest Production Volume &amp; Daily Incentive Achievers ({selectedShed})
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-xl text-xs font-black uppercase tracking-wider shadow-2xs">
+                  Date: {dailyReport.date}
+                </span>
+              </div>
+            </div>
+
+            {/* Top 5 Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
+              {topOperators.length === 0 ? (
+                <div className="col-span-5 bg-white rounded-3xl p-12 text-center border border-stone-200/90 flex flex-col items-center justify-center">
+                  <Users size={48} className="text-stone-300 mb-3" />
+                  <h4 className="text-base font-black text-stone-700 uppercase">No Sider Allocations Recorded</h4>
+                  <p className="text-xs text-stone-400 font-bold mt-1">Assign operators in Machine Allocation to see the top performers leaderboard.</p>
+                </div>
+              ) : (
+                topOperators.map((item, index) => {
+                  const rank = index + 1;
+                  const isGold = rank === 1;
+                  const isSilver = rank === 2;
+                  const isBronze = rank === 3;
+
+                  return (
+                    <div
+                      key={item.worker.id || item.worker.tNo || index}
+                      className={cn(
+                        "rounded-3xl p-5 border flex flex-col justify-between relative shadow-2xs transition-all duration-300 hover:shadow-md",
+                        isGold ? "bg-white border-amber-300 ring-4 ring-amber-400/20" :
+                        isSilver ? "bg-white border-slate-300 ring-2 ring-slate-400/20" :
+                        isBronze ? "bg-white border-amber-200" :
+                        "bg-white border-stone-200/90"
+                      )}
+                    >
+                      {/* Rank Badge */}
+                      <div className="flex items-center justify-between gap-1 mb-3">
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1 shadow-2xs",
+                          isGold ? "bg-amber-500 text-white" :
+                          isSilver ? "bg-slate-500 text-white" :
+                          isBronze ? "bg-amber-700 text-white" :
+                          "bg-emerald-600 text-white"
+                        )}>
+                          {isGold && <CrownIcon />}
+                          <span>Rank #{rank}</span>
+                        </span>
+
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200">
+                          {item.duties} {item.duties === 1 ? 'Duty' : 'Duties'}
+                        </span>
+                      </div>
+
+                      {/* Photo / Avatar */}
+                      <div className="flex flex-col items-center text-center my-2">
+                        <div className={cn(
+                          "w-20 h-20 sm:w-24 sm:h-24 rounded-full p-1 border-2 overflow-hidden shadow-sm flex items-center justify-center bg-stone-50 mb-3",
+                          isGold ? "border-amber-400 ring-4 ring-amber-200/50" :
+                          isSilver ? "border-slate-300" :
+                          "border-stone-200"
+                        )}>
+                          {item.worker.photoUrl ? (
+                            <img 
+                              src={item.worker.photoUrl} 
+                              alt={item.worker.name} 
+                              className="w-full h-full object-cover rounded-full"
+                            />
+                          ) : (
+                            <div className="w-full h-full rounded-full bg-stone-100 flex items-center justify-center text-stone-400 font-black text-xl font-mono">
+                              {item.worker.name.charAt(0)}
+                            </div>
+                          )}
+                        </div>
+
+                        <h4 className="text-base font-black text-stone-900 leading-snug line-clamp-1 uppercase">
+                          {item.worker.name}
+                        </h4>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 text-xs font-mono font-bold mt-1">
+                          <span>T.No:</span>
+                          <strong className="text-stone-900">{item.worker.tNo || 'N/A'}</strong>
+                        </div>
+                      </div>
+
+                      {/* Stats Box */}
+                      <div className="bg-stone-50/80 rounded-2xl p-3 border border-stone-200/80 space-y-2 mt-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-stone-500 uppercase text-[10px]">Production:</span>
+                          <span className="font-mono font-black text-emerald-700 text-sm">
+                            {item.totalKg.toLocaleString('en-IN', { maximumFractionDigits: 1 })} <span className="text-[10px] text-stone-500">Kg</span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-xs border-t border-stone-200/60 pt-1.5">
+                          <span className="font-bold text-stone-500 uppercase text-[10px]">Incentive:</span>
+                          <span className="font-mono font-black text-amber-700 text-sm">
+                            ₹{Math.round(item.incentive)}
+                          </span>
+                        </div>
+
+                        {item.gpsCount > 0 && (
+                          <div className="flex items-center justify-between text-xs border-t border-stone-200/60 pt-1.5">
+                            <span className="font-bold text-stone-500 uppercase text-[10px]">Avg GPS:</span>
+                            <span className="font-mono font-bold text-stone-800 text-xs">
+                              {(item.sumGps / item.gpsCount).toFixed(1)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Bottom Note */}
+            <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <span>Performance Standard: <strong className="text-stone-900">SCM Plant Quality &amp; Machine Allocation Ledger</strong></span>
+              <span>Incentive Status: <strong className="text-emerald-700">Calculated &amp; Approved for Payout</strong></span>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 5: BEST SHIFT AWARD                                 */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'champions' && (
+          <div className="h-full flex flex-col justify-between space-y-5 animate-in fade-in duration-500">
+            {/* Best Shift Award Banner */}
+            <div className="bg-gradient-to-r from-amber-50 via-white to-emerald-50 rounded-3xl p-6 sm:p-8 border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div className="flex items-center gap-5">
+                <div className="w-16 h-16 rounded-3xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30 shrink-0">
+                  <Trophy size={32} className="stroke-[2.5]" />
+                </div>
+                <div>
+                  <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full">
+                    Award of the Day
+                  </span>
+                  <h2 className="text-2xl sm:text-3xl font-black text-stone-900 uppercase tracking-tight mt-1 font-serif">
+                    Best Shift: <span className="text-amber-600 font-sans">{bestShift ? `Shift ${bestShift.shift}` : 'All Shifts Equal'}</span>
+                  </h2>
+                  <p className="text-xs text-stone-500 font-bold uppercase tracking-wider mt-0.5">
+                    Highest Production Efficiency &amp; Minimum Doff/Break Interruptions
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6">
+                <div className="text-right">
+                  <span className="text-xs font-bold text-stone-400 uppercase block">Shift Efficiency</span>
+                  <span className="text-3xl sm:text-4xl font-black font-mono text-emerald-600">
+                    {bestShift ? `${bestShift.efficiency.toFixed(1)}%` : '0%'}
+                  </span>
+                </div>
+                <div className="text-right border-l border-stone-200 pl-6">
+                  <span className="text-xs font-bold text-stone-400 uppercase block">Shift Output</span>
+                  <span className="text-3xl sm:text-4xl font-black font-mono text-stone-900">
+                    {bestShift ? Math.round(bestShift.actualKg).toLocaleString('en-IN') : 0} <span className="text-xs text-stone-400">Kg</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Shift Performance Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 flex-1 min-h-0">
+              {shiftAggs.map(sh => (
+                <div key={sh.shift} className="bg-white rounded-3xl p-6 border border-stone-200/90 shadow-2xs flex flex-col justify-between">
+                  <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+                    <div>
+                      <h4 className="text-lg font-black uppercase text-stone-900">Shift {sh.shift}</h4>
+                      <p className="text-[11px] text-stone-400 font-bold uppercase">Performance Summary</p>
+                    </div>
+                    <span className="px-3 py-1 bg-stone-100 text-stone-700 rounded-xl text-xs font-black">
+                      {sh.efficiency.toFixed(1)}% Eff
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 mb-4 text-xs">
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                      <span className="text-[10px] font-bold text-stone-500 block uppercase">Actual Prod</span>
-                      <span className="text-lg font-black font-mono text-white">{sh.actualKg.toFixed(1)} <span className="text-xs text-stone-400">Kg</span></span>
+                  <div className="my-4 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-stone-500 font-bold uppercase">Target:</span>
+                      <span className="font-mono font-bold text-stone-800">{sh.targetKg.toFixed(1)} Kg</span>
                     </div>
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                      <span className="text-[10px] font-bold text-stone-500 block uppercase">Average GPS</span>
-                      <span className="text-lg font-black font-mono text-emerald-400">{sh.avgShiftGps.toFixed(1)}</span>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-stone-500 font-bold uppercase">Actual Achieved:</span>
+                      <span className="font-mono font-black text-emerald-700">{sh.actualKg.toFixed(1)} Kg</span>
                     </div>
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                      <span className="text-[10px] font-bold text-stone-500 block uppercase">Utility %</span>
-                      <span className="text-lg font-black font-mono text-white">{sh.avgUtil.toFixed(1)}%</span>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-stone-500 font-bold uppercase">Average GPS:</span>
+                      <span className="font-mono font-black text-stone-900">{sh.avgGps.toFixed(1)}</span>
                     </div>
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80">
-                      <span className="text-[10px] font-bold text-stone-500 block uppercase">Shift EM %</span>
-                      <span className="text-lg font-black font-mono text-blue-400">{sh.avgEm > 0 ? `${sh.avgEm.toFixed(1)}%` : '--'}</span>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-stone-500 font-bold uppercase">Average Util%:</span>
+                      <span className="font-mono font-bold text-stone-800">{sh.avgUtil.toFixed(1)}%</span>
                     </div>
                   </div>
 
-                  <div className="w-full bg-stone-800 h-1.5 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
-                      style={{ width: `${Math.min(100, sh.eff)}%` }}
-                    />
+                  <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden border border-stone-200/60">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, sh.efficiency)}%` }} />
                   </div>
                 </div>
               ))}
             </div>
-
-            {/* Bottom Quick Bar */}
-            <div className="bg-stone-900/60 rounded-2xl px-6 py-3 border border-stone-800/80 flex items-center justify-between text-xs font-bold text-stone-400">
-              <div className="flex items-center gap-6">
-                <span>Mill: <strong className="text-white">SCM Spinning Mills</strong></span>
-                <span>Active Shed: <strong className="text-emerald-400">{selectedShed}</strong></span>
-                <span>Active Machines: <strong className="text-white">{summaries.length} Frames</strong></span>
-                <span>Avg Mill GPSS: <strong className="text-emerald-400">{avgGps.toFixed(1)}</strong> (Std: {stdGpsAvg.toFixed(1)})</span>
-              </div>
-              <span className="text-[10px] text-stone-500 uppercase tracking-widest">
-                Data Synced via MongoDB
-              </span>
-            </div>
           </div>
         )}
 
-        {/* SLIDE 2: CHARTS */}
-        {activeSlide.id === 'charts' && (
-          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0">
-              {/* Actual vs Target Production Bar Chart */}
-              <div className="bg-stone-900/90 rounded-2xl p-5 border border-stone-800 flex flex-col justify-between shadow-xl">
-                <div className="flex items-center justify-between mb-4 border-b border-stone-800 pb-2">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
-                    <BarChart3 size={16} className="text-emerald-400" />
-                    Machine Production: Actual vs Target (Kg)
-                  </h3>
-                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{selectedShed}</span>
-                </div>
-                <div className="flex-1 w-full min-h-[260px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={machineChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#292524" vertical={false} />
-                      <XAxis dataKey="machine" stroke="#78716c" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#78716c" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #44403c', borderRadius: '12px', color: '#fafaf9' }}
-                      />
-                      <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', textTransform: 'uppercase', paddingBottom: '12px' }} />
-                      <Bar dataKey="target" name="Target (Kg)" fill="#44403c" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="actual" name="Actual (Kg)" fill="#10b981" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Machine Efficiency & GPS Line Chart */}
-              <div className="bg-stone-900/90 rounded-2xl p-5 border border-stone-800 flex flex-col justify-between shadow-xl">
-                <div className="flex items-center justify-between mb-4 border-b border-stone-800 pb-2">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
-                    <TrendingUp size={16} className="text-teal-400" />
-                    Efficiency (%) & GPS vs Standard GPS
-                  </h3>
-                  <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{selectedShed}</span>
-                </div>
-                <div className="flex-1 w-full min-h-[260px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={machineChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#292524" vertical={false} />
-                      <XAxis dataKey="machine" stroke="#78716c" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#78716c" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} domain={[0, 110]} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #44403c', borderRadius: '12px', color: '#fafaf9' }}
-                      />
-                      <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', textTransform: 'uppercase', paddingBottom: '12px' }} />
-                      <Line type="monotone" dataKey="efficiency" name="Efficiency %" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} />
-                      <Line type="monotone" dataKey="gps" name="Actual GPS" stroke="#38bdf8" strokeWidth={2.5} dot={{ r: 3, fill: '#38bdf8' }} />
-                      <Line type="monotone" dataKey="stdGps" name="STD GPS" stroke="#fbbf24" strokeWidth={2} strokeDasharray="4 4" dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Machine Highlights */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-stone-900 p-3.5 rounded-xl border border-stone-800 flex items-center justify-between text-xs">
-                <span className="text-stone-400 font-bold uppercase">Top Producer Frame</span>
-                <span className="font-mono font-black text-emerald-400 text-sm">
-                  {machineChartData.length > 0 ? [...machineChartData].sort((a, b) => b.actual - a.actual)[0]?.machine : '--'}
-                </span>
-              </div>
-              <div className="bg-stone-900 p-3.5 rounded-xl border border-stone-800 flex items-center justify-between text-xs">
-                <span className="text-stone-400 font-bold uppercase">Highest Efficiency</span>
-                <span className="font-mono font-black text-emerald-400 text-sm">
-                  {machineChartData.length > 0 ? `${[...machineChartData].sort((a, b) => b.efficiency - a.efficiency)[0]?.efficiency}%` : '--'}
-                </span>
-              </div>
-              <div className="bg-stone-900 p-3.5 rounded-xl border border-stone-800 flex items-center justify-between text-xs">
-                <span className="text-stone-400 font-bold uppercase">Active Machines Monitored</span>
-                <span className="font-mono font-black text-white text-sm">{machineChartData.length} Frames</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SLIDE 3: MACHINE PERFORMANCE TABLE */}
-        {activeSlide.id === 'table' && (
-          <div className="h-full flex flex-col justify-between space-y-3 animate-in fade-in duration-500 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-2.5">
-              <div className="flex items-center gap-2">
-                <Gauge size={18} className="text-emerald-400" />
-                <h3 className="text-base font-black uppercase tracking-wider text-white">Machine GPS &amp; Efficiency Performance</h3>
-                <span className="bg-stone-800 text-emerald-300 text-xs px-2.5 py-0.5 rounded-full font-mono font-bold">{selectedShed}</span>
-              </div>
-              <span className="text-xs text-stone-400 font-bold">Total: {summaries.length} Machines</span>
-            </div>
-
-            <div className="flex-1 overflow-auto rounded-2xl border border-stone-800 bg-stone-900/90 shadow-2xl">
-              <table className="w-full text-left border-collapse text-xs md:text-sm">
-                <thead>
-                  <tr className="bg-stone-950 text-stone-400 font-black text-[11px] uppercase tracking-wider sticky top-0 z-10 border-b border-stone-800">
-                    <th className="py-3 px-3.5">RF No</th>
-                    <th className="py-3 px-3">Count</th>
-                    <th className="py-3 px-3 text-right">Std GPS</th>
-                    <th className="py-3 px-3 text-right">Target (Kg)</th>
-                    <th className="py-3 px-3 text-right text-emerald-400">Actual (Kg)</th>
-                    <th className="py-3 px-3 text-right">GPS I</th>
-                    <th className="py-3 px-3 text-right">GPS II</th>
-                    <th className="py-3 px-3 text-right">GPS III</th>
-                    <th className="py-3 px-3 text-right text-emerald-300">Avg GPS</th>
-                    <th className="py-3 px-3 text-right">Util %</th>
-                    <th className="py-3 px-3 text-right text-blue-400">EM I</th>
-                    <th className="py-3 px-3 text-right text-blue-400">EM II</th>
-                    <th className="py-3 px-3 text-right text-blue-400">EM III</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-800/80 font-mono">
-                  {summaries.map((m, idx) => {
-                    const eff = m.targetProd > 0 ? (m.actualProd / m.targetProd) * 100 : m.avgUtil || 0;
-                    const isHigh = m.avgGps >= m.stdGps && m.stdGps > 0;
-                    const mEm = machineEm[dailyReport.date]?.[m.frameNo] || {};
-
-                    return (
-                      <tr key={idx} className="hover:bg-stone-800/60 transition-colors">
-                        <td className="py-2.5 px-3.5 font-black text-white flex items-center gap-1.5 font-sans">
-                          <span className={cn("w-2 h-2 rounded-full", isHigh ? "bg-emerald-400" : "bg-stone-600")} />
-                          {m.frameNo}
-                        </td>
-                        <td className="py-2.5 px-3 text-stone-300 font-sans font-bold">{m.count}</td>
-                        <td className="py-2.5 px-3 text-right text-stone-400 font-bold">{Math.round(m.stdGps)}</td>
-                        <td className="py-2.5 px-3 text-right text-stone-400 font-bold">{Math.round(m.targetProd)}</td>
-                        <td className="py-2.5 px-3 text-right font-black text-emerald-400">{Math.round(m.actualProd)}</td>
-                        <td className="py-2.5 px-3 text-right text-stone-300">{Math.round(m.shiftGps?.I || 0)}</td>
-                        <td className="py-2.5 px-3 text-right text-stone-300">{Math.round(m.shiftGps?.II || 0)}</td>
-                        <td className="py-2.5 px-3 text-right text-stone-300">{Math.round(m.shiftGps?.III || 0)}</td>
-                        <td className={cn("py-2.5 px-3 text-right font-black", isHigh ? "text-emerald-400" : "text-amber-400")}>
-                          {(m.avgGps || 0).toFixed(1)}
-                        </td>
-                        <td className={cn("py-2.5 px-3 text-right font-black", eff >= 95 ? "text-emerald-400" : "text-stone-300")}>
-                          {eff.toFixed(1)}%
-                        </td>
-                        <td className="py-2.5 px-3 text-right text-blue-300">{mEm['1'] ? mEm['1'].toFixed(1) : '-'}</td>
-                        <td className="py-2.5 px-3 text-right text-blue-300">{mEm['2'] ? mEm['2'].toFixed(1) : '-'}</td>
-                        <td className="py-2.5 px-3 text-right text-blue-300">{mEm['3'] ? mEm['3'].toFixed(1) : '-'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* SLIDE 4: OPERATOR & SHIFT CHAMPIONS */}
-        {activeSlide.id === 'champions' && (
-          <div className="h-full flex flex-col justify-between space-y-5 animate-in fade-in duration-500">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0">
-              {/* Best Shift Award Banner */}
-              <div className="bg-gradient-to-br from-amber-950/60 via-stone-900 to-stone-900 rounded-3xl p-6 border border-amber-500/40 shadow-2xl flex flex-col justify-between relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-                <div>
-                  <div className="flex items-center gap-2 text-amber-400 text-xs font-black uppercase tracking-widest mb-3">
-                    <Trophy size={16} />
-                    <span>Mill Shift Champion</span>
-                  </div>
-                  <h3 className="text-4xl lg:text-5xl font-black uppercase tracking-tight text-white">
-                    Shift {bestShift?.shift || 'I'}
-                  </h3>
-                  <p className="text-xs text-amber-300/80 font-bold mt-2">
-                    Delivered the highest plant efficiency &amp; output across {selectedShed} today.
-                  </p>
-                </div>
-
-                <div className="my-6 space-y-3">
-                  <div className="bg-stone-950/80 p-3.5 rounded-2xl border border-stone-800 flex items-center justify-between text-xs font-bold">
-                    <span className="text-stone-400 uppercase">Shift Production</span>
-                    <span className="text-lg font-mono font-black text-amber-300">{bestShift ? `${bestShift.actualKg.toFixed(1)} Kg` : '--'}</span>
-                  </div>
-                  <div className="bg-stone-950/80 p-3.5 rounded-2xl border border-stone-800 flex items-center justify-between text-xs font-bold">
-                    <span className="text-stone-400 uppercase">Efficiency Level</span>
-                    <span className="text-lg font-mono font-black text-emerald-400">{bestShift ? `${bestShift.eff.toFixed(1)}%` : '--'}</span>
-                  </div>
-                  <div className="bg-stone-950/80 p-3.5 rounded-2xl border border-stone-800 flex items-center justify-between text-xs font-bold">
-                    <span className="text-stone-400 uppercase">Average Shift GPS</span>
-                    <span className="text-lg font-mono font-black text-white">{bestShift ? bestShift.avgShiftGps.toFixed(1) : '--'}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-amber-400">
-                  <Star size={14} className="fill-amber-400" />
-                  <span>Shift Excellence Award</span>
-                </div>
-              </div>
-
-              {/* Top Operators Podium */}
-              <div className="col-span-1 md:col-span-2 bg-stone-900/90 rounded-3xl p-6 border border-stone-800 shadow-2xl flex flex-col justify-between">
-                <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
-                  <div className="flex items-center gap-2">
-                    <Users size={18} className="text-emerald-400" />
-                    <h3 className="text-base font-black uppercase tracking-wider text-white">Top Operator Champions</h3>
-                  </div>
-                  <span className="text-xs text-stone-400 font-bold uppercase tracking-wider">Incentive Leaderboard</span>
-                </div>
-
-                <div className="space-y-3 flex-1 overflow-auto">
-                  {topOperators.map((item, idx) => {
-                    const isFirst = idx === 0;
-                    const isSecond = idx === 1;
-                    const isThird = idx === 2;
-
-                    return (
-                      <div 
-                        key={idx}
-                        className={cn(
-                          "flex items-center justify-between p-3.5 rounded-2xl border transition-all",
-                          isFirst ? "bg-amber-950/40 border-amber-500/40 shadow-lg shadow-amber-950/20" :
-                          isSecond ? "bg-stone-800/80 border-stone-700" :
-                          isThird ? "bg-stone-800/50 border-stone-700/60" :
-                          "bg-stone-950/60 border-stone-800"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className={cn(
-                            "w-8 h-8 rounded-xl font-black text-xs flex items-center justify-center shrink-0",
-                            isFirst ? "bg-amber-400 text-stone-950 shadow-md shadow-amber-400/30" :
-                            isSecond ? "bg-stone-300 text-stone-900" :
-                            isThird ? "bg-amber-700 text-white" :
-                            "bg-stone-800 text-stone-400"
-                          )}>
-                            #{idx + 1}
-                          </span>
-
-                          <div className="w-10 h-10 rounded-xl overflow-hidden bg-stone-800 shrink-0 border border-stone-700">
-                            {item.worker.photoUrl ? (
-                              <img src={item.worker.photoUrl} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-xs font-black text-stone-500 uppercase">
-                                {item.worker.name.charAt(0)}
-                              </div>
-                            )}
-                          </div>
-
-                          <div>
-                            <h4 className="text-sm font-black uppercase tracking-tight text-white">{item.worker.name}</h4>
-                            <span className="text-[10px] text-stone-400 font-mono font-bold">TK: {item.worker.tNo}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-6 font-mono text-right">
-                          <div>
-                            <span className="text-[9px] text-stone-500 block uppercase font-sans">Produced</span>
-                            <span className="text-xs font-bold text-stone-300">{item.totalKg.toFixed(1)} Kg</span>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-stone-500 block uppercase font-sans">Incentive</span>
-                            <span className="text-sm font-black text-emerald-400">₹{item.incentive.toLocaleString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {topOperators.length === 0 && (
-                    <div className="py-12 text-center text-stone-500 text-xs font-bold uppercase tracking-wider">
-                      No operator incentive allocations logged for today.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SLIDE 5: SHEDS COMPARATIVE SUMMARY */}
+        {/* ========================================================= */}
+        {/* SLIDE 6: MULTI-SHED COMPARATIVE INTELLIGENCE              */}
+        {/* ========================================================= */}
         {activeSlide.id === 'sheds' && (
-          <div className="h-full flex flex-col justify-between space-y-5 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
               <div className="flex items-center gap-2">
-                <Layers size={18} className="text-emerald-400" />
-                <h3 className="text-base font-black uppercase tracking-wider text-white">Shed-Wise Mill Performance Comparison</h3>
+                <Grid3X3 size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Multi-Shed Production Intelligence</h3>
               </div>
-              <span className="text-xs text-stone-400 font-bold uppercase tracking-wider">Date: {dailyReport.date}</span>
+              <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Date: {dailyReport.date}</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 flex-1">
-              {shedsSummary.map(s => (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1 min-h-0">
+              {shedComparison.map((s) => (
                 <div 
-                  key={s.shed}
-                  onClick={() => onSelectShed(s.shed)}
+                  key={s.shed} 
                   className={cn(
-                    "rounded-3xl p-6 border flex flex-col justify-between transition-all cursor-pointer shadow-xl",
-                    s.isActive 
-                      ? "bg-gradient-to-b from-emerald-950/60 via-stone-900 to-stone-900 border-emerald-500 shadow-emerald-950/30 ring-2 ring-emerald-500/50" 
-                      : "bg-stone-900/90 border-stone-800 hover:border-stone-700"
+                    "rounded-3xl p-6 border flex flex-col justify-between shadow-2xs transition-all",
+                    selectedShed === s.shed 
+                      ? "bg-white border-emerald-400 ring-4 ring-emerald-400/20" 
+                      : "bg-white border-stone-200/90"
                   )}
                 >
-                  <div className="flex items-center justify-between border-b border-stone-800 pb-3 mb-4">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-3">
                     <div>
-                      <h4 className="text-lg font-black uppercase tracking-tight text-white">{s.shed}</h4>
-                      <span className="text-[10px] text-stone-400 font-bold uppercase">{s.machines} Machines Active</span>
+                      <h4 className="text-xl font-black text-stone-900 uppercase font-serif">{s.shed}</h4>
+                      <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Production Unit</span>
                     </div>
-                    {s.isActive && (
-                      <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase px-2 py-0.5 rounded-full border border-emerald-500/30">
-                        Current
-                      </span>
-                    )}
+                    <span className={cn(
+                      "px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase",
+                      s.active ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-500"
+                    )}>
+                      {s.active ? 'ACTIVE' : 'IDLE'}
+                    </span>
                   </div>
 
-                  <div className="space-y-3 font-mono my-2 text-xs">
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80 flex items-center justify-between">
-                      <span className="text-stone-500 uppercase font-sans">Target Prod</span>
-                      <span className="font-bold text-stone-300">{s.target.toLocaleString()} Kg</span>
+                  <div className="my-4 space-y-3">
+                    <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase block">Actual Production</span>
+                      <span className="text-2xl font-black font-mono text-emerald-700">{s.actual.toLocaleString('en-IN')} <span className="text-xs font-sans text-stone-400">Kg</span></span>
                     </div>
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80 flex items-center justify-between">
-                      <span className="text-stone-500 uppercase font-sans">Actual Prod</span>
-                      <span className="font-black text-emerald-400">{s.actual.toLocaleString()} Kg</span>
+
+                    <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
+                      <span className="text-stone-500 text-xs font-bold uppercase">Target:</span>
+                      <span className="font-mono font-bold text-stone-800 text-xs">{s.target.toLocaleString('en-IN')} Kg</span>
                     </div>
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80 flex items-center justify-between">
-                      <span className="text-stone-500 uppercase font-sans">Average GPS</span>
-                      <span className="font-bold text-white">{s.avgGps}</span>
+
+                    <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
+                      <span className="text-stone-500 text-xs font-bold uppercase">Average GPS:</span>
+                      <span className="font-bold text-stone-900 text-xs">{s.avgGps}</span>
                     </div>
-                    <div className="bg-stone-950 p-3 rounded-xl border border-stone-800/80 flex items-center justify-between">
-                      <span className="text-stone-500 uppercase font-sans">Plant Eff %</span>
-                      <span className={cn("font-black text-sm", s.efficiency >= 95 ? "text-emerald-400" : "text-amber-400")}>
+
+                    <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
+                      <span className="text-stone-500 text-xs font-bold uppercase">Plant Eff %:</span>
+                      <span className={cn("font-black text-sm", s.efficiency >= 95 ? "text-emerald-700" : "text-amber-700")}>
                         {s.efficiency}%
                       </span>
                     </div>
                   </div>
 
-                  <div className="mt-4">
-                    <div className="w-full bg-stone-800 h-2 rounded-full overflow-hidden">
+                  <div className="mt-2">
+                    <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden border border-stone-200/60">
                       <div 
-                        className={cn("h-full rounded-full transition-all duration-1000", s.efficiency >= 95 ? "bg-emerald-400" : "bg-amber-400")}
+                        className={cn("h-full rounded-full transition-all duration-1000", s.efficiency >= 95 ? "bg-emerald-500" : "bg-amber-500")}
                         style={{ width: `${Math.min(100, s.efficiency)}%` }}
                       />
                     </div>
@@ -873,47 +957,49 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           </div>
         )}
 
-        {/* SLIDE 6: MONTHLY TRENDS */}
+        {/* ========================================================= */}
+        {/* SLIDE 7: MONTHLY PRODUCTION TRENDS                        */}
+        {/* ========================================================= */}
         {activeSlide.id === 'monthly' && (
           <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
-            <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
               <div className="flex items-center gap-2">
-                <TrendingUp size={18} className="text-emerald-400" />
-                <h3 className="text-base font-black uppercase tracking-wider text-white">Monthly Cumulative Production &amp; Efficiency Trends</h3>
-                <span className="bg-stone-800 text-emerald-300 text-xs px-2.5 py-0.5 rounded-full font-bold">{selectedShed}</span>
+                <TrendingUp size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Monthly Cumulative Production &amp; Efficiency Trends</h3>
+                <span className="bg-emerald-50 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">{selectedShed}</span>
               </div>
-              <span className="text-xs text-stone-400 font-bold uppercase tracking-wider">Last 15 Production Days</span>
+              <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">Last 15 Production Days</span>
             </div>
 
-            <div className="bg-stone-900/90 rounded-3xl p-6 border border-stone-800 flex-1 min-h-[300px] shadow-2xl">
+            <div className="bg-white rounded-3xl p-6 border border-stone-200/90 flex-1 min-h-[300px] shadow-2xs">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyTrendData} margin={{ top: 20, right: 20, left: 0, bottom: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#292524" vertical={false} />
-                  <XAxis dataKey="date" stroke="#78716c" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
-                  <YAxis stroke="#78716c" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="date" stroke="#6b7280" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#6b7280" fontSize={11} fontWeight={700} tickLine={false} axisLine={false} />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #44403c', borderRadius: '12px', color: '#fafaf9' }}
+                    contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', color: '#111827', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }}
                   />
-                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', textTransform: 'uppercase', paddingBottom: '16px' }} />
-                  <Bar dataKey="target" name="Target (Kg)" fill="#44403c" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="actual" name="Actual Production (Kg)" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '11px', textTransform: 'uppercase', paddingBottom: '16px', fontWeight: 'bold' }} />
+                  <Bar dataKey="target" name="Target (Kg)" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="actual" name="Actual Production (Kg)" fill="#059669" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="bg-stone-900/60 rounded-2xl px-6 py-3 border border-stone-800/80 flex items-center justify-between text-xs font-bold text-stone-400">
-              <span>Historical Days Logged: <strong className="text-white">{monthlyTrendData.length} Days</strong></span>
-              <span>Average Daily Production: <strong className="text-emerald-400">{monthlyTrendData.length > 0 ? (monthlyTrendData.reduce((a, b) => a + b.actual, 0) / monthlyTrendData.length).toFixed(1) : 0} Kg</strong></span>
-              <span>Tracking System: <strong className="text-white">Active Production Database</strong></span>
+            <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <span>Historical Days Logged: <strong className="text-stone-900">{monthlyTrendData.length} Days</strong></span>
+              <span>Average Daily Production: <strong className="text-emerald-700">{monthlyTrendData.length > 0 ? (monthlyTrendData.reduce((a, b) => a + b.actual, 0) / monthlyTrendData.length).toFixed(1) : 0} Kg</strong></span>
+              <span>Tracking System: <strong className="text-stone-900">Active Production Database</strong></span>
             </div>
           </div>
         )}
       </main>
 
-      {/* ---------------- TV FLOATING CONTROLS HUD ---------------- */}
+      {/* ---------------- TV FLOATING CONTROLS HUD (WHITE THEME) ---------------- */}
       <footer 
         className={cn(
-          "px-6 py-3 bg-stone-900/95 border-t border-stone-800 flex items-center justify-between gap-4 shrink-0 transition-opacity duration-300 backdrop-blur-md",
+          "px-6 py-3 bg-white/95 border-t border-stone-200 flex items-center justify-between gap-4 shrink-0 transition-opacity duration-300 backdrop-blur-md shadow-lg",
           showControls ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
       >
@@ -930,8 +1016,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shrink-0",
                   isCurrent 
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/40" 
-                    : "bg-stone-800/80 hover:bg-stone-800 text-stone-400 hover:text-white"
+                    ? "bg-emerald-600 text-white shadow-xs" 
+                    : "bg-stone-100 hover:bg-stone-200 text-stone-700"
                 )}
               >
                 <span>{idx + 1}. {slide.title.split(' ')[0]}</span>
@@ -942,13 +1028,13 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
         {/* Playback Controls & Countdown */}
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono text-stone-400 bg-stone-950 px-2.5 py-1 rounded-lg border border-stone-800">
-            Next in <strong className="text-emerald-400">{timeRemaining}s</strong>
+          <span className="text-[11px] font-mono text-stone-600 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200 font-bold">
+            Next in <strong className="text-emerald-700">{timeRemaining}s</strong>
           </span>
 
           <button
             onClick={() => setCurrentSlideIndex(idx => (idx - 1 + slidesToUse.length) % slidesToUse.length)}
-            className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 transition-colors cursor-pointer"
             title="Previous Slide (Left Arrow)"
           >
             <ChevronLeft size={16} />
@@ -956,7 +1042,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
           <button
             onClick={() => setIsPlaying(p => !p)}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-emerald-900/40"
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
             title="Play / Pause Slideshow (Spacebar)"
           >
             {isPlaying ? <Pause size={14} /> : <Play size={14} />}
@@ -965,7 +1051,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
           <button
             onClick={() => setCurrentSlideIndex(idx => (idx + 1) % slidesToUse.length)}
-            className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 transition-colors cursor-pointer"
             title="Next Slide (Right Arrow)"
           >
             <ChevronRight size={16} />
@@ -973,7 +1059,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
           <button
             onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 transition-colors cursor-pointer"
             title="Toggle Fullscreen"
           >
             {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
@@ -983,3 +1069,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     </div>
   );
 };
+
+// Simple crown icon helper for #1 ranking
+const CrownIcon: React.FC = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+    <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14v2H5v-2z" />
+  </svg>
+);

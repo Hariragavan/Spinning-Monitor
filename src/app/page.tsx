@@ -199,21 +199,44 @@ export default function Home() {
 
 
   const activeDailyReport = useMemo(() => {
-    const todayStr = getTodayUniversalDate();
-    // If dailyReport is specifically for today and current shed, prioritize it
-    if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed && dailyReport.date === todayStr) {
-      return dailyReport;
-    }
-    const todayMatch = currentShedHistory.find(r => r.date === todayStr);
-    if (todayMatch) return todayMatch;
-
+    // 1. If dailyReport belongs to selected shed, use it
     if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed) {
       return dailyReport;
     }
 
-    // Fresh day default: clean blank report for today for this unit
-    return createDefaultReportForShed(selectedShed, todayStr);
+    // 2. Check if a report for dailyReport.date exists in selected shed
+    const targetDate = dailyReport?.date || getTodayUniversalDate();
+    const sameDateMatch = currentShedHistory.find(r => r.date === targetDate);
+    if (sameDateMatch) return sameDateMatch;
+
+    // 3. Check if current shed history has a report for today
+    const todayStr = getTodayUniversalDate();
+    const todayMatch = currentShedHistory.find(r => r.date === todayStr);
+    if (todayMatch) return todayMatch;
+
+    // 4. Fresh day default: clean blank report for selected shed
+    return createDefaultReportForShed(selectedShed, targetDate);
   }, [dailyReport, selectedShed, currentShedHistory]);
+
+  const availableReportDates = useMemo(() => {
+    const dateSet = new Set<string>();
+    if (activeDailyReport?.date) dateSet.add(activeDailyReport.date);
+    currentShedHistory.forEach(r => {
+      if (r.date) dateSet.add(r.date);
+    });
+    dateSet.add(getTodayUniversalDate());
+
+    return Array.from(dateSet).filter(Boolean).sort((a, b) => {
+      const pA = a.split('/').map(Number);
+      const pB = b.split('/').map(Number);
+      if (pA.length === 3 && pB.length === 3) {
+        const timeA = new Date(pA[2], pA[1] - 1, pA[0]).getTime();
+        const timeB = new Date(pB[2], pB[1] - 1, pB[0]).getTime();
+        return timeB - timeA;
+      }
+      return b.localeCompare(a);
+    });
+  }, [activeDailyReport?.date, currentShedHistory]);
 
   const todayFormatted = useMemo(() => {
     return new Date().toLocaleDateString('en-GB', {
@@ -241,6 +264,7 @@ export default function Home() {
       'overview': 15,
       'charts': 20,
       'table': 20,
+      'top-workers': 15,
       'champions': 15,
       'sheds': 15,
       'monthly': 15
@@ -249,6 +273,7 @@ export default function Home() {
       'overview': true,
       'charts': true,
       'table': true,
+      'top-workers': true,
       'champions': true,
       'sheds': true,
       'monthly': true
@@ -773,7 +798,7 @@ export default function Home() {
     });
   };
 
-  const createBlankReport = (date: string) => {
+  const createBlankReport = (date: string, silent = false) => {
     const existing = currentShedHistory.find(r => r.date === date);
     if (existing) {
       setDailyReport(existing);
@@ -785,7 +810,19 @@ export default function Home() {
     setReportHistory(prev => [...prev.filter(r => !(r.date === date && (r.shed || 'Shed 1') === selectedShed)), newReport]);
     setDailyReport(newReport);
     apiClient.saveDailyReport(newReport).catch(() => {});
-    alert(`Blank report created for ${date} in ${selectedShed}`);
+    if (!silent) {
+      alert(`Blank report created for ${date} in ${selectedShed}`);
+    }
+  };
+
+  const handleTopDateChange = (newDate: string) => {
+    if (!newDate) return;
+    const existing = currentShedHistory.find(r => r.date === newDate);
+    if (existing) {
+      setDailyReport(existing);
+    } else {
+      createBlankReport(newDate, true);
+    }
   };
 
   const changeReportDate = (oldDate: string, newDate: string) => {
@@ -1738,9 +1775,15 @@ export default function Home() {
                     defaultSecs: 20
                   },
                   {
+                    id: 'top-workers',
+                    name: 'Top 5 Star Sider Champions',
+                    desc: 'Podium and leaderboard of top 5 operator champions with photos, production volume (kg), and daily incentive earnings.',
+                    defaultSecs: 15
+                  },
+                  {
                     id: 'champions',
                     name: 'Best Shift & Operator Champions',
-                    desc: 'Best shift banner and Top 5 Operator Champions leaderboard with photos and prizes.',
+                    desc: 'Best shift banner and performance telemetry cards across all working shifts.',
                     defaultSecs: 15
                   },
                   {
@@ -2394,19 +2437,46 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Right Section: Plain today's date, Export/Import, TV mode */}
+              {/* Right Section: Interactive Date Picker, Available Dates Dropdown, TV mode */}
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {/* Plain Today's Date */}
-                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-stone-100 text-stone-700 rounded-xl text-xs font-bold border border-stone-200/80 shrink-0">
-                  <Calendar size={12} className="text-emerald-600" />
-                  <span>{todayFormatted}</span>
+                {/* Date Selection: Calendar Date Picker & Dropdown for fast switching */}
+                <div className="flex items-center gap-1.5 bg-stone-100/90 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs">
+                  <CalendarDatePicker
+                    value={activeDailyReport.date}
+                    onChange={(newDate) => handleTopDateChange(newDate)}
+                    className="shrink-0"
+                  />
+                  {availableReportDates.length > 1 && (
+                    <select
+                      value={activeDailyReport.date}
+                      onChange={(e) => handleTopDateChange(e.target.value)}
+                      className="text-xs bg-white text-stone-800 font-bold px-2 py-1.5 rounded-lg border border-stone-200/80 hover:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer hidden md:block max-w-[130px] truncate"
+                      title="Quick switch between recorded dates"
+                    >
+                      {availableReportDates.map(d => (
+                        <option key={d} value={d}>
+                          {d} {d === getTodayUniversalDate() ? '(Today)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {activeDailyReport.date !== getTodayUniversalDate() && (
+                    <button
+                      type="button"
+                      onClick={() => handleTopDateChange(getTodayUniversalDate())}
+                      className="px-2 py-1 text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-2xs cursor-pointer hidden sm:inline-flex"
+                      title="Jump to Today's Date"
+                    >
+                      Today
+                    </button>
+                  )}
                 </div>
 
                 <div className="h-4 w-px bg-stone-200 mx-0.5 hidden sm:block" />
 
                 <button
                   onClick={() => setIsTvMode(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-xl font-black uppercase tracking-widest text-[9px] hover:bg-emerald-100 transition-all border border-emerald-200 cursor-pointer shadow-2xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl font-black uppercase tracking-widest text-[9px] hover:bg-emerald-100 transition-all border border-emerald-200 cursor-pointer shadow-2xs"
                 >
                   <Monitor size={12} /> <span className="hidden sm:inline">TV Mode</span>
                 </button>
