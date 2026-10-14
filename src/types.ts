@@ -128,6 +128,7 @@ export interface DailyReport {
   totalProductionTarget: number;
   totalProductionActual: number;
   timestamp?: number;
+  emData?: MachineEmData;
 }
 
 export interface MachineEmData {

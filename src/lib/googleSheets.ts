@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { Sider, IncentiveRule, MachineEmData } from '../types';
+import { extractEmbeddedMachineEm } from './parser';
 
 export function parseMachineEmWorkbook(workbook: XLSX.WorkBook): MachineEmData {
   const sheetName = workbook.SheetNames[0];
@@ -8,8 +9,20 @@ export function parseMachineEmWorkbook(workbook: XLSX.WorkBook): MachineEmData {
   
   const result: MachineEmData = {};
   
-  if (rows.length < 3) return result;
+  if (rows.length < 2) return result;
+
+  const d = new Date();
+  const todayStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   
+  // Check if grid contains a standard vertical table (Machine | Shift I | Shift II | Shift III)
+  const vertical = extractEmbeddedMachineEm(rows, todayStr);
+  if (vertical && vertical.emData) {
+    const hasAny = Object.values(vertical.emData).some(m => Object.keys(m).length > 0);
+    if (hasAny) return vertical.emData;
+  }
+  
+  if (rows.length < 3) return result;
+
   const row0 = rows[0] || [];
   const row1 = rows[1] || [];
   const row2 = rows[2] || [];
@@ -147,11 +160,7 @@ export function parseMachineEmWorkbook(workbook: XLSX.WorkBook): MachineEmData {
       continue;
     }
     
-    let machineName = rawMachineLabel;
-    const match = rawMachineLabel.match(/(?:RF|K|RF-)\s*0?([1-6])/i);
-    if (match) {
-      machineName = `K0${match[1]}`;
-    }
+    const machineName = rawMachineLabel.toUpperCase().replace(/\s+/g, '');
     
     for (let colIdx = 1; colIdx < colDates.length; colIdx++) {
       const dateStr = colDates[colIdx];

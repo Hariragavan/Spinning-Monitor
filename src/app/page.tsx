@@ -1630,8 +1630,18 @@ export default function Home() {
             initialShed={selectedShed}
             onUploadSuccess={async (reportOrReports) => {
               if (Array.isArray(reportOrReports)) {
+                let hasEm = false;
+                let mergedEm = { ...machineEm };
                 for (const r of reportOrReports) {
                   await apiClient.saveDailyReport(r);
+                  if (r.emData) {
+                    mergedEm = { ...mergedEm, ...r.emData };
+                    hasEm = true;
+                  }
+                }
+                if (hasEm) {
+                  setMachineEm(mergedEm);
+                  await apiClient.saveMachineEm(mergedEm);
                 }
                 const refreshed = await apiClient.fetchInitialData();
                 if (refreshed.history) setReportHistory(refreshed.history);
@@ -1639,6 +1649,11 @@ export default function Home() {
                 alert(`Monthly statements uploaded and stored in MongoDB for ${reportOrReports[0]?.shed || selectedShed}!`);
               } else {
                 await apiClient.saveDailyReport(reportOrReports);
+                if (reportOrReports.emData) {
+                  const mergedEm = { ...machineEm, ...reportOrReports.emData };
+                  setMachineEm(mergedEm);
+                  await apiClient.saveMachineEm(mergedEm);
+                }
                 setDailyReport(reportOrReports);
                 setReportHistory(prev => [
                   ...prev.filter(r => !(r.date === reportOrReports.date && (r.shed || 'Shed 1') === (reportOrReports.shed || selectedShed))),

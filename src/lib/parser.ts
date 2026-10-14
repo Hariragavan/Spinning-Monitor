@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion } from '../types';
+import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion, MachineEmData } from '../types';
 import { parseUniversalDate } from './utils';
 
 export const normalizeDateValue = (val: any): string => {
@@ -120,7 +120,8 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
       .sort((a, b) => a.frameNo.localeCompare(b.frameNo)),
     gaiters: report.gaiters || { I: [], II: [], III: [] },
     aiCones: report.aiCones || { I: [], II: [], III: [] },
-    fitters: report.fitters || { I: [], II: [], III: [] }
+    fitters: report.fitters || { I: [], II: [], III: [] },
+    emData: report.emData
   };
 };
 
@@ -243,6 +244,19 @@ export const parseExcelReport = async (file: File, countConversions: CountConver
         }
 
         if (report) {
+          // If embedded EM was not found in the production sheet, check other sheets
+          if (!report.emData) {
+            for (const sName of workbook.SheetNames) {
+              const s = workbook.Sheets[sName];
+              const g = XLSX.utils.sheet_to_json(s, { header: 1 }) as any[][];
+              if (!g || g.length === 0) continue;
+              const { emData } = extractEmbeddedMachineEm(g, report.date);
+              if (emData) {
+                report.emData = emData;
+                break;
+              }
+            }
+          }
           resolve(ensureSixMachines(report, targetShed));
         } else {
           const errorMsg = errors.length > 0 
@@ -259,6 +273,147 @@ export const parseExcelReport = async (file: File, countConversions: CountConver
   });
 };
 
+export const extractEmbeddedMachineEm = (grid: any[][], defaultDate: string): { emData?: MachineEmData; emTotals?: { '1': number; '2': number; '3': number } } => {
+  if (!grid || grid.length < 2) return {};
+
+  let headerRowIdx = -1;
+  let machineColIdx = -1;
+  let emDate = defaultDate;
+
+  // 1. Look for Date near "Machine EM" header if specified
+  for (let r = 0; r < Math.min(grid.length, 10); r++) {
+    const row = grid[r];
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').toLowerCase().trim();
+      if (cell.includes('machine em')) {
+        for (let dr = 0; dr <= 2; dr++) {
+          const searchRow = grid[r + dr];
+          if (!searchRow) continue;
+          for (let dc = Math.max(0, c - 2); dc < Math.min(searchRow.length, c + 8); dc++) {
+            const dCell = String(searchRow[dc] || '').toLowerCase().trim();
+            if (dCell.includes('date')) {
+              for (let off = 1; off <= 3; off++) {
+                const val = searchRow[dc + off];
+                const norm = normalizeDateValue(val);
+                if (norm && (norm.includes('/') || norm.includes('-'))) {
+                  emDate = norm;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Find header row for Machine EM:
+  // Look for a cell with "Machine" or "Rf no" that has adjacent/subsequent cells "Shift I", "Shift II", "Shift III" (or "Shift 1", "Shift 2", "Shift 3")
+  for (let r = 0; r < Math.min(grid.length, 15); r++) {
+    const row = grid[r];
+    if (!row) continue;
+    for (let c = 0; c < row.length; c++) {
+      const cellText = String(row[c] || '').toLowerCase().trim();
+      if (cellText === 'machine' || (c > 3 && cellText.includes('machine')) || (c > 10 && cellText.includes('rf no'))) {
+        const next1 = String(row[c + 1] || '').toLowerCase().trim();
+        const next2 = String(row[c + 2] || '').toLowerCase().trim();
+        const next3 = String(row[c + 3] || '').toLowerCase().trim();
+        if (
+          (next1.includes('shift') || next1.includes('i') || next1.includes('1')) &&
+          (next2.includes('shift') || next2.includes('ii') || next2.includes('2')) &&
+          (next3.includes('shift') || next3.includes('iii') || next3.includes('3'))
+        ) {
+          headerRowIdx = r;
+          machineColIdx = c;
+          break;
+        }
+      }
+    }
+    if (headerRowIdx !== -1) break;
+  }
+
+  if (headerRowIdx === -1 || machineColIdx === -1) return {};
+
+  const colShift1 = machineColIdx + 1;
+  const colShift2 = machineColIdx + 2;
+  const colShift3 = machineColIdx + 3;
+
+  const result: MachineEmData = {};
+  result[emDate] = {};
+
+  let sumShift1 = 0;
+  let sumShift2 = 0;
+  let sumShift3 = 0;
+  let countShift1 = 0;
+  let countShift2 = 0;
+  let countShift3 = 0;
+
+  let fileTotal1: number | null = null;
+  let fileTotal2: number | null = null;
+  let fileTotal3: number | null = null;
+
+  for (let r = headerRowIdx + 1; r < grid.length; r++) {
+    const row = grid[r];
+    if (!row) continue;
+    const rawLabel = String(row[machineColIdx] || '').trim();
+    if (!rawLabel) continue;
+
+    const lower = rawLabel.toLowerCase();
+    // Check if this is the Grand Total / Total row
+    if (lower.includes('grand tot') || lower.includes('grand total') || lower === 'total') {
+      const val1 = parseFloat(String(row[colShift1] || ''));
+      const val2 = parseFloat(String(row[colShift2] || ''));
+      const val3 = parseFloat(String(row[colShift3] || ''));
+      if (!isNaN(val1)) fileTotal1 = val1;
+      if (!isNaN(val2)) fileTotal2 = val2;
+      if (!isNaN(val3)) fileTotal3 = val3;
+      break;
+    }
+
+    // Machine row (e.g. SP029)
+    const machineName = rawLabel.toUpperCase().replace(/\s+/g, '');
+    const val1 = parseFloat(String(row[colShift1] || ''));
+    const val2 = parseFloat(String(row[colShift2] || ''));
+    const val3 = parseFloat(String(row[colShift3] || ''));
+
+    const machineShifts: Record<string, number> = {};
+    if (!isNaN(val1)) {
+      machineShifts['1'] = val1;
+      sumShift1 += val1;
+      countShift1++;
+    }
+    if (!isNaN(val2)) {
+      machineShifts['2'] = val2;
+      sumShift2 += val2;
+      countShift2++;
+    }
+    if (!isNaN(val3)) {
+      machineShifts['3'] = val3;
+      sumShift3 += val3;
+      countShift3++;
+    }
+
+    if (Object.keys(machineShifts).length > 0) {
+      result[emDate][machineName] = machineShifts;
+    }
+  }
+
+  // Calculate totals if not provided in file (Averages across machines per shift)
+  const calcTotal1 = countShift1 > 0 ? Number((sumShift1 / countShift1).toFixed(1)) : 0;
+  const calcTotal2 = countShift2 > 0 ? Number((sumShift2 / countShift2).toFixed(1)) : 0;
+  const calcTotal3 = countShift3 > 0 ? Number((sumShift3 / countShift3).toFixed(1)) : 0;
+
+  const finalTotals = {
+    '1': fileTotal1 !== null ? fileTotal1 : calcTotal1,
+    '2': fileTotal2 !== null ? fileTotal2 : calcTotal2,
+    '3': fileTotal3 !== null ? fileTotal3 : calcTotal3,
+  };
+
+  const hasData = Object.keys(result[emDate]).length > 0;
+  return hasData ? { emData: result, emTotals: finalTotals } : {};
+};
+
 const handleProduction = (grid: any[][], countConversions: CountConversion[]): DailyReport => {
   let reportDate = new Date().toLocaleDateString('en-GB');
   let headerRowIdx = -1;
@@ -266,7 +421,10 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
 
   for (let r = 0; r < Math.min(grid.length, 15); r++) {
     if (!grid[r]) continue;
-    const idx = grid[r].findIndex(c => String(c || '').toLowerCase().includes('rf no'));
+    const idx = grid[r].findIndex(c => {
+      const s = String(c || '').toLowerCase().trim();
+      return s.includes('rf no') || s.includes('rfno') || s.includes('mc no') || (s.includes('machine') && !s.includes('machine em'));
+    });
     if (idx !== -1) {
       headerRowIdx = r;
       labelCol = idx;
@@ -302,8 +460,11 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
     frame: labelCol, 
     count: labelCol + 1, 
     stdGps: labelCol + 2, 
-    targetProd: labelCol + 3, 
-    totalAch: labelCol + 7, // Col H
+    targetProd: labelCol + 3,
+    prodI: labelCol + 4,
+    prodII: labelCol + 5,
+    prodIII: labelCol + 6,
+    totalAch: labelCol + 7,
     gpsI: labelCol + 8, 
     gpsII: labelCol + 9, 
     gpsIII: labelCol + 10, 
@@ -313,6 +474,28 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
     uIII: labelCol + 14, 
     uTotal: labelCol + 15
   };
+
+  const headerRow = grid[headerRowIdx] || [];
+  headerRow.forEach((cellVal, cIdx) => {
+    const raw = String(cellVal || '').toLowerCase().trim();
+    const text = raw.replace(/[\s_%-]/g, '');
+    if (text === 'rfno' || text === 'mcno' || text === 'machineno' || (text === 'machine' && cIdx < 5)) colMap.frame = cIdx;
+    else if (text === 'count') colMap.count = cIdx;
+    else if (text === 'stdgps' || text === 'std') colMap.stdGps = cIdx;
+    else if (text === 'targetprod' || text === 'targetprc' || text === 'target') colMap.targetProd = cIdx;
+    else if (text === 'prodi' || text === 'shifti' || text === 'prod1' || text === 'shift1') colMap.prodI = cIdx;
+    else if (text === 'prodii' || text === 'shiftii' || text === 'prod2' || text === 'shift2') colMap.prodII = cIdx;
+    else if (text === 'prodiii' || text === 'shiftiii' || text === 'prod3' || text === 'shift3') colMap.prodIII = cIdx;
+    else if (text === 'totalproc' || text === 'totalprod' || text === 'totalach' || text === 'totalachieved') colMap.totalAch = cIdx;
+    else if (text === 'gpsi' || text === 'gps1') colMap.gpsI = cIdx;
+    else if (text === 'gpsii' || text === 'gps2') colMap.gpsII = cIdx;
+    else if (text === 'gpsiii' || text === 'gps3') colMap.gpsIII = cIdx;
+    else if (text === 'avggps' || text === 'totalgps') colMap.gpsTotal = cIdx;
+    else if (text === 'utili' || text === 'ui' || text === 'util1' || text === 'u1') colMap.uI = cIdx;
+    else if (text === 'utilii' || text === 'uii' || text === 'util2' || text === 'u2') colMap.uII = cIdx;
+    else if (text === 'utiliii' || text === 'uiii' || text === 'util3' || text === 'u3') colMap.uIII = cIdx;
+    else if (text === 'avgutil' || text === 'totalu' || text === 'totalutil') colMap.uTotal = cIdx;
+  });
 
   const countTo40s = new Map<string, number>();
   let runningCountRow = -1;
@@ -337,14 +520,25 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
 
   let totalTarget = 0;
   let totalAchieved = 0;
+  let fileTotalTarget: number | null = null;
+  let fileTotalAchieved: number | null = null;
   const loopEnd = runningCountRow !== -1 ? runningCountRow : grid.length;
 
   for (let r = headerRowIdx + 1; r < loopEnd; r++) {
     const row = grid[r];
     if (!row) continue;
     const frameNoRaw = String(row[colMap.frame] || '').trim();
-    if (!frameNoRaw || frameNoRaw.toLowerCase().includes('rf no') || frameNoRaw.toLowerCase().includes('grand') || frameNoRaw.toLowerCase().includes('running')) continue;
-    if (frameNoRaw.toLowerCase() === 'total' || frameNoRaw.toLowerCase().includes('date')) break;
+    if (!frameNoRaw || frameNoRaw.toLowerCase().includes('rf no') || frameNoRaw.toLowerCase().includes('running')) continue;
+
+    const lowerFrame = frameNoRaw.toLowerCase();
+    // Check for Total / Grand Total row at the bottom
+    if (lowerFrame === 'total' || lowerFrame === 'grand total' || lowerFrame === 'grand tot' || lowerFrame.includes('date')) {
+      const fileTarget = Number(row[colMap.targetProd]);
+      const fileAch = Number(row[colMap.totalAch]);
+      if (!isNaN(fileTarget) && fileTarget > 0) fileTotalTarget = fileTarget;
+      if (!isNaN(fileAch) && fileAch > 0) fileTotalAchieved = fileAch;
+      break;
+    }
 
     // Normalize machine name: clean whitespace
     const frameNo = frameNoRaw.toUpperCase()
@@ -354,16 +548,20 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
     const count = String(row[colMap.count] || '').trim();
     const stdGps = Number(row[colMap.stdGps]) || 0;
     const targetProd = Number(row[colMap.targetProd]) || 0;
-    const actualProd = Number(row[colMap.totalAch]) || 0;
+    let actualProd = Number(row[colMap.totalAch]) || 0;
 
     const sGps = { I: Number(row[colMap.gpsI])||0, II: Number(row[colMap.gpsII])||0, III: Number(row[colMap.gpsIII])||0 };
     const sUtil = { I: Number(row[colMap.uI])||0, II: Number(row[colMap.uII])||0, III: Number(row[colMap.uIII])||0 };
     
     const sProd = {
-      I: Number(row[labelCol + 4]) || 0,
-      II: Number(row[labelCol + 5]) || 0,
-      III: Number(row[labelCol + 6]) || 0
+      I: Number(row[colMap.prodI]) || 0,
+      II: Number(row[colMap.prodII]) || 0,
+      III: Number(row[colMap.prodIII]) || 0
     };
+
+    if (actualProd === 0 && (sProd.I > 0 || sProd.II > 0 || sProd.III > 0)) {
+      actualProd = sProd.I + sProd.II + sProd.III;
+    }
 
     const hasSProd = sProd.I > 0 || sProd.II > 0 || sProd.III > 0;
     const finalSProd = hasSProd ? sProd : {
@@ -412,7 +610,21 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
     });
   }
 
-  return { date: reportDate, entries, summaries, totalProductionTarget: totalTarget, totalProductionActual: totalAchieved };
+  // If total was in the file, use it; otherwise, use calculated sum
+  const finalTotalTarget = (fileTotalTarget !== null && fileTotalTarget > 0) ? fileTotalTarget : totalTarget;
+  const finalTotalAchieved = (fileTotalAchieved !== null && fileTotalAchieved > 0) ? fileTotalAchieved : totalAchieved;
+
+  // Check for Machine EM embedded on the same sheet
+  const { emData } = extractEmbeddedMachineEm(grid, reportDate);
+
+  return {
+    date: reportDate,
+    entries,
+    summaries,
+    totalProductionTarget: finalTotalTarget,
+    totalProductionActual: finalTotalAchieved,
+    emData
+  };
 };
 
 const handleBreakage = (grid: any[][]): DailyReport => {

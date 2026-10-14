@@ -53,23 +53,35 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     let filename = '';
 
     if (type === 'daily_report') {
+      const today = new Date().toLocaleDateString('en-GB');
       data = [
-        ['KTTM SPINNING MILLS - PRODUCTION STATEMENT', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['Date:', new Date().toLocaleDateString('en-GB'), '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['Rf no', 'Count', 'STD GPS', 'Target Prod', 'Shift I', 'Shift II', 'Shift III', 'Total Ach', 'GPS I', 'GPS II', 'GPS III', 'Total GPS', 'U% I', 'U% II', 'U% III', 'Total U%'],
-        ['01', '40s KWH', 108.5, 420.0, 138.0, 136.5, 142.0, 416.5, 107.2, 106.8, 109.1, 107.7, 98.2, 97.5, 98.9, 98.2],
-        ['02', '40s KWH', 108.5, 420.0, 135.0, 137.0, 140.0, 412.0, 106.5, 107.0, 108.5, 107.3, 97.5, 98.0, 98.5, 98.0],
-        ['03', '34s CH',  112.0, 450.0, 148.0, 149.0, 151.0, 448.0, 111.0, 111.5, 113.0, 111.8, 98.0, 98.2, 99.0, 98.4],
-        ['04', '34s CH',  112.0, 450.0, 147.0, 148.5, 150.0, 445.5, 110.8, 111.2, 112.5, 111.5, 97.8, 98.1, 98.8, 98.2],
-        ['05', '30s CW',  118.0, 480.0, 158.0, 159.0, 161.0, 478.0, 117.2, 117.5, 118.8, 117.8, 98.5, 98.6, 99.1, 98.7],
-        ['06', '30s CW',  118.0, 480.0, 156.0, 157.5, 160.0, 473.5, 116.5, 117.0, 118.2, 117.2, 98.1, 98.3, 98.8, 98.4],
-        ['Total', '', '', 2700.0, 882.0, 887.5, 904.0, 2673.5, '', '', '', 111.5, '', '', '', 98.3],
-        ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
-        ['RUNNING COUNT GPSS', '', '', '', '', '', '', '', '', '', '', '', '', '40s GPSS', '', ''],
-        ['40s KWH', '', '', '', '', '', '', '', '', '', '', '', '', 107.7, '', ''],
-        ['34s CH',  '', '', '', '', '', '', '', '', '', '', '', '', 111.8, '', ''],
-        ['30s CW',  '', '', '', '', '', '', '', '', '', '', '', '', 117.8, '', ''],
+        ['Production', 'Statement', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Machine EM', '', '', ''],
+        ['Date:', today, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Date:', today, '', ''],
+        ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        [
+          'Rf no', 'Count', 'Std GPS', 'Target Prod', 'Prod I', 'Prod II', 'Prod III', 'Total Prod',
+          'GPS I', 'GPS II', 'GPS III', 'Avg GPS', 'Util I', 'Util II', 'Util III', 'Avg Util',
+          '', 'Machine', 'Shift I', 'Shift II', 'Shift III'
+        ],
+        ['SP029', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP029', 2.5, 1.8, 2.0],
+        ['SP032', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP032', 3.8, 3.0, 3.8],
+        ['SP033', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP033', 3.0, 3.0, 3.8],
+        ['SP034', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP034', 3.2, 2.8, 3.1],
+        ['SP035', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP035', 4.9, 3.8, 3.6],
+        ['SP036', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP036', 2.3, 3.3, 3.1],
+        ['SP037', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP037', 3.0, 2.9, 3.0],
+        ['SP038', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP038', 3.1, 3.0, 3.2],
+        ['SP025', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP025', 2.8, 2.5, 2.7],
+        ['SP026', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP026', 3.5, 3.1, 3.4],
+        ['SP027', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP027', 3.2, 2.9, 3.0],
+        ['SP030', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP030', 3.4, 3.2, 3.3],
+        ['SP031', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP031', 3.3, 3.0, 3.2],
+        ['SP056', '40s', 450, 1200, 400, 400, 400, 1200, 445, 448, 452, 448.3, 95, 96, 97, 96, '', 'SP056', 3.1, 2.8, 3.0],
+        [
+          'Total', '', '', 16800, 5600, 5600, 5600, 16800,
+          445.0, 448.0, 452.0, 448.3, 95.0, 96.0, 97.0, 96.0,
+          '', 'Grand Tot', 3.3, 3.0, 3.2
+        ]
       ];
       filename = 'Production_Statement_Template.xlsx';
     } else if (type === 'incentive') {
@@ -85,16 +97,26 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       ];
       filename = 'Incentive_Template.xlsx';
     } else if (type === 'em') {
+      const today = new Date().toLocaleDateString('en-GB');
       data = [
-        ['Date:', new Date().toLocaleDateString('en-GB'), '', ''],
-        ['Shift:', '1', '2', '3'],
-        ['Machine', '', '', ''],
-        ['01', '52.3', '49.8', '51.2'],
-        ['02', '48.5', '47.0', '49.1'],
-        ['03', '50.1', '51.0', '50.4'],
-        ['04', '49.8', '48.9', '51.5'],
-        ['05', '51.2', '50.5', '49.8'],
-        ['06', '50.6', '49.4', '50.9'],
+        ['Date:', today, '', ''],
+        ['', '', '', ''],
+        ['Machine', 'Shift I', 'Shift II', 'Shift III'],
+        ['SP029', 2.5, 1.8, 2.0],
+        ['SP032', 3.8, 3.0, 3.8],
+        ['SP033', 3.0, 3.0, 3.8],
+        ['SP034', 3.2, 2.8, 3.1],
+        ['SP035', 4.9, 3.8, 3.6],
+        ['SP036', 2.3, 3.3, 3.1],
+        ['SP037', 3.0, 2.9, 3.0],
+        ['SP038', 3.1, 3.0, 3.2],
+        ['SP025', 2.8, 2.5, 2.7],
+        ['SP026', 3.5, 3.1, 3.4],
+        ['SP027', 3.2, 2.9, 3.0],
+        ['SP030', 3.4, 3.2, 3.3],
+        ['SP031', 3.3, 3.0, 3.2],
+        ['SP056', 3.1, 2.8, 3.0],
+        ['Grand Tot', 3.3, 3.0, 3.2]
       ];
       filename = 'Machine_EM_Template.xlsx';
     } else {
@@ -226,7 +248,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               ...report,
               shed: targetShed,
               date: formattedDate
-            }
+            },
+            emData: report.emData
           });
         }
       }
@@ -251,12 +274,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         const withShed = monthlyReports.map(r => ({ ...r, shed }));
         onUploadSuccess(withShed);
       } else if (dailyReport) {
+        if (emData && onMachineEmUpdate) {
+          await onMachineEmUpdate(emData);
+        }
         const finalReport: DailyReport = {
           ...dailyReport,
           shed,
           date,
           entries: dailyReport.entries.map(e => ({ ...e, shed })),
           summaries: dailyReport.summaries.map(s => ({ ...s, shed })),
+          emData: emData || dailyReport.emData
         };
         setPendingReports(prev => ({
           ...prev,
@@ -419,6 +446,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Avg GPSS / Frames</span>
             <span className="text-sm font-black text-stone-900 font-mono">{avgGps.toFixed(1)} <span className="text-[10px] text-stone-400 font-sans">({rep.summaries.length} M/C)</span></span>
           </div>
+          {modal.emData && Object.keys(modal.emData).length > 0 && (
+            <div className="col-span-2 sm:col-span-4 bg-blue-50 border border-blue-200 p-2.5 rounded-xl flex items-center justify-between text-xs text-blue-900 font-bold">
+              <span>⚡ Machine EM Included: {Object.keys(modal.emData[Object.keys(modal.emData)[0]] || {}).length} Machines with Shift I, II, III EM values</span>
+              <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">Sync Ready</span>
+            </div>
+          )}
         </div>
       );
     }
