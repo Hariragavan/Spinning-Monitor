@@ -29,6 +29,7 @@ import { OperatorEmFormat } from '@/components/OperatorEmFormat';
 import { PerformanceChart } from '@/components/PerformanceChart';
 import { Sidebar } from '@/components/Sidebar';
 import { MasterDataTable } from '@/components/MasterDataTable';
+import { TvDashboard } from '@/components/TvDashboard';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
@@ -44,7 +45,7 @@ import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Coins, Trophy, BarChart3,
   Monitor, Zap, Star, AlertTriangle, X, CloudUpload, Loader2, Grid3X3,
   FileText, Check, MessageSquare, Play, Wrench, RotateCcw, History, Menu,
-  ArrowLeft, Table
+  ArrowLeft, Table, Search
 } from 'lucide-react';
 
 const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
@@ -236,6 +237,22 @@ export default function Home() {
     whatsAppProdPhone: '+919944711575',
     whatsAppEmPhone: '+919944711575',
     whatsAppIncentivePhone: '+919944711575',
+    tvSlideIntervals: {
+      'overview': 15,
+      'charts': 20,
+      'table': 20,
+      'champions': 15,
+      'sheds': 15,
+      'monthly': 15
+    },
+    tvSlideEnabled: {
+      'overview': true,
+      'charts': true,
+      'table': true,
+      'champions': true,
+      'sheds': true,
+      'monthly': true
+    },
     tvPageIntervals: {
       'dashboard': 15,
       'daily-incentive': 15,
@@ -273,6 +290,10 @@ export default function Home() {
   const [syncResultModal, setSyncResultModal] = useState<{ show: boolean; title: string; message: string; success: boolean } | null>(null);
   const [whatsAppToast, setWhatsAppToast] = useState<{ show: boolean; url: string; phone: string } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Settings Machine Configuration filter state
+  const [settingsMachineShed, setSettingsMachineShed] = useState<string>('All');
+  const [settingsMachineSearch, setSettingsMachineSearch] = useState<string>('');
 
   // Load Initial Data from MongoDB
   useEffect(() => {
@@ -340,43 +361,6 @@ export default function Home() {
     }
   }, [dailyReport.date]);
 
-  // TV Mode Page Rotation
-  useEffect(() => {
-    if (!isTvMode || !tvStarted) return;
-
-    const baseSequence = [
-      'dashboard', 'daily-incentive', 'daily-incentive-machine', 'reports',
-      'running-count-incentives', 'month-view', 'month-abstract',
-      'sider-monthly-performance', 'fitter-monthly-performance',
-      'operator-em-format', 'ai-month-view', 'ai-month-abstract',
-      'ai-monthly-performance', 'best-shift', 'best',
-      'best-operators-em', 'em-outliers-compare'
-    ];
-
-    const activeSequence = baseSequence.filter(tabId => {
-      const seconds = settings.tvPageIntervals?.[tabId] !== undefined ? settings.tvPageIntervals[tabId] : 15;
-      return seconds > 0;
-    });
-
-    if (activeSequence.length === 0) {
-      if (activeTab !== 'dashboard') setActiveTab('dashboard');
-      return;
-    }
-
-    const currentIntervalSecs = (settings.tvPageIntervals?.[activeTab] !== undefined)
-      ? settings.tvPageIntervals[activeTab]
-      : 15;
-
-    const effectiveDuration = (currentIntervalSecs || 15) * 1000;
-
-    const timeout = setTimeout(() => {
-      const currentIndex = activeSequence.indexOf(activeTab);
-      const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % activeSequence.length;
-      setActiveTab(activeSequence[nextIndex]);
-    }, effectiveDuration);
-
-    return () => clearTimeout(timeout);
-  }, [isTvMode, tvStarted, activeTab, settings.tvPageIntervals, subPagesCount]);
 
   // Manual Sync to MongoDB
   const forceSync = async () => {
@@ -1063,7 +1047,6 @@ export default function Home() {
     { id: 'ai-monthly-performance', icon: FileText, label: 'AI Monthly Performance' },
     { id: 'fitter-monthly-performance', icon: Wrench, label: 'Fitter Monthly Performance' },
     { id: 'running-count-incentives', icon: Coins, label: 'Incentive Amount Based in GPS' },
-    { id: 'performance', icon: Gauge, label: 'Machine Performance' },
     { id: 'best-shift', icon: Star, label: 'Best Shift' },
     { id: 'best', icon: Trophy, label: 'Best Sider' },
     { id: 'best-operators-em', icon: Trophy, label: 'Best 2 Operators EM Table' },
@@ -1083,78 +1066,57 @@ export default function Home() {
           <motion.div 
             initial={{ opacity: 0, y: 10 }} 
             animate={{ opacity: 1, y: 0 }} 
-            className={cn(
-              isTvMode 
-                ? "h-screen w-full flex flex-col justify-between p-4 bg-stone-100 overflow-hidden select-none" 
-                : "space-y-3.5 pb-6 relative"
-            )}
+            className="space-y-3.5 pb-6 relative"
           >
-            {/* TV Broadcast Banner (TV Mode only) */}
-            {isTvMode ? (
-              <div className="flex justify-between items-center bg-stone-900 text-white px-5 py-2.5 rounded-2xl shadow-md border border-stone-800 shrink-0 mb-2">
-                <div className="flex items-center gap-3">
-                  <div className="h-7 w-2 bg-emerald-500 rounded-full" />
-                  <h1 className="text-xl md:text-2xl font-black tracking-tight uppercase text-white font-serif">
-                    SCM <span className="text-emerald-400 font-sans text-base font-bold ml-1">PRODUCTION MONITOR</span>
-                  </h1>
-                  <span className="px-3 py-0.5 bg-emerald-950/80 text-emerald-400 rounded-xl text-xs font-black border border-emerald-800/80 ml-2">
-                    {selectedShed}
-                  </span>
+            <div className="flex justify-between items-end relative z-10 px-1">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <div className="h-6 w-2 bg-emerald-700 rounded-full" />
+                  <h2 className="text-xl md:text-2xl font-black tracking-tight uppercase text-stone-900">
+                    Production Overview <span className="text-emerald-600 font-serif italic text-lg md:text-xl ml-1">({selectedShed})</span>
+                  </h2>
                 </div>
-
-                <div className="flex items-center gap-3 text-xs font-bold">
-                  <div className="flex items-center gap-2 bg-stone-800 px-3 py-1.5 rounded-xl border border-stone-700">
-                    <Calendar size={13} className="text-emerald-400" />
-                    <span>Date: <strong className="text-white">{activeDailyReport.date}</strong></span>
+                <div className="flex items-center gap-2 text-stone-500 font-bold text-[11px] uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-stone-200 shadow-2xs">
+                    <Calendar size={12} className="text-emerald-600" />
+                    <span>Sider Assigned Date: <strong className="text-stone-800">{activeDailyReport.date}</strong></span>
                   </div>
-                  <div className="flex items-center gap-2 bg-emerald-900/60 text-emerald-300 px-3 py-1.5 rounded-xl border border-emerald-700/60">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>55&quot; TV CONSOLE</span>
+                  <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200 shadow-2xs">
+                    <Activity size={12} />
+                    <span>{selectedShed} Active</span>
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="flex justify-between items-end relative z-10 px-1">
-                <div>
-                  <div className="flex items-center gap-3 mb-1">
-                    <div className="h-6 w-2 bg-emerald-700 rounded-full" />
-                    <h2 className="text-xl md:text-2xl font-black tracking-tight uppercase text-stone-900">
-                      Production Overview <span className="text-emerald-600 font-serif italic text-lg md:text-xl ml-1">({selectedShed})</span>
-                    </h2>
-                  </div>
-                  <div className="flex items-center gap-2 text-stone-500 font-bold text-[11px] uppercase tracking-wider">
-                    <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-stone-200 shadow-2xs">
-                      <Calendar size={12} className="text-emerald-600" />
-                      <span>Sider Assigned Date: <strong className="text-stone-800">{activeDailyReport.date}</strong></span>
-                    </div>
-                    <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200 shadow-2xs">
-                      <Activity size={12} />
-                      <span>{selectedShed} Active</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
 
             {/* KPI Strip */}
             <div className="relative z-10 shrink-0">
-              <KPIStats report={activeDailyReport} isTvMode={isTvMode} lastSyncDate={settings.lastSyncDate} />
+              <KPIStats report={activeDailyReport} isTvMode={false} lastSyncDate={settings.lastSyncDate} />
             </div>
 
-            {/* Master Data Table */}
-            <div className={cn("relative z-10", isTvMode ? "flex-1 min-h-0 overflow-hidden" : "")}>
-              <MasterDataTable
-                report={activeDailyReport}
-                workers={currentShedWorkers}
-                rules={incentiveRules}
-                isTvMode={isTvMode}
-                onSelectDate={(date) => {
-                  const r = currentShedHistory.find(rep => rep.date === date);
-                  if (r) setDailyReport(r);
-                  else createBlankReport(date);
-                }}
-                availableDates={Array.from(new Set([activeDailyReport.date, ...currentShedHistory.map(r => r.date)].filter(Boolean)))}
-              />
+            {/* Machine GPS & Efficiency Performance */}
+            <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-200 shadow-sm relative z-10 space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 border-b border-stone-100 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-50 text-emerald-700 rounded-2xl border border-emerald-100">
+                    <Gauge size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-lg md:text-xl font-black uppercase text-stone-900 tracking-tight">
+                      Machine GPS & Efficiency Performance <span className="text-emerald-600 font-serif italic text-base">({selectedShed})</span>
+                    </h3>
+                    <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest mt-0.5">
+                      Gram Per Spindle (GPS) & Production Efficiency Monitoring
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="px-3.5 py-1 bg-stone-100 text-stone-700 rounded-xl text-xs font-black border border-stone-200">
+                    Date: {activeDailyReport.date}
+                  </span>
+                </div>
+              </div>
+              <PerformanceChart report={activeDailyReport} />
             </div>
           </motion.div>
         );
@@ -1685,273 +1647,594 @@ export default function Home() {
 
       case 'settings':
         return (
-          <div className="bg-white p-10 rounded-[3rem] border border-stone-200 shadow-sm max-w-4xl mx-auto space-y-12">
-            <div>
-              <h2 className="text-3xl font-black text-stone-900 uppercase tracking-tight mb-8">System Access</h2>
-              <div className="p-8 bg-emerald-50 rounded-[2.5rem] border border-emerald-100 flex flex-col md:flex-row items-center justify-between gap-6">
-                <div>
-                  <h3 className="text-lg font-black text-emerald-900 uppercase tracking-tight">Supervisor Assignment Link</h3>
-                  <p className="text-xs text-emerald-600 font-bold mt-1">Direct link for supervisors to access ONLY the machine allocation screen.</p>
+          <div className="bg-white p-6 sm:p-10 rounded-[3rem] border border-stone-200 shadow-sm max-w-5xl mx-auto space-y-10">
+            {/* TV Dashboard Slideshow Settings */}
+            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-emerald-500/10 border border-emerald-300 text-emerald-700 rounded-2xl flex items-center justify-center shrink-0">
+                    <Monitor size={22} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
+                      TV Dashboard & Slideshow Settings
+                    </h3>
+                    <p className="text-xs text-stone-500 font-bold mt-0.5">
+                      Configure rotation duration (seconds) and active analytics slides for the plant TV screen
+                    </p>
+                  </div>
                 </div>
-                <button
-                  onClick={() => {
-                    const url = `${window.location.origin}${window.location.pathname}?view=supervisor`;
-                    navigator.clipboard.writeText(url);
-                    alert('Supervisor link copied to clipboard!');
-                  }}
-                  className="px-8 py-3 bg-emerald-700 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 hover:bg-emerald-800 transition-all shadow-lg shadow-emerald-700/20"
-                >
-                  <FileUp size={14} /> Copy Supervisor Link
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setIsTvMode(true);
+                      try {
+                        document.documentElement.requestFullscreen();
+                      } catch {}
+                    }}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Play size={14} className="fill-white" />
+                    <span>Launch TV Dashboard</span>
+                  </button>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <h2 className="text-3xl font-black text-stone-900 uppercase tracking-tight mb-8">Data Synchronization & Google Sheets</h2>
-              <div className="space-y-6">
-                <div className="p-6 bg-stone-50 rounded-2xl border border-stone-100">
-                  <label className="block text-[11px] font-black text-stone-400 uppercase tracking-widest mb-4">Google Sheet URL</label>
-                  <div className="flex gap-4">
-                    <input
-                      type="text"
-                      className="flex-1 bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm font-bold"
-                      value={settings.googleSheetUrl}
-                      onChange={(e) => setSettings(prev => ({ ...prev, googleSheetUrl: e.target.value }))}
-                    />
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-stone-200">
+                <span className="text-xs font-black uppercase text-stone-500 tracking-wider">
+                  Quick Duration Presets:
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[
+                    { label: 'Fast (10s)', secs: 10 },
+                    { label: 'Default (15s)', secs: 15 },
+                    { label: 'Detailed (25s)', secs: 25 },
+                    { label: 'Slow (40s)', secs: 40 }
+                  ].map(preset => (
                     <button
-                      onClick={syncData}
-                      className="px-6 py-3 bg-stone-900 text-white rounded-xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2 cursor-pointer"
+                      key={preset.label}
+                      onClick={() => {
+                        const newIntervals = {
+                          overview: preset.secs,
+                          charts: preset.secs,
+                          table: preset.secs,
+                          champions: preset.secs,
+                          sheds: preset.secs,
+                          monthly: preset.secs
+                        };
+                        const updated = { ...settings, tvSlideIntervals: newIntervals };
+                        setSettings(updated);
+                        apiClient.saveSettings(updated).catch(() => {});
+                      }}
+                      className="px-3 py-1.5 bg-stone-100 hover:bg-emerald-50 hover:text-emerald-700 text-stone-700 rounded-xl text-xs font-bold transition-all border border-stone-200 cursor-pointer"
                     >
-                      <RefreshCw size={14} /> Sync Now
+                      {preset.label}
                     </button>
-                  </div>
+                  ))}
                 </div>
+              </div>
 
-                {/* WhatsApp Dispatch Section */}
-                <div className="p-6 bg-white rounded-2xl border border-stone-200 space-y-4">
-                  <h4 className="text-sm font-black text-emerald-800 uppercase tracking-widest flex items-center gap-2">
-                    <MessageSquare size={18} className="text-emerald-600" /> WhatsApp Notifications & Dispatch
-                  </h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl">
-                      <div>
-                        <div className="text-xs font-bold">1. Daily Production Statement</div>
-                        <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppProdPhone}</div>
-                      </div>
-                      <button
-                        onClick={() => {
-                          const phone = (settings.whatsAppProdPhone || '+919944711575').replace(/[^0-9+]/g, '');
-                          const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateWhatsAppMessage(dailyReport)}`;
-                          window.open(url, '_blank');
-                        }}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                      >
-                        <Play size={10} /> Send Now
-                      </button>
-                    </div>
+              {/* Slides Configuration List */}
+              <div className="space-y-3">
+                {[
+                  {
+                    id: 'overview',
+                    name: 'Overview & Broadcast',
+                    desc: 'Executive daily production, target progress gauge, plant efficiency & shift breakdown.',
+                    defaultSecs: 15
+                  },
+                  {
+                    id: 'charts',
+                    name: 'Machine Analytics Charts',
+                    desc: 'Recharts bar graph of Machine Production (Target vs Actual) & GPS/Efficiency trends.',
+                    defaultSecs: 20
+                  },
+                  {
+                    id: 'table',
+                    name: 'Machine GPS & Performance Table',
+                    desc: 'Full-width machine-by-machine production, frame efficiency, GPS, and assigned sider table.',
+                    defaultSecs: 20
+                  },
+                  {
+                    id: 'champions',
+                    name: 'Best Shift & Operator Champions',
+                    desc: 'Best shift banner and Top 5 Operator Champions leaderboard with photos and prizes.',
+                    defaultSecs: 15
+                  },
+                  {
+                    id: 'sheds',
+                    name: 'Multi-Shed Production Intelligence',
+                    desc: 'Comparative cards and telemetry breakdown for Shed 1, Shed 2, Shed 3, and KTTM.',
+                    defaultSecs: 15
+                  },
+                  {
+                    id: 'monthly',
+                    name: 'Monthly Cumulative Production Trend',
+                    desc: '15-day / month-to-date cumulative production volume and plant trajectory chart.',
+                    defaultSecs: 15
+                  }
+                ].map((slide, idx) => {
+                  const currentSecs = settings.tvSlideIntervals?.[slide.id] ?? slide.defaultSecs;
+                  const isEnabled = settings.tvSlideEnabled?.[slide.id] !== false;
 
-                    <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl">
-                      <div>
-                        <div className="text-xs font-bold">2. Daily EM Statement</div>
-                        <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppEmPhone}</div>
+                  return (
+                    <div
+                      key={slide.id}
+                      className={cn(
+                        "p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4",
+                        isEnabled ? "bg-white border-stone-200" : "bg-stone-100/70 border-stone-200/60 opacity-60"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="w-7 h-7 rounded-xl bg-stone-100 border border-stone-200 text-stone-600 text-xs font-black flex items-center justify-center shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-black text-stone-900 uppercase tracking-tight">
+                              {slide.name}
+                            </h4>
+                            <span className={cn(
+                              "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
+                              isEnabled ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-500"
+                            )}>
+                              {isEnabled ? `${currentSecs}s duration` : 'Disabled'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-stone-400 font-bold mt-0.5 truncate">
+                            {slide.desc}
+                          </p>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => {
-                          const phone = (settings.whatsAppEmPhone || '+919944711575').replace(/[^0-9+]/g, '');
-                          const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateEmStatementMessage(dailyReport)}`;
-                          window.open(url, '_blank');
-                        }}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                      >
-                        <Play size={10} /> Send Now
-                      </button>
-                    </div>
 
-                    <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl">
-                      <div>
-                        <div className="text-xs font-bold">3. Daily Incentive Ledger</div>
-                        <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppIncentivePhone}</div>
+                      <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
+                        {/* Enable/Disable Toggle */}
+                        <button
+                          onClick={() => {
+                            const updated = {
+                              ...settings,
+                              tvSlideEnabled: {
+                                ...(settings.tvSlideEnabled || {}),
+                                [slide.id]: !isEnabled
+                              }
+                            };
+                            setSettings(updated);
+                            apiClient.saveSettings(updated).catch(() => {});
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer",
+                            isEnabled
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                              : "bg-stone-200 text-stone-600 hover:bg-stone-300"
+                          )}
+                          title={isEnabled ? "Disable slide from TV rotation" : "Enable slide in TV rotation"}
+                        >
+                          {isEnabled ? <Check size={12} /> : <X size={12} />}
+                          <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>
+                        </button>
+
+                        {/* Seconds Stepper */}
+                        <div className="flex items-center gap-1 bg-stone-50 p-1 rounded-xl border border-stone-200">
+                          <button
+                            onClick={() => {
+                              const newSecs = Math.max(5, currentSecs - 5);
+                              const updated = {
+                                ...settings,
+                                tvSlideIntervals: {
+                                  ...(settings.tvSlideIntervals || {}),
+                                  [slide.id]: newSecs
+                                }
+                              };
+                              setSettings(updated);
+                              apiClient.saveSettings(updated).catch(() => {});
+                            }}
+                            disabled={!isEnabled || currentSecs <= 5}
+                            className="w-8 h-8 rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 font-black text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center"
+                          >
+                            -5s
+                          </button>
+
+                          <div className="w-14 text-center">
+                            <span className="text-sm font-black text-stone-900 tabular-nums">
+                              {currentSecs}s
+                            </span>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              const newSecs = Math.min(120, currentSecs + 5);
+                              const updated = {
+                                ...settings,
+                                tvSlideIntervals: {
+                                  ...(settings.tvSlideIntervals || {}),
+                                  [slide.id]: newSecs
+                                }
+                              };
+                              setSettings(updated);
+                              apiClient.saveSettings(updated).catch(() => {});
+                            }}
+                            disabled={!isEnabled || currentSecs >= 120}
+                            className="w-8 h-8 rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 font-black text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center"
+                          >
+                            +5s
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => {
-                          const phone = (settings.whatsAppIncentivePhone || '+919944711575').replace(/[^0-9+]/g, '');
-                          const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateIncentiveStatementMessage(dailyReport)}`;
-                          window.open(url, '_blank');
-                        }}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                      >
-                        <Play size={10} /> Send Now
-                      </button>
                     </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
             </div>
 
             {/* Shift Gaiter Allocation */}
-            <div>
-              <h2 className="text-3xl font-black text-stone-900 uppercase tracking-tight mb-8">Shift Gaiter Allocation</h2>
-              <div className="p-10 bg-amber-50 rounded-[3rem] border border-amber-100 grid grid-cols-1 md:grid-cols-3 gap-8">
-                {(['I', 'II', 'III'] as Shift[]).map(shift => (
-                  <div key={shift} className="bg-white p-6 rounded-2xl border border-amber-100 shadow-sm">
-                    <div className="flex items-center gap-3 mb-6 border-b border-amber-50 pb-4">
-                      <Zap size={18} className="text-amber-500" />
-                      <h4 className="text-sm font-black text-amber-900 uppercase tracking-widest">Shift {shift} Gaiters</h4>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <button
-                        onClick={() => {
-                          const current = settings.gaiterCounts?.[shift] || 1;
-                          if (current > 0) {
-                            const updated = { ...settings, gaiterCounts: { ...settings.gaiterCounts, [shift]: current - 1 } };
-                            setSettings(updated);
-                            apiClient.saveSettings(updated);
-                          }
-                        }}
-                        className="w-10 h-10 rounded-xl bg-amber-100/50 border border-amber-200 flex items-center justify-center text-amber-700 font-black cursor-pointer"
-                      >
-                        -
-                      </button>
-                      <span className="text-3xl font-black text-amber-900 tabular-nums">{settings.gaiterCounts?.[shift] ?? 1}</span>
-                      <button
-                        onClick={() => {
-                          const current = settings.gaiterCounts?.[shift] || 1;
-                          if (current < 5) {
-                            const updated = { ...settings, gaiterCounts: { ...settings.gaiterCounts, [shift]: current + 1 } };
-                            setSettings(updated);
-                            apiClient.saveSettings(updated);
-                          }
-                        }}
-                        className="w-10 h-10 rounded-xl bg-amber-100/50 border border-amber-200 flex items-center justify-center text-amber-700 font-black cursor-pointer"
-                      >
-                        +
-                      </button>
-                    </div>
+            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200/80 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-amber-500/10 border border-amber-300 text-amber-700 rounded-2xl flex items-center justify-center shrink-0">
+                    <Zap size={22} className="text-amber-600 fill-amber-500/20" />
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Machine Configuration: Sides per Machine (LH & RH Allocation) */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-3xl font-black text-stone-900 uppercase tracking-tight">Machine Configuration</h2>
-                  <p className="text-xs text-stone-500 font-bold uppercase tracking-wider mt-1">Spinning Frame Operator &amp; Side Allotment Master</p>
-                </div>
-              </div>
-
-              <div className="p-8 sm:p-10 bg-gradient-to-b from-blue-50/70 via-indigo-50/40 to-slate-50/70 rounded-[3rem] border border-blue-200/80 shadow-xs">
-                {/* Header Row */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-blue-100">
-                  <div className="max-w-2xl">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <Activity size={18} className="text-blue-600" />
-                      <h3 className="text-base sm:text-lg font-black text-blue-950 uppercase tracking-wider">
-                        Sides Per Machine (LH &amp; RH Allocation)
-                      </h3>
-                    </div>
-                    <p className="text-xs text-blue-900/80 font-medium leading-relaxed italic">
-                      All machines default to 2 sides: LH and RH. Same sider on both sides earns 100% full machine incentive. Sider on 1 side earns 50%.
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
+                      Shift Gaiter Crew Allocation
+                    </h3>
+                    <p className="text-xs text-stone-500 font-bold mt-0.5">
+                      Configure standard number of gaiters deployed per shift for doff assistance and line continuity
                     </p>
                   </div>
-
-                  {/* Quick Action Buttons */}
-                  <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
-                    <button
-                      onClick={() => setAllMachinesSides(2)}
-                      className="px-4 py-2 bg-blue-900 hover:bg-blue-950 text-white rounded-2xl text-xs font-black uppercase tracking-wider shadow-sm transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Check size={13} className="text-blue-300" />
-                      <span>2 Sides / Machine (LH &amp; RH)</span>
-                    </button>
-                    <button
-                      onClick={() => setAllMachinesSides(1)}
-                      className="px-3.5 py-2 bg-white hover:bg-blue-50 text-blue-900 border border-blue-200/80 rounded-2xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
-                    >
-                      <span>1 Side / Machine</span>
-                    </button>
-                  </div>
                 </div>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="px-3.5 py-1.5 bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-black uppercase tracking-wider">
+                    Total: {((settings.gaiterCounts?.I ?? 1) + (settings.gaiterCounts?.II ?? 1) + (settings.gaiterCounts?.III ?? 1))} Gaiters / Day
+                  </span>
+                </div>
+              </div>
 
-                {/* Grid of Machine Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3.5 sm:gap-4 mt-8">
-                  {configurableMachines.map(rfNo => {
-                    const currentSides = settings.machineSiderCounts?.[rfNo] !== undefined 
-                      ? settings.machineSiderCounts[rfNo] 
-                      : 2;
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+                {(['I', 'II', 'III'] as Shift[]).map(shift => {
+                  const shiftName = shift === 'I' ? 'Shift I (Morning)' : shift === 'II' ? 'Shift II (Evening)' : 'Shift III (Night)';
+                  const currentCount = settings.gaiterCounts?.[shift] ?? 1;
 
-                    return (
-                      <div
-                        key={rfNo}
-                        className="bg-white rounded-2xl p-4 border border-blue-100/90 shadow-2xs hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between group"
-                      >
-                        {/* Card Top: Pulse icon, RF No, Badge */}
-                        <div className="flex items-center justify-between gap-1 mb-4 pb-2 border-b border-blue-50">
-                          <div className="flex items-center gap-1.5">
-                            <Activity size={14} className="text-blue-600 animate-pulse" />
-                            <span className="font-black text-stone-900 text-xs sm:text-sm tracking-tight">{rfNo}</span>
-                          </div>
-                          <span
-                            className={cn(
-                              "text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md tracking-wider transition-colors",
-                              currentSides === 2 
-                                ? "bg-blue-100 text-blue-800 border border-blue-200/60"
-                                : currentSides === 1
-                                ? "bg-stone-100 text-stone-700 border border-stone-200/60"
-                                : "bg-purple-100 text-purple-800 border border-purple-200/60"
-                            )}
-                          >
-                            {currentSides === 2 ? 'LH+RH' : currentSides === 1 ? 'LH' : `${currentSides} SIDES`}
+                  return (
+                    <div
+                      key={shift}
+                      className="bg-white p-5 sm:p-6 rounded-2xl border border-stone-200/90 shadow-2xs hover:shadow-md hover:border-amber-300 transition-all flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-stone-100">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                          <h4 className="text-xs sm:text-sm font-black text-stone-800 uppercase tracking-wider">
+                            {shiftName}
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200">
+                          {currentCount} Crew
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4 py-2">
+                        <button
+                          onClick={() => {
+                            if (currentCount > 0) {
+                              const updated = {
+                                ...settings,
+                                gaiterCounts: { ...settings.gaiterCounts, [shift]: currentCount - 1 }
+                              };
+                              setSettings(updated);
+                              apiClient.saveSettings(updated).catch(() => {});
+                            }
+                          }}
+                          disabled={currentCount <= 0}
+                          className={cn(
+                            "w-11 h-11 rounded-2xl flex items-center justify-center font-black text-lg transition-all",
+                            currentCount <= 0
+                              ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
+                              : "bg-stone-100 hover:bg-amber-100 text-stone-800 hover:text-amber-900 border border-stone-200 active:scale-95 cursor-pointer shadow-2xs"
+                          )}
+                          title="Decrease gaiters"
+                        >
+                          -
+                        </button>
+
+                        <div className="text-center">
+                          <span className="text-3xl sm:text-4xl font-black text-stone-900 tabular-nums block leading-none">
+                            {currentCount}
+                          </span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 mt-1 block">
+                            Allocated
                           </span>
                         </div>
 
-                        {/* Stepper Control */}
-                        <div className="flex items-center justify-between gap-2 my-2 px-1">
-                          <button
-                            onClick={() => updateMachineSides(rfNo, currentSides - 1)}
-                            disabled={currentSides <= 1}
-                            className={cn(
-                              "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
-                              currentSides <= 1
-                                ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
-                                : "bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 active:scale-90 cursor-pointer shadow-2xs"
-                            )}
-                          >
-                            -
-                          </button>
-
-                          <div className="text-center">
-                            <span className="text-2xl sm:text-3xl font-black text-blue-950 tabular-nums block leading-none">
-                              {currentSides}
-                            </span>
-                            <span className="text-[9px] font-black uppercase tracking-wider text-blue-700/70 mt-1 block">
-                              {currentSides === 2 ? 'LH & RH' : currentSides === 1 ? 'LH ONLY' : `${currentSides} Sides`}
-                            </span>
-                          </div>
-
-                          <button
-                            onClick={() => updateMachineSides(rfNo, currentSides + 1)}
-                            disabled={currentSides >= 3}
-                            className={cn(
-                              "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
-                              currentSides >= 3
-                                ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
-                                : "bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 active:scale-90 cursor-pointer shadow-2xs"
-                            )}
-                          >
-                            +
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => {
+                            if (currentCount < 6) {
+                              const updated = {
+                                ...settings,
+                                gaiterCounts: { ...settings.gaiterCounts, [shift]: currentCount + 1 }
+                              };
+                              setSettings(updated);
+                              apiClient.saveSettings(updated).catch(() => {});
+                            }
+                          }}
+                          disabled={currentCount >= 6}
+                          className={cn(
+                            "w-11 h-11 rounded-2xl flex items-center justify-center font-black text-lg transition-all",
+                            currentCount >= 6
+                              ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
+                              : "bg-amber-600 hover:bg-amber-700 text-white border border-amber-600 active:scale-95 cursor-pointer shadow-sm shadow-amber-600/30"
+                          )}
+                          title="Increase gaiters"
+                        >
+                          +
+                        </button>
                       </div>
+
+                      <p className="text-[11px] text-stone-400 font-bold text-center mt-3 pt-2 border-t border-stone-100">
+                        {currentCount === 0 ? 'No gaiter crew assigned' : `${currentCount} gaiter(s) earn pooled shift incentive`}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Machine Configuration: Sides per Machine */}
+            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-blue-500/10 border border-blue-300 text-blue-700 rounded-2xl flex items-center justify-center shrink-0">
+                    <Activity size={22} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
+                      Machine Configuration & Side Allotments
+                    </h3>
+                    <p className="text-xs text-stone-500 font-bold mt-0.5">
+                      Spinning Frame Operator & Side Allotment Master (LH & RH Allocation)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setAllMachinesSides(2)}
+                    className="px-3.5 py-2 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check size={13} className="text-blue-300" />
+                    <span>Set All 2 Sides (LH + RH)</span>
+                  </button>
+                  <button
+                    onClick={() => setAllMachinesSides(1)}
+                    className="px-3.5 py-2 bg-white hover:bg-stone-100 text-stone-800 border border-stone-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
+                  >
+                    <span>Set All 1 Side</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Explanatory Banner */}
+              <div className="bg-blue-50/80 border border-blue-200/70 rounded-2xl p-4 flex items-start gap-3">
+                <Monitor size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-950 font-medium leading-relaxed">
+                  <strong>Standard Mill Rule:</strong> All frames default to 2 sides (Left Hand <code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-[11px] font-bold">LH</code> & Right Hand <code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-[11px] font-bold">RH</code>). Siders operating both sides receive 100% machine incentive. 1 side assignment earns 50%.
+                </p>
+              </div>
+
+              {/* Shed Filter Tabs & Search Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="inline-flex p-1 bg-white border border-stone-200 rounded-2xl shadow-2xs gap-1">
+                  {(['All', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shedTab => {
+                    const isSelected = settingsMachineShed === shedTab;
+                    const countInTab = shedTab === 'All'
+                      ? configurableMachines.length
+                      : configurableMachines.filter(rf => {
+                          const m = machines.find(x => x.rfNo === rf);
+                          return (m?.shed || 'Shed 1') === shedTab;
+                        }).length;
+
+                    return (
+                      <button
+                        key={shedTab}
+                        onClick={() => setSettingsMachineShed(shedTab)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                          isSelected
+                            ? "bg-blue-600 text-white shadow-2xs"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+                        )}
+                      >
+                        <span>{shedTab}</span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-md text-[10px]",
+                          isSelected ? "bg-white/20 text-white" : "bg-stone-100 text-stone-500"
+                        )}>
+                          {countInTab}
+                        </span>
+                      </button>
                     );
                   })}
                 </div>
 
-                {/* Footer Note */}
-                <div className="mt-8 pt-5 border-t border-blue-100/80 flex items-center justify-center gap-2 text-center text-blue-900/70 text-xs font-bold uppercase tracking-wider">
-                  <Monitor size={14} className="text-blue-600 shrink-0" />
-                  <span>Adjust how many operators are assigned to one spinning frame. Defaults to 2 sides (LH &amp; RH).</span>
+                <div className="relative max-w-xs w-full">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="text"
+                    placeholder="Search frame (e.g. SP023)..."
+                    value={settingsMachineSearch}
+                    onChange={(e) => setSettingsMachineSearch(e.target.value)}
+                    className="w-full bg-white border border-stone-200 rounded-xl pl-9 pr-3 py-2 text-xs font-bold text-stone-800 placeholder-stone-400 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Filtered Machine Cards Grid */}
+              {(() => {
+                const filtered = configurableMachines.filter(rfNo => {
+                  const m = machines.find(x => x.rfNo === rfNo);
+                  const mShed = m?.shed || 'Shed 1';
+                  const matchesShed = settingsMachineShed === 'All' || mShed === settingsMachineShed;
+                  const matchesSearch = !settingsMachineSearch || rfNo.toLowerCase().includes(settingsMachineSearch.toLowerCase());
+                  return matchesShed && matchesSearch;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-stone-200">
+                      <p className="text-sm font-bold text-stone-400">No spinning frames found matching filters.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
+                    {filtered.map(rfNo => {
+                      const m = machines.find(x => x.rfNo === rfNo);
+                      const mShed = m?.shed || 'Shed 1';
+                      const currentSides = settings.machineSiderCounts?.[rfNo] !== undefined 
+                        ? settings.machineSiderCounts[rfNo] 
+                        : 2;
+
+                      return (
+                        <div
+                          key={rfNo}
+                          className="bg-white rounded-2xl p-4 border border-stone-200 shadow-2xs hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between"
+                        >
+                          <div className="flex items-center justify-between gap-1 mb-3 pb-2 border-b border-stone-100">
+                            <div>
+                              <div className="font-black text-stone-900 text-sm tracking-tight">{rfNo}</div>
+                              <span className="text-[9px] font-black uppercase text-stone-400">{mShed}</span>
+                            </div>
+                            <span
+                              className={cn(
+                                "text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider",
+                                currentSides === 2 
+                                  ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                  : currentSides === 1
+                                  ? "bg-stone-100 text-stone-700 border border-stone-200"
+                                  : "bg-purple-100 text-purple-800 border border-purple-200"
+                              )}
+                            >
+                              {currentSides === 2 ? 'LH + RH' : currentSides === 1 ? 'LH' : `${currentSides} SIDES`}
+                            </span>
+                          </div>
+
+                          {/* Visual Side Pills */}
+                          <div className="flex items-center justify-center gap-1.5 mb-3">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
+                              currentSides >= 1 ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-400"
+                            )}>
+                              LH
+                            </span>
+                            <span className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
+                              currentSides >= 2 ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-400"
+                            )}>
+                              RH
+                            </span>
+                            {currentSides >= 3 && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white">
+                                S3
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Stepper Control */}
+                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
+                            <button
+                              onClick={() => updateMachineSides(rfNo, currentSides - 1)}
+                              disabled={currentSides <= 1}
+                              className={cn(
+                                "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
+                                currentSides <= 1
+                                  ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
+                                  : "bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 active:scale-90 cursor-pointer"
+                              )}
+                            >
+                              -
+                            </button>
+
+                            <span className="text-xl font-black text-stone-900 tabular-nums">
+                              {currentSides}
+                            </span>
+
+                            <button
+                              onClick={() => updateMachineSides(rfNo, currentSides + 1)}
+                              disabled={currentSides >= 3}
+                              className={cn(
+                                "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
+                                currentSides >= 3
+                                  ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
+                                  : "bg-blue-600 hover:bg-blue-700 text-white active:scale-90 cursor-pointer shadow-xs"
+                              )}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* WhatsApp Dispatch Section */}
+            <div className="p-6 sm:p-8 bg-stone-50/70 rounded-3xl border border-stone-200 space-y-4">
+              <h4 className="text-sm font-black text-emerald-800 uppercase tracking-widest flex items-center gap-2">
+                <MessageSquare size={18} className="text-emerald-600" /> WhatsApp Notifications & Dispatch
+              </h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-stone-200/80 shadow-2xs">
+                  <div>
+                    <div className="text-xs font-bold text-stone-800">1. Daily Production Statement</div>
+                    <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppProdPhone}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const phone = (settings.whatsAppProdPhone || '+919944711575').replace(/[^0-9+]/g, '');
+                      const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateWhatsAppMessage(dailyReport)}`;
+                      window.open(url, '_blank');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer hover:bg-emerald-700 transition-colors shadow-2xs"
+                  >
+                    <Play size={10} /> Send Now
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-stone-200/80 shadow-2xs">
+                  <div>
+                    <div className="text-xs font-bold text-stone-800">2. Daily EM Statement</div>
+                    <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppEmPhone}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const phone = (settings.whatsAppEmPhone || '+919944711575').replace(/[^0-9+]/g, '');
+                      const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateEmStatementMessage(dailyReport)}`;
+                      window.open(url, '_blank');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer hover:bg-emerald-700 transition-colors shadow-2xs"
+                  >
+                    <Play size={10} /> Send Now
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-stone-200/80 shadow-2xs">
+                  <div>
+                    <div className="text-xs font-bold text-stone-800">3. Daily Incentive Ledger</div>
+                    <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppIncentivePhone}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const phone = (settings.whatsAppIncentivePhone || '+919944711575').replace(/[^0-9+]/g, '');
+                      const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateIncentiveStatementMessage(dailyReport)}`;
+                      window.open(url, '_blank');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer hover:bg-emerald-700 transition-colors shadow-2xs"
+                  >
+                    <Play size={10} /> Send Now
+                  </button>
                 </div>
               </div>
             </div>
@@ -2027,11 +2310,37 @@ export default function Home() {
     }
   };
 
+  if (isTvMode) {
+    return (
+      <ErrorBoundary>
+        <TvDashboard
+          dailyReport={activeDailyReport}
+          history={currentShedHistory}
+          workers={currentShedWorkers}
+          rules={incentiveRules}
+          selectedShed={selectedShed}
+          onSelectShed={setSelectedShed}
+          machineEm={machineEm}
+          settings={settings}
+          onExit={() => {
+            setIsTvMode(false);
+            setTvStarted(false);
+            try {
+              if (document.fullscreenElement) {
+                document.exitFullscreen();
+              }
+            } catch {}
+          }}
+        />
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-row h-screen overflow-hidden">
         {/* Left Sidebar Navigation */}
-        {!isTvMode && !isSupervisorMode && (
+        {!isSupervisorMode && (
           <Sidebar
             activeTab={activeTab}
             setActiveTab={setActiveTab}
@@ -2134,7 +2443,7 @@ export default function Home() {
           )}
 
           <main className="flex-1 overflow-y-auto">
-            <div className={cn(isTvMode ? 'w-full h-full p-0 overflow-hidden' : 'w-full max-w-full p-2.5 md:p-3.5 lg:p-4.5 h-full relative')}>
+            <div className="w-full max-w-full p-2.5 md:p-3.5 lg:p-4.5 h-full relative">
               {!isSystemReady && (
                 <div className="absolute inset-0 z-[100] bg-white flex flex-col items-center justify-center text-center p-10">
                   <div className="w-20 h-20 bg-stone-100 rounded-[2rem] flex items-center justify-center text-stone-300 mb-6 animate-pulse">
@@ -2145,85 +2454,8 @@ export default function Home() {
                 </div>
               )}
 
-              {isTvMode && !tvStarted && isSystemReady && (
-                <div className="absolute inset-0 z-[100] bg-stone-900 flex flex-col items-center justify-center text-center p-10">
-                  <div className="w-24 h-24 bg-emerald-600 rounded-[2rem] flex items-center justify-center text-white mb-8 shadow-2xl shadow-emerald-500/20 animate-bounce">
-                    <Gauge size={48} />
-                  </div>
-                  <h2 className="text-5xl font-black text-white uppercase tracking-tighter mb-4 italic">TV DASHBOARD READY</h2>
-                  <p className="text-stone-400 font-bold uppercase tracking-[0.3em] mb-12 text-sm">Rotating Views with MongoDB Live Data</p>
-                  <div className="flex flex-wrap items-center justify-center gap-4">
-                    <button
-                      onClick={() => {
-                        setTvStarted(true);
-                        try { document.documentElement.requestFullscreen(); } catch {}
-                      }}
-                      className="px-14 py-5 bg-white text-stone-900 rounded-2xl font-black uppercase tracking-widest text-base hover:bg-emerald-500 hover:text-white transition-all shadow-2xl active:scale-95 group flex items-center gap-4 cursor-pointer"
-                    >
-                      Start Live Monitoring
-                      <Activity size={22} className="group-hover:rotate-12 transition-transform" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsTvMode(false);
-                        setTvStarted(false);
-                        setActiveTab('dashboard');
-                      }}
-                      className="px-8 py-5 bg-stone-800 text-stone-300 hover:text-white hover:bg-stone-700 rounded-2xl font-black uppercase tracking-widest text-base transition-all border border-stone-700 active:scale-95 flex items-center gap-2.5 cursor-pointer"
-                    >
-                      <ArrowLeft size={20} />
-                      Back to Dashboard
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Floating Back Button & Shed Selector in TV Mode (White bg, low opacity, hover bright) */}
-              {isTvMode && (
-                <div className="fixed top-4 right-4 z-[9999] no-print flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity duration-200">
-                  <div className="flex items-center bg-white/95 p-1 rounded-2xl border border-stone-200 shadow-xl backdrop-blur-md gap-1">
-                    {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
-                      const isSelected = selectedShed === shed;
-                      return (
-                        <button
-                          key={shed}
-                          onClick={() => setSelectedShed(shed)}
-                          className={cn(
-                            "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                            isSelected
-                              ? "bg-emerald-600 text-white shadow-md scale-105"
-                              : "text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-bold"
-                          )}
-                        >
-                          <span className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-white" : "bg-stone-400")} />
-                          {shed}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      setIsTvMode(false);
-                      setTvStarted(false);
-                      setActiveTab('dashboard');
-                      try {
-                        if (document.fullscreenElement) {
-                          document.exitFullscreen();
-                        }
-                      } catch {}
-                    }}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-white/95 hover:bg-white text-stone-900 rounded-2xl font-black text-xs shadow-xl backdrop-blur-md border border-stone-200 hover:scale-105 active:scale-95 transition-all cursor-pointer group"
-                    title="Back"
-                  >
-                    <ArrowLeft size={15} className="text-stone-700 group-hover:-translate-x-0.5 transition-transform" />
-                    <span>Back</span>
-                  </button>
-                </div>
-              )}
-
               <AnimatePresence mode="wait">
-                <div key={activeTab} className={cn(isTvMode && 'h-full')}>
+                <div key={activeTab}>
                   {renderContent()}
                 </div>
               </AnimatePresence>

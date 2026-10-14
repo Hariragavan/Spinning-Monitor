@@ -158,6 +158,8 @@ export interface SystemSettings {
   whatsAppProdPhone?: string;
   whatsAppEmPhone?: string;
   whatsAppIncentivePhone?: string;
+  tvSlideIntervals?: Record<string, number>;
+  tvSlideEnabled?: Record<string, boolean>;
 }
 
 export interface FrozenMonthAbstractItem {

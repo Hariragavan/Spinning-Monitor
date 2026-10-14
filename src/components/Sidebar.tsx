@@ -57,7 +57,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },
         { id: 'sider-monthly-performance', label: 'Sider Monthly Performance', icon: FileText },
         { id: 'operator-em-format', label: 'Operator EM Format', icon: FileText },
-        { id: 'performance', label: 'Machine Performance', icon: Gauge },
       ]
     },
     {

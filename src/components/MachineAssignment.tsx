@@ -47,29 +47,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const [showCopyPanel, setShowCopyPanel] = useState(false);
   const [chosenCopyDate, setChosenCopyDate] = useState('');
   const [chosenCopyShift, setChosenCopyShift] = useState<Shift | 'ALL'>('ALL');
-  const [copiedPublicLink, setCopiedPublicLink] = useState(false);
-  const [showQrModal, setShowQrModal] = useState(false);
-
-  const publicAllocationUrl = `${window.location.origin}${window.location.pathname}?tab=assignments`;
-
-  const handleCopyPublicLink = () => {
-    try {
-      navigator.clipboard.writeText(publicAllocationUrl);
-      setCopiedPublicLink(true);
-      setTimeout(() => setCopiedPublicLink(false), 3500);
-    } catch {
-      // Fallback
-      const input = document.createElement('input');
-      input.value = publicAllocationUrl;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
-      setCopiedPublicLink(true);
-      setTimeout(() => setCopiedPublicLink(false), 3500);
-    }
-  };
-
   const shifts: Shift[] = ['I', 'II', 'III'];
   const activeGaiterShifts = selectedShift === 'ALL' ? shifts : [selectedShift as Shift];
 
@@ -161,106 +138,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-      {/* Public Mobile Link Banner for Allocation Entry (Shown in Admin view, hidden in Public/Supervisor Mode) */}
-      {!isSupervisorMode && (
-        <>
-          <div className="bg-gradient-to-r from-emerald-900 via-stone-900 to-stone-900 text-white rounded-[2.5rem] p-6 md:p-8 shadow-xl border border-emerald-800/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
-            <div className="flex items-start md:items-center gap-4 relative z-10">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-inner">
-                <Smartphone size={28} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base md:text-lg font-black uppercase tracking-tight text-white flex items-center gap-2">
-                    <span>📱 Mobile Allocation Direct Link</span>
-                  </h3>
-                  <span className="bg-emerald-500/30 text-emerald-300 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full border border-emerald-400/30">
-                    Public Mobile Link
-                  </span>
-                </div>
-                <p className="text-xs text-stone-300 font-bold mt-1 max-w-2xl">
-                  Open or share this direct public link on any smartphone to enter machine, sider, gaiter, and fitter allocations easily on mobile devices without logging in.
-                </p>
-                <div className="mt-2.5 flex items-center gap-2 text-[11px] font-mono text-emerald-300/90 bg-stone-950/70 px-3.5 py-1.5 rounded-xl border border-stone-800 max-w-full sm:max-w-md truncate shadow-inner">
-                  <span className="truncate">{publicAllocationUrl}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 w-full md:w-auto relative z-10 shrink-0">
-              <button
-                type="button"
-                onClick={handleCopyPublicLink}
-                className={cn(
-                  "flex-1 md:flex-none px-6 py-3.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95",
-                  copiedPublicLink 
-                    ? "bg-emerald-400 text-stone-950 font-black shadow-emerald-400/30" 
-                    : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30"
-                )}
-              >
-                {copiedPublicLink ? <Check size={18} /> : <Copy size={18} />}
-                <span>{copiedPublicLink ? "Link Copied!" : "Copy Public Link"}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowQrModal(true)}
-                className="px-5 py-3.5 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
-                title="Show QR code for mobile phone scanning"
-              >
-                <QrCode size={18} />
-                <span className="hidden sm:inline">Scan QR</span>
-              </button>
-            </div>
-          </div>
-
-          {/* QR Code Scan Modal */}
-          {showQrModal && (
-            <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-              <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-stone-200 relative text-center space-y-6">
-                <button
-                  onClick={() => setShowQrModal(false)}
-                  className="absolute right-6 top-6 p-2 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 transition-all cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
-
-                <div className="w-16 h-16 rounded-3xl bg-emerald-100 text-emerald-800 flex items-center justify-center mx-auto">
-                  <QrCode size={36} />
-                </div>
-
-                <div>
-                  <h3 className="text-xl font-black text-stone-900 uppercase tracking-tight">Scan for Mobile Allocation</h3>
-                  <p className="text-xs text-stone-500 font-bold uppercase tracking-wider mt-1">
-                    Scan with any mobile camera to open allocation entry directly
-                  </p>
-                </div>
-
-                <div className="p-4 bg-stone-50 border-2 border-stone-200 rounded-3xl inline-block mx-auto shadow-inner">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(publicAllocationUrl)}`}
-                    alt="Mobile Allocation QR Code"
-                    className="w-56 h-56 rounded-xl mx-auto"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-[11px] font-mono text-stone-500 bg-stone-100 p-2.5 rounded-xl break-all">
-                    {publicAllocationUrl}
-                  </p>
-                  <button
-                    onClick={handleCopyPublicLink}
-                    className="w-full py-3 bg-stone-900 hover:bg-stone-800 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {copiedPublicLink ? <Check size={16} /> : <Copy size={16} />}
-                    {copiedPublicLink ? "Copied to Clipboard!" : "Copy Link"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
       {/* Active Duplicate Allocations Warnings & Resolvers */}
       {duplicates.length > 0 && (
         <div className="bg-rose-50 border border-rose-200 rounded-[2.5rem] p-10 space-y-6">

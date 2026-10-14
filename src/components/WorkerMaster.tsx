@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Plus, Search, Download, Upload, Edit2, Trash2, Camera, 
   X, Save, AlertCircle, FileSpreadsheet, Code, CheckSquare, 
-  Square, Users, Image as ImageIcon, CheckCircle2 
+  Square, Users, Image as ImageIcon, CheckCircle2, RefreshCw 
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Sider } from '../types';
@@ -50,6 +50,87 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   const modalPhotoInputRef = useRef<HTMLInputElement>(null);
   const cardPhotoInputRef = useRef<HTMLInputElement>(null);
   const [activeCardPhotoWorkerId, setActiveCardPhotoWorkerId] = useState<string | null>(null);
+
+  // Live Camera Capture Modal State
+  const [cameraModalOpen, setCameraModalOpen] = useState(false);
+  const [cameraTargetWorkerId, setCameraTargetWorkerId] = useState<'modal' | string | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const startCamera = async (target: 'modal' | string) => {
+    setCameraTargetWorkerId(target);
+    setCapturedImage(null);
+    setCameraError(null);
+    setCameraModalOpen(true);
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+          audio: false
+        });
+        setCameraStream(stream);
+      } else {
+        throw new Error('Camera access is not supported by your browser.');
+      }
+    } catch (err: any) {
+      console.error('Camera access error:', err);
+      setCameraError(err?.message || 'Unable to access camera. Please allow camera permissions or upload an image file instead.');
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setCameraModalOpen(false);
+    setCapturedImage(null);
+    setCameraError(null);
+  };
+
+  useEffect(() => {
+    if (cameraModalOpen && videoRef.current && cameraStream && !capturedImage) {
+      videoRef.current.srcObject = cameraStream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraModalOpen, cameraStream, capturedImage]);
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current || document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      setCapturedImage(dataUrl);
+    }
+  };
+
+  const retakePhoto = () => {
+    setCapturedImage(null);
+  };
+
+  const confirmCapturedPhoto = async () => {
+    if (!capturedImage) return;
+    const compressed = await compressImage(capturedImage, 350, 350, 0.82);
+
+    if (cameraTargetWorkerId === 'modal') {
+      setFormPhotoUrl(compressed);
+    } else if (cameraTargetWorkerId) {
+      const worker = workers.find(w => w.id === cameraTargetWorkerId);
+      if (worker) {
+        onUpdate({ ...worker, photoUrl: compressed });
+      }
+    }
+    stopCamera();
+  };
 
   // Sync tab with currentShed
   React.useEffect(() => {
@@ -661,13 +742,30 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                     {worker.name}
                   </h3>
 
-                  {/* PHOTO STATUS SUBTITLE */}
-                  <p 
-                    onClick={() => handleTriggerCardPhoto(worker.id)}
-                    className="text-[10px] text-stone-400 hover:text-stone-600 cursor-pointer font-medium mt-0.5 truncate"
-                  >
-                    {hasPhoto ? "Photo Added — Click to Change" : "Photo Not Added — Click to Upload"}
-                  </p>
+                  {/* PHOTO ACTION BUTTONS */}
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <button 
+                      type="button"
+                      onClick={() => startCamera(worker.id)}
+                      className="px-2 py-0.5 bg-stone-100 hover:bg-emerald-50 text-stone-700 hover:text-emerald-700 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 border border-stone-200 cursor-pointer transition-all active:scale-95"
+                      title="Capture photo from camera"
+                    >
+                      <Camera size={11} className="text-emerald-600" />
+                      <span>Camera</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => handleTriggerCardPhoto(worker.id)}
+                      className="px-2 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1 border border-stone-200 cursor-pointer transition-all active:scale-95"
+                      title="Upload image file"
+                    >
+                      <Upload size={11} className="text-stone-500" />
+                      <span>Upload</span>
+                    </button>
+                    {hasPhoto && (
+                      <span className="text-[9px] text-emerald-600 font-bold ml-0.5">✓ Photo</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -733,23 +831,45 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
             <div className="space-y-4">
               {/* PHOTO UPLOAD BLOCK */}
-              <div className="flex items-center gap-4 bg-stone-50 p-3 rounded-xl border border-stone-200">
-                <div className="w-14 h-14 rounded-xl border border-dashed border-stone-300 bg-white flex items-center justify-center overflow-hidden shrink-0">
+              <div className="flex items-center gap-4 bg-stone-50 p-3.5 rounded-xl border border-stone-200">
+                <div className="w-16 h-16 rounded-xl border border-dashed border-stone-300 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
                   {formPhotoUrl ? (
                     <img src={formPhotoUrl} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
-                    <Camera size={20} className="text-stone-300" />
+                    <Camera size={22} className="text-stone-300" />
                   )}
                 </div>
                 <div className="flex-1">
-                  <span className="block text-xs font-bold text-stone-700">Employee Photo</span>
-                  <button
-                    type="button"
-                    onClick={() => modalPhotoInputRef.current?.click()}
-                    className="text-[11px] font-black text-emerald-700 hover:underline mt-0.5 cursor-pointer"
-                  >
-                    {formPhotoUrl ? "Change Photo" : "Upload Photo"}
-                  </button>
+                  <span className="block text-xs font-bold text-stone-700 mb-1.5">Employee Photo</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => startCamera('modal')}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                    >
+                      <Camera size={13} />
+                      <span>Camera</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => modalPhotoInputRef.current?.click()}
+                      className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                    >
+                      <Upload size={13} />
+                      <span>Upload Image</span>
+                    </button>
+
+                    {formPhotoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setFormPhotoUrl('')}
+                        className="text-xs text-red-500 hover:text-red-700 font-bold ml-1 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="file"
                     ref={modalPhotoInputRef}
@@ -758,15 +878,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                     className="hidden"
                   />
                 </div>
-                {formPhotoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setFormPhotoUrl('')}
-                    className="text-xs text-red-500 hover:text-red-700 font-bold"
-                  >
-                    Remove
-                  </button>
-                )}
               </div>
 
               {/* NAME */}
@@ -864,6 +975,105 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                 <Save size={14} />
                 <span>Save Employee</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIVE CAMERA CAPTURE MODAL */}
+      {cameraModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-stone-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between p-4 border-b border-stone-100 bg-stone-50">
+              <div className="flex items-center gap-2">
+                <Camera size={18} className="text-emerald-600" />
+                <h3 className="text-sm font-black text-stone-900 uppercase tracking-wider">
+                  Capture Worker Photo
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={stopCamera}
+                className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col items-center">
+              {cameraError ? (
+                <div className="p-6 text-center space-y-3">
+                  <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <AlertCircle size={24} />
+                  </div>
+                  <p className="text-xs font-bold text-red-700 leading-relaxed">{cameraError}</p>
+                  <p className="text-[11px] text-stone-500 font-medium">You can still upload photos from your device using the &quot;Upload Image&quot; button.</p>
+                </div>
+              ) : (
+                <div className="relative w-full aspect-square max-w-[320px] rounded-2xl overflow-hidden bg-stone-950 border-2 border-stone-800 shadow-inner flex items-center justify-center">
+                  {!capturedImage ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover mirror"
+                      />
+                      {/* Viewfinder circle guide */}
+                      <div className="absolute inset-4 border-2 border-dashed border-white/40 rounded-full pointer-events-none" />
+                    </>
+                  ) : (
+                    <img 
+                      src={capturedImage} 
+                      alt="Captured snapshot" 
+                      className="w-full h-full object-cover" 
+                    />
+                  )}
+                  <canvas ref={canvasRef} className="hidden" />
+                </div>
+              )}
+
+              {/* Camera Actions */}
+              {!cameraError && (
+                <div className="mt-5 w-full flex items-center justify-center gap-3">
+                  {!capturedImage ? (
+                    <button
+                      type="button"
+                      onClick={capturePhoto}
+                      className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-600/30 flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Camera size={16} />
+                      <span>Capture Photo</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={retakePhoto}
+                        className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw size={14} />
+                        <span>Retake</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={confirmCapturedPhoto}
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs uppercase tracking-wider shadow-md flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <CheckCircle2 size={15} />
+                        <span>Confirm &amp; Use</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-stone-50 border-t border-stone-100 text-center">
+              <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">
+                Hold face centered inside the frame • Good lighting recommended
+              </span>
             </div>
           </div>
         </div>
