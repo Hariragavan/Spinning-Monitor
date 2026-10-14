@@ -1,29 +1,35 @@
-import { DailyReport, Sider, IncentiveRule, CountConversion, SystemSettings, MachineEmData, FrozenMonthRecord } from '@/types';
+import { DailyReport, Sider, IncentiveRule, CountConversion, SystemSettings, MachineEmData, FrozenMonthRecord, MachineMasterItem, User } from '@/types';
 
 export const apiClient = {
-  async fetchInitialData() {
-    const [reportRes, historyRes, workersRes, rulesRes, countsRes, settingsRes, emRes, frozenRes] = await Promise.all([
-      fetch('/api/reports').then(r => r.json()).catch(() => ({ data: null })),
-      fetch('/api/reports/history').then(r => r.json()).catch(() => ({ data: [] })),
+  async fetchInitialData(shed?: string) {
+    const shedQuery = shed ? `?shed=${encodeURIComponent(shed)}` : '';
+    const [reportRes, historyRes, workersRes, machinesRes, rulesRes, countsRes, settingsRes, emRes, frozenRes, usersRes] = await Promise.all([
+      fetch(`/api/reports${shedQuery}`).then(r => r.json()).catch(() => ({ data: null })),
+      fetch(`/api/reports/history${shedQuery}`).then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/workers').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch('/api/machines').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/rules').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/counts').then(r => r.json()).catch(() => ({ data: [] })),
       fetch('/api/settings').then(r => r.json()).catch(() => ({ data: null })),
       fetch('/api/machine-em').then(r => r.json()).catch(() => ({ data: {} })),
       fetch('/api/frozen-months').then(r => r.json()).catch(() => ({ data: {} })),
+      fetch('/api/users').then(r => r.json()).catch(() => ({ data: [] })),
     ]);
 
     return {
       dailyReport: reportRes?.data as DailyReport | null,
       history: (historyRes?.data || []) as DailyReport[],
       workers: (workersRes?.data || []) as Sider[],
+      machines: (machinesRes?.data || []) as MachineMasterItem[],
       rules: (rulesRes?.data || []) as IncentiveRule[],
       counts: (countsRes?.data || []) as CountConversion[],
       settings: settingsRes?.data as SystemSettings | null,
       machineEm: (emRes?.data || {}) as MachineEmData,
       frozenMonths: (frozenRes?.data || {}) as Record<string, FrozenMonthRecord>,
+      users: (usersRes?.data || []) as User[],
     };
   },
+
 
   async saveDailyReport(report: DailyReport): Promise<boolean> {
     const res = await fetch('/api/reports', {
@@ -84,11 +90,11 @@ export const apiClient = {
     return res.ok;
   },
 
-  async saveWorkers(workers: Sider[]): Promise<boolean> {
+  async saveWorkers(workers: Sider[], shed?: string): Promise<boolean> {
     const res = await fetch('/api/workers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'batch', workers })
+      body: JSON.stringify({ action: 'batch', workers, shed })
     });
     return res.ok;
   },
@@ -109,9 +115,67 @@ export const apiClient = {
     return res.ok;
   },
 
-  async clearAllWorkers(): Promise<boolean> {
-    const res = await fetch('/api/workers?all=true', {
+  async clearAllWorkers(shed?: string): Promise<boolean> {
+    const query = shed ? `?all=true&shed=${encodeURIComponent(shed)}` : '?all=true';
+    const res = await fetch(`/api/workers${query}`, {
       method: 'DELETE'
+    });
+    return res.ok;
+  },
+
+  async fetchMachines(shed?: string): Promise<MachineMasterItem[]> {
+    const query = shed && shed !== 'All' ? `?shed=${encodeURIComponent(shed)}` : '';
+    const res = await fetch(`/api/machines${query}`);
+    const json = await res.json();
+    return json?.data || [];
+  },
+
+  async saveMachines(machines: MachineMasterItem[], shed?: string): Promise<boolean> {
+    const res = await fetch('/api/machines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'batch', machines, shed })
+    });
+    return res.ok;
+  },
+
+  async saveMachine(machine: MachineMasterItem): Promise<boolean> {
+    const res = await fetch('/api/machines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ machine })
+    });
+    return res.ok;
+  },
+
+  async deleteMachine(id: string, frameNo?: string): Promise<boolean> {
+    const param = frameNo ? `frameNo=${encodeURIComponent(frameNo)}` : `id=${encodeURIComponent(id)}`;
+    const res = await fetch(`/api/machines?${param}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  },
+
+  async clearAllMachines(shed?: string): Promise<boolean> {
+    const query = shed ? `?all=true&shed=${encodeURIComponent(shed)}` : '?all=true';
+    const res = await fetch(`/api/machines${query}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  },
+
+  async fetchUsers(shed?: string): Promise<User[]> {
+    const query = shed && shed !== 'All' ? `?shed=${encodeURIComponent(shed)}` : '';
+    const res = await fetch(`/api/users${query}`);
+    const json = await res.json();
+    return json?.data || [];
+  },
+
+  async saveUser(user: User): Promise<boolean> {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user })
     });
     return res.ok;
   },

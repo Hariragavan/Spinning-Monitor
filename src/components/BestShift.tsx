@@ -162,11 +162,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
 
   // AI Linkconer Shift-wide performance calculations (matches implementation in AiMonthlyGrid)
   const aiMetrics = useMemo(() => {
-    const aiFrameNos = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6'];
-    const utilEntries = shiftEntries.filter(e => {
-      const normalizedFrame = (e.frameNo || '').toUpperCase().trim().replace(/[\s-]/g, '');
-      return aiFrameNos.some(f => f.toUpperCase().replace(/[\s-]/g, '') === normalizedFrame);
-    });
+    const utilEntries = shiftEntries.filter(e => typeof e.utility === 'number' && !isNaN(e.utility) && (e.utility || 0) > 0);
     const avgUtility = utilEntries.length > 0
       ? utilEntries.reduce((acc, curr) => acc + (curr.utility || 0), 0) / utilEntries.length
       : 0;
@@ -193,7 +189,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
     return { avgUtility, aiIncentive };
   }, [shiftEntries, rules]);
 
-  // Shift performance KPIs across the Ringframes (K01-K06)
+  // Shift performance KPIs across the Ringframes
   const shiftPlatformKPIs = useMemo(() => {
     if (!report || !report.summaries || report.summaries.length === 0) {
       return { shiftAvgUtil: 0, shiftAvgEff: 0, shiftAvgGps: 0, shiftTotalDoffs: 0 };
@@ -313,17 +309,20 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
     }
   };
 
-  const gridItems = [
-    { machine: 'K01', slot: 0 },
-    { machine: 'K01', slot: 1 },
-    { machine: 'K02', slot: 0 },
-    { machine: 'K03', slot: 0 },
-    { machine: 'K04', slot: 0 },
-    { machine: 'K05', slot: 0 },
-    { machine: 'K06', slot: 0 },
-    { machine: 'Gaiter', slot: 0 },
-    { machine: 'Gaiter', slot: 1 }
-  ];
+  const gridItems = useMemo(() => {
+    const frameNos = Array.from(new Set(shiftEntries.map(e => e.frameNo))).filter(Boolean).sort();
+    const items: { machine: string; slot: number }[] = [];
+    frameNos.forEach(frame => {
+      items.push({ machine: frame, slot: 0 });
+      const entry = shiftEntries.find(e => e.frameNo === frame);
+      if (entry && entry.siderIds && entry.siderIds.length > 1) {
+        items.push({ machine: frame, slot: 1 });
+      }
+    });
+    items.push({ machine: 'Gaiter', slot: 0 });
+    items.push({ machine: 'Gaiter', slot: 1 });
+    return items;
+  }, [shiftEntries]);
 
   /* ==========================================
      1. TV mode view: Optimized for 50-inch TV

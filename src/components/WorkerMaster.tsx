@@ -15,6 +15,7 @@ interface WorkerMasterProps {
   onAdd: (worker: Omit<Sider, 'id'>) => void;
   onBulkDelete?: (ids: string[]) => void;
   onImportWorkers?: (imported: Sider[], mode: 'replace' | 'merge') => void;
+  currentShed?: string;
 }
 
 export const WorkerMaster: React.FC<WorkerMasterProps> = ({
@@ -23,8 +24,10 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   onUpdate,
   onAdd,
   onBulkDelete,
-  onImportWorkers
+  onImportWorkers,
+  currentShed = 'Shed 1'
 }) => {
+  const [selectedShedTab, setSelectedShedTab] = useState<string>(currentShed || 'All Sheds');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [photoFilter, setPhotoFilter] = useState<'all' | 'has_photo' | 'no_photo'>('all');
@@ -36,8 +39,9 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   const [editingWorker, setEditingWorker] = useState<Sider | null>(null);
   const [formName, setFormName] = useState('');
   const [formTNo, setFormTNo] = useState('');
+  const [formShed, setFormShed] = useState<string>(currentShed || 'Shed 1');
   const [formDept, setFormDept] = useState('Gaiter');
-  const [formMachine, setFormMachine] = useState('SP023');
+  const [formMachine, setFormMachine] = useState('');
   const [formPhotoUrl, setFormPhotoUrl] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -46,6 +50,14 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   const modalPhotoInputRef = useRef<HTMLInputElement>(null);
   const cardPhotoInputRef = useRef<HTMLInputElement>(null);
   const [activeCardPhotoWorkerId, setActiveCardPhotoWorkerId] = useState<string | null>(null);
+
+  // Sync tab with currentShed
+  React.useEffect(() => {
+    if (currentShed && currentShed !== 'All') {
+      setSelectedShedTab(currentShed);
+    }
+  }, [currentShed]);
+
 
   // Calculate distinct categories
   const categoriesMap = new Map<string, number>();
@@ -59,6 +71,12 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
   // Filtered list
   const filteredWorkers = workers.filter(w => {
+    // Shed filter
+    if (selectedShedTab !== 'All Sheds') {
+      const wShed = w.shed || 'Shed 1';
+      if (wShed !== selectedShedTab) return false;
+    }
+
     // Search query
     const matchSearch = 
       w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -99,11 +117,13 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
   // Add / Edit Modal trigger
   const handleOpenAdd = () => {
+    const activeShed = selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1');
     setEditingWorker(null);
     setFormName('');
     setFormTNo('');
-    setFormDept('Gaiter');
-    setFormMachine('SP023');
+    setFormShed(activeShed);
+    setFormDept('Sider');
+    setFormMachine('');
     setFormPhotoUrl('');
     setValidationError(null);
     setModalOpen(true);
@@ -113,8 +133,9 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     setEditingWorker(worker);
     setFormName(worker.name);
     setFormTNo(worker.tNo);
-    setFormDept(worker.department || 'Gaiter');
-    setFormMachine(worker.assignedMachine || 'SP023');
+    setFormShed(worker.shed || currentShed || 'Shed 1');
+    setFormDept(worker.department || 'Sider');
+    setFormMachine(worker.assignedMachine || '');
     setFormPhotoUrl(worker.photoUrl || '');
     setValidationError(null);
     setModalOpen(true);
@@ -127,11 +148,15 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     }
 
     const cleanTNo = formTNo.trim().toUpperCase();
+    const cleanShed = formShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
+
     const duplicate = workers.find(w => 
-      w.id !== editingWorker?.id && w.tNo.trim().toUpperCase() === cleanTNo
+      w.id !== editingWorker?.id && 
+      w.tNo.trim().toUpperCase() === cleanTNo &&
+      (w.shed || 'Shed 1') === cleanShed
     );
     if (duplicate) {
-      setValidationError(`TK. NO "${cleanTNo}" is already assigned to ${duplicate.name.toUpperCase()}.`);
+      setValidationError(`TK. NO "${cleanTNo}" is already assigned to ${duplicate.name.toUpperCase()} in ${cleanShed}.`);
       return;
     }
 
@@ -140,6 +165,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
         ...editingWorker,
         name: formName.trim().toUpperCase(),
         tNo: cleanTNo,
+        shed: cleanShed,
         department: formDept,
         assignedMachine: formMachine.trim().toUpperCase(),
         photoUrl: formPhotoUrl
@@ -148,6 +174,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
       onAdd({
         name: formName.trim().toUpperCase(),
         tNo: cleanTNo,
+        shed: cleanShed,
         department: formDept,
         assignedMachine: formMachine.trim().toUpperCase(),
         photoUrl: formPhotoUrl
@@ -325,14 +352,35 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                 EMPLOYEE MASTER (WORKER DIRECTORY)
               </h1>
               <p className="text-xs font-semibold text-stone-400 mt-0.5">
-                Manage Employee Name, Ticket No (T.No), Category (Sider / Gaiter), Backup / Import &amp; Permanent Deletion
+                Manage Employee Name, Ticket No (T.No), Category (Sider / Gaiter / Fitter / AI Linkconer) &amp; Shed Assignment
               </p>
             </div>
           </div>
 
-          {/* SEARCH & ADD BUTTON */}
+          {/* SHED TABS & SEARCH & ADD BUTTON */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <div className="relative min-w-[260px]">
+            {/* SHED FILTER BAR */}
+            <div className="inline-flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+              {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => {
+                const isSelected = selectedShedTab === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSelectedShedTab(s)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                      isSelected ? "bg-white text-emerald-800 shadow-xs font-black" : "text-stone-500 hover:text-stone-800"
+                    )}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative min-w-[220px]">
+
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={15} />
               <input
                 type="text"
@@ -595,12 +643,16 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                       TK. NO {worker.tNo}
                     </span>
                     <span>•</span>
+                    <span className="px-1.5 py-0.5 rounded-md bg-stone-100 text-stone-700 text-[10px] font-bold border border-stone-200">
+                      {worker.shed || 'Shed 1'}
+                    </span>
+                    <span>•</span>
                     <span className="text-purple-600">
-                      DEPT {worker.department || 'GAITER'}
+                      DEPT {worker.department || 'SIDER'}
                     </span>
                     <span>•</span>
                     <span className="text-stone-400 font-mono">
-                      {worker.assignedMachine || 'SP023'}
+                      {worker.assignedMachine || '-'}
                     </span>
                   </div>
 
@@ -738,11 +790,29 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. FD0262"
+                  placeholder="e.g. 101, 201, 301, 401"
                   value={formTNo}
                   onChange={(e) => setFormTNo(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-900 placeholder-stone-400 focus:bg-white focus:border-emerald-500 outline-none uppercase"
                 />
+              </div>
+
+              {/* SHED / UNIT SELECTOR */}
+              <div>
+                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
+                  Shed / Unit Assignment *
+                </label>
+                <select
+                  value={formShed}
+                  onChange={(e) => {
+                    setFormShed(e.target.value);
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none cursor-pointer"
+                >
+                  {['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </div>
 
               {/* CATEGORY & ASSIGNED MACHINE */}
@@ -769,7 +839,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. SP023"
+                    placeholder="e.g. 01"
                     value={formMachine}
                     onChange={(e) => setFormMachine(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none uppercase"

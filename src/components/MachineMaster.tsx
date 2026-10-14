@@ -3,31 +3,28 @@ import {
   RotateCcw, Plus, Edit2, Trash2, Settings, Save, 
   X, Check, AlertCircle, Layers, Cpu, Wrench 
 } from 'lucide-react';
-import { MachineMasterItem, Sider, CountConversion } from '../types';
+import { MachineMasterItem, Sider, CountConversion, Shed } from '../types';
 import { cn } from '../lib/utils';
 
-export const STANDARD_12_MACHINES: MachineMasterItem[] = [
-  { id: 'm-sp023', rfNo: 'SP023', description: 'RING FRAME SP023 - 3RD SHED', count: '034/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp045', rfNo: 'SP045', description: 'RING FRAME SP045 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp046', rfNo: 'SP046', description: 'RING FRAME SP046 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp047', rfNo: 'SP047', description: 'RING FRAME SP047 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp048', rfNo: 'SP048', description: 'RING FRAME SP048 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp049', rfNo: 'SP049', description: 'RING FRAME SP049 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp050', rfNo: 'SP050', description: 'RING FRAME SP050 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp051', rfNo: 'SP051', description: 'RING FRAME SP051 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp052', rfNo: 'SP052', description: 'RING FRAME SP052 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp053', rfNo: 'SP053', description: 'RING FRAME SP053 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp054', rfNo: 'SP054', description: 'RING FRAME SP054 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-  { id: 'm-sp055', rfNo: 'SP055', description: 'RING FRAME SP055 - 3RD SHED', count: '040/1-PH-PC', stdGps: 155.0, actualGps: 155.0, productionKg: 650, assignedSider: '-', assignedGaiter: 'CHITRASEN NAIK' },
-];
+export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
+  'Shed 1': [],
+  'Shed 2': [],
+  'Shed 3': [],
+  'KTTM': [],
+};
+
+export const ALL_STANDARD_MACHINES: MachineMasterItem[] = [];
+
+export const STANDARD_12_MACHINES = ALL_STANDARD_MACHINES;
 
 interface MachineMasterProps {
   machines: MachineMasterItem[];
   onSaveMachine: (machine: MachineMasterItem) => void;
   onDeleteMachine: (id: string) => void;
-  onResetStandardMachines: () => void;
+  onResetStandardMachines: (shed?: string) => void;
   workers?: Sider[];
   countConversions?: CountConversion[];
+  currentShed?: Shed | string;
 }
 
 export const MachineMaster: React.FC<MachineMasterProps> = ({
@@ -36,39 +33,57 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   onDeleteMachine,
   onResetStandardMachines,
   workers = [],
-  countConversions = []
+  countConversions = [],
+  currentShed = 'Shed 1'
 }) => {
+  const [selectedShedTab, setSelectedShedTab] = useState<string>(currentShed || 'All Sheds');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<MachineMasterItem, 'id'>>({
     rfNo: '',
     description: '',
-    count: '034/1-PH-PC',
-    stdGps: 155.0,
-    actualGps: 155.0,
-    productionKg: 650,
+    shed: currentShed || 'Shed 1',
+    count: '32/1-CH-CY',
+    stdGps: 340,
+    actualGps: 340,
+    productionKg: 1500,
     assignedSider: '-',
-    assignedGaiter: 'CHITRASEN NAIK'
+    assignedGaiter: '-'
   });
   const [error, setError] = useState<string | null>(null);
   const [quickConfigMachine, setQuickConfigMachine] = useState<MachineMasterItem | null>(null);
 
+  // Sync tab with currentShed if currentShed prop changes
+  useEffect(() => {
+    if (currentShed && currentShed !== 'All') {
+      setSelectedShedTab(currentShed);
+    }
+  }, [currentShed]);
+
   // Available count options
-  const defaultCounts = ['030/1-PH-PC', '034/1-PH-PC', '040/1-PH-PC', '40s KWH', '34s CH', '30s CW', '32/1-CH-CY'];
+  const defaultCounts = ['32/1-CH-CY', '34/1CHY-OCY', '30/1CH', '20/1-CW-WVG', '40s Combed', '34/1 CH', '24/1 Carded', '60s Super Combed', '50s Compact', '40s Micro Weft', '30s Warp', '32s Hosiery', '40s Compact'];
   const availableCounts = Array.from(new Set([
     ...defaultCounts,
     ...countConversions.map(c => c.count),
     ...machines.map(m => m.count)
   ])).filter(Boolean);
 
-  // Worker lists
-  const sidersList = workers.filter(w => !w.department || w.department.toLowerCase().includes('sider'));
-  const gaitersList = workers.filter(w => w.department && w.department.toLowerCase().includes('gaiter'));
+  // Filter machines based on selected shed tab
+  const filteredMachines = machines.filter(m => {
+    if (selectedShedTab === 'All Sheds') return true;
+    return (m.shed || 'Shed 1') === selectedShedTab;
+  });
+
+  // Filter workers based on form machine's shed
+  const targetShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
+  const sidersList = workers.filter(w => (!w.shed || w.shed === targetShed) && (!w.department || w.department.toLowerCase().includes('sider')));
+  const gaitersList = workers.filter(w => (!w.shed || w.shed === targetShed) && w.department && w.department.toLowerCase().includes('gaiter'));
 
   const handleStartEdit = (machine: MachineMasterItem) => {
     setEditingId(machine.id);
     setFormData({
       rfNo: machine.rfNo,
       description: machine.description || '',
+      shed: machine.shed || currentShed || 'Shed 1',
       count: machine.count,
       stdGps: machine.stdGps,
       actualGps: machine.actualGps,
@@ -81,15 +96,17 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
   const handleCancelEdit = () => {
     setEditingId(null);
+    const activeShed = selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1');
     setFormData({
       rfNo: '',
       description: '',
-      count: availableCounts[0] || '034/1-PH-PC',
-      stdGps: 155.0,
-      actualGps: 155.0,
-      productionKg: 650,
+      shed: activeShed,
+      count: availableCounts[0] || '32/1-CH-CY',
+      stdGps: 340,
+      actualGps: 340,
+      productionKg: 1500,
       assignedSider: '-',
-      assignedGaiter: 'CHITRASEN NAIK'
+      assignedGaiter: '-'
     });
     setError(null);
   };
@@ -102,17 +119,20 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
 
     const cleanRfNo = formData.rfNo.trim().toUpperCase();
-    // Check duplicate RF No
+    const cleanShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
+
+    // Check duplicate RF No across same or other sheds
     const duplicate = machines.find(m => m.id !== editingId && m.rfNo.toUpperCase() === cleanRfNo);
     if (duplicate) {
-      setError(`Machine "${cleanRfNo}" already exists in the registry.`);
+      setError(`Machine "${cleanRfNo}" already exists in ${duplicate.shed || 'registry'}. Each machine must be unique.`);
       return;
     }
 
     const item: MachineMasterItem = {
       id: editingId || `m-${cleanRfNo.toLowerCase()}-${Date.now()}`,
       rfNo: cleanRfNo,
-      description: formData.description?.trim() || `RING FRAME ${cleanRfNo} - 3RD SHED`,
+      description: formData.description?.trim() || `RING FRAME ${cleanRfNo} - ${cleanShed.toUpperCase()}`,
+      shed: cleanShed,
       count: formData.count,
       stdGps: Number(formData.stdGps) || 0,
       actualGps: Number(formData.actualGps) || 0,
@@ -123,9 +143,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
     onSaveMachine(item);
     handleCancelEdit();
-  };
-
-  return (
+  };  return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* HEADER SECTION */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
@@ -134,18 +152,37 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
             MACHINE MASTER
           </h1>
           <p className="text-xs font-semibold text-stone-400 mt-0.5">
-            Configure Ring Frame Numbers (RF No), Running Counts & Crew Properties
+            Configure Ring Frame Numbers (RF No), Running Counts & Crew Properties per Shed
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onResetStandardMachines}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-stone-200 text-stone-700 hover:text-stone-950 text-xs font-bold hover:bg-stone-50 transition-all shadow-2xs cursor-pointer self-start sm:self-center"
-        >
-          <RotateCcw size={14} className="text-stone-500" />
-          <span>Reset to Standard 12 Machines (SP023, SP045–SP055)</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* SHED TABS */}
+          <div className="inline-flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+            {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSelectedShedTab(s)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                  selectedShedTab === s ? "bg-white text-emerald-800 shadow-xs" : "text-stone-500 hover:text-stone-800"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onResetStandardMachines(selectedShedTab === 'All Sheds' ? undefined : selectedShedTab)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-stone-200 text-stone-700 hover:text-stone-950 text-xs font-bold hover:bg-stone-50 transition-all shadow-2xs cursor-pointer self-start sm:self-center"
+          >
+            <RotateCcw size={14} className="text-stone-500" />
+            <span>Reset {selectedShedTab === 'All Sheds' ? 'All' : selectedShedTab} Machines</span>
+          </button>
+        </div>
       </div>
 
       {/* TWO COLUMN GRID */}
@@ -185,6 +222,22 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* SHED / UNIT SELECTOR */}
+            <div>
+              <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
+                SHED / UNIT *
+              </label>
+              <select
+                value={formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1')}
+                onChange={(e) => setFormData(prev => ({ ...prev, shed: e.target.value }))}
+                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
+              >
+                {['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(sh => (
+                  <option key={sh} value={sh}>{sh}</option>
+                ))}
+              </select>
+            </div>
+
             {/* RF NO */}
             <div>
               <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
@@ -192,13 +245,13 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="E.G. SP023, SP045, SP055"
+                placeholder="e.g. 01, RF-1"
                 value={formData.rfNo}
                 onChange={(e) => setFormData(prev => ({ ...prev, rfNo: e.target.value }))}
                 className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 placeholder-stone-400 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all uppercase"
               />
               <span className="block text-[10px] text-stone-400 font-medium mt-1">
-                Standard format: SP023, SP045 to SP055
+                Enter unique machine identifier for this shed
               </span>
             </div>
 
@@ -209,7 +262,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="e.g. Ring Frame SP023 - 3rd Shed"
+                placeholder="e.g. Ring Frame 1"
                 value={formData.description || ''}
                 onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                 className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-medium text-stone-800 placeholder-stone-400 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all"
@@ -280,7 +333,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  ASSIGNED SIDER
+                  ASSIGNED SIDER ({targetShed})
                 </label>
                 <select
                   value={formData.assignedSider || '-'}
@@ -291,8 +344,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                   {sidersList.map(s => (
                     <option key={s.id} value={s.name}>{s.name} ({s.tNo})</option>
                   ))}
-                  {/* Also show all other workers if not in sidersList */}
-                  {workers.filter(w => !sidersList.some(s => s.id === w.id)).map(w => (
+                  {workers.filter(w => (!w.shed || w.shed === targetShed) && !sidersList.some(s => s.id === w.id)).map(w => (
                     <option key={w.id} value={w.name}>{w.name} ({w.tNo})</option>
                   ))}
                 </select>
@@ -300,19 +352,18 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  ASSIGNED GAITER
+                  ASSIGNED GAITER ({targetShed})
                 </label>
                 <select
-                  value={formData.assignedGaiter || 'CHITRASEN NAIK'}
+                  value={formData.assignedGaiter || '-'}
                   onChange={(e) => setFormData(prev => ({ ...prev, assignedGaiter: e.target.value }))}
                   className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
                 >
                   <option value="-">Default Gaiter</option>
-                  <option value="CHITRASEN NAIK">CHITRASEN NAIK</option>
-                  {gaitersList.filter(g => g.name !== 'CHITRASEN NAIK').map(g => (
+                  {gaitersList.map(g => (
                     <option key={g.id} value={g.name}>{g.name} ({g.tNo})</option>
                   ))}
-                  {workers.filter(w => w.name !== 'CHITRASEN NAIK' && !gaitersList.some(g => g.id === w.id)).map(w => (
+                  {workers.filter(w => (!w.shed || w.shed === targetShed) && !gaitersList.some(g => g.id === w.id)).map(w => (
                     <option key={w.id} value={w.name}>{w.name} ({w.tNo})</option>
                   ))}
                 </select>
@@ -336,15 +387,15 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
         <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
           <div className="flex items-center justify-between pb-4 border-b border-stone-100 mb-3">
             <h2 className="text-xs font-black uppercase tracking-wider text-stone-800">
-              ACTIVE RING FRAME (RF) MACHINES
+              ACTIVE RING FRAME (RF) MACHINES {selectedShedTab !== 'All Sheds' ? `— ${selectedShedTab}` : ''}
             </h2>
             <span className="text-xs font-black text-stone-500 font-mono">
-              {machines.length} TOTAL
+              {filteredMachines.length} TOTAL
             </span>
           </div>
 
           <div className="divide-y divide-stone-100">
-            {machines.map((m, idx) => (
+            {filteredMachines.map((m, idx) => (
               <div 
                 key={m.id || m.rfNo}
                 className={cn(
@@ -360,6 +411,11 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                   {/* GREEN PILL BADGE */}
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black font-mono shrink-0">
                     {m.rfNo}
+                  </span>
+
+                  {/* SHED BADGE */}
+                  <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold shrink-0">
+                    {m.shed || 'Shed 1'}
                   </span>
 
                   <div className="min-w-0">
@@ -411,13 +467,14 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               </div>
             ))}
 
-            {machines.length === 0 && (
+            {filteredMachines.length === 0 && (
               <div className="py-12 text-center text-stone-400 font-bold text-xs uppercase tracking-wider">
-                No active machines found. Click &quot;Reset to Standard 12 Machines&quot; above to load presets.
+                No active machines found for {selectedShedTab}. Click &quot;Reset {selectedShedTab} Machines&quot; above to load presets.
               </div>
             )}
           </div>
         </div>
+
       </div>
 
       {/* QUICK CONFIGURE MODAL */}

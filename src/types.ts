@@ -180,3 +180,18 @@ export interface FrozenMonthRecord {
   aiAbstract: FrozenMonthAbstractItem[];
   dailyWorkerIncentives: Record<string, Record<string, number>>;
 }
+
+export interface User {
+  userId: string;
+  username: string;
+  name: string;
+  role: 'ADMIN' | 'SUPERVISOR' | 'MAINTENANCE';
+  accessLevel: string;
+  shed?: Shed | string;
+  email?: string;
+  phone?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  lastLogin?: Date | string;
+  createdAt?: Date | string;
+}
+

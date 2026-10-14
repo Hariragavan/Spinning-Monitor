@@ -36,17 +36,13 @@ export const normalizeDateValue = (val: any): string => {
 };
 
 export const getShedMachines = (shed?: string): string[] => {
-  if (shed === 'Shed 2') return ['K07', 'K08', 'K09', 'K10', 'K11', 'K12'];
-  if (shed === 'Shed 3') return ['K13', 'K14', 'K15', 'K16', 'K17', 'K18'];
-  if (shed === 'KTTM') return ['KT01', 'KT02', 'KT03', 'KT04', 'KT05', 'KT06'];
-  return ['K01', 'K02', 'K03', 'K04', 'K05', 'K06'];
+  return [];
 };
 
 export const ensureSixMachines = (report: DailyReport, targetShed?: string): DailyReport => {
   const shed = targetShed || report.shed || 'Shed 1';
-  const defaultMachines = getShedMachines(shed);
   const existingFrames = Array.from(new Set(report.entries.map(e => e.frameNo))).filter(Boolean);
-  const machines = existingFrames.length >= 6 ? existingFrames : defaultMachines;
+  const machines = existingFrames;
 
   const shifts: Shift[] = ['I', 'II', 'III'];
   const entries = [...report.entries];
@@ -123,7 +119,8 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
       .map(s => ({ ...s, shed: s.shed || shed }))
       .sort((a, b) => a.frameNo.localeCompare(b.frameNo)),
     gaiters: report.gaiters || { I: [], II: [], III: [] },
-    aiCones: report.aiCones || { I: [], II: [], III: [] }
+    aiCones: report.aiCones || { I: [], II: [], III: [] },
+    fitters: report.fitters || { I: [], II: [], III: [] }
   };
 };
 
@@ -136,16 +133,18 @@ export const getTodayUniversalDate = (): string => {
 };
 
 export const createDefaultReportForShed = (shed: string = 'Shed 1', date: string = getTodayUniversalDate()): DailyReport => {
-  return ensureSixMachines({
+  return {
     date,
     shed,
     entries: [],
     summaries: [],
     gaiters: { I: [], II: [], III: [] },
+    aiCones: { I: [], II: [], III: [] },
+    fitters: { I: [], II: [], III: [] },
     totalProductionTarget: 0,
     totalProductionActual: 0,
     timestamp: Date.now()
-  }, shed);
+  };
 };
 
 export const mockData: DailyReport = createDefaultReportForShed('Shed 1', getTodayUniversalDate());
@@ -347,12 +346,10 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
     if (!frameNoRaw || frameNoRaw.toLowerCase().includes('rf no') || frameNoRaw.toLowerCase().includes('grand') || frameNoRaw.toLowerCase().includes('running')) continue;
     if (frameNoRaw.toLowerCase() === 'total' || frameNoRaw.toLowerCase().includes('date')) break;
 
-    // Normalize machine name: RF-01 -> K01, RF 01 -> K01
+    // Normalize machine name: clean whitespace
     const frameNo = frameNoRaw.toUpperCase()
-      .replace('RF-', 'K')
-      .replace('RF', 'K')
       .replace(/\s+/g, '')
-      .replace('NO', '');
+      .trim();
 
     const count = String(row[colMap.count] || '').trim();
     const stdGps = Number(row[colMap.stdGps]) || 0;
@@ -479,10 +476,10 @@ const handleBreakage = (grid: any[][]): DailyReport => {
   
   const isMachineName = (name: string) => {
     const norm = name.toUpperCase().replace(/\s+/g, '');
-    return (norm.includes('RF') || norm.startsWith('K')) && /\d+/.test(norm) && !norm.includes('TOTAL') && !norm.includes('SHIFT') && !norm.includes('STD');
+    return /\d+/.test(norm) && !norm.includes('TOTAL') && !norm.includes('SHIFT') && !norm.includes('STD') && !norm.includes('DATE');
   };
 
-  // Machine names start after STD column (Col B=Rf no, Col C=STD, Col D=K01)
+  // Machine names start after STD column
   let c = labelCol + 2;
   while (c < (rfHeader?.length || 0)) {
     const val = String(rfHeader[c] || '').trim();
@@ -495,10 +492,8 @@ const handleBreakage = (grid: any[][]): DailyReport => {
     
     if (isMachineName(finalName)) {
       const normalized = finalName
-        .replace('RF-', 'K')
-        .replace('RF', 'K')
-        .replace('NO', '')
-        .replace(/\s+/g, '');
+        .replace(/\s+/g, '')
+        .trim();
         
       rfNodes.push({ 
         frame: normalized, 

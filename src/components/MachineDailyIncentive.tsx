@@ -42,8 +42,8 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
 
   // Get active unique frame numbers
   const machines = useMemo(() => {
-    const unique = Array.from(new Set(report.entries.map(e => e.frameNo))).sort();
-    return unique.length > 0 ? unique : ['K01', 'K02', 'K03', 'K04', 'K05', 'K06'];
+    const unique = Array.from(new Set(report.entries.map(e => e.frameNo))).filter(Boolean).sort();
+    return unique;
   }, [report.entries]);
 
   // Process data for the machine-wise rows
@@ -214,12 +214,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
 
     shiftsList.forEach(shift => {
       const shiftEntries = report.entries.filter(e => e.shift === shift);
-      const aiFrameNos = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6'];
-      const utilEntries = shiftEntries.filter(e => {
-        const normalizedFrame = (e.frameNo || '').toUpperCase().trim().replace(/[\s-]/g, '');
-        const isAiFrame = aiFrameNos.some(f => f.toUpperCase().replace(/[\s-]/g, "") === normalizedFrame);
-        return isAiFrame && typeof e.utility === 'number' && !isNaN(e.utility);
-      });
+      const utilEntries = shiftEntries.filter(e => typeof e.utility === 'number' && !isNaN(e.utility) && e.utility > 0);
       const avgUtility = utilEntries.length > 0
         ? utilEntries.reduce((acc, curr) => acc + curr.utility, 0) / utilEntries.length
         : 0;

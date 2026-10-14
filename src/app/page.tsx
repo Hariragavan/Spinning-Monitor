@@ -9,7 +9,7 @@ import { BestSider } from '@/components/BestSider';
 import { BestOperatorsEm } from '@/components/BestOperatorsEm';
 import { EmOutliersCompare } from '@/components/EmOutliersCompare';
 import { WorkerMaster } from '@/components/WorkerMaster';
-import { MachineMaster, STANDARD_12_MACHINES } from '@/components/MachineMaster';
+import { MachineMaster, STANDARD_12_MACHINES, ALL_STANDARD_MACHINES, STANDARD_MACHINES_BY_SHED } from '@/components/MachineMaster';
 import { BestShift } from '@/components/BestShift';
 import { DailyIncentive } from '@/components/DailyIncentive';
 import { MachineDailyIncentive } from '@/components/MachineDailyIncentive';
@@ -156,11 +156,7 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
   }
 ];
 
-const DEFAULT_WORKERS: Sider[] = [
-  { id: 'w-fd0262', name: 'AMARESH PANDA', tNo: 'FD0262', department: 'Gaiter', assignedMachine: 'SP023', photoUrl: '' },
-  { id: 'w-fd0426', name: 'SUBASH CHANDRA', tNo: 'FD0426', department: 'Gaiter', assignedMachine: 'SP023', photoUrl: '' },
-  { id: 'w-fd0483', name: 'CHITRASEN NAIK', tNo: 'FD0483', department: 'Gaiter', assignedMachine: 'SP023', photoUrl: '' },
-];
+const DEFAULT_WORKERS: Sider[] = [];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -180,7 +176,7 @@ export default function Home() {
         } catch {}
       }
     }
-    return STANDARD_12_MACHINES;
+    return [];
   });
   const [incentiveRules, setIncentiveRules] = useState<IncentiveRule[]>(DEFAULT_INCENTIVE_RULES);
   const [countConversions, setCountConversions] = useState<CountConversion[]>(DEFAULT_COUNT_CONVERSIONS);
@@ -191,6 +187,15 @@ export default function Home() {
   const currentShedHistory = useMemo(() => {
     return reportHistory.filter(r => (r.shed || 'Shed 1') === selectedShed);
   }, [reportHistory, selectedShed]);
+
+  const currentShedWorkers = useMemo(() => {
+    return workers.filter(w => !w.shed || w.shed === selectedShed);
+  }, [workers, selectedShed]);
+
+  const currentShedMachines = useMemo(() => {
+    return machines.filter(m => !m.shed || m.shed === selectedShed);
+  }, [machines, selectedShed]);
+
 
   const activeDailyReport = useMemo(() => {
     const todayStr = getTodayUniversalDate();
@@ -224,7 +229,7 @@ export default function Home() {
     bestSiderOverrideId: null,
     tvInterval: 15,
     tvSubInterval: 5,
-    machineSiderCounts: { SP023: 2, SP045: 2, SP046: 2, SP047: 2, SP048: 2, SP049: 2, SP050: 2, SP051: 2, SP052: 2, SP053: 2, SP054: 2, SP055: 2, K01: 2, K02: 2, K03: 2, K04: 2, K05: 2, K06: 2 },
+    machineSiderCounts: {},
     gaiterCounts: { I: 1, II: 1, III: 1 },
     tvShowBestSiderMonth: true,
     emHighLimit: 4,
@@ -277,6 +282,12 @@ export default function Home() {
         if (data.dailyReport) setDailyReport(ensureSixMachines(data.dailyReport));
         if (data.history && data.history.length > 0) setReportHistory(data.history);
         if (data.workers && data.workers.length > 0) setWorkers(mergeDuplicateWorkers(data.workers));
+        if (data.machines && data.machines.length > 0) {
+          setMachines(data.machines);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('spinning_machines', JSON.stringify(data.machines));
+          }
+        }
         if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
         if (data.counts && data.counts.length > 0) setCountConversions(data.counts);
         if (data.settings) setSettings(prev => ({ ...prev, ...data.settings }));
@@ -376,6 +387,7 @@ export default function Home() {
         apiClient.saveDailyReport(dailyReport),
         apiClient.saveReportHistory(reportHistory),
         apiClient.saveWorkers(workers),
+        apiClient.saveMachines(machines),
         apiClient.saveRules(incentiveRules),
         apiClient.saveSettings(settings),
         apiClient.saveMachineEm(machineEm)
@@ -852,7 +864,7 @@ export default function Home() {
     await apiClient.saveWorkers(updated);
   };
 
-  const saveMachine = (machine: MachineMasterItem) => {
+  const saveMachine = async (machine: MachineMasterItem) => {
     setMachines(prev => {
       const exists = prev.some(m => m.id === machine.id || m.rfNo === machine.rfNo);
       const updated = exists 
@@ -863,9 +875,10 @@ export default function Home() {
       }
       return updated;
     });
+    await apiClient.saveMachine(machine);
   };
 
-  const deleteMachine = (id: string) => {
+  const deleteMachine = async (id: string) => {
     setMachines(prev => {
       const updated = prev.filter(m => m.id !== id);
       if (typeof window !== 'undefined') {
@@ -873,14 +886,22 @@ export default function Home() {
       }
       return updated;
     });
+    await apiClient.deleteMachine(id);
   };
 
-  const resetStandardMachines = () => {
-    setMachines(STANDARD_12_MACHINES);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('spinning_machines', JSON.stringify(STANDARD_12_MACHINES));
+  const resetStandardMachines = async (shed?: string) => {
+    let newMachines: MachineMasterItem[];
+    if (shed) {
+      newMachines = machines.filter(m => m.shed !== shed);
+    } else {
+      newMachines = [];
     }
-    alert('Reset all machines to Standard 12 Machines (SP023, SP045–SP055)');
+    setMachines(newMachines);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('spinning_machines', JSON.stringify(newMachines));
+    }
+    await apiClient.saveMachines(newMachines);
+    alert(shed ? `Cleared machines for ${shed}` : 'Cleared all machines');
   };
 
   const saveCountConversion = async (conv: CountConversion) => {
@@ -1124,7 +1145,7 @@ export default function Home() {
             <div className={cn("relative z-10", isTvMode ? "flex-1 min-h-0 overflow-hidden" : "")}>
               <MasterDataTable
                 report={activeDailyReport}
-                workers={workers}
+                workers={currentShedWorkers}
                 rules={incentiveRules}
                 isTvMode={isTvMode}
                 onSelectDate={(date) => {
@@ -1143,7 +1164,7 @@ export default function Home() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
             <MasterDataTable
               report={activeDailyReport}
-              workers={workers}
+              workers={currentShedWorkers}
               rules={incentiveRules}
               isTvMode={isTvMode}
               onSelectDate={(date) => {
@@ -1169,7 +1190,7 @@ export default function Home() {
         return (
           <DailyIncentive
             report={activeDailyReport}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             isTvMode={isTvMode}
             onUpdateEntry={(entry) => {
@@ -1193,7 +1214,7 @@ export default function Home() {
         return (
           <MachineDailyIncentive
             report={activeDailyReport}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             isTvMode={isTvMode}
             onSelectDate={(date) => {
@@ -1208,7 +1229,7 @@ export default function Home() {
       case 'assignments':
         return (
           <MachineAssignment
-            workers={workers}
+            workers={currentShedWorkers}
             entries={activeDailyReport.entries}
             gaiters={activeDailyReport.gaiters || { I: [], II: [], III: [] }}
             aiCones={activeDailyReport.aiCones || { I: [], II: [], III: [] }}
@@ -1238,7 +1259,7 @@ export default function Home() {
         return (
           <MonthlyGrid
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             machineEm={machineEm}
             type="gps"
@@ -1268,7 +1289,7 @@ export default function Home() {
         return (
           <AiMonthlyGrid
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             selectedMonth={tvActiveMonth}
             selectedYear={tvActiveYear}
@@ -1293,7 +1314,7 @@ export default function Home() {
         return (
           <MonthAbstract
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             month={tvActiveMonth}
             year={tvActiveYear}
@@ -1312,7 +1333,7 @@ export default function Home() {
         return (
           <AiMonthAbstract
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             month={tvActiveMonth}
             year={tvActiveYear}
@@ -1329,7 +1350,7 @@ export default function Home() {
         return (
           <IncentiveLedgerReport
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             machineEm={machineEm}
             initialMonth={selectedMonth}
@@ -1349,7 +1370,7 @@ export default function Home() {
         return (
           <SiderMonthlyPerformance
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             isTvMode={isTvMode}
             month={tvActiveMonth}
@@ -1367,7 +1388,7 @@ export default function Home() {
         return (
           <OperatorEmFormat
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             machineEm={machineEm}
             onUpdateMachineEm={async (newData, sheetUrl) => {
@@ -1399,7 +1420,7 @@ export default function Home() {
         return (
           <AiMonthlyPerformance
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             isTvMode={isTvMode}
             month={tvActiveMonth}
@@ -1414,7 +1435,7 @@ export default function Home() {
         return (
           <FitterMonthlyPerformance
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             isTvMode={isTvMode}
             month={tvActiveMonth}
             year={tvActiveYear}
@@ -1451,7 +1472,7 @@ export default function Home() {
         );
 
       case 'best-shift':
-        return <BestShift report={activeDailyReport} workers={workers} rules={incentiveRules} isTvMode={isTvMode} />;
+        return <BestShift report={activeDailyReport} workers={currentShedWorkers} rules={incentiveRules} isTvMode={isTvMode} />;
 
       case 'best': {
         const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
@@ -1459,7 +1480,7 @@ export default function Home() {
         return (
           <BestSider
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             isTvMode={isTvMode}
             rules={incentiveRules}
             month={tvActiveMonth}
@@ -1475,7 +1496,7 @@ export default function Home() {
         return (
           <BestOperatorsEm
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             rules={incentiveRules}
             machineEm={machineEm}
             isTvMode={isTvMode}
@@ -1491,7 +1512,7 @@ export default function Home() {
         return (
           <EmOutliersCompare
             history={currentShedHistory}
-            workers={workers}
+            workers={currentShedWorkers}
             machineEm={machineEm}
             isTvMode={isTvMode}
             month={tvActiveMonth}
@@ -1566,6 +1587,7 @@ export default function Home() {
             </div>
             <WorkerMaster
               workers={workers}
+              currentShed={selectedShed}
               onDelete={deleteWorker}
               onUpdate={updateWorker}
               onAdd={addWorker}
@@ -1592,6 +1614,7 @@ export default function Home() {
             </div>
             <MachineMaster
               machines={machines}
+              currentShed={selectedShed}
               onSaveMachine={saveMachine}
               onDeleteMachine={deleteMachine}
               onResetStandardMachines={resetStandardMachines}

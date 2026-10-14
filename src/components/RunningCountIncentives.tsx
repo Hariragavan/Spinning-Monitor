@@ -40,17 +40,16 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     return match ? parseInt(match[0], 10) : 0;
   };
 
-  // Get active counts running on the 6 machines (K01 to K06)
+  // Get active counts running on machines
   const activeCountsOnMachines = React.useMemo(() => {
     if (!report) return null;
     
     const counts = new Set<string>();
-    const targetMachines = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6'];
     
     // Check summaries
     if (report.summaries && report.summaries.length > 0) {
       report.summaries.forEach(s => {
-        if (targetMachines.includes(s.frameNo) && s.count) {
+        if (s.count) {
           counts.add(s.count.trim());
         }
       });
@@ -59,7 +58,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     // Check entries as well
     if (report.entries && report.entries.length > 0) {
       report.entries.forEach(e => {
-        if (targetMachines.includes(e.frameNo) && e.count) {
+        if (e.count) {
           counts.add(e.count.trim());
         }
       });

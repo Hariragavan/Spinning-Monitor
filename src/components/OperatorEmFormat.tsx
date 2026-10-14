@@ -149,7 +149,12 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   ];
 
   const yearsList = [2025, 2026, 2027];
-  const machines = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06'];
+  const machines = useMemo(() => {
+    const fromHistory = (history || []).flatMap(r => (r.entries || []).map(e => e.frameNo)).filter(Boolean);
+    const fromEm = Object.values(machineEm || {}).flatMap(dateObj => Object.keys(dateObj));
+    const unique = Array.from(new Set([...fromHistory, ...fromEm])).sort();
+    return unique;
+  }, [history, machineEm]);
   const shifts: ('1' | '2' | '3')[] = ['1', '2', '3'];
 
   // Helper mapping Shift I, II, III <-> 1, 2, 3

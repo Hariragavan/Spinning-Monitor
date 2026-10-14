@@ -96,12 +96,7 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
 
         if (isMatched) {
           const shiftEntries = report.entries.filter(e => e.shift === shift);
-          const aiFrameNos = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06', 'K1', 'K2', 'K3', 'K4', 'K5', 'K6'];
-          const utilEntries = shiftEntries.filter(e => {
-            const normalizedFrame = (e.frameNo || '').toUpperCase().trim().replace(/[\s-]/g, '');
-            const isAiFrame = aiFrameNos.some(f => f.toUpperCase().replace(/[\s-]/g, '') === normalizedFrame);
-            return isAiFrame && typeof e.utility === 'number' && !isNaN(e.utility);
-          });
+          const utilEntries = shiftEntries.filter(e => typeof e.utility === 'number' && !isNaN(e.utility) && e.utility > 0);
           const avgUtility = utilEntries.length > 0
             ? utilEntries.reduce((acc, curr) => acc + curr.utility, 0) / utilEntries.length
             : 0;

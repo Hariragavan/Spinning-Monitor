@@ -847,28 +847,31 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
   // KTTM Ringframe Daily/Monthly Production Report (Machine Wise) for selected month & year
   const machineWiseMonthlyData = useMemo(() => {
     // 1. Get number of days in selectedMonth/selectedYear
+    const monthFrames = Array.from(new Set(
+      history
+        .filter(report => {
+          if (!report || !report.date) return false;
+          const parts = parseUniversalDateParts(report.date);
+          return parts && parts.month === selectedMonth && parts.year === selectedYear;
+        })
+        .flatMap(r => [
+          ...(r.summaries || []).map(s => s.frameNo),
+          ...(r.entries || []).map(e => e.frameNo)
+        ])
+    )).filter(Boolean).sort();
+
     const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-    
-    // 2. Generate a list of all days in the month
     const rows = [];
-    
-    // Track totals
     let totalTarget = 0;
-    let totalK01 = 0;
-    let totalK02 = 0;
-    let totalK03 = 0;
-    let totalK04 = 0;
-    let totalK05 = 0;
-    let totalK06 = 0;
     let totalGrandTotal = 0;
+    const totalsPerFrame: Record<string, number> = {};
+    monthFrames.forEach(f => { totalsPerFrame[f] = 0; });
 
     for (let d = 1; d <= daysInMonth; d++) {
-      // Find matching report
       const reportForDay = history.find(report => {
         if (!report || !report.date) return false;
         const parts = parseUniversalDateParts(report.date);
-        if (!parts) return false;
-        return parts.day === d && parts.month === selectedMonth && parts.year === selectedYear;
+        return parts && parts.day === d && parts.month === selectedMonth && parts.year === selectedYear;
       });
 
       const dayStr = d.toString().padStart(2, '0');
@@ -876,35 +879,25 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
       const dateString = `${dayStr}/${monthStr}/${selectedYear}`;
 
       let target = 0;
-      let K01 = 0;
-      let K02 = 0;
-      let K03 = 0;
-      let K04 = 0;
-      let K05 = 0;
-      let K06 = 0;
       let grandTotal = 0;
       let hasData = false;
+      const frameProd: Record<string, number> = {};
+      monthFrames.forEach(f => { frameProd[f] = 0; });
 
       if (reportForDay) {
         hasData = true;
-        // Calculate Target
         if (reportForDay.summaries && reportForDay.summaries.length > 0) {
           reportForDay.summaries.forEach(s => {
-            if (['K01', 'K02', 'K03', 'K04', 'K05', 'K06'].includes(s.frameNo)) {
-              target += s.targetProd || 0;
-            }
+            target += s.targetProd || 0;
           });
         } else if (reportForDay.entries && reportForDay.entries.length > 0) {
           const frameTargets = new Map<string, number>();
           reportForDay.entries.forEach(e => {
-            if (['K01', 'K02', 'K03', 'K04', 'K05', 'K06'].includes(e.frameNo)) {
-              frameTargets.set(e.frameNo, (frameTargets.get(e.frameNo) || 0) + (e.productionTarget || 0));
-            }
+            frameTargets.set(e.frameNo, (frameTargets.get(e.frameNo) || 0) + (e.productionTarget || 0));
           });
           frameTargets.forEach(val => { target += val; });
         }
 
-        // Helper to get machine actual prod
         const getMachineProd = (frame: string) => {
           let prod = 0;
           if (reportForDay.summaries && reportForDay.summaries.length > 0) {
@@ -920,56 +913,35 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           return prod;
         };
 
-        K01 = getMachineProd('K01');
-        K02 = getMachineProd('K02');
-        K03 = getMachineProd('K03');
-        K04 = getMachineProd('K04');
-        K05 = getMachineProd('K05');
-        K06 = getMachineProd('K06');
-
-        grandTotal = K01 + K02 + K03 + K04 + K05 + K06;
+        monthFrames.forEach(frame => {
+          const p = getMachineProd(frame);
+          frameProd[frame] = p > 0 ? Math.round(p) : 0;
+          grandTotal += frameProd[frame];
+          totalsPerFrame[frame] = (totalsPerFrame[frame] || 0) + frameProd[frame];
+        });
       }
 
-      // Format individual cell values for display
-      const rowItem = {
+      totalTarget += target;
+      totalGrandTotal += grandTotal;
+
+      rows.push({
         date: dateString,
         target: target > 0 ? Math.round(target) : 0,
-        K01: K01 > 0 ? Math.round(K01) : 0,
-        K02: K02 > 0 ? Math.round(K02) : 0,
-        K03: K03 > 0 ? Math.round(K03) : 0,
-        K04: K04 > 0 ? Math.round(K04) : 0,
-        K05: K05 > 0 ? Math.round(K05) : 0,
-        K06: K06 > 0 ? Math.round(K06) : 0,
+        frameProd,
         grandTotal: grandTotal > 0 ? Math.round(grandTotal) : 0,
         eff: (target > 0 && grandTotal > 0) ? ((grandTotal / target) * 100) : 0,
         hasData
-      };
-
-      // Accumulate totals
-      totalTarget += rowItem.target;
-      totalK01 += rowItem.K01;
-      totalK02 += rowItem.K02;
-      totalK03 += rowItem.K03;
-      totalK04 += rowItem.K04;
-      totalK05 += rowItem.K05;
-      totalK06 += rowItem.K06;
-      totalGrandTotal += rowItem.grandTotal;
-
-      rows.push(rowItem);
+      });
     }
 
     const overallEff = totalTarget > 0 ? ((totalGrandTotal / totalTarget) * 100) : 0;
 
     return {
+      frames: monthFrames,
       rows,
       totals: {
         target: Math.round(totalTarget),
-        K01: Math.round(totalK01),
-        K02: Math.round(totalK02),
-        K03: Math.round(totalK03),
-        K04: Math.round(totalK04),
-        K05: Math.round(totalK05),
-        K06: Math.round(totalK06),
+        frameProd: totalsPerFrame,
         grandTotal: Math.round(totalGrandTotal),
         eff: overallEff
       }
@@ -1015,6 +987,10 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
       return parseUniversalDate(a.date).getTime() - parseUniversalDate(b.date).getTime();
     });
 
+    const frameHeaders = Array.from(new Set(
+      sortedReports.flatMap(r => (r.entries || []).map(e => e.frameNo?.trim()).filter(Boolean) as string[])
+    )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
     sortedReports.forEach(report => {
       const shifts: Shift[] = ['I', 'II', 'III'];
       
@@ -1023,8 +999,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
         const ringframes: Record<string, string> = {};
         let sidersCount = 0;
 
-        const frameNoList = ['K01', 'K02', 'K03', 'K04', 'K05', 'K06'];
-        frameNoList.forEach(frame => {
+        frameHeaders.forEach(frame => {
           const entry = report.entries?.find(e => {
             if (e.shift !== shift) return false;
             const normEntryFrame = (e.frameNo || '').toUpperCase().trim().replace(/[\s-]/g, '');
@@ -1112,6 +1087,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     });
 
     return {
+      frameHeaders,
       ringframeRows: filteredRingframeRows,
       aiConeRows: filteredAiConeRows,
       totalRingframeRawCount: ringframeRows.length,
@@ -1149,19 +1125,20 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
 
   const handleExportToExcel = () => {
     // 1. Prepare Ringframe Allocation Rows for Excel
-    const ringframeRows = allocationReportData.ringframeRows.map(row => ({
-      'Date': row.date,
-      'Shift': row.shiftCode, // Express actual shift code (I, II, III) or shift label (1, 2, 3)
-      'K01 Sider': row.ringframes['K01'] || '',
-      'K02 Sider': row.ringframes['K02'] || '',
-      'K03 Sider': row.ringframes['K03'] || '',
-      'K04 Sider': row.ringframes['K04'] || '',
-      'K05 Sider': row.ringframes['K05'] || '',
-      'K06 Sider': row.ringframes['K06'] || '',
-      'Gaiter 1': row.gaiter1 || '',
-      'Gaiter 2': row.gaiter2 || '',
-      'Total Workers': row.total || ''
-    }));
+    const frameHeaders = allocationReportData.frameHeaders || [];
+    const ringframeRows = allocationReportData.ringframeRows.map(row => {
+      const obj: Record<string, any> = {
+        'Date': row.date,
+        'Shift': row.shiftCode, // Express actual shift code (I, II, III) or shift label (1, 2, 3)
+      };
+      frameHeaders.forEach(f => {
+        obj[`${f} Sider`] = row.ringframes[f] || '';
+      });
+      obj['Gaiter 1'] = row.gaiter1 || '';
+      obj['Gaiter 2'] = row.gaiter2 || '';
+      obj['Total Workers'] = row.total || '';
+      return obj;
+    });
 
     // 2. Prepare AI Cone Allocation Rows for Excel in 3-column Shift Layout
     const aiConeRows = allocationReportData.aiConeRows.map(row => ({
@@ -1182,12 +1159,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     wsRingframe['!cols'] = [
       { wch: 14 }, // Date
       { wch: 8 },  // Shift
-      { wch: 16 }, // K01
-      { wch: 16 }, // K02
-      { wch: 16 }, // K03
-      { wch: 16 }, // K04
-      { wch: 16 }, // K05
-      { wch: 16 }, // K06
+      ...frameHeaders.map(() => ({ wch: 16 })),
       { wch: 16 }, // Gaiter 1
       { wch: 16 }, // Gaiter 2
       { wch: 14 }  // Total Siders/Gaiters
@@ -1271,33 +1243,34 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     const dateStr = `${monthName}_${selectedYear}`;
 
     // 1. Prepare rows
-    const excelRows = machineWiseMonthlyData.rows.map(row => ({
-      'Date': row.date,
-      'Target': row.target > 0 ? row.target : '',
-      'K01': row.K01 > 0 ? row.K01 : '',
-      'K02': row.K02 > 0 ? row.K02 : '',
-      'K03': row.K03 > 0 ? row.K03 : '',
-      'K04': row.K04 > 0 ? row.K04 : '',
-      'K05': row.K05 > 0 ? row.K05 : '',
-      'K06': row.K06 > 0 ? row.K06 : '',
-      'Grand Total': row.grandTotal > 0 ? row.grandTotal : '',
-      'Eff%': row.eff > 0 ? Number(row.eff.toFixed(1)) : ''
-    }));
+    const frames = machineWiseMonthlyData.frames;
+    const excelRows = machineWiseMonthlyData.rows.map(row => {
+      const obj: Record<string, any> = {
+        'Date': row.date,
+        'Target': row.target > 0 ? row.target : '',
+      };
+      frames.forEach(f => {
+        const val = row.frameProd[f] || 0;
+        obj[f] = val > 0 ? val : '';
+      });
+      obj['Grand Total'] = row.grandTotal > 0 ? row.grandTotal : '';
+      obj['Eff%'] = row.eff > 0 ? Number(row.eff.toFixed(1)) : '';
+      return obj;
+    });
 
     // 2. Add Grand Total row
     const totals = machineWiseMonthlyData.totals;
-    excelRows.push({
+    const totalsObj: Record<string, any> = {
       'Date': 'Grand Total',
       'Target': totals.target,
-      'K01': totals.K01,
-      'K02': totals.K02,
-      'K03': totals.K03,
-      'K04': totals.K04,
-      'K05': totals.K05,
-      'K06': totals.K06,
-      'Grand Total': totals.grandTotal,
-      'Eff%': Number(totals.eff.toFixed(1))
+    };
+    frames.forEach(f => {
+      const val = totals.frameProd[f] || 0;
+      totalsObj[f] = val > 0 ? val : '';
     });
+    totalsObj['Grand Total'] = totals.grandTotal;
+    totalsObj['Eff%'] = Number(totals.eff.toFixed(1));
+    excelRows.push(totalsObj);
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(excelRows);
@@ -1306,12 +1279,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     ws['!cols'] = [
       { wch: 15 }, // Date
       { wch: 12 }, // Target
-      { wch: 10 }, // K01
-      { wch: 10 }, // K02
-      { wch: 10 }, // K03
-      { wch: 10 }, // K04
-      { wch: 10 }, // K05
-      { wch: 10 }, // K06
+      ...frames.map(() => ({ wch: 10 })),
       { wch: 15 }, // Grand Total
       { wch: 12 }  // Eff%
     ];
@@ -2154,12 +2122,9 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                     <tr className="bg-stone-50 text-stone-900 font-black text-xs border-b border-black">
                       <th className="border border-black px-3 py-2 text-left uppercase tracking-wider">Date</th>
                       <th className="border border-black px-3 py-2 uppercase tracking-wider">Target</th>
-                      <th className="border border-black px-3 py-2 uppercase tracking-wider">K01</th>
-                      <th className="border border-black px-3 py-2 uppercase tracking-wider">K02</th>
-                      <th className="border border-black px-3 py-2 uppercase tracking-wider">K03</th>
-                      <th className="border border-black px-3 py-2 uppercase tracking-wider">K04</th>
-                      <th className="border border-black px-3 py-2 uppercase tracking-wider">K05</th>
-                      <th className="border border-black px-3 py-2 uppercase tracking-wider">K06</th>
+                      {machineWiseMonthlyData.frames.map(frame => (
+                        <th key={frame} className="border border-black px-3 py-2 uppercase tracking-wider">{frame}</th>
+                      ))}
                       <th className="border border-black px-3 py-2 uppercase tracking-wider font-bold">Grand Total</th>
                       <th className="border border-black px-3 py-2 uppercase tracking-wider font-bold">Eff%</th>
                     </tr>
@@ -2169,12 +2134,14 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                       <tr key={idx} className="hover:bg-stone-50/50 transition-colors text-xs font-semibold text-stone-900 border-b border-stone-200">
                         <td className="border border-black px-3 py-1 text-left font-bold">{row.date}</td>
                         <td className="border border-black px-3 py-1 font-mono bg-stone-50/10">{row.target > 0 ? row.target.toLocaleString('en-IN') : '—'}</td>
-                        <td className="border border-black px-3 py-1 font-mono bg-stone-50/30">{row.K01 > 0 ? row.K01.toLocaleString('en-IN') : ''}</td>
-                        <td className="border border-black px-3 py-1 font-mono bg-stone-50/30">{row.K02 > 0 ? row.K02.toLocaleString('en-IN') : ''}</td>
-                        <td className="border border-black px-3 py-1 font-mono bg-stone-50/30">{row.K03 > 0 ? row.K03.toLocaleString('en-IN') : ''}</td>
-                        <td className="border border-black px-3 py-1 font-mono bg-stone-50/30">{row.K04 > 0 ? row.K04.toLocaleString('en-IN') : ''}</td>
-                        <td className="border border-black px-3 py-1 font-mono bg-stone-50/30">{row.K05 > 0 ? row.K05.toLocaleString('en-IN') : ''}</td>
-                        <td className="border border-black px-3 py-1 font-mono bg-stone-50/30">{row.K06 > 0 ? row.K06.toLocaleString('en-IN') : ''}</td>
+                        {machineWiseMonthlyData.frames.map(frame => {
+                          const val = row.frameProd[frame] || 0;
+                          return (
+                            <td key={frame} className="border border-black px-3 py-1 font-mono bg-stone-50/30">
+                              {val > 0 ? val.toLocaleString('en-IN') : ''}
+                            </td>
+                          );
+                        })}
                         <td className="border border-black px-3 py-1 font-mono font-bold bg-stone-100/50">{row.grandTotal > 0 ? row.grandTotal.toLocaleString('en-IN') : '—'}</td>
                         <td className={`border border-black px-3 py-1 font-mono font-bold ${row.eff >= 100 ? "text-emerald-700" : "text-amber-800"}`}>{row.eff > 0 ? row.eff.toFixed(1) : '—'}</td>
                       </tr>
@@ -2183,12 +2150,14 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                     <tr className="bg-stone-100 font-bold border-t border-black text-xs text-stone-950">
                       <td className="border border-black px-3 py-2.5 text-left font-black uppercase">Grand Total</td>
                       <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.target > 0 ? machineWiseMonthlyData.totals.target.toLocaleString('en-IN') : '—'}</td>
-                      <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.K01 > 0 ? machineWiseMonthlyData.totals.K01.toLocaleString('en-IN') : ''}</td>
-                      <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.K02 > 0 ? machineWiseMonthlyData.totals.K02.toLocaleString('en-IN') : ''}</td>
-                      <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.K03 > 0 ? machineWiseMonthlyData.totals.K03.toLocaleString('en-IN') : ''}</td>
-                      <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.K04 > 0 ? machineWiseMonthlyData.totals.K04.toLocaleString('en-IN') : ''}</td>
-                      <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.K05 > 0 ? machineWiseMonthlyData.totals.K05.toLocaleString('en-IN') : ''}</td>
-                      <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.K06 > 0 ? machineWiseMonthlyData.totals.K06.toLocaleString('en-IN') : ''}</td>
+                      {machineWiseMonthlyData.frames.map(frame => {
+                        const val = machineWiseMonthlyData.totals.frameProd[frame] || 0;
+                        return (
+                          <td key={frame} className="border border-black px-3 py-2.5 font-mono font-black">
+                            {val > 0 ? val.toLocaleString('en-IN') : ''}
+                          </td>
+                        );
+                      })}
                       <td className="border border-black px-3 py-2.5 font-mono font-black">{machineWiseMonthlyData.totals.grandTotal > 0 ? machineWiseMonthlyData.totals.grandTotal.toLocaleString('en-IN') : '—'}</td>
                       <td className="border border-black px-3 py-2.5 font-mono font-black text-emerald-950">{machineWiseMonthlyData.totals.eff > 0 ? machineWiseMonthlyData.totals.eff.toFixed(1) : '—'}</td>
                     </tr>
@@ -2299,18 +2268,19 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                         <tr className="bg-stone-100 text-stone-900 text-[10px] sm:text-xs font-extrabold uppercase font-sans tracking-wide">
                           <th rowSpan={2} className="border border-stone-400 px-3 py-2 text-center min-w-[100px] font-black">Date</th>
                           <th rowSpan={2} className="border border-stone-400 px-2 py-2 text-center w-12 font-black">Shift</th>
-                          <th colSpan={6} className="border border-stone-400 px-3 py-2 text-center bg-stone-200/50 font-black">Sider Name</th>
+                          <th colSpan={Math.max(1, (allocationReportData.frameHeaders || []).length)} className="border border-stone-400 px-3 py-2 text-center bg-stone-200/50 font-black">Sider Name</th>
                           <th rowSpan={2} className="border border-stone-400 px-2 py-2 text-center min-w-[110px] font-black">Gaiter</th>
                           <th rowSpan={2} className="border border-stone-400 px-2 py-2 text-center min-w-[110px] font-black">Gaiter</th>
                           <th rowSpan={2} className="border border-stone-400 px-2 py-2 text-center w-16 font-black bg-stone-50/50">Total</th>
                         </tr>
                         <tr className="bg-stone-50 text-stone-700 text-[9px] sm:text-xs font-bold uppercase font-sans tracking-wide">
-                          <th className="border border-stone-400 px-2 py-1 w-24">1</th>
-                          <th className="border border-stone-400 px-2 py-1 w-24">2</th>
-                          <th className="border border-stone-400 px-2 py-1 w-24">3</th>
-                          <th className="border border-stone-400 px-2 py-1 w-24">4</th>
-                          <th className="border border-stone-400 px-2 py-1 w-24">5</th>
-                          <th className="border border-stone-400 px-2 py-1 w-24">6</th>
+                          {(allocationReportData.frameHeaders && allocationReportData.frameHeaders.length > 0) ? (
+                            allocationReportData.frameHeaders.map(frame => (
+                              <th key={frame} className="border border-stone-400 px-2 py-1 min-w-[70px]">{frame}</th>
+                            ))
+                          ) : (
+                            <th className="border border-stone-400 px-2 py-1 w-24">-</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -2324,11 +2294,15 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                               <td className="border border-stone-400 px-2 py-1.5 text-center font-black bg-stone-50/20">
                                 {row.shiftLabel}
                               </td>
-                              {['K01', 'K02', 'K03', 'K04', 'K05', 'K06'].map(frame => (
-                                <td key={frame} className="border border-stone-400 px-2 py-1.5 font-semibold text-stone-950 uppercase">
-                                  {row.ringframes[frame] || ''}
-                                </td>
-                              ))}
+                              {(allocationReportData.frameHeaders && allocationReportData.frameHeaders.length > 0) ? (
+                                allocationReportData.frameHeaders.map(frame => (
+                                  <td key={frame} className="border border-stone-400 px-2 py-1.5 font-semibold text-stone-950 uppercase">
+                                    {row.ringframes[frame] || ''}
+                                  </td>
+                                ))
+                              ) : (
+                                <td className="border border-stone-400 px-2 py-1.5 font-semibold text-stone-950 uppercase">-</td>
+                              )}
                               <td className="border border-stone-400 px-2 py-1.5 font-semibold text-stone-950 uppercase">
                                 {row.gaiter1 || ''}
                               </td>

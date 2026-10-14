@@ -34,18 +34,12 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
 
   // Frame summary data with shift details & worker info
   const machineData = useMemo(() => {
-    const defaultFrames = (report.shed === 'Shed 2')
-      ? ['K07', 'K08', 'K09', 'K10', 'K11', 'K12']
-      : (report.shed === 'Shed 3')
-      ? ['K13', 'K14', 'K15', 'K16', 'K17', 'K18']
-      : ['K01', 'K02', 'K03', 'K04', 'K05', 'K06'];
-
-    const existingFrames = Array.from(new Set([
+    const frames = Array.from(new Set([
       ...(report.summaries?.map(s => s.frameNo) || []),
       ...(report.entries?.map(e => e.frameNo) || [])
     ])).filter(Boolean);
 
-    const frames = existingFrames.length > 0 ? existingFrames : defaultFrames;
+    if (frames.length === 0) return [];
     const entries = report.entries || [];
     const summaries = report.summaries || [];
 
