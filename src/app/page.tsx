@@ -1635,7 +1635,9 @@ export default function Home() {
                 for (const r of reportOrReports) {
                   await apiClient.saveDailyReport(r);
                   if (r.emData) {
-                    mergedEm = { ...mergedEm, ...r.emData };
+                    Object.entries(r.emData).forEach(([dStr, mData]) => {
+                      mergedEm[dStr] = { ...(mergedEm[dStr] || {}), ...mData };
+                    });
                     hasEm = true;
                   }
                 }
@@ -1646,11 +1648,15 @@ export default function Home() {
                 const refreshed = await apiClient.fetchInitialData();
                 if (refreshed.history) setReportHistory(refreshed.history);
                 if (refreshed.dailyReport) setDailyReport(refreshed.dailyReport);
-                alert(`Monthly statements uploaded and stored in MongoDB for ${reportOrReports[0]?.shed || selectedShed}!`);
+                const distinctSheds = Array.from(new Set(reportOrReports.map(r => r.shed))).filter(Boolean);
+                alert(`Data successfully uploaded and stored in MongoDB for ${distinctSheds.length > 1 ? distinctSheds.join(', ') : (reportOrReports[0]?.shed || selectedShed)}!`);
               } else {
                 await apiClient.saveDailyReport(reportOrReports);
                 if (reportOrReports.emData) {
-                  const mergedEm = { ...machineEm, ...reportOrReports.emData };
+                  const mergedEm = { ...machineEm };
+                  Object.entries(reportOrReports.emData).forEach(([dStr, mData]) => {
+                    mergedEm[dStr] = { ...(mergedEm[dStr] || {}), ...mData };
+                  });
                   setMachineEm(mergedEm);
                   await apiClient.saveMachineEm(mergedEm);
                 }

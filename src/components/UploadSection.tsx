@@ -54,8 +54,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
     if (type === 'daily_report') {
       const today = new Date().toLocaleDateString('en-GB');
-      data = [
-        ['Production', 'Statement', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Machine EM', '', '', ''],
+
+      const createShedData = (shedLabel: string) => [
+        [shedLabel, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Machine EM', '', '', ''],
+        ['Production Statement', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
         ['Date:', today, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Date:', today, '', ''],
         ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
         [
@@ -82,6 +84,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           445.0, 448.0, 452.0, 448.3, 95.0, 96.0, 97.0, 96.0,
           '', 'Grand Tot', 3.3, 3.0, 3.2
         ]
+      ];
+
+      data = [
+        ...createShedData('Shed-1'),
+        [],
+        ...createShedData('Shed-2'),
+        [],
+        ...createShedData('Shed-3'),
+        [],
+        ...createShedData('KTTM')
       ];
       filename = 'Production_Statement_Template.xlsx';
     } else if (type === 'incentive') {
@@ -188,15 +200,31 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         const reportData = await parseExcelReport(file, countConversions, targetShed);
         
         if (Array.isArray(reportData)) {
-          // Monthly dataset
+          // Multi-shed or monthly dataset
           const firstDate = reportData[0]?.date || `${selectedDate.split('-')[2]}/${selectedDate.split('-')[1]}/${selectedDate.split('-')[0]}`;
+          const detectedSheds = Array.from(new Set(reportData.map(r => r.shed))).filter(Boolean) as Shed[];
+          const shedTitle = detectedSheds.length > 1
+            ? `${detectedSheds.length} Sheds (${detectedSheds.join(', ')})`
+            : (detectedSheds[0] || targetShed);
+
+          // Aggregate emData across all reports in the array
+          const aggregatedEm: MachineEmData = {};
+          reportData.forEach(r => {
+            if (r.emData) {
+              Object.entries(r.emData).forEach(([dStr, mObj]) => {
+                aggregatedEm[dStr] = { ...(aggregatedEm[dStr] || {}), ...mObj };
+              });
+            }
+          });
+
           setPreviewModal({
             category: category as any,
-            categoryTitle: category === 'daily_report' ? 'Production Statement' : 'Incentive Amount Sheet',
+            categoryTitle: category === 'daily_report' ? `Production Statement (${shedTitle})` : 'Incentive Amount Sheet',
             fileName: file.name,
-            shed: targetShed,
+            shed: (detectedSheds[0] || targetShed) as Shed,
             date: firstDate,
-            monthlyReports: reportData.map(r => ({ ...r, shed: targetShed }))
+            monthlyReports: reportData.map(r => ({ ...r, shed: (r.shed || targetShed) as Shed })),
+            emData: Object.keys(aggregatedEm).length > 0 ? aggregatedEm : undefined
           });
           return;
         }
@@ -271,7 +299,33 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       } else if (category === 'machine_em' && emData) {
         if (onMachineEmUpdate) await onMachineEmUpdate(emData);
       } else if (monthlyReports && monthlyReports.length > 0) {
-        const withShed = monthlyReports.map(r => ({ ...r, shed }));
+        const withShed = monthlyReports.map(r => {
+          const s = (r.shed || shed) as Shed;
+          return {
+            ...r,
+            shed: s,
+            entries: r.entries.map(e => ({ ...e, shed: s })),
+            summaries: r.summaries.map(sm => ({ ...sm, shed: s }))
+          };
+        });
+
+        const aggregatedEm: MachineEmData = {};
+        withShed.forEach(r => {
+          if (r.emData) {
+            Object.entries(r.emData).forEach(([dateStr, machines]) => {
+              aggregatedEm[dateStr] = { ...(aggregatedEm[dateStr] || {}), ...machines };
+            });
+          }
+        });
+        if (emData) {
+          Object.entries(emData).forEach(([dateStr, machines]) => {
+            aggregatedEm[dateStr] = { ...(aggregatedEm[dateStr] || {}), ...machines };
+          });
+        }
+        if (Object.keys(aggregatedEm).length > 0 && onMachineEmUpdate) {
+          await onMachineEmUpdate(aggregatedEm);
+        }
+
         onUploadSuccess(withShed);
       } else if (dailyReport) {
         if (emData && onMachineEmUpdate) {
@@ -421,6 +475,42 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   ];
 
   const renderModalKpis = (modal: ExtractedPreview) => {
+    if (modal.monthlyReports && modal.monthlyReports.length > 0) {
+      const reports = modal.monthlyReports;
+      const totalTarget = reports.reduce((sum, r) => sum + (r.totalProductionTarget || 0), 0);
+      const totalActual = reports.reduce((sum, r) => sum + (r.totalProductionActual || 0), 0);
+      const eff = totalTarget > 0 ? (totalActual / totalTarget) * 100 : 0;
+      const distinctSheds = Array.from(new Set(reports.map(r => r.shed))).filter(Boolean);
+      const totalFrames = reports.reduce((sum, r) => sum + (r.summaries?.length || 0), 0);
+
+      return (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Total Target Prod</span>
+            <span className="text-sm font-black text-stone-800 font-mono">{totalTarget.toFixed(1)} Kg</span>
+          </div>
+          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Total Actual Prod</span>
+            <span className="text-sm font-black text-emerald-600 font-mono">{totalActual.toFixed(1)} Kg</span>
+          </div>
+          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Overall Efficiency</span>
+            <span className="text-sm font-black text-stone-900 font-mono">{eff.toFixed(1)}%</span>
+          </div>
+          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Detected Scope</span>
+            <span className="text-sm font-black text-stone-900 font-mono">{distinctSheds.length} Sheds <span className="text-[10px] text-stone-400 font-sans">({totalFrames} M/C)</span></span>
+          </div>
+          {modal.emData && Object.keys(modal.emData).length > 0 && (
+            <div className="col-span-2 sm:col-span-4 bg-blue-50 border border-blue-200 p-2.5 rounded-xl flex items-center justify-between text-xs text-blue-900 font-bold">
+              <span>⚡ Machine EM Included for {distinctSheds.join(', ')}: Shift I, II, III EM values ready</span>
+              <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">Sync Ready</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (modal.category === 'daily_report' && modal.dailyReport) {
       const rep = modal.dailyReport;
       const eff = rep.totalProductionTarget > 0 ? (rep.totalProductionActual / rep.totalProductionTarget) * 100 : 0;

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion, MachineEmData } from '../types';
+import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion, MachineEmData, Shed } from '../types';
 import { parseUniversalDate } from './utils';
 
 export const normalizeDateValue = (val: any): string => {
@@ -23,6 +23,11 @@ export const normalizeDateValue = (val: any): string => {
       if (firstPartText.includes('date')) {
         parts[0] = parts[0].replace(/date\s*[:\s]*/i, '').trim();
       }
+      if (parts[2].length === 2) {
+        parts[2] = `20${parts[2]}`;
+      } else if (parts[2].length === 3 && parts[2] === '202') {
+        parts[2] = '2026';
+      }
       if (parts[0].length === 4) {
         // YYYY/MM/DD -> DD/MM/YYYY
         return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
@@ -33,6 +38,102 @@ export const normalizeDateValue = (val: any): string => {
     }
   }
   return str;
+};
+
+export const normalizeShedName = (val: any): Shed | null => {
+  if (!val) return null;
+  const str = String(val).toLowerCase().trim();
+  const cleaned = str.replace(/[\s\-_]/g, '');
+  if (cleaned.includes('kttm')) return 'KTTM';
+  if (cleaned.includes('shed1') || cleaned.includes('shed01') || cleaned.includes('unit1') || cleaned.includes('shedi') || str.includes('shed-1') || str.includes('shed 1')) return 'Shed 1';
+  if (cleaned.includes('shed2') || cleaned.includes('shed02') || cleaned.includes('unit2') || cleaned.includes('shedii') || str.includes('shed-2') || str.includes('shed 2')) return 'Shed 2';
+  if (cleaned.includes('shed3') || cleaned.includes('shed03') || cleaned.includes('unit3') || cleaned.includes('shediii') || str.includes('shed-3') || str.includes('shed 3')) return 'Shed 3';
+  return null;
+};
+
+export interface ShedSection {
+  shed: Shed;
+  startRow: number;
+  endRow: number;
+}
+
+export const detectShedSections = (grid: any[][], defaultShed: Shed = 'Shed 1'): ShedSection[] => {
+  if (!grid || grid.length === 0) return [];
+
+  // Find all header rows that have "Rf no" (or "rf no", "rfno", "mc no")
+  const rfHeaderRows: { rowIdx: number; colIdx: number }[] = [];
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    if (!row) continue;
+    const colIdx = row.findIndex((c, idx) => {
+      if (idx > 4) return false;
+      const s = String(c || '').toLowerCase().trim().replace(/[\s_\-]/g, '');
+      return s === 'rfno' || s === 'mcno' || s === 'machineno' || s === 'rf' || s === 'machine';
+    });
+    if (colIdx !== -1) {
+      const hasProdHeaders = row.some(c => {
+        const s = String(c || '').toLowerCase().trim();
+        return s.includes('count') || s.includes('prod') || s.includes('gps') || s.includes('target') || s.includes('util');
+      });
+      if (hasProdHeaders) {
+        rfHeaderRows.push({ rowIdx: r, colIdx });
+      }
+    }
+  }
+
+  if (rfHeaderRows.length === 0) return [];
+
+  const detected: { shed: Shed; headerRowIdx: number; sectionStart: number }[] = [];
+
+  rfHeaderRows.forEach((item, idx) => {
+    let matchedShed: Shed | null = null;
+    let titleRow = Math.max(0, item.rowIdx - 4);
+
+    // Search upwards from header row up to 8 rows above to find shed name
+    for (let r = item.rowIdx - 1; r >= Math.max(0, item.rowIdx - 8); r--) {
+      const row = grid[r];
+      if (!row) continue;
+      for (let c = 0; c < Math.min(row.length, 8); c++) {
+        const val = row[c];
+        const s = normalizeShedName(val);
+        if (s) {
+          matchedShed = s;
+          titleRow = r;
+          break;
+        }
+      }
+      if (matchedShed) break;
+    }
+
+    const standardOrder: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
+    let finalShed: Shed;
+    if (matchedShed) {
+      finalShed = matchedShed;
+    } else if (rfHeaderRows.length > 1 && idx < standardOrder.length) {
+      finalShed = standardOrder[idx];
+    } else {
+      finalShed = defaultShed;
+    }
+
+    detected.push({
+      shed: finalShed,
+      headerRowIdx: item.rowIdx,
+      sectionStart: titleRow
+    });
+  });
+
+  const sections: ShedSection[] = [];
+  for (let i = 0; i < detected.length; i++) {
+    const startRow = detected[i].sectionStart;
+    const endRow = i < detected.length - 1 ? detected[i + 1].sectionStart : grid.length;
+    sections.push({
+      shed: detected[i].shed,
+      startRow,
+      endRow
+    });
+  }
+
+  return sections;
 };
 
 export const getShedMachines = (shed?: string): string[] => {
@@ -203,30 +304,52 @@ export const parseExcelReport = async (file: File, countConversions: CountConver
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'binary' });
         
-        let report: DailyReport | null = null;
+        const allReports: DailyReport[] = [];
         const errors: string[] = [];
+        const defaultShed: Shed = (targetShed as Shed) || 'Shed 1';
 
         for (const sheetName of workbook.SheetNames) {
           const sheet = workbook.Sheets[sheetName];
           const grid = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
           if (!grid || grid.length === 0) continue;
 
+          const sheetShed = normalizeShedName(sheetName) || defaultShed;
+
           const hasText = (text: string) => grid.some(row => 
             row && row.some(cell => String(cell || '').toLowerCase().includes(text.toLowerCase()))
           );
 
-          const isProduction = hasText('Production Statement') || (hasText('Rf no') && hasText('Target Prod'));
-          const isBreakage = hasText('Breakage Report') || hasText('Breaakge Report') || hasText('Machine Performance') || hasText('KTTM') || (hasText('Rf no') && hasText('Breaks'));
+          const isProduction = hasText('Production Statement') || (hasText('Rf no') && (hasText('Target Prod') || hasText('Target Prc') || hasText('Total Prod') || hasText('Total Ach') || hasText('Count')));
+          const isBreakage = hasText('Breakage Report') || hasText('Breaakge Report') || hasText('Machine Performance') || (hasText('Rf no') && hasText('Breaks'));
           const isIncentive = hasText('Daily Incentive Amount') || hasText('Incentive Amount');
           const isMonthlyIncentive = hasText('Sider Incetnive Report for the Month Of') || hasText('Sider Incentive Report');
 
           try {
             if (isProduction) {
-              report = handleProduction(grid, countConversions);
-              if (report) break;
+              const sections = detectShedSections(grid, sheetShed);
+              if (sections.length > 1) {
+                for (const section of sections) {
+                  const subgrid = grid.slice(section.startRow, section.endRow);
+                  if (subgrid.length === 0) continue;
+                  try {
+                    const rep = handleProduction(subgrid, countConversions, section.shed);
+                    if (rep && rep.entries.length > 0) {
+                      allReports.push(ensureSixMachines(rep, section.shed));
+                    }
+                  } catch (secErr) {
+                    errors.push(`${sheetName} (${section.shed}): ${secErr instanceof Error ? secErr.message : String(secErr)}`);
+                  }
+                }
+              } else {
+                const singleShed = sections.length === 1 ? sections[0].shed : sheetShed;
+                const rep = handleProduction(grid, countConversions, singleShed);
+                if (rep && rep.entries.length > 0) {
+                  allReports.push(ensureSixMachines(rep, singleShed));
+                }
+              }
             } else if (isBreakage) {
-              report = handleBreakage(grid);
-              if (report) break;
+              const rep = handleBreakage(grid);
+              if (rep) allReports.push(ensureSixMachines(rep, sheetShed));
             } else if (isMonthlyIncentive) {
               const multiReports = handleMonthlyIncentive(grid);
               if (multiReports && multiReports.length > 0) {
@@ -234,8 +357,8 @@ export const parseExcelReport = async (file: File, countConversions: CountConver
                 return;
               }
             } else if (isIncentive) {
-              report = handleIncentiveDaily(grid);
-              if (report) break;
+              const rep = handleIncentiveDaily(grid);
+              if (rep) allReports.push(ensureSixMachines(rep, sheetShed));
             }
           } catch (err) {
             errors.push(`${sheetName}: ${err instanceof Error ? err.message : String(err)}`);
@@ -243,21 +366,26 @@ export const parseExcelReport = async (file: File, countConversions: CountConver
           }
         }
 
-        if (report) {
-          // If embedded EM was not found in the production sheet, check other sheets
-          if (!report.emData) {
+        // Check if any report is missing EM data, search other sheets in the workbook
+        for (const rep of allReports) {
+          if (!rep.emData) {
             for (const sName of workbook.SheetNames) {
               const s = workbook.Sheets[sName];
               const g = XLSX.utils.sheet_to_json(s, { header: 1 }) as any[][];
               if (!g || g.length === 0) continue;
-              const { emData } = extractEmbeddedMachineEm(g, report.date);
+              const { emData } = extractEmbeddedMachineEm(g, rep.date);
               if (emData) {
-                report.emData = emData;
+                rep.emData = emData;
                 break;
               }
             }
           }
-          resolve(ensureSixMachines(report, targetShed));
+        }
+
+        if (allReports.length > 1) {
+          resolve(allReports);
+        } else if (allReports.length === 1) {
+          resolve(allReports[0]);
         } else {
           const errorMsg = errors.length > 0 
             ? `Validation Errors:\n${errors.join('\n')}`
@@ -414,7 +542,7 @@ export const extractEmbeddedMachineEm = (grid: any[][], defaultDate: string): { 
   return hasData ? { emData: result, emTotals: finalTotals } : {};
 };
 
-const handleProduction = (grid: any[][], countConversions: CountConversion[]): DailyReport => {
+const handleProduction = (grid: any[][], countConversions: CountConversion[], targetShed: Shed = 'Shed 1'): DailyReport => {
   let reportDate = new Date().toLocaleDateString('en-GB');
   let headerRowIdx = -1;
   let labelCol = -1;
@@ -436,8 +564,8 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
   for (let r = 0; r < Math.min(grid.length, 10); r++) {
     const dateIdx = grid[r]?.findIndex(c => String(c || '').toLowerCase().includes('date'));
     if (dateIdx !== -1) {
-      // Look for the date in the next few cells
-      for (let offset = 1; offset < 5; offset++) {
+      // Look for the date in the same cell or next few cells
+      for (let offset = 0; offset < 5; offset++) {
         const val = grid[r][dateIdx + offset];
         if (val !== undefined && val !== null && String(val).trim() !== '') {
           const norm = normalizeDateValue(val);
@@ -586,7 +714,8 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
       shiftUkg: {I:0,II:0,III:0}, shiftNoOfDoff: {I:0,II:0,III:0},
       shiftAvgDoffTime: {I:0,II:0,III:0}, shiftNoOfStop: {I:0,II:0,III:0},
       shiftNormalStopMin: {I:0,II:0,III:0}, shiftProductionKg: finalSProd,
-      shiftUtilizationPinter: {I:0,II:0,III:0}
+      shiftUtilizationPinter: {I:0,II:0,III:0},
+      shed: targetShed
     });
 
     ['I', 'II', 'III'].forEach((sh, idx) => {
@@ -605,7 +734,8 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
         gps40sCon: conv40s, efficiency: (actualProd/targetProd)*100 || 0,
         utility: idx === 0 ? sUtil.I : idx === 1 ? sUtil.II : sUtil.III,
         ue: 0, naturalEmt: 0, doffEmt: 0, idlePercent: 0, worstPercent: 0,
-        slipPercent: 0, ukg: 0, restartBreaks: 0
+        slipPercent: 0, ukg: 0, restartBreaks: 0,
+        shed: targetShed
       });
     });
   }
@@ -619,6 +749,7 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[]): D
 
   return {
     date: reportDate,
+    shed: targetShed,
     entries,
     summaries,
     totalProductionTarget: finalTotalTarget,
