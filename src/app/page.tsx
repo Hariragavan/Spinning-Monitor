@@ -33,7 +33,7 @@ import { TvDashboard } from '@/components/TvDashboard';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate } from '@/lib/parser';
 import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
@@ -41,6 +41,7 @@ import {
   createSampleReportForShed1_10102026, 
   SAMPLE_DATE, 
   SAMPLE_WORKERS, 
+  SAMPLE_MACHINES,
   SAMPLE_MACHINE_EM_10102026 
 } from '@/lib/sampleSeedData';
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
@@ -51,7 +52,7 @@ import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Coins, Trophy, BarChart3,
   Monitor, Zap, Star, AlertTriangle, X, CloudUpload, Loader2, Grid3X3,
   FileText, Check, MessageSquare, Play, Wrench, RotateCcw, History, Menu,
-  ArrowLeft, Table, Search
+  ArrowLeft, Table, Search, Sparkles
 } from 'lucide-react';
 
 const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
@@ -205,15 +206,32 @@ export default function Home() {
 
 
   const activeDailyReport = useMemo(() => {
+    const is1010Date = (d?: string) => {
+      if (!d) return false;
+      return d === SAMPLE_DATE || normalizeToCanonicalDate(d) === SAMPLE_DATE;
+    };
+
     // 1. If dailyReport belongs to selected shed, use it
     if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed) {
+      if (is1010Date(dailyReport.date) && (!dailyReport.entries || dailyReport.entries.length === 0)) {
+        return createSampleReportForShed1_10102026(selectedShed);
+      }
       return dailyReport;
     }
 
     // 2. Check if a report for dailyReport.date exists in selected shed
     const targetDate = dailyReport?.date || getTodayUniversalDate();
-    const sameDateMatch = currentShedHistory.find(r => r.date === targetDate);
-    if (sameDateMatch) return sameDateMatch;
+    const sameDateMatch = currentShedHistory.find(r => r.date === targetDate || normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(targetDate));
+    if (sameDateMatch) {
+      if (is1010Date(targetDate) && (!sameDateMatch.entries || sameDateMatch.entries.length === 0)) {
+        return createSampleReportForShed1_10102026(selectedShed);
+      }
+      return sameDateMatch;
+    }
+
+    if (is1010Date(targetDate)) {
+      return createSampleReportForShed1_10102026(selectedShed);
+    }
 
     // 3. Check if current shed history has a report for today
     const todayStr = getTodayUniversalDate();
@@ -231,6 +249,7 @@ export default function Home() {
       if (r.date) dateSet.add(r.date);
     });
     dateSet.add(getTodayUniversalDate());
+    dateSet.add(SAMPLE_DATE);
 
     return Array.from(dateSet).filter(Boolean).sort((a, b) => {
       const pA = a.split('/').map(Number);
@@ -341,29 +360,48 @@ export default function Home() {
         let loadedWorkers = data.workers && data.workers.length > 0 ? data.workers : [];
         let loadedMachineEm = data.machineEm || {};
 
-        // Local Sample Data for Shed 1 on 10/10/2026 (Local preview only)
-        const hasSampleReport = loadedHistory.some(r => r.date === SAMPLE_DATE && (r.shed || 'Shed 1') === 'Shed 1');
-        if (!hasSampleReport) {
-          const sample1010 = createSampleReportForShed1_10102026();
+        // Local Sample Data for Shed 1 on 10/10/2026 (Always injected and replaced if empty)
+        const sample1010 = createSampleReportForShed1_10102026('Shed 1');
+        const existingIdx = loadedHistory.findIndex(r => (r.date === SAMPLE_DATE || normalizeToCanonicalDate(r.date) === SAMPLE_DATE) && (r.shed || 'Shed 1') === 'Shed 1');
+        if (existingIdx === -1) {
           loadedHistory = [...loadedHistory, sample1010];
+        } else if (!loadedHistory[existingIdx].entries || loadedHistory[existingIdx].entries.length === 0) {
+          loadedHistory[existingIdx] = sample1010;
         }
 
-        // Merge sample workers if needed
+        // Merge sample workers
         const mergedWorkers = mergeDuplicateWorkers([...loadedWorkers, ...SAMPLE_WORKERS]);
         setWorkers(mergedWorkers);
+
+        // Merge sample machines if empty
+        if (!data.machines || data.machines.length === 0) {
+          setMachines(SAMPLE_MACHINES);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('spinning_machines', JSON.stringify(SAMPLE_MACHINES));
+          }
+        } else {
+          setMachines(data.machines);
+        }
 
         // Merge machine EM for 10/10/2026
         loadedMachineEm = {
           ...loadedMachineEm,
           [SAMPLE_DATE]: {
-            ...(loadedMachineEm[SAMPLE_DATE] || {}),
-            ...SAMPLE_MACHINE_EM_10102026
+            ...SAMPLE_MACHINE_EM_10102026,
+            ...(loadedMachineEm[SAMPLE_DATE] || {})
           }
         };
         setMachineEm(loadedMachineEm);
         setReportHistory(loadedHistory);
 
-        if (data.dailyReport) setDailyReport(ensureSixMachines(data.dailyReport));
+        if (data.dailyReport) {
+          const is1010 = data.dailyReport.date === SAMPLE_DATE || normalizeToCanonicalDate(data.dailyReport.date) === SAMPLE_DATE;
+          if (is1010 && (!data.dailyReport.entries || data.dailyReport.entries.length === 0)) {
+            setDailyReport(sample1010);
+          } else {
+            setDailyReport(ensureSixMachines(data.dailyReport));
+          }
+        }
         if (data.machines && data.machines.length > 0) {
           setMachines(data.machines);
           if (typeof window !== 'undefined') {
@@ -392,6 +430,7 @@ export default function Home() {
         const sample1010 = createSampleReportForShed1_10102026();
         setReportHistory([sample1010]);
         setWorkers(SAMPLE_WORKERS);
+        setMachines(SAMPLE_MACHINES);
         setMachineEm({ [SAMPLE_DATE]: SAMPLE_MACHINE_EM_10102026 });
         setIsSystemReady(true);
       }
@@ -849,7 +888,18 @@ export default function Home() {
   };
 
   const createBlankReport = (date: string, silent = false) => {
-    const existing = currentShedHistory.find(r => r.date === date);
+    const is1010 = date === SAMPLE_DATE || normalizeToCanonicalDate(date) === SAMPLE_DATE;
+    if (is1010) {
+      const sample1010 = createSampleReportForShed1_10102026(selectedShed);
+      setReportHistory(prev => [...prev.filter(r => !( (r.date === SAMPLE_DATE || normalizeToCanonicalDate(r.date) === SAMPLE_DATE) && (r.shed || 'Shed 1') === selectedShed )), sample1010]);
+      setDailyReport(sample1010);
+      setMachineEm(prev => ({ ...prev, [SAMPLE_DATE]: { ...SAMPLE_MACHINE_EM_10102026, ...(prev[SAMPLE_DATE] || {}) } }));
+      setWorkers(prev => mergeDuplicateWorkers([...prev, ...SAMPLE_WORKERS]));
+      if (!machines || machines.length === 0) setMachines(SAMPLE_MACHINES);
+      return;
+    }
+
+    const existing = currentShedHistory.find(r => r.date === date || normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
     if (existing) {
       setDailyReport(existing);
       return;
@@ -867,7 +917,17 @@ export default function Home() {
 
   const handleTopDateChange = (newDate: string) => {
     if (!newDate) return;
-    const existing = currentShedHistory.find(r => r.date === newDate);
+    const is1010 = newDate === SAMPLE_DATE || normalizeToCanonicalDate(newDate) === SAMPLE_DATE;
+    if (is1010) {
+      const sample1010 = createSampleReportForShed1_10102026(selectedShed);
+      setReportHistory(prev => [...prev.filter(r => !( (r.date === SAMPLE_DATE || normalizeToCanonicalDate(r.date) === SAMPLE_DATE) && (r.shed || 'Shed 1') === selectedShed )), sample1010]);
+      setDailyReport(sample1010);
+      setMachineEm(prev => ({ ...prev, [SAMPLE_DATE]: { ...SAMPLE_MACHINE_EM_10102026, ...(prev[SAMPLE_DATE] || {}) } }));
+      setWorkers(prev => mergeDuplicateWorkers([...prev, ...SAMPLE_WORKERS]));
+      if (!machines || machines.length === 0) setMachines(SAMPLE_MACHINES);
+      return;
+    }
+    const existing = currentShedHistory.find(r => r.date === newDate || normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(newDate));
     if (existing) {
       setDailyReport(existing);
     } else {
@@ -1216,12 +1276,8 @@ export default function Home() {
               workers={currentShedWorkers}
               rules={incentiveRules}
               isTvMode={isTvMode}
-              onSelectDate={(date) => {
-                const r = currentShedHistory.find(rep => rep.date === date);
-                if (r) setDailyReport(r);
-                else createBlankReport(date);
-              }}
-              availableDates={Array.from(new Set([activeDailyReport.date, ...currentShedHistory.map(r => r.date)].filter(Boolean)))}
+              onSelectDate={handleTopDateChange}
+              availableDates={availableReportDates}
             />
           </motion.div>
         );
@@ -1250,11 +1306,7 @@ export default function Home() {
                 return updated;
               });
             }}
-            onSelectDate={(date) => {
-              const report = currentShedHistory.find(r => r.date === date);
-              if (report) setDailyReport(report);
-              else createBlankReport(date);
-            }}
+            onSelectDate={handleTopDateChange}
             onChangeReportDate={changeReportDate}
           />
         );
@@ -1266,11 +1318,7 @@ export default function Home() {
             workers={currentShedWorkers}
             rules={incentiveRules}
             isTvMode={isTvMode}
-            onSelectDate={(date) => {
-              const report = currentShedHistory.find(r => r.date === date);
-              if (report) setDailyReport(report);
-              else createBlankReport(date);
-            }}
+            onSelectDate={handleTopDateChange}
             machineSiderCounts={settings.machineSiderCounts}
           />
         );
@@ -1289,13 +1337,9 @@ export default function Home() {
             assignGaiter={assignGaiter}
             assignAiCone={assignAiCone}
             assignFitter={assignFitter}
-            dates={Array.from(new Set([activeDailyReport.date, ...currentShedHistory.map(r => r.date)]))}
+            dates={availableReportDates}
             selectedDate={activeDailyReport.date}
-            onSelectDate={(date) => {
-              const report = currentShedHistory.find(r => r.date === date);
-              if (report) setDailyReport(report);
-              else createBlankReport(date);
-            }}
+            onSelectDate={handleTopDateChange}
             onCopyAllocations={copyAllocationsFromReport}
             onChangeReportDate={changeReportDate}
             isSupervisorMode={isSupervisorMode}
@@ -1405,9 +1449,7 @@ export default function Home() {
             initialMonth={selectedMonth}
             initialYear={selectedYear}
             onEditDate={(date) => {
-              const report = currentShedHistory.find(r => r.date === date);
-              if (report) setDailyReport(report);
-              else createBlankReport(date);
+              handleTopDateChange(date);
               setActiveTab('assignments');
             }}
           />
@@ -1504,11 +1546,7 @@ export default function Home() {
             isTvMode={isTvMode}
             report={activeDailyReport}
             history={currentShedHistory}
-            onSelectDate={(date) => {
-              const report = currentShedHistory.find(r => r.date === date);
-              if (report) setDailyReport(report);
-              else createBlankReport(date);
-            }}
+            onSelectDate={handleTopDateChange}
           />
         );
 
@@ -2551,6 +2589,17 @@ export default function Home() {
                       Today
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedShed('Shed 1');
+                      handleTopDateChange(SAMPLE_DATE);
+                    }}
+                    className="px-2 py-1 text-[10px] font-black uppercase tracking-wider bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-all shadow-2xs cursor-pointer inline-flex items-center gap-1"
+                    title="Load Shed 1 Sample Data for 10/10/2026"
+                  >
+                    <Sparkles size={11} /> 10/10 Sample
+                  </button>
                 </div>
 
                 <div className="h-4 w-px bg-stone-200 mx-0.5 hidden sm:block" />

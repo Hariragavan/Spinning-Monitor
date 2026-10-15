@@ -2,16 +2,20 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { MachineEmData } from '@/types';
 
+import { SAMPLE_DATE, SAMPLE_MACHINE_EM_10102026 } from '@/lib/sampleSeedData';
+
 export async function GET() {
   try {
     const db = await getDb();
     const doc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
 
-    if (!doc) {
-      return NextResponse.json({ success: true, data: {} });
-    }
+    const data: Record<string, any> = doc?.data || {};
+    data[SAMPLE_DATE] = {
+      ...SAMPLE_MACHINE_EM_10102026,
+      ...(data[SAMPLE_DATE] || {})
+    };
 
-    return NextResponse.json({ success: true, data: doc.data || {} });
+    return NextResponse.json({ success: true, data });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch machine em data' }, { status: 500 });
   }

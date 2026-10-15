@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 
+import { SAMPLE_MACHINES } from '@/lib/sampleSeedData';
+
 export async function GET(req: Request) {
   try {
     const db = await getDb();
@@ -13,6 +15,9 @@ export async function GET(req: Request) {
     }
 
     const machines = await db.collection('machines').find(filter, { projection: { _id: 0 } }).toArray();
+    if (!machines || machines.length === 0) {
+      return NextResponse.json({ success: true, data: SAMPLE_MACHINES });
+    }
     return NextResponse.json({ success: true, data: machines });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch machines' }, { status: 500 });

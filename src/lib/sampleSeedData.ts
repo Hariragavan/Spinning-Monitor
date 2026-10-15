@@ -1,33 +1,50 @@
-import { DailyReport, Sider, ProductionEntry, FrameDailySummary, Shift } from '../types';
+import { DailyReport, Sider, ProductionEntry, FrameDailySummary, Shift, MachineMasterItem } from '../types';
 
 export const SAMPLE_DATE = '10/10/2026';
 
+export const SAMPLE_MACHINES: MachineMasterItem[] = [
+  { id: 'm-sp025', rfNo: 'SP025', count: '40s CH', stdGps: 450, actualGps: 448, productionKg: 1200, shed: 'Shed 1' },
+  { id: 'm-sp026', rfNo: 'SP026', count: '40s CH', stdGps: 450, actualGps: 452, productionKg: 1210, shed: 'Shed 1' },
+  { id: 'm-sp027', rfNo: 'SP027', count: '40s CH', stdGps: 450, actualGps: 446, productionKg: 1195, shed: 'Shed 1' },
+  { id: 'm-sp029', rfNo: 'SP029', count: '40s CH', stdGps: 450, actualGps: 450, productionKg: 1205, shed: 'Shed 1' },
+  { id: 'm-sp030', rfNo: 'SP030', count: '34s K', stdGps: 455, actualGps: 458, productionKg: 1260, shed: 'Shed 1' },
+  { id: 'm-sp031', rfNo: 'SP031', count: '34s K', stdGps: 455, actualGps: 454, productionKg: 1250, shed: 'Shed 1' },
+  { id: 'm-sp032', rfNo: 'SP032', count: '34s K', stdGps: 455, actualGps: 456, productionKg: 1265, shed: 'Shed 1' },
+  { id: 'm-sp033', rfNo: 'SP033', count: '34s K', stdGps: 455, actualGps: 455, productionKg: 1255, shed: 'Shed 1' },
+  { id: 'm-sp034', rfNo: 'SP034', count: '30s KD', stdGps: 460, actualGps: 462, productionKg: 1320, shed: 'Shed 1' },
+  { id: 'm-sp035', rfNo: 'SP035', count: '30s KD', stdGps: 460, actualGps: 465, productionKg: 1330, shed: 'Shed 1' },
+  { id: 'm-sp036', rfNo: 'SP036', count: '30s KD', stdGps: 460, actualGps: 459, productionKg: 1315, shed: 'Shed 1' },
+  { id: 'm-sp037', rfNo: 'SP037', count: '30s KD', stdGps: 460, actualGps: 461, productionKg: 1325, shed: 'Shed 1' },
+  { id: 'm-sp038', rfNo: 'SP038', count: '60s CW', stdGps: 440, actualGps: 438, productionKg: 980, shed: 'Shed 1' },
+  { id: 'm-sp056', rfNo: 'SP056', count: '60s CW', stdGps: 440, actualGps: 441, productionKg: 990, shed: 'Shed 1' }
+];
+
 export const SAMPLE_WORKERS: Sider[] = [
-  { id: 'w-1001', name: 'Ramesh Kumar', tNo: '1001', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1002', name: 'Suresh Babu', tNo: '1002', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1003', name: 'Murugan P', tNo: '1003', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1004', name: 'Selvan M', tNo: '1004', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1005', name: 'Karthik S', tNo: '1005', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1006', name: 'Vignesh R', tNo: '1006', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1007', name: 'Prakash K', tNo: '1007', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1008', name: 'Anbu Chelvan', tNo: '1008', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1009', name: 'Vijay Anand', tNo: '1009', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1010', name: 'Saravanan T', tNo: '1010', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1011', name: 'Manikandan V', tNo: '1011', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1012', name: 'Raja Mohan', tNo: '1012', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1013', name: 'Arumugam C', tNo: '1013', department: 'Sider', shed: 'Shed 1' },
-  { id: 'w-1014', name: 'Dhandapani K', tNo: '1014', department: 'Sider', shed: 'Shed 1' },
+  { id: 'w-1001', name: 'Ramesh Kumar', tNo: '1001', department: 'Sider' },
+  { id: 'w-1002', name: 'Suresh Babu', tNo: '1002', department: 'Sider' },
+  { id: 'w-1003', name: 'Murugan P', tNo: '1003', department: 'Sider' },
+  { id: 'w-1004', name: 'Selvan M', tNo: '1004', department: 'Sider' },
+  { id: 'w-1005', name: 'Karthik S', tNo: '1005', department: 'Sider' },
+  { id: 'w-1006', name: 'Vignesh R', tNo: '1006', department: 'Sider' },
+  { id: 'w-1007', name: 'Prakash K', tNo: '1007', department: 'Sider' },
+  { id: 'w-1008', name: 'Anbu Chelvan', tNo: '1008', department: 'Sider' },
+  { id: 'w-1009', name: 'Vijay Anand', tNo: '1009', department: 'Sider' },
+  { id: 'w-1010', name: 'Saravanan T', tNo: '1010', department: 'Sider' },
+  { id: 'w-1011', name: 'Manikandan V', tNo: '1011', department: 'Sider' },
+  { id: 'w-1012', name: 'Raja Mohan', tNo: '1012', department: 'Sider' },
+  { id: 'w-1013', name: 'Arumugam C', tNo: '1013', department: 'Sider' },
+  { id: 'w-1014', name: 'Dhandapani K', tNo: '1014', department: 'Sider' },
   // Gaiters
-  { id: 'w-2001', name: 'Muthu Vel', tNo: '2001', department: 'Gaiter', shed: 'Shed 1' },
-  { id: 'w-2002', name: 'Ganesan R', tNo: '2002', department: 'Gaiter', shed: 'Shed 1' },
-  { id: 'w-2003', name: 'Senthil Nathan', tNo: '2003', department: 'Gaiter', shed: 'Shed 1' },
+  { id: 'w-2001', name: 'Muthu Vel', tNo: '2001', department: 'Gaiter' },
+  { id: 'w-2002', name: 'Ganesan R', tNo: '2002', department: 'Gaiter' },
+  { id: 'w-2003', name: 'Senthil Nathan', tNo: '2003', department: 'Gaiter' },
   // AI Linkconers
-  { id: 'w-3001', name: 'Balaji K', tNo: '3001', department: 'AI Linkconer', shed: 'Shed 1' },
-  { id: 'w-3002', name: 'Deepak Raj', tNo: '3002', department: 'AI Linkconer', shed: 'Shed 1' },
-  { id: 'w-3003', name: 'Dinesh Kumar', tNo: '3003', department: 'AI Linkconer', shed: 'Shed 1' },
+  { id: 'w-3001', name: 'Balaji K', tNo: '3001', department: 'AI Linkconer' },
+  { id: 'w-3002', name: 'Deepak Raj', tNo: '3002', department: 'AI Linkconer' },
+  { id: 'w-3003', name: 'Dinesh Kumar', tNo: '3003', department: 'AI Linkconer' },
   // Fitters
-  { id: 'w-4001', name: 'Ravi Chandran', tNo: '4001', department: 'Maintenance', shed: 'Shed 1' },
-  { id: 'w-4002', name: 'Natarajan M', tNo: '4002', department: 'Maintenance', shed: 'Shed 1' }
+  { id: 'w-4001', name: 'Ravi Chandran', tNo: '4001', department: 'Maintenance' },
+  { id: 'w-4002', name: 'Natarajan M', tNo: '4002', department: 'Maintenance' }
 ];
 
 export const SAMPLE_MACHINE_EM_10102026: Record<string, { '1': number; '2': number; '3': number }> = {
@@ -47,7 +64,8 @@ export const SAMPLE_MACHINE_EM_10102026: Record<string, { '1': number; '2': numb
   'SP056': { '1': 3.1, '2': 2.8, '3': 3.0 }
 };
 
-export const createSampleReportForShed1_10102026 = (): DailyReport => {
+export const createSampleReportForShed1_10102026 = (targetShed: any = 'Shed 1'): DailyReport => {
+  const shed = targetShed || 'Shed 1';
   const machines = [
     { no: 'SP025', count: '40s CH', target: 1200 },
     { no: 'SP026', count: '40s CH', target: 1200 },
@@ -120,9 +138,10 @@ export const createSampleReportForShed1_10102026 = (): DailyReport => {
         ukg: 3.2,
         restartBreaks: 1.1,
         siderId: assignedWorker.id,
+        siderIds: [assignedWorker.id],
         siderName: assignedWorker.name,
         incentiveAmount,
-        shed: 'Shed 1'
+        shed
       });
     });
 
@@ -149,7 +168,7 @@ export const createSampleReportForShed1_10102026 = (): DailyReport => {
       shiftNormalStopMin: { I: 15, II: 15, III: 15 },
       shiftProductionKg: shiftProd,
       shiftUtilizationPinter: shiftUtil,
-      shed: 'Shed 1'
+      shed
     });
   });
 
@@ -158,7 +177,7 @@ export const createSampleReportForShed1_10102026 = (): DailyReport => {
 
   return {
     date: SAMPLE_DATE,
-    shed: 'Shed 1',
+    shed,
     entries,
     summaries,
     gaiters: {
