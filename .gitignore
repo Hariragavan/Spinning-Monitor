@@ -25,3 +25,7 @@ tsconfig.tsbuildinfo
 .env*
 !.env.example
 
+# Local sample seed data
+src/lib/sampleSeedData.ts
+src/scripts/
+

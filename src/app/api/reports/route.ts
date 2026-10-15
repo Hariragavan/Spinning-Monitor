@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { DailyReport } from '@/types';
 import { ensureSixMachines, mockData, getTodayUniversalDate, createDefaultReportForShed } from '@/lib/parser';
-import { normalizeToCanonicalDate, parseUniversalDate } from '@/lib/utils';
-import { createSampleReportForShed1_10102026, SAMPLE_DATE } from '@/lib/sampleSeedData';
+import { parseUniversalDate } from '@/lib/utils';
 
 export async function GET(req: Request) {
   try {
@@ -17,18 +16,10 @@ export async function GET(req: Request) {
       : { shed };
 
     if (date) {
-      const is1010 = date === SAMPLE_DATE || normalizeToCanonicalDate(date) === SAMPLE_DATE;
       const report = await db.collection<DailyReport>('reports').findOne(
         { date, ...shedFilter },
         { projection: { _id: 0 } }
       );
-      if (report && report.entries && report.entries.length > 0) {
-        return NextResponse.json({ success: true, data: ensureSixMachines(report, shed) });
-      }
-      if (is1010) {
-        const sample1010 = createSampleReportForShed1_10102026(shed);
-        return NextResponse.json({ success: true, data: sample1010 });
-      }
       if (report) {
         return NextResponse.json({ success: true, data: ensureSixMachines(report, shed) });
       }

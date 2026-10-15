@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { Sider } from '@/types';
 
-import { SAMPLE_WORKERS } from '@/lib/sampleSeedData';
-
 export async function GET(req: Request) {
   try {
     const db = await getDb();
@@ -16,9 +14,6 @@ export async function GET(req: Request) {
     }
 
     const workers = await db.collection<Sider>('workers').find(filter, { projection: { _id: 0 } }).toArray();
-    if (!workers || workers.length === 0) {
-      return NextResponse.json({ success: true, data: SAMPLE_WORKERS });
-    }
     return NextResponse.json({ success: true, data: workers });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch workers' }, { status: 500 });

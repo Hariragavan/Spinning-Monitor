@@ -2,9 +2,8 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { DailyReport } from '@/types';
 import { getHistoricalAprilData } from '@/lib/historicalData';
-import { parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate } from '@/lib/utils';
+import { parseUniversalDate, parseUniversalDateParts } from '@/lib/utils';
 import { ensureSixMachines } from '@/lib/parser';
-import { createSampleReportForShed1_10102026, SAMPLE_DATE } from '@/lib/sampleSeedData';
 
 export async function GET(req: Request) {
   try {
@@ -20,16 +19,6 @@ export async function GET(req: Request) {
     const history = (await db.collection<DailyReport>('reports')
       .find(filter, { projection: { _id: 0 } })
       .toArray()) as unknown as DailyReport[];
-
-    // Ensure 10/10/2026 sample report is present and fully populated
-    const targetShed = shed || 'Shed 1';
-    const sample1010 = createSampleReportForShed1_10102026(targetShed);
-    const idx1010 = history.findIndex(r => (r.date === SAMPLE_DATE || normalizeToCanonicalDate(r.date) === SAMPLE_DATE) && (r.shed || 'Shed 1') === targetShed);
-    if (idx1010 === -1) {
-      history.push(sample1010);
-    } else if (!history[idx1010].entries || history[idx1010].entries.length === 0) {
-      history[idx1010] = sample1010;
-    }
 
     // Sort history by calendar date descending so latest dates (e.g. today) are first
     history.sort((a, b) => {
