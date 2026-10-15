@@ -3,7 +3,7 @@ import {
   Play, Pause, ChevronLeft, ChevronRight, Maximize, Minimize, 
   X, Activity, Trophy, BarChart3, Table, TrendingUp, Grid3X3, 
   Calendar, Clock, Check, Users, Gauge, Layers, Star, Zap,
-  Award, ArrowUpRight, Sparkles, Medal, UserCheck
+  Award, ArrowUpRight, Sparkles, Medal, UserCheck, Coins, FileText, Target
 } from 'lucide-react';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData } from '../types';
 import { cn } from '../lib/utils';
+import { CalendarDatePicker } from './CalendarPickers';
 
 interface TvDashboardProps {
   dailyReport: DailyReport;
@@ -22,6 +23,8 @@ interface TvDashboardProps {
   machineEm: MachineEmData;
   settings: SystemSettings;
   onExit: () => void;
+  onSelectDate?: (date: string) => void;
+  availableDates?: string[];
 }
 
 export const TvDashboard: React.FC<TvDashboardProps> = ({
@@ -33,7 +36,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   onSelectShed,
   machineEm,
   settings,
-  onExit
+  onExit,
+  onSelectDate,
+  availableDates = []
 }) => {
   // Available slides (All in White Theme)
   const allSlides = useMemo(() => [
@@ -43,7 +48,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     { id: 'top-workers', title: 'Top 5 Star Sider Champions', icon: Trophy, defaultSeconds: 15 },
     { id: 'champions', title: 'Best Shift Award & Shift Telemetry', icon: Star, defaultSeconds: 15 },
     { id: 'sheds', title: 'Multi-Shed Production Intelligence', icon: Grid3X3, defaultSeconds: 15 },
-    { id: 'monthly', title: 'Month-to-Date Production Volume Trends', icon: TrendingUp, defaultSeconds: 15 }
+    { id: 'monthly', title: 'Month-to-Date Production Volume Trends', icon: TrendingUp, defaultSeconds: 15 },
+    { id: 'running-counts', title: 'Running Counts & Production Telemetry', icon: Layers, defaultSeconds: 20 },
+    { id: 'daily-incentive', title: 'Daily Operator Incentive Ledger & Payouts', icon: Coins, defaultSeconds: 20 },
+    { id: 'monthly-report', title: 'Monthly Production Master Report', icon: FileText, defaultSeconds: 20 }
   ], []);
 
   // Filter only enabled slides
@@ -107,6 +115,15 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
     return () => clearInterval(timer);
   }, [isPlaying, slidesToUse.length, currentSlideIndex, settings.tvSlideIntervals]);
+
+  // Auto-request fullscreen on mount
+  useEffect(() => {
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } catch {}
+  }, []);
 
   // Fullscreen detection & listener
   useEffect(() => {
@@ -300,6 +317,131 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     });
   }, [history, dailyReport, selectedShed]);
 
+  // Slide 8: Running counts data
+  const runningCountsData = useMemo(() => {
+    const countMap = new Map<string, { count: string; frames: Set<string>; actualKg: number; targetKg: number; sumGps: number; gpsEntries: number; sumEff: number; effEntries: number }>();
+
+    entries.forEach(e => {
+      const c = e.count?.trim() || 'Standard';
+      const existing = countMap.get(c) || { count: c, frames: new Set<string>(), actualKg: 0, targetKg: 0, sumGps: 0, gpsEntries: 0, sumEff: 0, effEntries: 0 };
+      if (e.frameNo) existing.frames.add(e.frameNo);
+      existing.actualKg += e.productionActual || 0;
+      existing.targetKg += e.productionTarget || 0;
+      if (e.gpsActual && e.gpsActual > 0) {
+        existing.sumGps += e.gpsActual;
+        existing.gpsEntries += 1;
+      }
+      if (e.efficiency && e.efficiency > 0) {
+        existing.sumEff += e.efficiency;
+        existing.effEntries += 1;
+      }
+      countMap.set(c, existing);
+    });
+
+    return Array.from(countMap.values()).map(item => ({
+      count: item.count,
+      framesCount: item.frames.size,
+      actualKg: Math.round(item.actualKg),
+      targetKg: Math.round(item.targetKg),
+      avgGps: item.gpsEntries > 0 ? Number((item.sumGps / item.gpsEntries).toFixed(1)) : 0,
+      avgEff: item.effEntries > 0 ? Number((item.sumEff / item.effEntries).toFixed(1)) : 0,
+      achievement: item.targetKg > 0 ? Number(((item.actualKg / item.targetKg) * 100).toFixed(1)) : 0
+    })).sort((a, b) => b.actualKg - a.actualKg);
+  }, [entries]);
+
+  // Slide 9: Daily incentive report data
+  const dailyIncentiveReportData = useMemo(() => {
+    let totalIncentive = 0;
+    const shiftPayouts = { I: 0, II: 0, III: 0 };
+    const operatorIncentives = new Map<string, { worker: Sider; frameNo: string; shift: Shift; count: string; gps: number; incentive: number }>();
+
+    entries.forEach(e => {
+      const inc = e.incentiveAmount || 0;
+      totalIncentive += inc;
+      if (e.shift in shiftPayouts) {
+        shiftPayouts[e.shift] += inc;
+      }
+      const wId = e.siderIds?.[0] || e.siderId;
+      const wName = e.siderName;
+      if (wId || wName) {
+        const worker = workers.find(w => w.id === wId || w.tNo === wId || w.name === wName) || {
+          id: wId || 'unknown',
+          name: wName || wId || 'Operator',
+          tNo: (e as any).siderTicketNo || e.siderId || 'T-N/A'
+        };
+        const key = `${worker.tNo || worker.name}-${e.shift}-${e.frameNo}`;
+        operatorIncentives.set(key, {
+          worker,
+          frameNo: e.frameNo,
+          shift: e.shift,
+          count: e.count || '40s',
+          gps: e.gpsActual || 0,
+          incentive: inc
+        });
+      }
+    });
+
+    const topEarners = Array.from(operatorIncentives.values())
+      .filter(item => item.incentive > 0)
+      .sort((a, b) => b.incentive - a.incentive)
+      .slice(0, 10);
+
+    return {
+      totalIncentive,
+      shiftPayouts,
+      topEarners,
+      eligibleCount: operatorIncentives.size
+    };
+  }, [entries, workers]);
+
+  // Slide 10: Monthly production report data
+  const monthlyProductionReportData = useMemo(() => {
+    const currentShedHistory = history.filter(r => (r.shed || 'Shed 1') === selectedShed);
+    const totalActualKg = currentShedHistory.reduce((acc, r) => acc + (r.totalProductionActual || 0), 0);
+    const totalTargetKg = currentShedHistory.reduce((acc, r) => acc + (r.totalProductionTarget || 0), 0);
+    const overallEff = totalTargetKg > 0 ? Number(((totalActualKg / totalTargetKg) * 100).toFixed(1)) : 0;
+
+    const shiftTotals = {
+      I: { kg: 0, gpsSum: 0, count: 0 },
+      II: { kg: 0, gpsSum: 0, count: 0 },
+      III: { kg: 0, gpsSum: 0, count: 0 }
+    };
+
+    currentShedHistory.forEach(r => {
+      (r.entries || []).forEach(e => {
+        if (e.shift in shiftTotals) {
+          shiftTotals[e.shift].kg += e.productionActual || 0;
+          if (e.gpsActual) {
+            shiftTotals[e.shift].gpsSum += e.gpsActual;
+            shiftTotals[e.shift].count += 1;
+          }
+        }
+      });
+    });
+
+    const shiftData = [
+      { shift: 'Shift I', kg: Math.round(shiftTotals.I.kg), avgGps: shiftTotals.I.count > 0 ? Number((shiftTotals.I.gpsSum / shiftTotals.I.count).toFixed(1)) : 0 },
+      { shift: 'Shift II', kg: Math.round(shiftTotals.II.kg), avgGps: shiftTotals.II.count > 0 ? Number((shiftTotals.II.gpsSum / shiftTotals.II.count).toFixed(1)) : 0 },
+      { shift: 'Shift III', kg: Math.round(shiftTotals.III.kg), avgGps: shiftTotals.III.count > 0 ? Number((shiftTotals.III.gpsSum / shiftTotals.III.count).toFixed(1)) : 0 }
+    ];
+
+    const dailyRecords = currentShedHistory.map(r => ({
+      date: r.date,
+      target: Math.round(r.totalProductionTarget || 0),
+      actual: Math.round(r.totalProductionActual || 0),
+      eff: r.totalProductionTarget > 0 ? Number(((r.totalProductionActual / r.totalProductionTarget) * 100).toFixed(1)) : 0
+    }));
+
+    return {
+      daysLogged: currentShedHistory.length,
+      totalActualKg: Math.round(totalActualKg),
+      totalTargetKg: Math.round(totalTargetKg),
+      overallEff,
+      shiftData,
+      dailyRecords: dailyRecords.slice(-10)
+    };
+  }, [history, selectedShed]);
+
   return (
     <div 
       onMouseMove={handleMouseMove}
@@ -358,11 +500,32 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           })}
         </div>
 
-        {/* Right: Date, Clock & Countdown */}
+        {/* Right: Interactive Date Selection, Clock & Countdown */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-2 bg-stone-100 px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-mono font-bold text-stone-700 shadow-2xs">
-            <Calendar size={13} className="text-emerald-600" />
-            <span>{dailyReport.date}</span>
+          <div className="flex items-center gap-1.5 bg-stone-100 p-0.5 rounded-xl border border-stone-200 shadow-2xs">
+            <CalendarDatePicker
+              value={dailyReport.date}
+              onChange={(newDate) => {
+                if (onSelectDate) onSelectDate(newDate);
+              }}
+              className="shrink-0"
+            />
+            {availableDates && availableDates.length > 1 && (
+              <select
+                value={dailyReport.date}
+                onChange={(e) => {
+                  if (onSelectDate) onSelectDate(e.target.value);
+                }}
+                className="text-xs bg-white text-stone-800 font-bold px-2 py-1.5 rounded-lg border border-stone-200 hover:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer hidden sm:block max-w-[125px] truncate"
+                title="Select date for TV mode"
+              >
+                {availableDates.map(d => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="flex items-center gap-2 bg-emerald-50 px-3.5 py-1.5 rounded-xl border border-emerald-200 text-xs font-mono font-black text-emerald-800 shadow-2xs">
@@ -991,6 +1154,424 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
               <span>Historical Days Logged: <strong className="text-stone-900">{monthlyTrendData.length} Days</strong></span>
               <span>Average Daily Production: <strong className="text-emerald-700">{monthlyTrendData.length > 0 ? (monthlyTrendData.reduce((a, b) => a + b.actual, 0) / monthlyTrendData.length).toFixed(1) : 0} Kg</strong></span>
               <span>Tracking System: <strong className="text-stone-900">Active Production Database</strong></span>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 8: RUNNING COUNTS & PRODUCTION TELEMETRY             */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'running-counts' && (
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            {/* Header banner */}
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <Layers size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Running Counts &amp; Production Telemetry</h3>
+                <span className="bg-emerald-50 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">{selectedShed}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-stone-100 text-stone-700 text-xs px-3 py-1 rounded-xl font-bold border border-stone-200">
+                  Active Counts: <strong className="text-stone-900">{runningCountsData.length}</strong>
+                </span>
+                <span className="bg-emerald-50 text-emerald-800 text-xs px-3 py-1 rounded-xl font-bold border border-emerald-200">
+                  Total Output: <strong className="text-emerald-700">{runningCountsData.reduce((acc, c) => acc + c.actualKg, 0).toLocaleString()} Kg</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Split layout: Chart on left, Table on right */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
+              {/* Left: Production volume by Count Recharts Bar Chart */}
+              <div className="lg:col-span-6 bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-800 flex items-center gap-2">
+                    <BarChart3 size={15} className="text-emerald-600" />
+                    <span>Count-Wise Production Volume (Kg)</span>
+                  </h4>
+                  <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Target vs Actual</span>
+                </div>
+                <div className="flex-1 min-h-[260px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={runningCountsData} margin={{ top: 10, right: 15, left: -10, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                      <XAxis dataKey="count" stroke="#6b7280" fontSize={11} fontWeight={800} tickLine={false} />
+                      <YAxis stroke="#6b7280" fontSize={10} fontWeight={700} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', color: '#111827', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }} />
+                      <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold' }} />
+                      <Bar dataKey="targetKg" name="Target (Kg)" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="actualKg" name="Actual (Kg)" fill="#059669" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Right: Detailed Count Metrics Table */}
+              <div className="lg:col-span-6 bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs flex flex-col justify-between overflow-hidden">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-800 flex items-center gap-2">
+                    <Table size={15} className="text-emerald-600" />
+                    <span>Running Counts Operational Breakdown</span>
+                  </h4>
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 uppercase">Live Mills</span>
+                </div>
+
+                <div className="flex-1 overflow-y-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-stone-100 text-[10px] font-black uppercase text-stone-400 tracking-wider">
+                        <th className="py-2 px-3">Count</th>
+                        <th className="py-2 px-2 text-center">Frames</th>
+                        <th className="py-2 px-2 text-right">Target Kg</th>
+                        <th className="py-2 px-2 text-right">Actual Kg</th>
+                        <th className="py-2 px-2 text-right">Avg GPS</th>
+                        <th className="py-2 px-3 text-right">Efficiency</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 text-xs">
+                      {runningCountsData.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-stone-50/80 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-black bg-stone-100 text-stone-800 border border-stone-200">
+                              {item.count}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 text-center font-bold text-stone-600">
+                            {item.framesCount}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-500">
+                            {item.targetKg.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-black text-emerald-700">
+                            {item.actualKg.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-700">
+                            {item.avgGps}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className="font-mono font-black text-stone-900 text-xs">{item.avgEff}%</span>
+                              <div className="w-12 bg-stone-100 h-1.5 rounded-full overflow-hidden">
+                                <div 
+                                  className={cn("h-full rounded-full", item.avgEff >= 95 ? "bg-emerald-500" : "bg-amber-500")}
+                                  style={{ width: `${Math.min(100, item.avgEff)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-3 border-t border-stone-100 flex items-center justify-between text-[11px] font-bold text-stone-500 mt-2">
+                  <span>Count Variety: <strong className="text-stone-800">{runningCountsData.length} Spun Types</strong></span>
+                  <span>Average Performance: <strong className="text-emerald-700">{(runningCountsData.reduce((acc, c) => acc + c.avgEff, 0) / (runningCountsData.length || 1)).toFixed(1)}% Eff</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Status Pill */}
+            <div className="bg-white rounded-2xl px-6 py-2.5 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <span>Telemetry: <strong className="text-stone-900">Live Frame Count Sensor Telemetry</strong></span>
+              <span>Total Active Spindles: <strong className="text-emerald-700">{(runningCountsData.reduce((acc, c) => acc + c.framesCount, 0) * 1200).toLocaleString()} Spindles</strong></span>
+              <span>Unit: <strong className="text-stone-900">{selectedShed}</strong></span>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 9: DAILY OPERATOR INCENTIVE LEDGER & PAYOUTS         */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'daily-incentive' && (
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <Coins size={18} className="text-amber-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Daily Operator Incentive Ledger &amp; Payouts</h3>
+                <span className="bg-amber-50 text-amber-800 text-xs px-2.5 py-0.5 rounded-full font-bold border border-amber-200">{selectedShed}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Date: <strong className="text-stone-900 font-mono">{dailyReport.date}</strong></span>
+                <span className="bg-emerald-600 text-white text-xs px-3.5 py-1 rounded-xl font-black uppercase tracking-wider shadow-sm shadow-emerald-600/30">
+                  Total Payout: ₹{dailyIncentiveReportData.totalIncentive.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Top 3 Shift Stat Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Total Payout</span>
+                  <span className="text-2xl font-black text-stone-900 font-mono">₹{dailyIncentiveReportData.totalIncentive.toLocaleString()}</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <Coins size={20} />
+                </div>
+              </div>
+              {(['I', 'II', 'III'] as Shift[]).map(shift => (
+                <div key={shift} className="bg-white p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Shift {shift} Payout</span>
+                    <span className="text-2xl font-black text-emerald-700 font-mono">₹{(dailyIncentiveReportData.shiftPayouts[shift] || 0).toLocaleString()}</span>
+                  </div>
+                  <span className="w-8 h-8 rounded-lg bg-stone-100 text-stone-700 flex items-center justify-center text-xs font-black">
+                    {shift}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Split View: Leaderboard table on left, chart on right */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
+              {/* Left: Top Sider Incentive Earners Table */}
+              <div className="lg:col-span-7 bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs flex flex-col justify-between overflow-hidden">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-800 flex items-center gap-2">
+                    <Trophy size={15} className="text-amber-500" />
+                    <span>Top Sider Incentive Earners</span>
+                  </h4>
+                  <span className="text-[10px] font-bold text-stone-400 uppercase">Top 10 High Performers</span>
+                </div>
+
+                <div className="flex-1 overflow-y-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-stone-100 text-[10px] font-black uppercase text-stone-400 tracking-wider">
+                        <th className="py-2 px-2 text-center w-10">#</th>
+                        <th className="py-2 px-3">Operator Name</th>
+                        <th className="py-2 px-2 text-center">T.No</th>
+                        <th className="py-2 px-2 text-center">Shift</th>
+                        <th className="py-2 px-2 text-center">Frame</th>
+                        <th className="py-2 px-2 text-right">GPS</th>
+                        <th className="py-2 px-3 text-right">Incentive</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 text-xs">
+                      {dailyIncentiveReportData.topEarners.map((item, idx) => (
+                        <tr key={idx} className="hover:bg-amber-50/40 transition-colors">
+                          <td className="py-2.5 px-2 text-center font-black">
+                            {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-stone-900 truncate max-w-[150px]">
+                            {item.worker.name}
+                          </td>
+                          <td className="py-2.5 px-2 text-center font-mono font-bold text-stone-500 text-[11px]">
+                            {item.worker.tNo}
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            <span className="px-1.5 py-0.5 rounded bg-stone-100 text-stone-700 font-bold text-[10px]">
+                              {item.shift}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2 text-center font-mono font-bold text-stone-600">
+                            {item.frameNo}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-700">
+                            {item.gps}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono font-black text-xs">
+                              ₹{item.incentive}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right: Payout by Shift Recharts Bar Chart */}
+              <div className="lg:col-span-5 bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-800 flex items-center gap-2">
+                    <BarChart3 size={15} className="text-emerald-600" />
+                    <span>Shift-Wise Payout Comparison</span>
+                  </h4>
+                  <span className="text-[10px] text-stone-400 font-bold uppercase">₹ Total</span>
+                </div>
+
+                <div className="flex-1 min-h-[220px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[
+                      { shift: 'Shift I', amount: dailyIncentiveReportData.shiftPayouts.I },
+                      { shift: 'Shift II', amount: dailyIncentiveReportData.shiftPayouts.II },
+                      { shift: 'Shift III', amount: dailyIncentiveReportData.shiftPayouts.III }
+                    ]} margin={{ top: 10, right: 15, left: -10, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                      <XAxis dataKey="shift" stroke="#6b7280" fontSize={11} fontWeight={800} tickLine={false} />
+                      <YAxis stroke="#6b7280" fontSize={10} fontWeight={700} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', color: '#111827', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }} />
+                      <Bar dataKey="amount" name="Payout (₹)" fill="#d97706" radius={[6, 6, 0, 0]}>
+                        <Cell fill="#059669" />
+                        <Cell fill="#0284c7" />
+                        <Cell fill="#7c3aed" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="pt-3 border-t border-stone-100 flex items-center justify-between text-[11px] font-bold text-stone-500">
+                  <span>Eligible Operators: <strong className="text-stone-800">{dailyIncentiveReportData.topEarners.length} Operators</strong></span>
+                  <span>Avg per Earner: <strong className="text-emerald-700">₹{dailyIncentiveReportData.topEarners.length > 0 ? Math.round(dailyIncentiveReportData.totalIncentive / dailyIncentiveReportData.topEarners.length) : 0}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Status */}
+            <div className="bg-white rounded-2xl px-6 py-2.5 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <span>Payroll Integration: <strong className="text-stone-900">Direct Incentive Ledger Verified</strong></span>
+              <span>Gaiter &amp; AI Cone Roles: <strong className="text-emerald-700">Synchronized &amp; Included</strong></span>
+              <span>Status: <strong className="text-emerald-700">Approved for Payout</strong></span>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* SLIDE 10: MONTHLY PRODUCTION MASTER REPORT                 */}
+        {/* ========================================================= */}
+        {activeSlide.id === 'monthly-report' && (
+          <div className="h-full flex flex-col justify-between space-y-4 animate-in fade-in duration-500">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-stone-200 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black uppercase tracking-wider text-stone-900">Monthly Production Master Report</h3>
+                <span className="bg-emerald-50 text-emerald-800 text-xs px-2.5 py-0.5 rounded-full font-bold border border-emerald-200">{selectedShed}</span>
+              </div>
+              <span className="text-xs text-stone-500 font-bold uppercase tracking-wider">
+                Full Month Trajectory &amp; Telemetry
+              </span>
+            </div>
+
+            {/* 4 Stat Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Total Actual Output</span>
+                  <span className="text-2xl font-black text-emerald-700 font-mono">{monthlyProductionReportData.totalActualKg.toLocaleString()} <span className="text-xs font-sans text-stone-500">Kg</span></span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <TrendingUp size={20} />
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Target Production</span>
+                  <span className="text-2xl font-black text-stone-800 font-mono">{monthlyProductionReportData.totalTargetKg.toLocaleString()} <span className="text-xs font-sans text-stone-500">Kg</span></span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-stone-100 text-stone-600 flex items-center justify-center">
+                  <Target size={20} />
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Plant Efficiency</span>
+                  <span className="text-2xl font-black text-stone-900 font-mono">{monthlyProductionReportData.overallEff}%</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Gauge size={20} />
+                </div>
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Working Days</span>
+                  <span className="text-2xl font-black text-stone-900 font-mono">{monthlyProductionReportData.daysLogged} <span className="text-xs font-sans text-stone-500">Days</span></span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                  <Calendar size={20} />
+                </div>
+              </div>
+            </div>
+
+            {/* Split View: Chart on Left, Shift Breakdown & Recent Log on Right */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
+              {/* Left: Monthly Trend Chart */}
+              <div className="lg:col-span-7 bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-800 flex items-center gap-2">
+                    <BarChart3 size={15} className="text-emerald-600" />
+                    <span>Daily Production Volume vs Target (Kg)</span>
+                  </h4>
+                  <span className="text-[10px] text-stone-400 font-bold uppercase">Chronological Output</span>
+                </div>
+
+                <div className="flex-1 min-h-[220px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyProductionReportData.dailyRecords} margin={{ top: 10, right: 15, left: -10, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                      <XAxis dataKey="date" stroke="#6b7280" fontSize={10} fontWeight={700} tickLine={false} />
+                      <YAxis stroke="#6b7280" fontSize={10} fontWeight={700} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '16px', color: '#111827', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)' }} />
+                      <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: 'bold' }} />
+                      <Bar dataKey="target" name="Target (Kg)" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="actual" name="Actual (Kg)" fill="#059669" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Right: Shift Aggregates & Recent Days Table */}
+              <div className="lg:col-span-5 bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs flex flex-col justify-between overflow-hidden">
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-800 flex items-center gap-2 mb-3">
+                    <Layers size={15} className="text-emerald-600" />
+                    <span>Monthly Shift-Wise Totals</span>
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {monthlyProductionReportData.shiftData.map(s => (
+                      <div key={s.shift} className="p-2.5 rounded-xl bg-stone-50 border border-stone-200 text-center">
+                        <span className="text-[10px] font-black uppercase text-stone-500 block">{s.shift}</span>
+                        <span className="text-sm font-black text-stone-900 font-mono block mt-0.5">{s.kg.toLocaleString()} <span className="text-[9px] text-stone-400">kg</span></span>
+                        <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">{s.avgGps} GPS</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto">
+                  <span className="text-[10px] font-black uppercase text-stone-400 tracking-wider block mb-2">Recent Recorded Days</span>
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-stone-100 text-[10px] font-black uppercase text-stone-400">
+                        <th className="py-1 px-2">Date</th>
+                        <th className="py-1 px-2 text-right">Target</th>
+                        <th className="py-1 px-2 text-right">Actual</th>
+                        <th className="py-1 px-2 text-right">Efficiency</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {monthlyProductionReportData.dailyRecords.slice(-5).map((r, i) => (
+                        <tr key={i} className="hover:bg-stone-50/80">
+                          <td className="py-1.5 px-2 font-mono font-bold text-stone-800">{r.date}</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-stone-500">{r.target.toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-emerald-700">{r.actual.toLocaleString()}</td>
+                          <td className="py-1.5 px-2 text-right font-mono font-black text-stone-800">{r.eff}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pt-2 border-t border-stone-100 text-[10px] font-bold text-stone-400 flex items-center justify-between">
+                  <span>Mill Unit: {selectedShed}</span>
+                  <span className="text-emerald-700 font-bold">Monthly Master Telemetry OK</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Status */}
+            <div className="bg-white rounded-2xl px-6 py-2.5 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
+              <span>Monthly Data Source: <strong className="text-stone-900">Synchronized Cloud Telemetry</strong></span>
+              <span>Overall Achievement: <strong className="text-emerald-700">{monthlyProductionReportData.overallEff}% of Planned Production</strong></span>
+              <span>Executive Reporting: <strong className="text-stone-900">Active</strong></span>
             </div>
           </div>
         )}

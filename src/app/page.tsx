@@ -37,6 +37,12 @@ import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, reso
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate } from '@/lib/parser';
 import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
+import { 
+  createSampleReportForShed1_10102026, 
+  SAMPLE_DATE, 
+  SAMPLE_WORKERS, 
+  SAMPLE_MACHINE_EM_10102026 
+} from '@/lib/sampleSeedData';
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -267,7 +273,10 @@ export default function Home() {
       'top-workers': 15,
       'champions': 15,
       'sheds': 15,
-      'monthly': 15
+      'monthly': 15,
+      'running-counts': 20,
+      'daily-incentive': 20,
+      'monthly-report': 20
     },
     tvSlideEnabled: {
       'overview': true,
@@ -276,7 +285,10 @@ export default function Home() {
       'top-workers': true,
       'champions': true,
       'sheds': true,
-      'monthly': true
+      'monthly': true,
+      'running-counts': true,
+      'daily-incentive': true,
+      'monthly-report': true
     },
     tvPageIntervals: {
       'dashboard': 15,
@@ -325,9 +337,33 @@ export default function Home() {
     async function loadData() {
       try {
         const data = await apiClient.fetchInitialData();
+        let loadedHistory = data.history && data.history.length > 0 ? data.history : [];
+        let loadedWorkers = data.workers && data.workers.length > 0 ? data.workers : [];
+        let loadedMachineEm = data.machineEm || {};
+
+        // Local Sample Data for Shed 1 on 10/10/2026 (Local preview only)
+        const hasSampleReport = loadedHistory.some(r => r.date === SAMPLE_DATE && (r.shed || 'Shed 1') === 'Shed 1');
+        if (!hasSampleReport) {
+          const sample1010 = createSampleReportForShed1_10102026();
+          loadedHistory = [...loadedHistory, sample1010];
+        }
+
+        // Merge sample workers if needed
+        const mergedWorkers = mergeDuplicateWorkers([...loadedWorkers, ...SAMPLE_WORKERS]);
+        setWorkers(mergedWorkers);
+
+        // Merge machine EM for 10/10/2026
+        loadedMachineEm = {
+          ...loadedMachineEm,
+          [SAMPLE_DATE]: {
+            ...(loadedMachineEm[SAMPLE_DATE] || {}),
+            ...SAMPLE_MACHINE_EM_10102026
+          }
+        };
+        setMachineEm(loadedMachineEm);
+        setReportHistory(loadedHistory);
+
         if (data.dailyReport) setDailyReport(ensureSixMachines(data.dailyReport));
-        if (data.history && data.history.length > 0) setReportHistory(data.history);
-        if (data.workers && data.workers.length > 0) setWorkers(mergeDuplicateWorkers(data.workers));
         if (data.machines && data.machines.length > 0) {
           setMachines(data.machines);
           if (typeof window !== 'undefined') {
@@ -336,13 +372,27 @@ export default function Home() {
         }
         if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
         if (data.counts && data.counts.length > 0) setCountConversions(data.counts);
-        if (data.settings) setSettings(prev => ({ ...prev, ...data.settings }));
-        if (data.machineEm) setMachineEm(data.machineEm);
+        if (data.settings) {
+          setSettings(prev => ({ 
+            ...prev, 
+            ...data.settings,
+            gaiterCounts: {
+              I: data.settings.gaiterCounts?.I ?? 1,
+              II: data.settings.gaiterCounts?.II ?? 1,
+              III: 1
+            }
+          }));
+        }
         if (data.frozenMonths) setFrozenMonths(data.frozenMonths);
         setIsSystemReady(true);
       } catch (err: any) {
         console.error('Failed to load initial data from MongoDB:', err);
         setLastError(err?.message || 'Database connection error');
+        // Offline local sample data fallback
+        const sample1010 = createSampleReportForShed1_10102026();
+        setReportHistory([sample1010]);
+        setWorkers(SAMPLE_WORKERS);
+        setMachineEm({ [SAMPLE_DATE]: SAMPLE_MACHINE_EM_10102026 });
         setIsSystemReady(true);
       }
     }
@@ -1737,9 +1787,13 @@ export default function Home() {
                           overview: preset.secs,
                           charts: preset.secs,
                           table: preset.secs,
+                          'top-workers': preset.secs,
                           champions: preset.secs,
                           sheds: preset.secs,
-                          monthly: preset.secs
+                          monthly: preset.secs,
+                          'running-counts': preset.secs,
+                          'daily-incentive': preset.secs,
+                          'monthly-report': preset.secs
                         };
                         const updated = { ...settings, tvSlideIntervals: newIntervals };
                         setSettings(updated);
@@ -1797,6 +1851,24 @@ export default function Home() {
                     name: 'Monthly Cumulative Production Trend',
                     desc: '15-day / month-to-date cumulative production volume and plant trajectory chart.',
                     defaultSecs: 15
+                  },
+                  {
+                    id: 'running-counts',
+                    name: 'Running Counts & Telemetry',
+                    desc: 'Count-wise machine allocation, production volume (kg), and spindle distribution chart.',
+                    defaultSecs: 20
+                  },
+                  {
+                    id: 'daily-incentive',
+                    name: 'Daily Operator Incentive Ledger',
+                    desc: 'Daily sider incentive amounts, shift totals, and top earner payout leaderboard.',
+                    defaultSecs: 20
+                  },
+                  {
+                    id: 'monthly-report',
+                    name: 'Monthly Production Master Report',
+                    desc: 'Comprehensive monthly cumulative production, target achievement, and shift performance ledger.',
+                    defaultSecs: 20
                   }
                 ].map((slide, idx) => {
                   const currentSecs = settings.tvSlideIntervals?.[slide.id] ?? slide.defaultSecs;
@@ -2365,6 +2437,8 @@ export default function Home() {
           onSelectShed={setSelectedShed}
           machineEm={machineEm}
           settings={settings}
+          onSelectDate={handleTopDateChange}
+          availableDates={availableReportDates}
           onExit={() => {
             setIsTvMode(false);
             setTvStarted(false);
@@ -2387,7 +2461,14 @@ export default function Home() {
           <Sidebar
             activeTab={activeTab}
             setActiveTab={setActiveTab}
-            onTvMode={() => setIsTvMode(true)}
+            onTvMode={() => {
+              setIsTvMode(true);
+              try {
+                if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                }
+              } catch {}
+            }}
             onSeedData={seedHistoricalData}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
@@ -2475,7 +2556,14 @@ export default function Home() {
                 <div className="h-4 w-px bg-stone-200 mx-0.5 hidden sm:block" />
 
                 <button
-                  onClick={() => setIsTvMode(true)}
+                  onClick={() => {
+                    setIsTvMode(true);
+                    try {
+                      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                      }
+                    } catch {}
+                  }}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl font-black uppercase tracking-widest text-[9px] hover:bg-emerald-100 transition-all border border-emerald-200 cursor-pointer shadow-2xs"
                 >
                   <Monitor size={12} /> <span className="hidden sm:inline">TV Mode</span>

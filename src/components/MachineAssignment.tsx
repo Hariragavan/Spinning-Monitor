@@ -406,12 +406,12 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                 </label>
                 
                 <div className="space-y-2">
-                  {Array.from({ length: Math.max(gaiterCounts[shift] ?? 1, (gaiters[shift] || []).length) }).map((_, gIdx) => (
+                  {Array.from({ length: gaiterCounts[shift] ?? 1 }).map((_, gIdx) => (
                     <div key={gIdx} className="relative">
                       <select
                         value={gaiters[shift]?.[gIdx] || ''}
                         onChange={(e) => {
-                          const currentCount = Math.max(gaiterCounts[shift] ?? 1, (gaiters[shift] || []).length);
+                          const currentCount = gaiterCounts[shift] ?? 1;
                           const newGaiters = Array.from({ length: currentCount }, (_, i) => (gaiters[shift]?.[i] || ""));
                           newGaiters[gIdx] = e.target.value || "";
                           assignGaiter(shift, newGaiters);
