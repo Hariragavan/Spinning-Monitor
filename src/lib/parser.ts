@@ -698,8 +698,16 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[], ta
       III: (sGps.I + sGps.II + sGps.III > 0) ? actualProd * (sGps.III / (sGps.I + sGps.II + sGps.III)) : actualProd / 3,
     };
     
-    const conversionObj = countConversions.find(c => c.count.toLowerCase() === count.toLowerCase());
+    const countNorm = (count || '').toLowerCase().trim();
+    const conversionObj = countConversions.find(c => 
+      (c.count || '').toLowerCase().trim() === countNorm && 
+      (c.shed || 'Shed 1') === targetShed
+    ) || countConversions.find(c => 
+      (c.count || '').toLowerCase().trim() === countNorm && 
+      (c.shed === 'All Sheds' || !c.shed)
+    ) || countConversions.find(c => (c.count || '').toLowerCase().trim() === countNorm);
     const row40s = countTo40s.get(count) || (conversionObj ? actualProd * conversionObj.multiplicationFactor / 3 : 0);
+
     
     totalTarget += targetProd;
     totalAchieved += actualProd;

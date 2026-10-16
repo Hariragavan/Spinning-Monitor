@@ -49,29 +49,38 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
-  { count: '32/1-CH-CY', multiplicationFactor: 0.7155, description: '32/1 Comb Hosiery Compact Weft' },
-  { count: '34/1CHY-OCY', multiplicationFactor: 0.7836, description: '34/1 Comb Hosiery Compact Compact' },
-  { count: '30/1CH', multiplicationFactor: 0.6495, description: '30/1 Comb Hosiery' },
-  { count: '20/1-CW-WVG', multiplicationFactor: 0.3536, description: '20/1 Carded Weft Weaving' },
-  { count: '40s', multiplicationFactor: 1.0, description: 'Default 40s Standard Count' }
+  // Shed 1 Counts (Matching Mill Standards & User Screenshot)
+  { count: '030/1-PH-PC', multiplicationFactor: 0.539, description: '30/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
+  { count: '040/1-PH-PC', multiplicationFactor: 0.803, description: '40/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
+  { count: '34/1-PH-PV', multiplicationFactor: 0.54, description: '34/1 Poly Viscose Yarn', shed: 'Shed 1' },
+  { count: '042/1-CH-NY', multiplicationFactor: 0.7235, description: '42/1 Comb Hosiery NY', shed: 'Shed 1' },
+  { count: '038/1-CH-NY', multiplicationFactor: 0.6641, description: '38/1 Comb Hosiery NY', shed: 'Shed 1' },
+  { count: '034/1-PH-PC', multiplicationFactor: 0.54, description: 'Auto-imported count (034/1-PH-PC)', shed: 'Shed 1' },
+  
+  // Shed 2 Counts
+  { count: '32/1-CH-CY', multiplicationFactor: 0.7155, description: '32/1 Comb Hosiery Compact Weft', shed: 'Shed 2' },
+  { count: '34/1CHY-OCY', multiplicationFactor: 0.7836, description: '34/1 Comb Hosiery Compact Compact', shed: 'Shed 2' },
+  { count: '30/1CH', multiplicationFactor: 0.6495, description: '30/1 Comb Hosiery', shed: 'Shed 2' },
+  { count: '20/1-CW-WVG', multiplicationFactor: 0.3536, description: '20/1 Carded Weft Weaving', shed: 'Shed 2' },
+  
+  // Shed 3 Counts
+  { count: '26/1-CHY', multiplicationFactor: 0.585, description: '26/1 Comb Hosiery Yarn', shed: 'Shed 3' },
+  { count: '40s', multiplicationFactor: 1.0, description: '40s Standard Count', shed: 'Shed 3' },
+
+  // KTTM Counts
+  { count: '60s CW', multiplicationFactor: 1.837, description: '60s Combed Warp', shed: 'KTTM' },
+  { count: '40s', multiplicationFactor: 1.0, description: 'Default 40s Standard Count', shed: 'KTTM' },
+
+  // Universal / All Sheds
+  { count: '40s', multiplicationFactor: 1.0, description: 'Default 40s Standard Count', shed: 'All Sheds' }
 ];
 
 const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
-  {
-    count: '40s Count',
-    payouts: [
-      { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
-      { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for GPS 135 to 140', ruleText: 'Rs 90 for GPS 135 to 140' },
-      { gpsThreshold: 130, amount: 80, fromGps: 130, toGps: 135, conditionText: 'for 130 to 135', ruleText: 'Rs 80 for 130 to 135' },
-      { gpsThreshold: 128, amount: 70, fromGps: 128, toGps: 130, conditionText: 'for 128 to 130', ruleText: 'Rs 70 for 128 to 130' },
-      { gpsThreshold: 125, amount: 60, fromGps: 125, toGps: 128, conditionText: 'for 125 to 128', ruleText: 'Rs 60 for 125 to 128' },
-      { gpsThreshold: 120, amount: 50, fromGps: 120, toGps: 125, conditionText: 'for 120 to 125', ruleText: 'Rs 50 for 120 to 125' },
-      { gpsThreshold: 115, amount: 40, fromGps: 115, toGps: 120, conditionText: 'for 115 to 120', ruleText: 'Rs 40 for 115 to 120' },
-      { gpsThreshold: 110, amount: 30, fromGps: 110, toGps: 115, conditionText: 'for 110 to 115', ruleText: 'Rs 30 for 110 to 115' }
-    ]
-  },
+  // Shed 1 Rules
   {
     count: '030/1-PH-PC',
+    department: 'Sider',
+    shed: 'Shed 1',
     payouts: [
       { gpsThreshold: 210, amount: 100, fromGps: 210, toGps: 210, conditionText: 'for GPSS 210', ruleText: 'Rs 100 for GPSS 210' },
       { gpsThreshold: 200, amount: 90, fromGps: 200, toGps: 210, conditionText: 'for GPS 200 to 210', ruleText: 'Rs 90 for GPS 200 to 210' },
@@ -82,7 +91,22 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
     ]
   },
   {
+    count: '040/1-PH-PC',
+    department: 'Sider',
+    shed: 'Shed 1',
+    payouts: [
+      { gpsThreshold: 160, amount: 100, fromGps: 160, toGps: 160, conditionText: 'for GPSS 160', ruleText: 'Rs 100 for GPSS 160' },
+      { gpsThreshold: 155, amount: 90, fromGps: 155, toGps: 160, conditionText: 'for GPS 155 to 160', ruleText: 'Rs 90 for GPS 155 to 160' },
+      { gpsThreshold: 150, amount: 80, fromGps: 150, toGps: 155, conditionText: 'for 150 to 155', ruleText: 'Rs 80 for 150 to 155' },
+      { gpsThreshold: 145, amount: 70, fromGps: 145, toGps: 150, conditionText: 'for 145 to 150', ruleText: 'Rs 70 for 145 to 150' },
+      { gpsThreshold: 140, amount: 60, fromGps: 140, toGps: 145, conditionText: 'for 140 to 145', ruleText: 'Rs 60 for 140 to 145' },
+      { gpsThreshold: 135, amount: 50, fromGps: 135, toGps: 140, conditionText: 'for 135 to 140', ruleText: 'Rs 50 for 135 to 140' }
+    ]
+  },
+  {
     count: '34/1-PH-PV',
+    department: 'Sider',
+    shed: 'Shed 1',
     payouts: [
       { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
       { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for GPS 135 to 140', ruleText: 'Rs 90 for GPS 135 to 140' },
@@ -93,66 +117,159 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
     ]
   },
   {
-    count: '32/1-CH-CY',
+    count: '042/1-CH-NY',
+    department: 'Sider',
+    shed: 'Shed 1',
     payouts: [
-      { gpsThreshold: 210, amount: 60 },
-      { gpsThreshold: 220, amount: 80 },
-      { gpsThreshold: 225, amount: 85 },
-      { gpsThreshold: 230, amount: 90 },
-      { gpsThreshold: 235, amount: 95 },
-      { gpsThreshold: 240, amount: 110 }
+      { gpsThreshold: 150, amount: 100, fromGps: 150, toGps: 150, conditionText: 'for GPSS 150', ruleText: 'Rs 100 for GPSS 150' },
+      { gpsThreshold: 145, amount: 90, fromGps: 145, toGps: 150, conditionText: 'for 145 to 150', ruleText: 'Rs 90 for 145 to 150' },
+      { gpsThreshold: 140, amount: 80, fromGps: 140, toGps: 145, conditionText: 'for 140 to 145', ruleText: 'Rs 80 for 140 to 145' },
+      { gpsThreshold: 135, amount: 70, fromGps: 135, toGps: 140, conditionText: 'for 135 to 140', ruleText: 'Rs 70 for 135 to 140' }
+    ]
+  },
+  {
+    count: '038/1-CH-NY',
+    department: 'Sider',
+    shed: 'Shed 1',
+    payouts: [
+      { gpsThreshold: 160, amount: 100, fromGps: 160, toGps: 160, conditionText: 'for GPSS 160', ruleText: 'Rs 100 for GPSS 160' },
+      { gpsThreshold: 155, amount: 90, fromGps: 155, toGps: 160, conditionText: 'for 155 to 160', ruleText: 'Rs 90 for 155 to 160' },
+      { gpsThreshold: 150, amount: 80, fromGps: 150, toGps: 155, conditionText: 'for 150 to 155', ruleText: 'Rs 80 for 150 to 155' }
+    ]
+  },
+  {
+    count: '034/1-PH-PC',
+    department: 'Sider',
+    shed: 'Shed 1',
+    payouts: [
+      { gpsThreshold: 180, amount: 100, fromGps: 180, toGps: 180, conditionText: 'for GPSS 180', ruleText: 'Rs 100 for GPSS 180' },
+      { gpsThreshold: 175, amount: 90, fromGps: 175, toGps: 180, conditionText: 'for 175 to 180', ruleText: 'Rs 90 for 175 to 180' },
+      { gpsThreshold: 170, amount: 80, fromGps: 170, toGps: 175, conditionText: 'for 170 to 175', ruleText: 'Rs 80 for 170 to 175' }
+    ]
+  },
+  {
+    count: '40s',
+    department: 'Sider',
+    shed: 'Shed 1',
+    payouts: [
+      { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
+      { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for GPS 135 to 140', ruleText: 'Rs 90 for GPS 135 to 140' },
+      { gpsThreshold: 130, amount: 80, fromGps: 130, toGps: 135, conditionText: 'for 130 to 135', ruleText: 'Rs 80 for 130 to 135' },
+      { gpsThreshold: 125, amount: 70, fromGps: 125, toGps: 130, conditionText: 'for 125 to 130', ruleText: 'Rs 70 for 125 to 130' },
+      { gpsThreshold: 120, amount: 60, fromGps: 120, toGps: 125, conditionText: 'for 120 to 125', ruleText: 'Rs 60 for 120 to 125' },
+      { gpsThreshold: 115, amount: 50, fromGps: 115, toGps: 120, conditionText: 'for 115 to 120', ruleText: 'Rs 50 for 115 to 120' }
+    ]
+  },
+
+  // Shed 2 Rules
+  {
+    count: '32/1-CH-CY',
+    department: 'Sider',
+    shed: 'Shed 2',
+    payouts: [
+      { gpsThreshold: 240, amount: 110, fromGps: 240, toGps: 240, conditionText: 'for GPSS 240', ruleText: 'Rs 110 for GPSS 240' },
+      { gpsThreshold: 235, amount: 95, fromGps: 235, toGps: 240, conditionText: 'for 235 to 240', ruleText: 'Rs 95 for 235 to 240' },
+      { gpsThreshold: 230, amount: 90, fromGps: 230, toGps: 235, conditionText: 'for 230 to 235', ruleText: 'Rs 90 for 230 to 235' },
+      { gpsThreshold: 225, amount: 85, fromGps: 225, toGps: 230, conditionText: 'for 225 to 230', ruleText: 'Rs 85 for 225 to 230' },
+      { gpsThreshold: 220, amount: 80, fromGps: 220, toGps: 225, conditionText: 'for 220 to 225', ruleText: 'Rs 80 for 220 to 225' },
+      { gpsThreshold: 210, amount: 60, fromGps: 210, toGps: 220, conditionText: 'for 210 to 220', ruleText: 'Rs 60 for 210 to 220' }
     ]
   },
   {
     count: '34/1CHY-OCY',
+    department: 'Sider',
+    shed: 'Shed 2',
     payouts: [
-      { gpsThreshold: 190, amount: 60 },
-      { gpsThreshold: 200, amount: 80 },
-      { gpsThreshold: 205, amount: 85 },
-      { gpsThreshold: 210, amount: 90 },
-      { gpsThreshold: 220, amount: 95 },
-      { gpsThreshold: 230, amount: 110 }
+      { gpsThreshold: 230, amount: 110, fromGps: 230, toGps: 230, conditionText: 'for GPSS 230', ruleText: 'Rs 110 for GPSS 230' },
+      { gpsThreshold: 220, amount: 95, fromGps: 220, toGps: 230, conditionText: 'for 220 to 230', ruleText: 'Rs 95 for 220 to 230' },
+      { gpsThreshold: 210, amount: 90, fromGps: 210, toGps: 220, conditionText: 'for 210 to 220', ruleText: 'Rs 90 for 210 to 220' },
+      { gpsThreshold: 205, amount: 85, fromGps: 205, toGps: 210, conditionText: 'for 205 to 210', ruleText: 'Rs 85 for 205 to 210' },
+      { gpsThreshold: 200, amount: 80, fromGps: 200, toGps: 205, conditionText: 'for 200 to 205', ruleText: 'Rs 80 for 200 to 205' },
+      { gpsThreshold: 190, amount: 60, fromGps: 190, toGps: 200, conditionText: 'for 190 to 200', ruleText: 'Rs 60 for 190 to 200' }
     ]
   },
   {
     count: '30/1CH',
+    department: 'Sider',
+    shed: 'Shed 2',
     payouts: [
-      { gpsThreshold: 310, amount: 60 },
-      { gpsThreshold: 315, amount: 66 },
-      { gpsThreshold: 318, amount: 68 },
-      { gpsThreshold: 325, amount: 70 },
-      { gpsThreshold: 335, amount: 80 },
-      { gpsThreshold: 345, amount: 85 },
-      { gpsThreshold: 355, amount: 90 },
-      { gpsThreshold: 365, amount: 95 },
-      { gpsThreshold: 375, amount: 100 },
-      { gpsThreshold: 385, amount: 110 }
+      { gpsThreshold: 385, amount: 110, fromGps: 385, toGps: 385, conditionText: 'for GPSS 385', ruleText: 'Rs 110 for GPSS 385' },
+      { gpsThreshold: 375, amount: 100, fromGps: 375, toGps: 385, conditionText: 'for 375 to 385', ruleText: 'Rs 100 for 375 to 385' },
+      { gpsThreshold: 365, amount: 95, fromGps: 365, toGps: 375, conditionText: 'for 365 to 375', ruleText: 'Rs 95 for 365 to 375' },
+      { gpsThreshold: 355, amount: 90, fromGps: 355, toGps: 365, conditionText: 'for 355 to 365', ruleText: 'Rs 90 for 355 to 365' },
+      { gpsThreshold: 345, amount: 85, fromGps: 345, toGps: 355, conditionText: 'for 345 to 355', ruleText: 'Rs 85 for 345 to 355' },
+      { gpsThreshold: 335, amount: 80, fromGps: 335, toGps: 345, conditionText: 'for 335 to 345', ruleText: 'Rs 80 for 335 to 345' }
     ]
   },
   {
     count: '20/1-CW-WVG',
+    department: 'Sider',
+    shed: 'Shed 2',
     payouts: [
-      { gpsThreshold: 310, amount: 60 },
-      { gpsThreshold: 315, amount: 66 },
-      { gpsThreshold: 318, amount: 68 },
-      { gpsThreshold: 325, amount: 70 },
-      { gpsThreshold: 335, amount: 80 },
-      { gpsThreshold: 345, amount: 85 },
-      { gpsThreshold: 355, amount: 90 },
-      { gpsThreshold: 365, amount: 95 },
-      { gpsThreshold: 375, amount: 100 },
-      { gpsThreshold: 385, amount: 110 }
+      { gpsThreshold: 385, amount: 110, fromGps: 385, toGps: 385, conditionText: 'for GPSS 385', ruleText: 'Rs 110 for GPSS 385' },
+      { gpsThreshold: 365, amount: 95, fromGps: 365, toGps: 385, conditionText: 'for 365 to 385', ruleText: 'Rs 95 for 365 to 385' },
+      { gpsThreshold: 345, amount: 85, fromGps: 345, toGps: 365, conditionText: 'for 345 to 365', ruleText: 'Rs 85 for 345 to 365' },
+      { gpsThreshold: 325, amount: 70, fromGps: 325, toGps: 345, conditionText: 'for 325 to 345', ruleText: 'Rs 70 for 325 to 345' },
+      { gpsThreshold: 310, amount: 60, fromGps: 310, toGps: 325, conditionText: 'for 310 to 325', ruleText: 'Rs 60 for 310 to 325' }
+    ]
+  },
+
+  // Shed 3 Rules
+  {
+    count: '26/1-CHY',
+    department: 'Sider',
+    shed: 'Shed 3',
+    payouts: [
+      { gpsThreshold: 320, amount: 120, fromGps: 320, toGps: 320, conditionText: 'for GPSS 320', ruleText: 'Rs 120 for GPSS 320' },
+      { gpsThreshold: 315, amount: 115, fromGps: 315, toGps: 320, conditionText: 'for 315 to 320', ruleText: 'Rs 115 for 315 to 320' },
+      { gpsThreshold: 310, amount: 110, fromGps: 310, toGps: 315, conditionText: 'for 310 to 315', ruleText: 'Rs 110 for 310 to 315' },
+      { gpsThreshold: 305, amount: 100, fromGps: 305, toGps: 310, conditionText: 'for 305 to 310', ruleText: 'Rs 100 for 305 to 310' },
+      { gpsThreshold: 300, amount: 90, fromGps: 300, toGps: 305, conditionText: 'for 300 to 305', ruleText: 'Rs 90 for 300 to 305' },
+      { gpsThreshold: 295, amount: 80, fromGps: 295, toGps: 300, conditionText: 'for 295 to 300', ruleText: 'Rs 80 for 295 to 300' }
     ]
   },
   {
-    count: '26/1-CHY',
+    count: '40s',
+    department: 'Sider',
+    shed: 'Shed 3',
     payouts: [
-      { gpsThreshold: 295, amount: 80 },
-      { gpsThreshold: 300, amount: 90 },
-      { gpsThreshold: 305, amount: 100 },
-      { gpsThreshold: 310, amount: 110 },
-      { gpsThreshold: 315, amount: 115 },
-      { gpsThreshold: 320, amount: 120 }
+      { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
+      { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for 135 to 140', ruleText: 'Rs 90 for 135 to 140' },
+      { gpsThreshold: 130, amount: 80, fromGps: 130, toGps: 135, conditionText: 'for 130 to 135', ruleText: 'Rs 80 for 130 to 135' }
+    ]
+  },
+
+  // KTTM Rules
+  {
+    count: '60s CW',
+    department: 'Sider',
+    shed: 'KTTM',
+    payouts: [
+      { gpsThreshold: 120, amount: 110, fromGps: 120, toGps: 120, conditionText: 'for GPSS 120', ruleText: 'Rs 110 for GPSS 120' },
+      { gpsThreshold: 115, amount: 95, fromGps: 115, toGps: 120, conditionText: 'for 115 to 120', ruleText: 'Rs 95 for 115 to 120' },
+      { gpsThreshold: 110, amount: 85, fromGps: 110, toGps: 115, conditionText: 'for 110 to 115', ruleText: 'Rs 85 for 110 to 115' },
+      { gpsThreshold: 105, amount: 75, fromGps: 105, toGps: 110, conditionText: 'for 105 to 110', ruleText: 'Rs 75 for 105 to 110' }
+    ]
+  },
+  {
+    count: '40s',
+    department: 'Sider',
+    shed: 'KTTM',
+    payouts: [
+      { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
+      { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for 135 to 140', ruleText: 'Rs 90 for 135 to 140' }
+    ]
+  },
+
+  // Universal Gaiter Rule
+  {
+    count: 'All',
+    department: 'Gaiter',
+    shed: 'All Sheds',
+    payouts: [
+      { gpsThreshold: 340, amount: 90, fromGps: 340, toGps: 340, conditionText: 'for GPSS 340', ruleText: 'Rs 90 for GPSS 340' },
+      { gpsThreshold: 320, amount: 70, fromGps: 320, toGps: 340, conditionText: 'for 320 to 340', ruleText: 'Rs 70 for 320 to 340' },
+      { gpsThreshold: 300, amount: 50, fromGps: 300, toGps: 320, conditionText: 'for 300 to 320', ruleText: 'Rs 50 for 300 to 320' }
     ]
   }
 ];
@@ -947,21 +1064,59 @@ export default function Home() {
   };
 
   const saveCountConversion = async (conv: CountConversion) => {
-    const updated = [...countConversions.filter(c => c.count !== conv.count), conv];
-    setCountConversions(updated);
-    await apiClient.saveCountConversion(conv);
+    const convShed = conv.shed || selectedShed || 'Shed 1';
+    const cleanCount = conv.count.trim();
+    const cleanConv: CountConversion = {
+      ...conv,
+      count: cleanCount,
+      shed: convShed
+    };
+    setCountConversions(prev => {
+      const filtered = prev.filter(c => !(
+        c.count.trim().toLowerCase() === cleanCount.toLowerCase() &&
+        (c.shed || 'Shed 1') === convShed
+      ));
+      return [...filtered, cleanConv];
+    });
+    await apiClient.saveCountConversion(cleanConv);
   };
 
-  const deleteCountConversion = async (count: string) => {
-    const updated = countConversions.filter(c => c.count !== count);
-    setCountConversions(updated);
-    await apiClient.deleteCountConversion(count);
+  const deleteCountConversion = async (count: string, shed?: string) => {
+    const targetShed = shed && shed !== 'All' && shed !== 'All Sheds' ? shed : undefined;
+    const cleanCount = count.trim().toLowerCase();
+    setCountConversions(prev => prev.filter(c => {
+      if (c.count.trim().toLowerCase() !== cleanCount) return true;
+      if (targetShed && (c.shed || 'Shed 1') !== targetShed) return true;
+      return false;
+    }));
+    await apiClient.deleteCountConversion(count, targetShed);
   };
 
   const updateIncentiveRulesOnline = async (newRules: IncentiveRule[]) => {
-    setIncentiveRules(newRules);
-    await apiClient.saveRules(newRules);
+    const fallbackShed = selectedShed || 'Shed 1';
+    const seen = new Set<string>();
+    const normalized: IncentiveRule[] = [];
+    for (const r of newRules) {
+      if (!r || !r.count) continue;
+      const cleanCount = r.count.trim();
+      const s = r.shed || fallbackShed;
+      const d = r.department || 'Sider';
+      const key = `${cleanCount.toLowerCase()}__${d.toLowerCase()}__${s.toLowerCase()}`;
+      if (!seen.has(key)) {
+
+        seen.add(key);
+        normalized.push({
+          ...r,
+          count: cleanCount,
+          shed: s,
+          department: d
+        });
+      }
+    }
+    setIncentiveRules(normalized);
+    await apiClient.saveRules(normalized);
   };
+
 
   const handleToggleFreezeMonth = useCallback(async (m: number, y: number) => {
     const monthKey = getMonthKey(m, y);
@@ -1538,6 +1693,7 @@ export default function Home() {
               conversions={countConversions}
               onSave={saveCountConversion}
               onDelete={deleteCountConversion}
+              currentShed={selectedShed}
             />
           </div>
         );
@@ -1564,6 +1720,7 @@ export default function Home() {
               onNavigateToMatrix={() => setActiveTab('running-count-incentives')}
               frozenMonths={frozenMonths}
               onToggleFreezeMonth={handleToggleFreezeMonth}
+              currentShed={selectedShed}
             />
           </div>
         );
@@ -2388,6 +2545,7 @@ export default function Home() {
           settings={settings}
           onSelectDate={handleTopDateChange}
           availableDates={availableReportDates}
+          countConversions={countConversions}
           onExit={() => {
             setIsTvMode(false);
             setTvStarted(false);

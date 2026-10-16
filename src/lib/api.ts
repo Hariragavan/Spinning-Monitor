@@ -189,6 +189,26 @@ export const apiClient = {
     return res.ok;
   },
 
+  async saveRule(rule: IncentiveRule): Promise<boolean> {
+    const res = await fetch('/api/rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save_rule', rule })
+    });
+    return res.ok;
+  },
+
+  async deleteRule(count: string, shed?: string): Promise<boolean> {
+    const query = shed && shed !== 'All' && shed !== 'All Sheds'
+      ? `?count=${encodeURIComponent(count)}&shed=${encodeURIComponent(shed)}`
+      : `?count=${encodeURIComponent(count)}`;
+    const res = await fetch(`/api/rules${query}`, {
+      method: 'DELETE'
+    });
+    return res.ok;
+  },
+
+
   async saveCountConversion(conversion: CountConversion): Promise<boolean> {
     const res = await fetch('/api/counts', {
       method: 'POST',
@@ -198,8 +218,11 @@ export const apiClient = {
     return res.ok;
   },
 
-  async deleteCountConversion(count: string): Promise<boolean> {
-    const res = await fetch(`/api/counts?count=${encodeURIComponent(count)}`, {
+  async deleteCountConversion(count: string, shed?: string): Promise<boolean> {
+    const query = shed && shed !== 'All' && shed !== 'All Sheds'
+      ? `?count=${encodeURIComponent(count)}&shed=${encodeURIComponent(shed)}`
+      : `?count=${encodeURIComponent(count)}`;
+    const res = await fetch(`/api/counts${query}`, {
       method: 'DELETE'
     });
     return res.ok;

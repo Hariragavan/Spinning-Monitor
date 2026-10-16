@@ -21,6 +21,7 @@ interface IncentiveMasterProps {
   onNavigateToMatrix?: () => void;
   frozenMonths?: Record<string, FrozenMonthRecord>;
   onToggleFreezeMonth?: (month: number, year: number) => void;
+  currentShed?: string;
 }
 
 export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
@@ -29,12 +30,22 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   countConversions = [],
   onNavigateToMatrix,
   frozenMonths = {},
-  onToggleFreezeMonth
+  onToggleFreezeMonth,
+  currentShed = 'Shed 1'
 }) => {
+  // Active Shed Tab Filter
+  const [selectedShedTab, setSelectedShedTab] = useState<string>(() => {
+    return currentShed || 'Shed 1';
+  });
+
+  // Builder Target Shed
+  const [builderShed, setBuilderShed] = useState<string>(() => {
+    return currentShed && currentShed !== 'All Sheds' ? currentShed : 'Shed 1';
+  });
+
   // Active selected count for the Builder
   const [selectedCount, setSelectedCount] = useState<string>(() => {
     if (rules.length > 0) {
-      // Prefer 030/1-PH-PC if exists, else first rule
       const found = rules.find(r => r.count.includes('030') || r.count.includes('30'));
       return found ? found.count : rules[0].count;
     }
@@ -48,7 +59,28 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   // Modal for adding a new count rule
   const [newCountModalOpen, setNewCountModalOpen] = useState(false);
   const [newCountInput, setNewCountInput] = useState('');
+  const [newCountShed, setNewCountShed] = useState<string>('Shed 1');
   const [newCountError, setNewCountError] = useState<string | null>(null);
+
+  // Sync selectedShedTab when top navigation currentShed changes
+  useEffect(() => {
+    if (currentShed && currentShed !== 'All') {
+      setSelectedShedTab(currentShed);
+    }
+  }, [currentShed]);
+
+  // Sync builderShed when shed tab changes
+  useEffect(() => {
+    if (selectedShedTab !== 'All Sheds') {
+      setBuilderShed(selectedShedTab);
+      setNewCountShed(selectedShedTab);
+      // Switch selectedCount to one available in this shed if current count doesn't exist here
+      const shedRules = rules.filter(r => (r.shed || 'Shed 1') === selectedShedTab);
+      if (shedRules.length > 0 && !shedRules.some(r => r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim())) {
+        setSelectedCount(shedRules[0].count);
+      }
+    }
+  }, [selectedShedTab, rules]);
 
   // Helper to get formatted condition text
   const getSlotConditionText = (payout: IncentivePayout, idx: number, allPayouts: IncentivePayout[]): string => {
@@ -68,9 +100,19 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     return `Rs ${payout.amount} ${cond}`;
   };
 
-  // Sync builder when selectedCount or rules change
+  // Sync builder when selectedCount, builderShed, or rules change
   useEffect(() => {
-    const activeRule = rules.find(r => r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim());
+    if (!selectedCount) return;
+    const effectiveShed = builderShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
+    const activeRule = rules.find(r => 
+      r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() &&
+      (r.shed || 'Shed 1') === effectiveShed
+    ) || rules.find(r => 
+      r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() &&
+      r.shed === 'All Sheds'
+    );
+
+
     if (activeRule && activeRule.payouts && activeRule.payouts.length > 0) {
       // Sort descending by gpsThreshold
       const sorted = [...activeRule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
@@ -101,7 +143,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
         { id: 's6', amount: 50, fromGps: 180, toGps: '185' },
       ]);
     }
-  }, [selectedCount, rules]);
+  }, [selectedCount, builderShed, selectedShedTab, rules]);
 
   // Handle slot modifications in builder
   const handleUpdateSlotAmount = (index: number, val: number) => {
@@ -112,7 +154,6 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     setBuilderSlots(prev => {
       const next = [...prev];
       next[index] = { ...next[index], fromGps: val };
-      // Also update the next tier's "toGps" if applicable
       if (index + 1 < next.length) {
         next[index + 1] = { ...next[index + 1], toGps: String(val) };
       }
@@ -149,11 +190,10 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     ]);
   };
 
-  // Save slots from builder into rules
+  // Save slots from builder strictly for builderShed
   const handleSaveBuilder = () => {
     if (!selectedCount) return;
 
-    // Convert builder slots to payouts
     const payouts: IncentivePayout[] = builderSlots.map((s, idx) => {
       const toVal = parseFloat(s.toGps);
       const isTop = idx === 0 || s.toGps === 'GPSS Target';
@@ -170,32 +210,32 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       };
     });
 
-    // Sort descending by gpsThreshold
     payouts.sort((a, b) => b.gpsThreshold - a.gpsThreshold);
 
-    const exists = rules.some(r => r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim());
-    let newRules: IncentiveRule[];
+    const targetShed = builderShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
+    const cleanCount = selectedCount.trim();
 
-    if (exists) {
-      newRules = rules.map(r => 
-        r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim()
-          ? { ...r, payouts, department: r.department || 'Sider' }
-          : r
-      );
-    } else {
-      newRules = [
-        ...rules,
-        {
-          count: selectedCount,
-          payouts,
-          department: 'Sider'
-        }
-      ];
-    }
+    const cleanRule: IncentiveRule = {
+      count: cleanCount,
+      payouts,
+      department: 'Sider',
+      shed: targetShed
+    };
 
-    onUpdate(newRules);
+    // Filter out existing rule for THIS count in THIS shed only
+    const updatedRules = [
+      ...rules.filter(r => !(
+        r.count.toLowerCase().trim() === cleanCount.toLowerCase() && 
+        (r.shed || 'Shed 1') === targetShed &&
+        (r.department || 'Sider') === 'Sider'
+      )),
+      cleanRule
+    ];
+
+    onUpdate(updatedRules);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
+
   };
 
   // Add new count rule
@@ -206,9 +246,14 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       return;
     }
 
-    const exists = rules.some(r => r.count.toUpperCase() === clean);
+    const targetShed = newCountShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
+
+    const exists = rules.some(r => 
+      r.count.toUpperCase() === clean &&
+      (r.shed || 'Shed 1') === targetShed
+    );
     if (exists) {
-      setNewCountError(`Count rule "${clean}" already exists.`);
+      setNewCountError(`Count rule "${clean}" for ${targetShed} already exists.`);
       return;
     }
 
@@ -225,38 +270,68 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     const newRule: IncentiveRule = {
       count: clean,
       payouts: starterPayouts,
-      department: 'Sider'
+      department: 'Sider',
+      shed: targetShed
     };
 
     onUpdate([...rules, newRule]);
     setSelectedCount(clean);
+    setBuilderShed(targetShed);
     setNewCountModalOpen(false);
     setNewCountInput('');
     setNewCountError(null);
   };
 
+  // Delete an entire count rule for a shed
+  const handleDeleteRule = (ruleCount: string, ruleShed?: string) => {
+    const targetShed = ruleShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
+    if (confirm(`Delete incentive rule for count "${ruleCount}" in ${targetShed}?`)) {
+      const remaining = rules.filter(r => !(
+        r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && 
+        (r.shed || 'Shed 1') === targetShed
+      ));
+      onUpdate(remaining);
+      if (selectedCount === ruleCount) {
+        const next = remaining.find(r => (r.shed || 'Shed 1') === targetShed) || remaining[0];
+        if (next) {
+          setSelectedCount(next.count);
+          setBuilderShed(next.shed || 'Shed 1');
+        }
+      }
+    }
+  };
+
   // Delete an individual slot from a rule card
-  const handleDeleteSlotFromRule = (ruleCount: string, slotIdx: number) => {
-    const targetRule = rules.find(r => r.count === ruleCount);
+  const handleDeleteSlotFromRule = (ruleCount: string, ruleShed: string | undefined, slotIdx: number) => {
+    const targetShed = ruleShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
+    const targetRule = rules.find(r => 
+      r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && 
+      (r.shed || 'Shed 1') === targetShed
+    );
     if (!targetRule) return;
 
     if (targetRule.payouts.length <= 1) {
-      if (confirm(`Count "${ruleCount}" will have 0 slots. Do you want to delete this count rule entirely?`)) {
-        onUpdate(rules.filter(r => r.count !== ruleCount));
-        if (selectedCount === ruleCount) {
-          const next = rules.find(r => r.count !== ruleCount);
-          if (next) setSelectedCount(next.count);
-        }
-      }
+      handleDeleteRule(ruleCount, ruleShed);
       return;
     }
 
-    if (confirm(`Delete Slot ${slotIdx + 1} from ${ruleCount}?`)) {
+    if (confirm(`Delete Slot ${slotIdx + 1} from ${ruleCount} (${targetShed})?`)) {
       const updatedPayouts = targetRule.payouts.filter((_, idx) => idx !== slotIdx);
-      const updatedRules = rules.map(r => r.count === ruleCount ? { ...r, payouts: updatedPayouts } : r);
+      const updatedRules = rules.map(r => 
+        (r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && (r.shed || 'Shed 1') === targetShed)
+          ? { ...r, payouts: updatedPayouts } 
+          : r
+      );
       onUpdate(updatedRules);
     }
   };
+
+  // Filter rules strictly by selected shed tab
+  const filteredRules = rules.filter(r => {
+    if (selectedShedTab === 'All Sheds') return true;
+    const s = r.shed || 'Shed 1';
+    return s === selectedShedTab;
+  });
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -271,25 +346,56 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
           </p>
         </div>
 
-        {/* TOP RIGHT: QUICK COUNT PILLS & MATRIX BUTTON */}
-        <div className="flex flex-col items-end gap-2.5">
-          {/* Quick Select Pills */}
-          <div className="flex flex-wrap items-center gap-2">
-            {rules.map((rule) => {
-              const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim();
+        {/* TOP RIGHT: SHED TABS, QUICK COUNT PILLS & MATRIX BUTTON */}
+        <div className="flex flex-col items-start lg:items-end gap-2.5">
+          {/* Shed Filter Bar */}
+          <div className="inline-flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+            {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => {
+              const isSelected = selectedShedTab === s;
               return (
                 <button
-                  key={rule.count}
+                  key={s}
                   type="button"
-                  onClick={() => setSelectedCount(rule.count)}
+                  onClick={() => setSelectedShedTab(s)}
                   className={cn(
-                    "px-3.5 py-1 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer shadow-2xs",
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
+                    isSelected 
+                      ? "bg-white text-emerald-800 shadow-xs font-black" 
+                      : "text-stone-500 hover:text-stone-800"
+                  )}
+                >
+                  {s}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Quick Select Pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            {filteredRules.map((rule) => {
+              const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() && (rule.shed || 'All Sheds') === builderShed;
+              return (
+                <button
+                  key={`${rule.count}-${rule.shed || 'All'}`}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCount(rule.count);
+                    if (rule.shed) setBuilderShed(rule.shed);
+                  }}
+                  className={cn(
+                    "px-3.5 py-1 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer shadow-2xs flex items-center gap-1.5",
                     isSelected
                       ? "bg-stone-900 text-white shadow-xs scale-102"
                       : "bg-white text-stone-700 hover:text-stone-950 hover:bg-stone-50 border border-stone-200"
                   )}
                 >
-                  {rule.count} ({rule.payouts.length} Slots)
+                  <span>{rule.count}</span>
+                  {rule.shed && rule.shed !== 'All Sheds' && (
+                    <span className="px-1 py-0.2 bg-stone-200 text-stone-700 rounded text-[9px] font-bold">
+                      {rule.shed}
+                    </span>
+                  )}
+                  <span className="opacity-70">({rule.payouts.length} Slots)</span>
                 </button>
               );
             })}
@@ -330,6 +436,22 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
             </button>
           </div>
 
+          {/* ASSIGN SHED ROW */}
+          <div className="mb-3">
+            <label className="text-[10px] font-black uppercase tracking-wider text-stone-600 block mb-1">
+              ASSIGN SHED *
+            </label>
+            <select
+              value={builderShed}
+              onChange={(e) => setBuilderShed(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
+            >
+              {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(sh => (
+                <option key={sh} value={sh}>{sh}</option>
+              ))}
+            </select>
+          </div>
+
           {/* SELECT COUNT ROW */}
           <div className="mb-4">
             <div className="flex items-center justify-between mb-1">
@@ -346,16 +468,23 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
             </div>
 
             <select
-              value={selectedCount}
-              onChange={(e) => setSelectedCount(e.target.value)}
+              value={`${selectedCount}__${builderShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1')}`}
+              onChange={(e) => {
+                const parts = e.target.value.split('__');
+                const cnt = parts[0];
+                const sh = parts[1];
+                setSelectedCount(cnt);
+                if (sh) setBuilderShed(sh);
+              }}
               className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
             >
-              {rules.map(r => (
-                <option key={r.count} value={r.count}>
-                  {r.count}
+              {filteredRules.map(r => (
+                <option key={`${r.count}-${r.shed || 'Shed 1'}`} value={`${r.count}__${r.shed || 'Shed 1'}`}>
+                  {r.count} {r.shed && r.shed !== 'All Sheds' ? `(${r.shed})` : ''}
                 </option>
               ))}
             </select>
+
           </div>
 
           {/* SLOTS TABLE HEADER */}
@@ -474,13 +603,20 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
 
         {/* RIGHT COLUMN: COUNT RULES CARDS LIST */}
         <div className="lg:col-span-7 space-y-5">
-          {rules.map((rule) => {
-            const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim();
-            const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
+          {filteredRules.length === 0 ? (
+            <div className="bg-white rounded-2xl p-10 border border-stone-200 text-center text-stone-400">
+              <p className="text-sm font-bold text-stone-700">No incentive rules configured for {selectedShedTab}.</p>
+              <p className="text-xs text-stone-400 mt-1">Select a different shed tab above or use the Builder on the left to configure rules for {selectedShedTab}.</p>
+            </div>
+          ) : (
+            filteredRules.map((rule) => {
+              const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() && (rule.shed || 'All Sheds') === builderShed;
+              const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
 
-            return (
-              <div
-                key={rule.count}
+              return (
+                <div
+                  key={`${rule.count}-${rule.shed || 'All'}`}
+
                 className={cn(
                   "bg-white rounded-2xl p-5 shadow-2xs transition-all",
                   isSelected
@@ -493,9 +629,14 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                   <div className="flex items-center gap-2.5">
                     <Bookmark size={18} className="text-emerald-600 shrink-0" />
                     <div>
-                      <h3 className="text-base font-black text-stone-900 tracking-tight font-mono">
-                        {rule.count}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-stone-900 tracking-tight font-mono">
+                          {rule.count}
+                        </h3>
+                        <span className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded-md text-[10px] font-bold font-mono">
+                          {rule.shed || 'All Sheds'}
+                        </span>
+                      </div>
                       <p className="text-[11px] font-mono text-stone-500 font-medium">
                         {rule.payouts.length} GPS Slots Configured · Incentive Based Only on GPS
                       </p>
@@ -507,6 +648,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                       type="button"
                       onClick={() => {
                         setSelectedCount(rule.count);
+                        if (rule.shed) setBuilderShed(rule.shed);
                         handleAddBuilderSlot();
                       }}
                       className="px-2.5 py-1 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
@@ -516,7 +658,10 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => setSelectedCount(rule.count)}
+                      onClick={() => {
+                        setSelectedCount(rule.count);
+                        if (rule.shed) setBuilderShed(rule.shed);
+                      }}
                       className={cn(
                         "px-3 py-1 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs",
                         isSelected
@@ -526,6 +671,15 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                     >
                       <Edit2 size={12} />
                       <span>Edit {rule.payouts.length} Slots</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRule(rule.count, rule.shed)}
+                      className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer border border-stone-200 hover:border-red-200"
+                      title="Delete Count Rule"
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
@@ -564,7 +718,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                             <td className="py-2.5 px-3 text-right">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteSlotFromRule(rule.count, idx)}
+                                onClick={() => handleDeleteSlotFromRule(rule.count, rule.shed, idx)}
                                 className="text-stone-300 hover:text-red-500 transition-colors cursor-pointer"
                                 title="Delete Slot"
                               >
@@ -579,8 +733,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                 </div>
               </div>
             );
-          })}
+          })
+        )}
         </div>
+
+
       </div>
 
       {/* NEW COUNT RULE MODAL */}
@@ -606,17 +763,34 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
               </div>
             )}
 
-            <div>
-              <label className="block text-xs font-bold text-stone-700 mb-1">
-                Count Identifier / Name *
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 30s KWH or 24/1-CH"
-                value={newCountInput}
-                onChange={(e) => setNewCountInput(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-emerald-500"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  Assign Shed *
+                </label>
+                <select
+                  value={newCountShed}
+                  onChange={(e) => setNewCountShed(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none focus:border-emerald-500 font-mono"
+                >
+                  {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(sh => (
+                    <option key={sh} value={sh}>{sh}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  Count Identifier / Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 30s KWH or 24/1-CH"
+                  value={newCountInput}
+                  onChange={(e) => setNewCountInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold uppercase outline-none focus:border-emerald-500"
+                />
+              </div>
               <span className="block text-[10px] text-stone-400 mt-1 font-medium">
                 This rule will be configured with 6 initial slots that you can edit immediately.
               </span>

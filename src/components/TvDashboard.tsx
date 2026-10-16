@@ -9,7 +9,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
   Tooltip, Legend, ResponsiveContainer, Cell 
 } from 'recharts';
-import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData } from '../types';
+import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion } from '../types';
 import { cn } from '../lib/utils';
 import { CalendarDatePicker } from './CalendarPickers';
 
@@ -25,6 +25,7 @@ interface TvDashboardProps {
   onExit: () => void;
   onSelectDate?: (date: string) => void;
   availableDates?: string[];
+  countConversions?: CountConversion[];
 }
 
 export const TvDashboard: React.FC<TvDashboardProps> = ({
@@ -38,7 +39,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   settings,
   onExit,
   onSelectDate,
-  availableDates = []
+  availableDates = [],
+  countConversions = []
 }) => {
   // Available slides (All in White Theme)
   const allSlides = useMemo(() => [
@@ -170,10 +172,56 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   };
 
   // -------------------------------------------------------------
-  // Data Aggregations
+  // Data Aggregations & 40s GPS Conversions (Shed-aware)
   // -------------------------------------------------------------
   const summaries = dailyReport.summaries || [];
   const entries = dailyReport.entries || [];
+
+  const getFactorForCount = (countStr: string, shed?: string): number => {
+    if (!countStr) return 1.0;
+    const clean = countStr.trim().toLowerCase();
+    const effectiveShed = shed || selectedShed;
+
+    if (countConversions && effectiveShed && effectiveShed !== 'All Sheds') {
+      const shedMatch = countConversions.find(c => 
+        (c.shed === effectiveShed) &&
+        (c.count.toLowerCase().trim() === clean || clean.includes(c.count.toLowerCase().trim()))
+      );
+      if (shedMatch && shedMatch.multiplicationFactor > 0) {
+        return shedMatch.multiplicationFactor;
+      }
+    }
+
+    if (countConversions) {
+      const match = countConversions.find(c => 
+        c.count.toLowerCase().trim() === clean || clean.includes(c.count.toLowerCase().trim())
+      );
+      if (match && match.multiplicationFactor > 0) {
+        return match.multiplicationFactor;
+      }
+    }
+
+    const numMatch = countStr.match(/(\d+(\.\d+)?)/);
+    if (numMatch) {
+      const countNum = parseFloat(numMatch[1]);
+      if (countNum > 0) {
+        return Math.pow(countNum / 40, 1.5);
+      }
+    }
+
+    return 1.0;
+  };
+
+  const getEntry40sGps = (e: any): number => {
+    if (e.gps40sCon && e.gps40sCon > 0) return e.gps40sCon;
+    if (!e.gpsActual || e.gpsActual <= 0) return 0;
+    return e.gpsActual * getFactorForCount(e.count, e.shed || selectedShed);
+  };
+
+  const getSummary40sGps = (s: any): number => {
+    const factor = getFactorForCount(s.count, s.shed || selectedShed);
+    return (s.avgGps || 0) * factor;
+  };
 
   const totalTarget = dailyReport.totalProductionTarget || summaries.reduce((s, m) => s + (m.targetProd || 0), 0);
   const totalActual = dailyReport.totalProductionActual || summaries.reduce((s, m) => s + (m.actualProd || 0), 0);
@@ -183,6 +231,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const avgGps = summaries.length > 0 
     ? summaries.reduce((s, m) => s + (m.avgGps || 0), 0) / summaries.length 
     : 0;
+
+  const avg40sGps = summaries.length > 0
+    ? summaries.reduce((s, m) => s + getSummary40sGps(m), 0) / summaries.length
+    : (entries.length > 0 ? entries.reduce((s, e) => s + getEntry40sGps(e), 0) / entries.length : 0);
 
   const stdGpsAvg = summaries.length > 0
     ? summaries.reduce((s, m) => s + (m.stdGps || 0), 0) / summaries.length
@@ -198,6 +250,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       const eff = targetKg > 0 ? (actualKg / targetKg) * 100 : 0;
       const validGps = shiftEntries.map(e => e.gpsActual || 0).filter(v => v > 0);
       const avgShiftGps = validGps.length > 0 ? validGps.reduce((a, b) => a + b, 0) / validGps.length : 0;
+      const valid40sGps = shiftEntries.map(e => getEntry40sGps(e)).filter(v => v > 0);
+      const avgShift40sGps = valid40sGps.length > 0 ? valid40sGps.reduce((a, b) => a + b, 0) / valid40sGps.length : 0;
       const validUtil = shiftEntries.map(e => e.utility || 0).filter(v => v > 0);
       const avgUtil = validUtil.length > 0 ? validUtil.reduce((a, b) => a + b, 0) / validUtil.length : 0;
 
@@ -207,11 +261,12 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         targetKg,
         efficiency: eff,
         avgGps: avgShiftGps,
+        avg40sGps: avgShift40sGps,
         avgUtil,
         activeFrames: shiftEntries.length
       };
     });
-  }, [entries]);
+  }, [entries, countConversions, selectedShed]);
 
   // Best Shift
   const bestShift = useMemo(() => {
@@ -222,21 +277,27 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   // Machine Level Chart Data
   const machineChartData = useMemo(() => {
     return summaries
-      .map(s => ({
-        machine: s.frameNo,
-        count: s.count || '40s',
-        target: Math.round(s.targetProd || 0),
-        actual: Math.round(s.actualProd || 0),
-        efficiency: s.targetProd && s.targetProd > 0 ? Number(((s.actualProd / s.targetProd) * 100).toFixed(1)) : 0,
-        gps: Number((s.avgGps || 0).toFixed(1)),
-        stdGps: Number((s.stdGps || 0).toFixed(1))
-      }))
+      .map(s => {
+        const factor = getFactorForCount(s.count, s.shed || selectedShed);
+        const s40sGps = (s.avgGps || 0) * factor;
+        return {
+          machine: s.frameNo,
+          count: s.count || '40s',
+          target: Math.round(s.targetProd || 0),
+          actual: Math.round(s.actualProd || 0),
+          efficiency: s.targetProd && s.targetProd > 0 ? Number(((s.actualProd / s.targetProd) * 100).toFixed(1)) : 0,
+          gps: Number((s.avgGps || 0).toFixed(1)),
+          gps40s: Number(s40sGps.toFixed(1)),
+          factor: Number(factor.toFixed(4)),
+          stdGps: Number((s.stdGps || 0).toFixed(1))
+        };
+      })
       .sort((a, b) => a.machine.localeCompare(b.machine, undefined, { numeric: true }));
-  }, [summaries]);
+  }, [summaries, countConversions, selectedShed]);
 
   // Top 5 Operators / Siders
   const topOperators = useMemo(() => {
-    const operatorMap = new Map<string, { worker: Sider; totalKg: number; duties: number; incentive: number; sumGps: number; gpsCount: number }>();
+    const operatorMap = new Map<string, { worker: Sider; totalKg: number; duties: number; incentive: number; sumGps: number; sum40sGps: number; gpsCount: number }>();
 
     entries.forEach(entry => {
       const wId = entry.siderIds?.[0] || entry.siderId;
@@ -250,12 +311,13 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       };
 
       const key = worker.tNo || worker.name;
-      const existing = operatorMap.get(key) || { worker, totalKg: 0, duties: 0, incentive: 0, sumGps: 0, gpsCount: 0 };
+      const existing = operatorMap.get(key) || { worker, totalKg: 0, duties: 0, incentive: 0, sumGps: 0, sum40sGps: 0, gpsCount: 0 };
       existing.totalKg += entry.productionActual || 0;
       existing.duties += 1;
       existing.incentive += entry.incentiveAmount || 0;
       if (entry.gpsActual && entry.gpsActual > 0) {
         existing.sumGps += entry.gpsActual;
+        existing.sum40sGps += getEntry40sGps(entry);
         existing.gpsCount += 1;
       }
       operatorMap.set(key, existing);
@@ -264,7 +326,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     return Array.from(operatorMap.values())
       .sort((a, b) => b.incentive !== a.incentive ? b.incentive - a.incentive : b.totalKg - a.totalKg)
       .slice(0, 5);
-  }, [entries, workers]);
+  }, [entries, workers, countConversions, selectedShed]);
 
   // Monthly 15-day trend data
   const monthlyTrendData = useMemo(() => {
@@ -295,6 +357,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           efficiency: 0,
           frames: 0,
           avgGps: 0,
+          avg40sGps: 0,
           active: false
         };
       }
@@ -304,6 +367,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       const eff = tProd > 0 ? (aProd / tProd) * 100 : 0;
       const sList = reportForShed.summaries || [];
       const gps = sList.length > 0 ? sList.reduce((a, b) => a + (b.avgGps || 0), 0) / sList.length : 0;
+      const gps40s = sList.length > 0 
+        ? sList.reduce((a, b) => a + ((b.avgGps || 0) * getFactorForCount(b.count, shedName)), 0) / sList.length 
+        : 0;
 
       return {
         shed: shedName,
@@ -312,10 +378,11 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         efficiency: Number(eff.toFixed(1)),
         frames: sList.length,
         avgGps: Number(gps.toFixed(1)),
+        avg40sGps: Number(gps40s.toFixed(1)),
         active: aProd > 0
       };
     });
-  }, [history, dailyReport, selectedShed]);
+  }, [history, dailyReport, selectedShed, countConversions]);
 
   // Slide 8: Running counts data
   const runningCountsData = useMemo(() => {
@@ -338,22 +405,30 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       countMap.set(c, existing);
     });
 
-    return Array.from(countMap.values()).map(item => ({
-      count: item.count,
-      framesCount: item.frames.size,
-      actualKg: Math.round(item.actualKg),
-      targetKg: Math.round(item.targetKg),
-      avgGps: item.gpsEntries > 0 ? Number((item.sumGps / item.gpsEntries).toFixed(1)) : 0,
-      avgEff: item.effEntries > 0 ? Number((item.sumEff / item.effEntries).toFixed(1)) : 0,
-      achievement: item.targetKg > 0 ? Number(((item.actualKg / item.targetKg) * 100).toFixed(1)) : 0
-    })).sort((a, b) => b.actualKg - a.actualKg);
-  }, [entries]);
+    return Array.from(countMap.values()).map(item => {
+      const factor = getFactorForCount(item.count, selectedShed);
+      const avgGpsVal = item.gpsEntries > 0 ? Number((item.sumGps / item.gpsEntries).toFixed(1)) : 0;
+      const avg40sGpsVal = Number((avgGpsVal * factor).toFixed(1));
+
+      return {
+        count: item.count,
+        framesCount: item.frames.size,
+        actualKg: Math.round(item.actualKg),
+        targetKg: Math.round(item.targetKg),
+        avgGps: avgGpsVal,
+        avg40sGps: avg40sGpsVal,
+        factor,
+        avgEff: item.effEntries > 0 ? Number((item.sumEff / item.effEntries).toFixed(1)) : 0,
+        achievement: item.targetKg > 0 ? Number(((item.actualKg / item.targetKg) * 100).toFixed(1)) : 0
+      };
+    }).sort((a, b) => b.actualKg - a.actualKg);
+  }, [entries, countConversions, selectedShed]);
 
   // Slide 9: Daily incentive report data
   const dailyIncentiveReportData = useMemo(() => {
     let totalIncentive = 0;
     const shiftPayouts = { I: 0, II: 0, III: 0 };
-    const operatorIncentives = new Map<string, { worker: Sider; frameNo: string; shift: Shift; count: string; gps: number; incentive: number }>();
+    const operatorIncentives = new Map<string, { worker: Sider; frameNo: string; shift: Shift; count: string; gps: number; gps40s: number; incentive: number }>();
 
     entries.forEach(e => {
       const inc = e.incentiveAmount || 0;
@@ -376,6 +451,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           shift: e.shift,
           count: e.count || '40s',
           gps: e.gpsActual || 0,
+          gps40s: Number((getEntry40sGps(e)).toFixed(1)),
           incentive: inc
         });
       }
@@ -392,7 +468,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       topEarners,
       eligibleCount: operatorIncentives.size
     };
-  }, [entries, workers]);
+  }, [entries, workers, countConversions, selectedShed]);
 
   // Slide 10: Monthly production report data
   const monthlyProductionReportData = useMemo(() => {
@@ -402,9 +478,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     const overallEff = totalTargetKg > 0 ? Number(((totalActualKg / totalTargetKg) * 100).toFixed(1)) : 0;
 
     const shiftTotals = {
-      I: { kg: 0, gpsSum: 0, count: 0 },
-      II: { kg: 0, gpsSum: 0, count: 0 },
-      III: { kg: 0, gpsSum: 0, count: 0 }
+      I: { kg: 0, gpsSum: 0, gps40sSum: 0, count: 0 },
+      II: { kg: 0, gpsSum: 0, gps40sSum: 0, count: 0 },
+      III: { kg: 0, gpsSum: 0, gps40sSum: 0, count: 0 }
     };
 
     currentShedHistory.forEach(r => {
@@ -413,6 +489,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           shiftTotals[e.shift].kg += e.productionActual || 0;
           if (e.gpsActual) {
             shiftTotals[e.shift].gpsSum += e.gpsActual;
+            shiftTotals[e.shift].gps40sSum += getEntry40sGps(e);
             shiftTotals[e.shift].count += 1;
           }
         }
@@ -420,9 +497,24 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     });
 
     const shiftData = [
-      { shift: 'Shift I', kg: Math.round(shiftTotals.I.kg), avgGps: shiftTotals.I.count > 0 ? Number((shiftTotals.I.gpsSum / shiftTotals.I.count).toFixed(1)) : 0 },
-      { shift: 'Shift II', kg: Math.round(shiftTotals.II.kg), avgGps: shiftTotals.II.count > 0 ? Number((shiftTotals.II.gpsSum / shiftTotals.II.count).toFixed(1)) : 0 },
-      { shift: 'Shift III', kg: Math.round(shiftTotals.III.kg), avgGps: shiftTotals.III.count > 0 ? Number((shiftTotals.III.gpsSum / shiftTotals.III.count).toFixed(1)) : 0 }
+      { 
+        shift: 'Shift I', 
+        kg: Math.round(shiftTotals.I.kg), 
+        avgGps: shiftTotals.I.count > 0 ? Number((shiftTotals.I.gpsSum / shiftTotals.I.count).toFixed(1)) : 0,
+        avg40sGps: shiftTotals.I.count > 0 ? Number((shiftTotals.I.gps40sSum / shiftTotals.I.count).toFixed(1)) : 0
+      },
+      { 
+        shift: 'Shift II', 
+        kg: Math.round(shiftTotals.II.kg), 
+        avgGps: shiftTotals.II.count > 0 ? Number((shiftTotals.II.gpsSum / shiftTotals.II.count).toFixed(1)) : 0,
+        avg40sGps: shiftTotals.II.count > 0 ? Number((shiftTotals.II.gps40sSum / shiftTotals.II.count).toFixed(1)) : 0
+      },
+      { 
+        shift: 'Shift III', 
+        kg: Math.round(shiftTotals.III.kg), 
+        avgGps: shiftTotals.III.count > 0 ? Number((shiftTotals.III.gpsSum / shiftTotals.III.count).toFixed(1)) : 0,
+        avg40sGps: shiftTotals.III.count > 0 ? Number((shiftTotals.III.gps40sSum / shiftTotals.III.count).toFixed(1)) : 0
+      }
     ];
 
     const dailyRecords = currentShedHistory.map(r => ({
@@ -604,18 +696,18 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="bg-white rounded-3xl p-5 border border-stone-200/90 flex flex-col justify-between shadow-2xs">
-                <span className="text-[11px] font-black uppercase tracking-widest text-stone-400">Average GPS / STD GPS</span>
+              <div className="bg-white rounded-3xl p-5 border border-emerald-200/90 flex flex-col justify-between shadow-2xs">
+                <span className="text-[11px] font-black uppercase tracking-widest text-emerald-700">40s Converted GPS</span>
                 <div className="flex items-baseline justify-between mt-2">
-                  <span className="text-3xl lg:text-4xl font-black font-mono text-stone-900 tracking-tight">
-                    {avgGps.toFixed(1)}
+                  <span className="text-3xl lg:text-4xl font-black font-mono text-emerald-700 tracking-tight">
+                    {avg40sGps.toFixed(1)}
                   </span>
-                  <span className="text-xs font-bold text-stone-400 font-mono">/ {stdGpsAvg.toFixed(1)} STD</span>
+                  <span className="text-xs font-bold text-stone-500 font-mono">/ {avgGps.toFixed(1)} Act</span>
                 </div>
                 <div className="mt-3 text-[11px] font-bold text-stone-500 flex items-center justify-between">
-                  <span>Variance:</span>
-                  <span className={cn("font-mono font-black", variance >= 0 ? "text-emerald-600" : "text-rose-600")}>
-                    {variance >= 0 ? `+${variance.toFixed(1)}` : variance.toFixed(1)} Kg
+                  <span>STD Target GPS:</span>
+                  <span className="font-mono font-black text-stone-700">
+                    {stdGpsAvg.toFixed(1)} STD
                   </span>
                 </div>
               </div>
@@ -676,10 +768,15 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       </div>
 
                       <div className="flex items-baseline justify-between">
-                        <span className="text-xs font-bold text-stone-500 uppercase">Average GPS:</span>
-                        <span className="text-xl font-black font-mono text-stone-900">
-                          {shiftData.avgGps.toFixed(1)}
-                        </span>
+                        <span className="text-xs font-bold text-stone-500 uppercase">40s Converted GPS:</span>
+                        <div className="text-right">
+                          <span className="text-xl font-black font-mono text-emerald-700">
+                            {shiftData.avg40sGps.toFixed(1)}
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-stone-400 ml-1.5">
+                            ({shiftData.avgGps.toFixed(1)} act)
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -739,6 +836,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
             <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
               <span>Overall Output: <strong className="text-stone-900">{totalActual.toFixed(1)} Kg</strong></span>
+              <span>40s Converted GPS: <strong className="text-emerald-700 font-mono font-black">{avg40sGps.toFixed(1)}</strong> <span className="text-stone-400">({avgGps.toFixed(1)} Act)</span></span>
               <span>Efficiency Index: <strong className="text-emerald-700 font-mono font-black">{overallEfficiency.toFixed(1)}%</strong></span>
               <span>Showing {machineChartData.length} Spinning Machines in {selectedShed}</span>
             </div>
@@ -771,6 +869,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       <th className="py-2.5 px-3 text-right">Efficiency %</th>
                       <th className="py-2.5 px-3 text-right">STD GPS</th>
                       <th className="py-2.5 px-3 text-right font-black text-stone-900">Avg GPS</th>
+                      <th className="py-2.5 px-3 text-right font-black text-emerald-800 bg-emerald-50/60">40s GPS</th>
                       <th className="py-2.5 px-3 text-right">Avg Util%</th>
                     </tr>
                   </thead>
@@ -778,6 +877,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     {summaries.map((s, idx) => {
                       const eff = s.targetProd && s.targetProd > 0 ? (s.actualProd / s.targetProd) * 100 : 0;
                       const diff = (s.actualProd || 0) - (s.targetProd || 0);
+                      const s40sGps = getSummary40sGps(s);
 
                       return (
                         <tr key={s.frameNo || idx} className="hover:bg-emerald-50/40 transition-colors font-medium">
@@ -798,6 +898,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           </td>
                           <td className="py-2 px-3 text-right font-mono text-stone-500">{s.stdGps?.toFixed(1) || '—'}</td>
                           <td className="py-2 px-3 text-right font-mono font-black text-stone-900">{s.avgGps?.toFixed(1) || '—'}</td>
+                          <td className="py-2 px-3 text-right font-mono font-black text-emerald-700 bg-emerald-50/30">{s40sGps > 0 ? s40sGps.toFixed(1) : '—'}</td>
                           <td className="py-2 px-3 text-right font-mono text-stone-700">{s.avgUtil ? `${s.avgUtil.toFixed(1)}%` : '—'}</td>
                         </tr>
                       );
@@ -814,6 +915,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       <td className="py-2.5 px-3 text-right font-mono text-emerald-300">{overallEfficiency.toFixed(1)}%</td>
                       <td className="py-2.5 px-3 text-right font-mono text-stone-400">{stdGpsAvg.toFixed(1)}</td>
                       <td className="py-2.5 px-3 text-right font-mono text-amber-300">{avgGps.toFixed(1)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono text-emerald-400">{avg40sGps.toFixed(1)}</td>
                       <td className="py-2.5 px-3 text-right font-mono text-stone-400">—</td>
                     </tr>
                   </tfoot>
@@ -942,10 +1044,15 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
                         {item.gpsCount > 0 && (
                           <div className="flex items-center justify-between text-xs border-t border-stone-200/60 pt-1.5">
-                            <span className="font-bold text-stone-500 uppercase text-[10px]">Avg GPS:</span>
-                            <span className="font-mono font-bold text-stone-800 text-xs">
-                              {(item.sumGps / item.gpsCount).toFixed(1)}
-                            </span>
+                            <span className="font-bold text-stone-500 uppercase text-[10px]">40s / Act GPS:</span>
+                            <div className="text-right">
+                              <span className="font-mono font-black text-emerald-700 text-xs">
+                                {(item.sum40sGps / item.gpsCount).toFixed(1)}
+                              </span>
+                              <span className="font-mono font-medium text-stone-400 text-[10px] ml-1">
+                                ({(item.sumGps / item.gpsCount).toFixed(1)})
+                              </span>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -958,6 +1065,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             {/* Bottom Note */}
             <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
               <span>Performance Standard: <strong className="text-stone-900">SCM Plant Quality &amp; Machine Allocation Ledger</strong></span>
+              <span>40s Converted Plant GPS: <strong className="text-emerald-700 font-mono font-black">{avg40sGps.toFixed(1)}</strong></span>
               <span>Incentive Status: <strong className="text-emerald-700">Calculated &amp; Approved for Payout</strong></span>
             </div>
           </div>
@@ -1027,8 +1135,11 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       <span className="font-mono font-black text-emerald-700">{sh.actualKg.toFixed(1)} Kg</span>
                     </div>
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-stone-500 font-bold uppercase">Average GPS:</span>
-                      <span className="font-mono font-black text-stone-900">{sh.avgGps.toFixed(1)}</span>
+                      <span className="text-stone-500 font-bold uppercase">40s Converted GPS:</span>
+                      <div className="text-right">
+                        <span className="font-mono font-black text-emerald-700">{sh.avg40sGps.toFixed(1)}</span>
+                        <span className="font-mono font-bold text-stone-400 text-[10px] ml-1.5">({sh.avgGps.toFixed(1)} Act)</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-stone-500 font-bold uppercase">Average Util%:</span>
@@ -1094,8 +1205,11 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     </div>
 
                     <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                      <span className="text-stone-500 text-xs font-bold uppercase">Average GPS:</span>
-                      <span className="font-bold text-stone-900 text-xs">{s.avgGps}</span>
+                      <span className="text-stone-500 text-xs font-bold uppercase">40s Converted GPS:</span>
+                      <div className="text-right">
+                        <span className="font-mono font-black text-emerald-700 text-sm">{s.avg40sGps}</span>
+                        <span className="text-[10px] font-bold text-stone-400 ml-1">({s.avgGps} Act)</span>
+                      </div>
                     </div>
 
                     <div className="bg-stone-50 p-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
@@ -1152,6 +1266,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
             <div className="bg-white rounded-2xl px-6 py-3 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
               <span>Historical Days Logged: <strong className="text-stone-900">{monthlyTrendData.length} Days</strong></span>
+              <span>40s Converted Plant GPS: <strong className="text-emerald-700 font-mono font-black">{avg40sGps.toFixed(1)}</strong></span>
               <span>Average Daily Production: <strong className="text-emerald-700">{monthlyTrendData.length > 0 ? (monthlyTrendData.reduce((a, b) => a + b.actual, 0) / monthlyTrendData.length).toFixed(1) : 0} Kg</strong></span>
               <span>Tracking System: <strong className="text-stone-900">Active Production Database</strong></span>
             </div>
@@ -1225,6 +1340,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                         <th className="py-2 px-2 text-right">Target Kg</th>
                         <th className="py-2 px-2 text-right">Actual Kg</th>
                         <th className="py-2 px-2 text-right">Avg GPS</th>
+                        <th className="py-2 px-2 text-right font-black text-emerald-800 bg-emerald-50/50">40s GPS</th>
                         <th className="py-2 px-3 text-right">Efficiency</th>
                       </tr>
                     </thead>
@@ -1247,6 +1363,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           </td>
                           <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-700">
                             {item.avgGps}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-black text-emerald-700 bg-emerald-50/30">
+                            {item.avg40sGps}
                           </td>
                           <td className="py-2.5 px-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
@@ -1275,6 +1394,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             {/* Bottom Status Pill */}
             <div className="bg-white rounded-2xl px-6 py-2.5 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
               <span>Telemetry: <strong className="text-stone-900">Live Frame Count Sensor Telemetry</strong></span>
+              <span>40s Converted Plant GPS: <strong className="text-emerald-700 font-mono font-black">{avg40sGps.toFixed(1)}</strong></span>
               <span>Total Active Spindles: <strong className="text-emerald-700">{(runningCountsData.reduce((acc, c) => acc + c.framesCount, 0) * 1200).toLocaleString()} Spindles</strong></span>
               <span>Unit: <strong className="text-stone-900">{selectedShed}</strong></span>
             </div>
@@ -1346,7 +1466,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                         <th className="py-2 px-2 text-center">T.No</th>
                         <th className="py-2 px-2 text-center">Shift</th>
                         <th className="py-2 px-2 text-center">Frame</th>
-                        <th className="py-2 px-2 text-right">GPS</th>
+                        <th className="py-2 px-2 text-right">Act GPS</th>
+                        <th className="py-2 px-2 text-right font-black text-emerald-800 bg-emerald-50/50">40s GPS</th>
                         <th className="py-2 px-3 text-right">Incentive</th>
                       </tr>
                     </thead>
@@ -1370,8 +1491,11 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           <td className="py-2.5 px-2 text-center font-mono font-bold text-stone-600">
                             {item.frameNo}
                           </td>
-                          <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-700">
+                          <td className="py-2.5 px-2 text-right font-mono font-bold text-stone-500">
                             {item.gps}
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-black text-emerald-700 bg-emerald-50/30">
+                            {item.gps40s}
                           </td>
                           <td className="py-2.5 px-3 text-right">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono font-black text-xs">
@@ -1425,6 +1549,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             {/* Bottom Status */}
             <div className="bg-white rounded-2xl px-6 py-2.5 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
               <span>Payroll Integration: <strong className="text-stone-900">Direct Incentive Ledger Verified</strong></span>
+              <span>40s Converted Plant GPS: <strong className="text-emerald-700 font-mono font-black">{avg40sGps.toFixed(1)}</strong></span>
               <span>Gaiter &amp; AI Cone Roles: <strong className="text-emerald-700">Synchronized &amp; Included</strong></span>
               <span>Status: <strong className="text-emerald-700">Approved for Payout</strong></span>
             </div>
@@ -1530,7 +1655,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       <div key={s.shift} className="p-2.5 rounded-xl bg-stone-50 border border-stone-200 text-center">
                         <span className="text-[10px] font-black uppercase text-stone-500 block">{s.shift}</span>
                         <span className="text-sm font-black text-stone-900 font-mono block mt-0.5">{s.kg.toLocaleString()} <span className="text-[9px] text-stone-400">kg</span></span>
-                        <span className="text-[10px] font-bold text-emerald-700 block mt-0.5">{s.avgGps} GPS</span>
+                        <div className="mt-0.5">
+                          <span className="text-[10px] font-black text-emerald-700 block font-mono">{s.avg40sGps} 40s GPS</span>
+                          <span className="text-[9px] font-bold text-stone-400 block font-mono">({s.avgGps} Act)</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1570,6 +1698,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             {/* Bottom Status */}
             <div className="bg-white rounded-2xl px-6 py-2.5 border border-stone-200/90 shadow-2xs flex items-center justify-between text-xs font-bold text-stone-500">
               <span>Monthly Data Source: <strong className="text-stone-900">Synchronized Cloud Telemetry</strong></span>
+              <span>40s Converted Plant GPS: <strong className="text-emerald-700 font-mono font-black">{avg40sGps.toFixed(1)}</strong></span>
               <span>Overall Achievement: <strong className="text-emerald-700">{monthlyProductionReportData.overallEff}% of Planned Production</strong></span>
               <span>Executive Reporting: <strong className="text-stone-900">Active</strong></span>
             </div>

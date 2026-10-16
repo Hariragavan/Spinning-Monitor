@@ -71,6 +71,7 @@ export interface IncentiveRule {
   payouts: IncentivePayout[];
   department?: string; // e.g. 'Sider', 'AI Linkconer'
   effectiveDate?: string; // Optional effective date (DD/MM/YYYY format)
+  shed?: string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM', 'All Sheds'
 }
 
 export interface IncentiveReport {
@@ -115,6 +116,7 @@ export interface CountConversion {
   count: string;
   multiplicationFactor: number; // Factor to multiply Actual GPSS to get 40s GPSS
   description?: string;
+  shed?: string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM', 'All Sheds'
 }
 
 export interface DailyReport {

@@ -59,13 +59,31 @@ export function parseDDMMYYYY(dateStr: string): Date {
   return parseUniversalDate(dateStr);
 }
 
-export function getActiveRule(count: string, department: string | undefined, rules: IncentiveRule[], reportDate?: string): IncentiveRule | null {
+export function getActiveRule(
+  count: string, 
+  department: string | undefined, 
+  rules: IncentiveRule[], 
+  reportDate?: string,
+  shed?: string
+): IncentiveRule | null {
   const normalize = (c: string) => (c || "").toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
   const targetCountNorm = normalize(count || "");
   if (!targetCountNorm) return null;
 
+  // Filter rules by shed if specified: prioritize exact shed, fallback to All Sheds
+  let candidateRules = rules;
+  if (shed && shed !== 'All Sheds') {
+    const shedSpecific = rules.filter(r => r.shed === shed);
+    if (shedSpecific.length > 0) {
+      const hasMatch = shedSpecific.some(r => normalize(r.count) === targetCountNorm || targetCountNorm.includes(normalize(r.count)));
+      if (hasMatch) {
+        candidateRules = shedSpecific;
+      }
+    }
+  }
+
   // Find all candidate rules matching count and department
-  let matchingRules = rules.filter(r => {
+  let matchingRules = candidateRules.filter(r => {
     const deptMatch = (r.department || 'Sider') === (department || 'Sider');
     if (!deptMatch) return false;
     return normalize(r.count) === targetCountNorm;
@@ -73,7 +91,7 @@ export function getActiveRule(count: string, department: string | undefined, rul
 
   // If no exact match, try fuzzy matching
   if (matchingRules.length === 0) {
-    const sortedRules = [...rules].sort((a, b) => b.count.length - a.count.length);
+    const sortedRules = [...candidateRules].sort((a, b) => b.count.length - a.count.length);
     matchingRules = sortedRules.filter(r => {
       const deptMatch = (r.department || 'Sider') === (department || 'Sider');
       if (!deptMatch) return false;
@@ -123,12 +141,13 @@ export function getActiveRule(count: string, department: string | undefined, rul
   return sorted[0] || null;
 }
 
-export function calculateIncentive(entry: ProductionEntry, rules: IncentiveRule[], reportDate?: string): number {
+export function calculateIncentive(entry: ProductionEntry, rules: IncentiveRule[], reportDate?: string, shed?: string): number {
   if (entry.incentiveAmount !== undefined && entry.incentiveAmount !== null && entry.incentiveAmount > 0) {
     return entry.incentiveAmount;
   }
 
-  const rule = getActiveRule(entry.count, 'Sider', rules, reportDate);
+  const effectiveShed = entry.shed || shed;
+  const rule = getActiveRule(entry.count, 'Sider', rules, reportDate, effectiveShed);
   if (!rule) return 0;
 
   const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
