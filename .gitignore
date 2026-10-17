@@ -25,7 +25,10 @@ tsconfig.tsbuildinfo
 .env*
 !.env.example
 
-# Local sample seed data
+# Local sample seed data & avatars
 src/lib/sampleSeedData.ts
 src/scripts/
+public/avatars/
+scripts/generateAvatars.js
+scripts/seedSeptemberData.js
 
