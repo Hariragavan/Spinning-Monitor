@@ -301,6 +301,22 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const [isPaused, setIsPaused] = useState(false);
   const [isShedDropdownOpen, setIsShedDropdownOpen] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shedDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Click-outside listener for shed selection dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (shedDropdownRef.current && !shedDropdownRef.current.contains(event.target as Node)) {
+        setIsShedDropdownOpen(false);
+      }
+    };
+    if (isShedDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isShedDropdownOpen]);
 
   // Auto-request fullscreen on launch
   useEffect(() => {
@@ -330,7 +346,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const activeMainPages = useMemo(() => {
     return TV_MAIN_PAGES.map(main => {
       const activeSubPages = main.subPages.filter(sub => {
-        const configuredSecs = settings.tvPageIntervals?.[sub.id];
+        const configuredSecs = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
+        const isExplicitlyDisabled = settings.tvSlideEnabled?.[sub.id] === false || configuredSecs === 0;
+        if (isExplicitlyDisabled) return false;
         const secs = configuredSecs !== undefined ? configuredSecs : sub.defaultSeconds;
         return secs > 0;
       });
@@ -339,7 +357,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         subPages: activeSubPages
       };
     }).filter(main => main.subPages.length > 0);
-  }, [settings.tvPageIntervals]);
+  }, [settings.tvPageIntervals, settings.tvSlideIntervals, settings.tvSlideEnabled]);
 
   // Fallback if all pages omitted
   const availableMainPages = activeMainPages.length > 0 ? activeMainPages : TV_MAIN_PAGES;
@@ -357,10 +375,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   // 5. Calculate Duration for Current Sub-Page
   const currentSubDuration = useMemo(() => {
     if (!currentSub) return 15;
-    const configuredSecs = settings.tvPageIntervals?.[currentSub.id];
+    const configuredSecs = settings.tvPageIntervals?.[currentSub.id] ?? settings.tvSlideIntervals?.[currentSub.id];
     const baseSecs = configuredSecs !== undefined ? configuredSecs : currentSub.defaultSeconds;
     return Math.max(5, baseSecs) * Math.max(1, subPagesCount);
-  }, [currentSub, settings.tvPageIntervals, subPagesCount]);
+  }, [currentSub, settings.tvPageIntervals, settings.tvSlideIntervals, subPagesCount]);
 
   const [timeRemaining, setTimeRemaining] = useState(currentSubDuration);
 
@@ -503,11 +521,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
           <div className="h-4 w-px bg-stone-200 hidden sm:block" />
 
-          {/* Hover Shed Selector Dropdown Button (Includes Shed 1, Shed 2, Shed 3, KTTM) */}
+          {/* Click-to-Open Shed Selector Dropdown Button (Includes Shed 1, Shed 2, Shed 3, KTTM) */}
           <div 
+            ref={shedDropdownRef}
             className="relative"
-            onMouseEnter={() => setIsShedDropdownOpen(true)}
-            onMouseLeave={() => setIsShedDropdownOpen(false)}
           >
             <button
               onClick={() => setIsShedDropdownOpen(prev => !prev)}

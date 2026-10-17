@@ -1236,6 +1236,83 @@ export default function Home() {
     apiClient.saveSettings(updated).catch(() => {});
   };
 
+  const updateTvSubPageDuration = (subId: string, seconds: number) => {
+    const updated: SystemSettings = {
+      ...settings,
+      tvPageIntervals: {
+        ...(settings.tvPageIntervals || {}),
+        [subId]: Math.max(0, seconds)
+      },
+      tvSlideIntervals: {
+        ...(settings.tvSlideIntervals || {}),
+        [subId]: Math.max(0, seconds)
+      },
+      tvSlideEnabled: {
+        ...(settings.tvSlideEnabled || {}),
+        [subId]: seconds > 0
+      }
+    };
+    setSettings(updated);
+    apiClient.saveSettings(updated).catch(() => {});
+  };
+
+  const toggleTvSubPageEnabled = (subId: string, defaultSecs: number) => {
+    const configuredSecs = settings.tvPageIntervals?.[subId] ?? settings.tvSlideIntervals?.[subId];
+    const isCurrentlyEnabled = settings.tvSlideEnabled?.[subId] !== false && (configuredSecs === undefined || configuredSecs > 0);
+    const newSecs = isCurrentlyEnabled ? 0 : (configuredSecs && configuredSecs > 0 ? configuredSecs : Math.max(5, defaultSecs || 15));
+    updateTvSubPageDuration(subId, newSecs);
+  };
+
+  const setAllTvSubPagesDuration = (seconds: number) => {
+    const newPageIntervals = { ...(settings.tvPageIntervals || {}) };
+    const newSlideIntervals = { ...(settings.tvSlideIntervals || {}) };
+    const newSlideEnabled = { ...(settings.tvSlideEnabled || {}) };
+
+    TV_MAIN_PAGES.forEach(main => {
+      main.subPages.forEach(sub => {
+        newPageIntervals[sub.id] = seconds;
+        newSlideIntervals[sub.id] = seconds;
+        newSlideEnabled[sub.id] = seconds > 0;
+      });
+    });
+
+    const updated: SystemSettings = {
+      ...settings,
+      tvInterval: seconds,
+      tvSubInterval: seconds,
+      tvPageIntervals: newPageIntervals,
+      tvSlideIntervals: newSlideIntervals,
+      tvSlideEnabled: newSlideEnabled
+    };
+    setSettings(updated);
+    apiClient.saveSettings(updated).catch(() => {});
+  };
+
+  const resetTvTimingsToDefault = () => {
+    const newPageIntervals: Record<string, number> = {};
+    const newSlideIntervals: Record<string, number> = {};
+    const newSlideEnabled: Record<string, boolean> = {};
+
+    TV_MAIN_PAGES.forEach(main => {
+      main.subPages.forEach(sub => {
+        newPageIntervals[sub.id] = sub.defaultSeconds;
+        newSlideIntervals[sub.id] = sub.defaultSeconds;
+        newSlideEnabled[sub.id] = sub.defaultSeconds > 0;
+      });
+    });
+
+    const updated: SystemSettings = {
+      ...settings,
+      tvInterval: 15,
+      tvSubInterval: 5,
+      tvPageIntervals: newPageIntervals,
+      tvSlideIntervals: newSlideIntervals,
+      tvSlideEnabled: newSlideEnabled
+    };
+    setSettings(updated);
+    apiClient.saveSettings(updated).catch(() => {});
+  };
+
   const getClearMonthName = (m: string | number) => {
     const num = Number(m);
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1877,7 +1954,307 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Shift Gaiter Allocation */}
+            {/* TV Dashboard Pages & Sub-Pages Rotation Timing Configuration */}
+            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 bg-emerald-500/10 border border-emerald-300 text-emerald-700 rounded-2xl flex items-center justify-center shrink-0">
+                    <Monitor size={22} className="text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
+                      TV Dashboard Pages & Sub-Pages Rotation Timing
+                    </h3>
+                    <p className="text-xs text-stone-500 font-bold mt-0.5">
+                      Configure rotation duration (in seconds) for each of the 10 Main Chapters and 17 Sub-Pages, or toggle views on/off
+                    </p>
+                  </div>
+                </div>
+
+                {/* Preset Timing Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setAllTvSubPagesDuration(10)}
+                    className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-800 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
+                    title="Set all active views to 10 seconds"
+                  >
+                    Fast (10s)
+                  </button>
+                  <button
+                    onClick={() => setAllTvSubPagesDuration(15)}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
+                    title="Set all active views to standard 15 seconds"
+                  >
+                    Standard (15s)
+                  </button>
+                  <button
+                    onClick={() => setAllTvSubPagesDuration(25)}
+                    className="px-3 py-1.5 bg-white hover:bg-stone-100 text-stone-800 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
+                    title="Set all active views to 25 seconds"
+                  >
+                    Detailed (25s)
+                  </button>
+                  <button
+                    onClick={resetTvTimingsToDefault}
+                    className="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                    title="Reset all views to factory default seconds"
+                  >
+                    <RotateCcw size={12} /> Defaults
+                  </button>
+                </div>
+              </div>
+
+              {/* TV Broadcast Controls & Target Month Selection */}
+              <div className="bg-white p-5 rounded-2xl border border-stone-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-stone-400 block mb-1">
+                      TV Target Month
+                    </label>
+                    <select
+                      value={settings.tvMonth || 9}
+                      onChange={(e) => {
+                        const updated = { ...settings, tvMonth: Number(e.target.value) };
+                        setSettings(updated);
+                        apiClient.saveSettings(updated).catch(() => {});
+                      }}
+                      className="text-xs bg-stone-50 border border-stone-200 text-stone-800 font-bold px-3 py-1.5 rounded-xl cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((mName, idx) => (
+                        <option key={mName} value={idx + 1}>
+                          {mName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-stone-400 block mb-1">
+                      TV Target Year
+                    </label>
+                    <select
+                      value={settings.tvYear || 2026}
+                      onChange={(e) => {
+                        const updated = { ...settings, tvYear: Number(e.target.value) };
+                        setSettings(updated);
+                        apiClient.saveSettings(updated).catch(() => {});
+                      }}
+                      className="text-xs bg-stone-50 border border-stone-200 text-stone-800 font-bold px-3 py-1.5 rounded-xl cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {[2024, 2025, 2026, 2027, 2028].map(yr => (
+                        <option key={yr} value={yr}>
+                          {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Live Cycle Summary Calculations */}
+                {(() => {
+                  let totalSecs = 0;
+                  let activeSubCount = 0;
+                  let activeChapterCount = 0;
+
+                  TV_MAIN_PAGES.forEach(main => {
+                    let chapterHasActive = false;
+                    main.subPages.forEach(sub => {
+                      const configured = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
+                      const isEnabled = settings.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
+                      const secs = configured !== undefined ? configured : sub.defaultSeconds;
+                      if (isEnabled && secs > 0) {
+                        totalSecs += secs;
+                        activeSubCount++;
+                        chapterHasActive = true;
+                      }
+                    });
+                    if (chapterHasActive) activeChapterCount++;
+                  });
+
+                  const mins = Math.floor(totalSecs / 60);
+                  const remSecs = totalSecs % 60;
+
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black uppercase tracking-wider">
+                        {activeChapterCount} / 10 Chapters Active
+                      </span>
+                      <span className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-black uppercase tracking-wider">
+                        {activeSubCount} / 17 Sub-Pages Rotating
+                      </span>
+                      <span className="px-3 py-1.5 rounded-xl bg-stone-100 text-stone-900 border border-stone-300 text-xs font-black uppercase tracking-wider font-mono">
+                        Cycle: {mins}m {remSecs}s
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* 10 Chapters and 17 Sub-Pages Timing Cards */}
+              <div className="space-y-4">
+                {TV_MAIN_PAGES.map((chapter) => {
+                  const ChapterIcon = chapter.icon;
+                  
+                  // Compute total duration for this chapter
+                  let chapterSecs = 0;
+                  let activeSubsInChapter = 0;
+                  chapter.subPages.forEach(sub => {
+                    const configured = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
+                    const isEnabled = settings.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
+                    const secs = configured !== undefined ? configured : sub.defaultSeconds;
+                    if (isEnabled && secs > 0) {
+                      chapterSecs += secs;
+                      activeSubsInChapter++;
+                    }
+                  });
+
+                  return (
+                    <div
+                      key={chapter.id}
+                      className="bg-white rounded-2xl border border-stone-200 shadow-2xs overflow-hidden transition-all hover:border-stone-300"
+                    >
+                      {/* Chapter Bar */}
+                      <div className="p-4 bg-stone-50/80 border-b border-stone-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-black flex items-center justify-center shrink-0 shadow-2xs">
+                            {chapter.chapterNumber}
+                          </span>
+                          <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0 shadow-2xs">
+                            <ChapterIcon size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-black text-stone-900 uppercase tracking-tight truncate">
+                                {chapter.title}
+                              </h4>
+                            </div>
+                            <p className="text-[11px] text-stone-400 font-bold truncate">
+                              {chapter.subtitle}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <span className={cn(
+                            "text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border",
+                            activeSubsInChapter > 0 
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
+                              : "bg-stone-100 text-stone-500 border-stone-200"
+                          )}>
+                            {activeSubsInChapter} of {chapter.subPages.length} Sub-Pages Active
+                          </span>
+                          <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-stone-100 text-stone-800 border border-stone-200 font-mono">
+                            {chapterSecs}s total
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Sub-Pages Configuration List */}
+                      <div className="divide-y divide-stone-100">
+                        {chapter.subPages.map((sub, sIdx) => {
+                          const configured = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
+                          const isEnabled = settings.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
+                          const currentSecs = configured !== undefined ? configured : sub.defaultSeconds;
+
+                          return (
+                            <div
+                              key={sub.id}
+                              className={cn(
+                                "p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors",
+                                isEnabled ? "bg-white" : "bg-stone-50/60 opacity-60"
+                              )}
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="w-6 h-6 rounded-lg bg-stone-100 text-stone-500 text-[10px] font-black flex items-center justify-center shrink-0">
+                                  {chapter.chapterNumber}.{sIdx + 1}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-black text-stone-900 uppercase tracking-tight">
+                                      {sub.title}
+                                    </span>
+                                    <span className={cn(
+                                      "text-[9px] font-black uppercase px-2 py-0.5 rounded-md",
+                                      isEnabled ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-600"
+                                    )}>
+                                      {isEnabled ? `${currentSecs}s duration` : 'Disabled'}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-stone-400 font-medium mt-0.5 truncate max-w-lg">
+                                    {sub.description}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+                                {/* Enable / Disable Toggle */}
+                                <button
+                                  onClick={() => toggleTvSubPageEnabled(sub.id, sub.defaultSeconds)}
+                                  className={cn(
+                                    "px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs",
+                                    isEnabled
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                      : "bg-stone-200 text-stone-600 hover:bg-stone-300 border border-stone-300"
+                                  )}
+                                  title={isEnabled ? "Disable this sub-page from rotation" : "Enable this sub-page in rotation"}
+                                >
+                                  {isEnabled ? <Check size={12} /> : <X size={12} />}
+                                  <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>
+                                </button>
+
+                                {/* Seconds Stepper */}
+                                <div className="flex items-center gap-1 bg-stone-50 p-1 rounded-xl border border-stone-200">
+                                  <button
+                                    onClick={() => updateTvSubPageDuration(sub.id, Math.max(5, currentSecs - 5))}
+                                    disabled={!isEnabled || currentSecs <= 5}
+                                    className="w-8 h-8 rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 font-black text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-2xs"
+                                  >
+                                    -5s
+                                  </button>
+
+                                  <div className="w-14 text-center">
+                                    <span className="text-sm font-black text-stone-900 tabular-nums font-mono">
+                                      {isEnabled ? `${currentSecs}s` : '0s'}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    onClick={() => updateTvSubPageDuration(sub.id, Math.min(120, (currentSecs || 5) + 5))}
+                                    disabled={!isEnabled || currentSecs >= 120}
+                                    className="w-8 h-8 rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 font-black text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center shadow-2xs"
+                                  >
+                                    +5s
+                                  </button>
+                                </div>
+
+                                {/* Quick Seconds Chips */}
+                                <div className="hidden lg:flex items-center gap-1">
+                                  {[10, 15, 20, 30].map(s => (
+                                    <button
+                                      key={s}
+                                      onClick={() => updateTvSubPageDuration(sub.id, s)}
+                                      disabled={!isEnabled}
+                                      className={cn(
+                                        "px-1.5 py-0.5 rounded text-[10px] font-black cursor-pointer transition-all",
+                                        currentSecs === s && isEnabled
+                                          ? "bg-emerald-600 text-white"
+                                          : "bg-stone-100 text-stone-600 hover:bg-stone-200 disabled:opacity-40"
+                                      )}
+                                    >
+                                      {s}s
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200/80 pb-5">
                 <div className="flex items-center gap-3">
