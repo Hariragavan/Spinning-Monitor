@@ -29,7 +29,7 @@ import { OperatorEmFormat } from '@/components/OperatorEmFormat';
 import { PerformanceChart } from '@/components/PerformanceChart';
 import { Sidebar } from '@/components/Sidebar';
 import { MasterDataTable } from '@/components/MasterDataTable';
-import { TvDashboard } from '@/components/TvDashboard';
+import { TvDashboard, TV_MAIN_PAGES } from '@/components/TvDashboard';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
@@ -1841,251 +1841,39 @@ export default function Home() {
       case 'settings':
         return (
           <div className="bg-white p-6 sm:p-10 rounded-[3rem] border border-stone-200 shadow-sm max-w-5xl mx-auto space-y-10">
-            {/* TV Dashboard Slideshow Settings */}
-            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
+            {/* System Settings Header & Save Action */}
+            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 bg-emerald-500/10 border border-emerald-300 text-emerald-700 rounded-2xl flex items-center justify-center shrink-0">
-                    <Monitor size={22} className="text-emerald-600" />
+                    <Settings size={22} className="text-emerald-600" />
                   </div>
                   <div>
                     <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
-                      TV Dashboard & Slideshow Settings
+                      System & Mill Settings
                     </h3>
                     <p className="text-xs text-stone-500 font-bold mt-0.5">
-                      Configure rotation duration (seconds) and active analytics slides for the plant TV screen
+                      Configure crew allocations, automated alerts, and Google Sheets integrations
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={() => {
-                      setIsTvMode(true);
+                    onClick={async () => {
                       try {
-                        document.documentElement.requestFullscreen();
-                      } catch {}
+                        await apiClient.saveSettings(settings);
+                        alert('System settings have been successfully saved and updated to MongoDB!');
+                      } catch {
+                        alert('Failed to save settings. Please check your MongoDB connection.');
+                      }
                     }}
-                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
                   >
-                    <Play size={14} className="fill-white" />
-                    <span>Launch TV Dashboard</span>
+                    <Check size={16} />
+                    <span>Save & Update Settings</span>
                   </button>
                 </div>
-              </div>
-
-              {/* Quick Preset Buttons */}
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-stone-200">
-                <span className="text-xs font-black uppercase text-stone-500 tracking-wider">
-                  Quick Duration Presets:
-                </span>
-                <div className="flex flex-wrap items-center gap-2">
-                  {[
-                    { label: 'Fast (10s)', secs: 10 },
-                    { label: 'Default (15s)', secs: 15 },
-                    { label: 'Detailed (25s)', secs: 25 },
-                    { label: 'Slow (40s)', secs: 40 }
-                  ].map(preset => (
-                    <button
-                      key={preset.label}
-                      onClick={() => {
-                        const newIntervals = {
-                          overview: preset.secs,
-                          charts: preset.secs,
-                          table: preset.secs,
-                          'top-workers': preset.secs,
-                          champions: preset.secs,
-                          sheds: preset.secs,
-                          monthly: preset.secs,
-                          'running-counts': preset.secs,
-                          'daily-incentive': preset.secs,
-                          'monthly-report': preset.secs
-                        };
-                        const updated = { ...settings, tvSlideIntervals: newIntervals };
-                        setSettings(updated);
-                        apiClient.saveSettings(updated).catch(() => {});
-                      }}
-                      className="px-3 py-1.5 bg-stone-100 hover:bg-emerald-50 hover:text-emerald-700 text-stone-700 rounded-xl text-xs font-bold transition-all border border-stone-200 cursor-pointer"
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Slides Configuration List */}
-              <div className="space-y-3">
-                {[
-                  {
-                    id: 'overview',
-                    name: 'Overview & Broadcast',
-                    desc: 'Executive daily production, target progress gauge, plant efficiency & shift breakdown.',
-                    defaultSecs: 15
-                  },
-                  {
-                    id: 'charts',
-                    name: 'Machine Analytics Charts',
-                    desc: 'Recharts bar graph of Machine Production (Target vs Actual) & GPS/Efficiency trends.',
-                    defaultSecs: 20
-                  },
-                  {
-                    id: 'table',
-                    name: 'Machine GPS & Performance Table',
-                    desc: 'Full-width machine-by-machine production, frame efficiency, GPS, and assigned sider table.',
-                    defaultSecs: 20
-                  },
-                  {
-                    id: 'top-workers',
-                    name: 'Top 5 Star Sider Champions',
-                    desc: 'Podium and leaderboard of top 5 operator champions with photos, production volume (kg), and daily incentive earnings.',
-                    defaultSecs: 15
-                  },
-                  {
-                    id: 'champions',
-                    name: 'Best Shift & Operator Champions',
-                    desc: 'Best shift banner and performance telemetry cards across all working shifts.',
-                    defaultSecs: 15
-                  },
-                  {
-                    id: 'sheds',
-                    name: 'Multi-Shed Production Intelligence',
-                    desc: 'Comparative cards and telemetry breakdown for Shed 1, Shed 2, Shed 3, and KTTM.',
-                    defaultSecs: 15
-                  },
-                  {
-                    id: 'monthly',
-                    name: 'Monthly Cumulative Production Trend',
-                    desc: '15-day / month-to-date cumulative production volume and plant trajectory chart.',
-                    defaultSecs: 15
-                  },
-                  {
-                    id: 'running-counts',
-                    name: 'Running Counts & Telemetry',
-                    desc: 'Count-wise machine allocation, production volume (kg), and spindle distribution chart.',
-                    defaultSecs: 20
-                  },
-                  {
-                    id: 'daily-incentive',
-                    name: 'Daily Operator Incentive Ledger',
-                    desc: 'Daily sider incentive amounts, shift totals, and top earner payout leaderboard.',
-                    defaultSecs: 20
-                  },
-                  {
-                    id: 'monthly-report',
-                    name: 'Monthly Production Master Report',
-                    desc: 'Comprehensive monthly cumulative production, target achievement, and shift performance ledger.',
-                    defaultSecs: 20
-                  }
-                ].map((slide, idx) => {
-                  const currentSecs = settings.tvSlideIntervals?.[slide.id] ?? slide.defaultSecs;
-                  const isEnabled = settings.tvSlideEnabled?.[slide.id] !== false;
-
-                  return (
-                    <div
-                      key={slide.id}
-                      className={cn(
-                        "p-4 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4",
-                        isEnabled ? "bg-white border-stone-200" : "bg-stone-100/70 border-stone-200/60 opacity-60"
-                      )}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-7 h-7 rounded-xl bg-stone-100 border border-stone-200 text-stone-600 text-xs font-black flex items-center justify-center shrink-0">
-                          {idx + 1}
-                        </span>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-sm font-black text-stone-900 uppercase tracking-tight">
-                              {slide.name}
-                            </h4>
-                            <span className={cn(
-                              "text-[10px] font-black uppercase px-2 py-0.5 rounded-md",
-                              isEnabled ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-500"
-                            )}>
-                              {isEnabled ? `${currentSecs}s duration` : 'Disabled'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-stone-400 font-bold mt-0.5 truncate">
-                            {slide.desc}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 self-end md:self-auto shrink-0">
-                        {/* Enable/Disable Toggle */}
-                        <button
-                          onClick={() => {
-                            const updated = {
-                              ...settings,
-                              tvSlideEnabled: {
-                                ...(settings.tvSlideEnabled || {}),
-                                [slide.id]: !isEnabled
-                              }
-                            };
-                            setSettings(updated);
-                            apiClient.saveSettings(updated).catch(() => {});
-                          }}
-                          className={cn(
-                            "px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer",
-                            isEnabled
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                              : "bg-stone-200 text-stone-600 hover:bg-stone-300"
-                          )}
-                          title={isEnabled ? "Disable slide from TV rotation" : "Enable slide in TV rotation"}
-                        >
-                          {isEnabled ? <Check size={12} /> : <X size={12} />}
-                          <span>{isEnabled ? 'Enabled' : 'Disabled'}</span>
-                        </button>
-
-                        {/* Seconds Stepper */}
-                        <div className="flex items-center gap-1 bg-stone-50 p-1 rounded-xl border border-stone-200">
-                          <button
-                            onClick={() => {
-                              const newSecs = Math.max(5, currentSecs - 5);
-                              const updated = {
-                                ...settings,
-                                tvSlideIntervals: {
-                                  ...(settings.tvSlideIntervals || {}),
-                                  [slide.id]: newSecs
-                                }
-                              };
-                              setSettings(updated);
-                              apiClient.saveSettings(updated).catch(() => {});
-                            }}
-                            disabled={!isEnabled || currentSecs <= 5}
-                            className="w-8 h-8 rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 font-black text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center"
-                          >
-                            -5s
-                          </button>
-
-                          <div className="w-14 text-center">
-                            <span className="text-sm font-black text-stone-900 tabular-nums">
-                              {currentSecs}s
-                            </span>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              const newSecs = Math.min(120, currentSecs + 5);
-                              const updated = {
-                                ...settings,
-                                tvSlideIntervals: {
-                                  ...(settings.tvSlideIntervals || {}),
-                                  [slide.id]: newSecs
-                                }
-                              };
-                              setSettings(updated);
-                              apiClient.saveSettings(updated).catch(() => {});
-                            }}
-                            disabled={!isEnabled || currentSecs >= 120}
-                            className="w-8 h-8 rounded-lg bg-white border border-stone-200 text-stone-700 hover:bg-stone-100 font-black text-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center"
-                          >
-                            +5s
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </div>
 
@@ -2546,6 +2334,9 @@ export default function Home() {
           onSelectDate={handleTopDateChange}
           availableDates={availableReportDates}
           countConversions={countConversions}
+          frozenMonths={frozenMonths}
+          selectedMonth={selectedMonth}
+          selectedYear={selectedYear}
           onExit={() => {
             setIsTvMode(false);
             setTvStarted(false);
@@ -2627,27 +2418,13 @@ export default function Home() {
 
               {/* Right Section: Interactive Date Picker, Available Dates Dropdown, TV mode */}
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {/* Date Selection: Calendar Date Picker & Dropdown for fast switching */}
+                {/* Date Selection: Calendar Date Picker */}
                 <div className="flex items-center gap-1.5 bg-stone-100/90 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs">
                   <CalendarDatePicker
                     value={activeDailyReport.date}
                     onChange={(newDate) => handleTopDateChange(newDate)}
                     className="shrink-0"
                   />
-                  {availableReportDates.length > 1 && (
-                    <select
-                      value={activeDailyReport.date}
-                      onChange={(e) => handleTopDateChange(e.target.value)}
-                      className="text-xs bg-white text-stone-800 font-bold px-2 py-1.5 rounded-lg border border-stone-200/80 hover:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer hidden md:block max-w-[130px] truncate"
-                      title="Quick switch between recorded dates"
-                    >
-                      {availableReportDates.map(d => (
-                        <option key={d} value={d}>
-                          {d} {d === getTodayUniversalDate() ? '(Today)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
                   {activeDailyReport.date !== getTodayUniversalDate() && (
                     <button
                       type="button"
