@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { SystemSettings } from '@/types';
 
-export const DEFAULT_SETTINGS: SystemSettings = {
+const DEFAULT_SETTINGS: SystemSettings = {
   googleSheetUrl: '',
   autoUpdateEnabled: false,
   lastSyncDate: null,

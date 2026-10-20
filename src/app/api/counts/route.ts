@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { CountConversion } from '@/types';
 
-export const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
+const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
   // Shed 1 Counts (Matching Mill Standards)
   { count: '030/1-PH-PC', multiplicationFactor: 0.539, description: '30/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
   { count: '040/1-PH-PC', multiplicationFactor: 0.803, description: '40/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
