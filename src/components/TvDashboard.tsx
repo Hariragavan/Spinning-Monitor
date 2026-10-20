@@ -9,7 +9,8 @@ import {
   Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed } from '../types';
-import { cn } from '../lib/utils';
+import { cn, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
 
 // Import the 17 core application components
 import { KPIStats } from './KPIStats';
@@ -280,6 +281,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
 export interface TvDashboardProps {
   dailyReport: DailyReport;
   history: DailyReport[];
+  allShedsHistory?: DailyReport[];
   workers: Sider[];
   rules: IncentiveRule[];
   selectedShed: string;
@@ -298,6 +300,7 @@ export interface TvDashboardProps {
 export const TvDashboard: React.FC<TvDashboardProps> = ({
   dailyReport,
   history,
+  allShedsHistory,
   workers,
   rules,
   selectedShed,
@@ -316,23 +319,28 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [isShedDropdownOpen, setIsShedDropdownOpen] = useState(false);
+  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shedDropdownRef = useRef<HTMLDivElement | null>(null);
+  const dateDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Click-outside listener for shed selection dropdown
+  // Click-outside listener for shed & date selection dropdowns
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (shedDropdownRef.current && !shedDropdownRef.current.contains(event.target as Node)) {
         setIsShedDropdownOpen(false);
       }
+      if (dateDropdownRef.current && !dateDropdownRef.current.contains(event.target as Node)) {
+        setIsDateDropdownOpen(false);
+      }
     };
-    if (isShedDropdownOpen) {
+    if (isShedDropdownOpen || isDateDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isShedDropdownOpen]);
+  }, [isShedDropdownOpen, isDateDropdownOpen]);
 
   // Auto-request fullscreen on launch
   useEffect(() => {
@@ -484,24 +492,26 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   }, [goToNext, goToPrev, onExit]);
 
   // 10. Target Month & Year computation
+  // Respect propMonth/propYear (if selected) or the month/year of the active dailyReport, falling back to current calendar month/year
   const targetMonth = useMemo(() => {
-    if (settings.tvMonth && settings.tvMonth > 0) return settings.tvMonth;
-    return propMonth || (new Date().getMonth() + 1);
-  }, [settings.tvMonth, propMonth]);
+    if (propMonth && propMonth > 0) return propMonth;
+    const dateParts = parseUniversalDateParts(dailyReport?.date);
+    if (dateParts && dateParts.month > 0) return dateParts.month;
+    return new Date().getMonth() + 1;
+  }, [propMonth, dailyReport?.date]);
 
   const targetYear = useMemo(() => {
-    if (settings.tvYear && settings.tvYear > 0) return settings.tvYear;
-    return propYear || new Date().getFullYear();
-  }, [settings.tvYear, propYear]);
+    if (propYear && propYear > 0) return propYear;
+    const dateParts = parseUniversalDateParts(dailyReport?.date);
+    if (dateParts && dateParts.year > 0) return dateParts.year;
+    return new Date().getFullYear();
+  }, [propYear, dailyReport?.date]);
 
-  // 11. Safety Fallback: Use latest populated report if active is blank
+  // 11. Safety Fallback: Use dailyReport, ensure 6 machines so frames are always populated cleanly
   const safeDailyReport = useMemo(() => {
-    if (dailyReport && dailyReport.entries && dailyReport.entries.length > 0) {
-      return dailyReport;
-    }
-    const populated = history.find(r => r.entries && r.entries.length > 0);
-    return populated || dailyReport;
-  }, [dailyReport, history]);
+    const report = dailyReport || createDefaultReportForShed(selectedShed, getTodayUniversalDate());
+    return ensureSixMachines(report, selectedShed);
+  }, [dailyReport, selectedShed]);
 
   // Calculate Progress Percentage for the active sub-page
   const progressPercent = Math.max(0, Math.min(100, ((currentSubDuration - timeRemaining) / currentSubDuration) * 100));
@@ -512,9 +522,63 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   // 12. Multi-shed comparison calculation across all 4 sheds
   const shedComparison = useMemo(() => {
     const sheds: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
+    const searchPool = (allShedsHistory && allShedsHistory.length > 0) ? allShedsHistory : history;
+
     return sheds.map(shedName => {
-      const reportForShed = history.find(r => r.date === safeDailyReport.date && (r.shed || 'Shed 1') === shedName)
-        || (selectedShed === shedName ? safeDailyReport : null);
+      // 1. Direct date & shed match
+      let reportForShed = searchPool.find(r => r.date === safeDailyReport.date && (r.shed || 'Shed 1') === shedName);
+
+      // 2. If current active shed matches and dailyReport has data, prioritize it
+      if ((selectedShed === shedName || (safeDailyReport.shed || 'Shed 1') === shedName) && safeDailyReport) {
+        if (!reportForShed || (safeDailyReport.totalProductionActual || 0) > (reportForShed.totalProductionActual || 0)) {
+          reportForShed = safeDailyReport;
+        }
+      }
+
+      // 3. Normalized calendar date match (in case date format differs, e.g. YYYY-MM-DD vs DD/MM/YYYY)
+      if (!reportForShed) {
+        const targetParts = parseUniversalDateParts(safeDailyReport.date);
+        if (targetParts) {
+          reportForShed = searchPool.find(r => {
+            if ((r.shed || 'Shed 1') !== shedName) return false;
+            const rParts = parseUniversalDateParts(r.date);
+            return rParts && rParts.year === targetParts.year && rParts.month === targetParts.month && rParts.day === targetParts.day;
+          });
+        }
+      }
+
+      // 4. Same month fallback: if this shed has reports in the same month/year, pick the closest one
+      if (!reportForShed) {
+        const targetParts = parseUniversalDateParts(safeDailyReport.date);
+        if (targetParts) {
+          const sameMonthReports = searchPool.filter(r => {
+            if ((r.shed || 'Shed 1') !== shedName) return false;
+            const rParts = parseUniversalDateParts(r.date);
+            return rParts && rParts.year === targetParts.year && rParts.month === targetParts.month;
+          });
+          if (sameMonthReports.length > 0) {
+            const sorted = [...sameMonthReports].sort((a, b) => {
+              const pa = parseUniversalDateParts(a.date)?.day || 0;
+              const pb = parseUniversalDateParts(b.date)?.day || 0;
+              return pb - pa;
+            });
+            reportForShed = sorted[0];
+          }
+        }
+      }
+
+      // 5. Ultimate fallback: pick the latest populated report for this shed anywhere in searchPool
+      if (!reportForShed) {
+        const shedReports = searchPool.filter(r => (r.shed || 'Shed 1') === shedName && ((r.totalProductionActual || 0) > 0 || (r.entries && r.entries.length > 0) || (r.summaries && r.summaries.length > 0)));
+        if (shedReports.length > 0) {
+          const sorted = [...shedReports].sort((a, b) => {
+            const da = parseUniversalDate(a.date).getTime() || 0;
+            const db = parseUniversalDate(b.date).getTime() || 0;
+            return db - da;
+          });
+          reportForShed = sorted[0];
+        }
+      }
 
       if (!reportForShed) {
         return {
@@ -525,33 +589,44 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           frames: 0,
           avgGps: 0,
           avg40sGps: 0,
-          active: false
+          active: false,
+          reportDate: null
         };
       }
 
-      const tProd = reportForShed.totalProductionTarget || 0;
-      const aProd = reportForShed.totalProductionActual || 0;
-      const eff = tProd > 0 ? (aProd / tProd) * 100 : 0;
       const sList = reportForShed.summaries || [];
-      const gps = sList.length > 0 ? sList.reduce((a, b) => a + (b.avgGps || 0), 0) / sList.length : 0;
-      
       const entries = reportForShed.entries || [];
-      const gps40s = entries.length > 0 
-        ? entries.reduce((a, b) => a + (b.gps40sCon || 0), 0) / entries.length 
-        : 0;
+
+      const tProd = reportForShed.totalProductionTarget || sList.reduce((a, b) => a + (b.targetProd || 0), 0) || entries.reduce((a, b) => a + (b.productionTarget || 0), 0);
+      const aProd = reportForShed.totalProductionActual || sList.reduce((a, b) => a + (b.actualProd || 0), 0) || entries.reduce((a, b) => a + (b.productionActual || 0), 0);
+      const eff = tProd > 0 ? (aProd / tProd) * 100 : (aProd > 0 ? 100 : 0);
+      
+      let gps = sList.length > 0 ? sList.reduce((a, b) => a + (b.avgGps || 0), 0) / sList.length : 0;
+      if (gps === 0 && entries.length > 0) {
+        const validGps = entries.filter(e => (e.gpsActual || 0) > 0);
+        if (validGps.length > 0) gps = validGps.reduce((a, b) => a + (b.gpsActual || 0), 0) / validGps.length;
+      }
+      
+      const valid40s = entries.filter(e => (e.gps40sCon || 0) > 0);
+      const gps40s = valid40s.length > 0 
+        ? valid40s.reduce((a, b) => a + (b.gps40sCon || 0), 0) / valid40s.length 
+        : (gps > 0 ? gps : 0);
+
+      const frameCount = sList.length > 0 ? sList.length : (new Set(entries.map(e => e.frameNo))).size;
 
       return {
         shed: shedName,
         target: Math.round(tProd),
         actual: Math.round(aProd),
         efficiency: Number(eff.toFixed(1)),
-        frames: sList.length,
+        frames: frameCount,
         avgGps: Number(gps.toFixed(1)),
         avg40sGps: Number(gps40s.toFixed(1)),
-        active: aProd > 0 || entries.length > 0
+        active: aProd > 0 || entries.length > 0,
+        reportDate: reportForShed.date
       };
     });
-  }, [history, safeDailyReport, selectedShed]);
+  }, [allShedsHistory, history, safeDailyReport, selectedShed]);
 
   const shedAggregate = useMemo(() => {
     const totalActual = shedComparison.reduce((a, b) => a + b.actual, 0);
@@ -630,6 +705,78 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                         <span>{shed}</span>
                       </div>
                       {isSelected && <Check size={16} className="text-emerald-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Click-to-Open Date Selector Dropdown Button (Shows current date or selected date) */}
+          <div 
+            ref={dateDropdownRef}
+            className="relative"
+          >
+            <button
+              onClick={() => setIsDateDropdownOpen(prev => !prev)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-900 text-sm font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
+              title="Click to change TV report date"
+            >
+              <Calendar size={15} className="text-emerald-600" />
+              <span>{safeDailyReport.date}</span>
+              {safeDailyReport.date === getTodayUniversalDate() ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 hidden sm:inline-block">
+                  Current
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 hidden sm:inline-block">
+                  Selected
+                </span>
+              )}
+              {availableDates.length > 0 && (
+                <ChevronDown size={14} className={cn("text-stone-400 transition-transform duration-200", isDateDropdownOpen && "rotate-180")} />
+              )}
+            </button>
+
+            {/* Click Selection Dropdown Menu */}
+            {isDateDropdownOpen && availableDates.length > 0 && (
+              <div className="absolute top-full left-0 mt-2 w-52 max-h-64 overflow-y-auto bg-white rounded-2xl border border-stone-200 shadow-xl py-1.5 z-50">
+                {/* Jump to Current/Today Date option */}
+                <button
+                  onClick={() => {
+                    onSelectDate?.(getTodayUniversalDate());
+                    setIsDateDropdownOpen(false);
+                  }}
+                  className={cn(
+                    "w-full px-4 py-2.5 text-xs font-bold text-left flex items-center justify-between transition-colors cursor-pointer",
+                    safeDailyReport.date === getTodayUniversalDate() ? "bg-emerald-50 text-emerald-700 font-black" : "text-stone-700 hover:bg-stone-100"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                    <span>Current Date ({getTodayUniversalDate()})</span>
+                  </div>
+                  {safeDailyReport.date === getTodayUniversalDate() && <Check size={14} className="text-emerald-600" />}
+                </button>
+                
+                <div className="h-px bg-stone-100 my-1" />
+
+                {availableDates.filter(d => d !== getTodayUniversalDate()).map(d => {
+                  const isSelected = safeDailyReport.date === d;
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => {
+                        onSelectDate?.(d);
+                        setIsDateDropdownOpen(false);
+                      }}
+                      className={cn(
+                        "w-full px-4 py-2.5 text-xs font-bold text-left flex items-center justify-between transition-colors cursor-pointer",
+                        isSelected ? "bg-emerald-50 text-emerald-700 font-black" : "text-stone-700 hover:bg-stone-100"
+                      )}
+                    >
+                      <span>{d}</span>
+                      {isSelected && <Check size={14} className="text-emerald-600" />}
                     </button>
                   );
                 })}
@@ -979,12 +1126,14 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                         return (
                           <div 
                             key={s.shed} 
+                            onClick={() => onSelectShed(s.shed)}
                             className={cn(
-                              "rounded-3xl p-6 border flex flex-col justify-between shadow-2xs transition-all relative overflow-hidden bg-white",
+                              "rounded-3xl p-6 border flex flex-col justify-between shadow-2xs transition-all relative overflow-hidden bg-white cursor-pointer hover:border-emerald-300",
                               isSelected 
                                 ? "border-emerald-500 ring-4 ring-emerald-500/20 shadow-md" 
                                 : "border-stone-200/90"
                             )}
+                            title={`Click to switch to ${s.shed}`}
                           >
                             {/* Card Header */}
                             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
@@ -992,8 +1141,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                 <h4 className="text-2xl md:text-3xl font-black text-stone-900 uppercase font-serif tracking-tight">
                                   {s.shed}
                                 </h4>
-                                <span className="text-xs text-stone-400 font-bold uppercase tracking-wider">
+                                <span className="text-xs text-stone-400 font-bold uppercase tracking-wider block">
                                   {s.frames > 0 ? `${s.frames} Frames Logged` : 'Production Unit'}
+                                  {s.reportDate ? ` • ${s.reportDate}` : ''}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">

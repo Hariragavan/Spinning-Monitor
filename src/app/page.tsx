@@ -326,12 +326,14 @@ export default function Home() {
     const sameDateMatch = currentShedHistory.find(r => r.date === targetDate);
     if (sameDateMatch) return sameDateMatch;
 
-    // 3. Check if current shed history has a report for today
+    // 3. If target date is today, check if current shed history has a report for today
     const todayStr = getTodayUniversalDate();
-    const todayMatch = currentShedHistory.find(r => r.date === todayStr);
-    if (todayMatch) return todayMatch;
+    if (targetDate === todayStr) {
+      const todayMatch = currentShedHistory.find(r => r.date === todayStr);
+      if (todayMatch) return todayMatch;
+    }
 
-    // 4. Fresh day default: clean blank report for selected shed
+    // 4. Fresh report for selected shed and targetDate
     return createDefaultReportForShed(selectedShed, targetDate);
   }, [dailyReport, selectedShed, currentShedHistory]);
 
@@ -434,6 +436,20 @@ export default function Home() {
   const [rollbackMode, setRollbackMode] = useState<'after' | 'upto' | 'august'>('after');
   const [clearMonth, setClearMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
   const [clearYear, setClearYear] = useState(() => String(new Date().getFullYear()));
+
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'all' | 'month' | 'workers';
+    title: string;
+    description: string;
+    targetInfo?: string;
+    isProcessing?: boolean;
+  }>({
+    isOpen: false,
+    type: 'all',
+    title: '',
+    description: ''
+  });
 
   const [syncResultModal, setSyncResultModal] = useState<{ show: boolean; title: string; message: string; success: boolean } | null>(null);
   const [whatsAppToast, setWhatsAppToast] = useState<{ show: boolean; url: string; phone: string } | null>(null);
@@ -1141,19 +1157,94 @@ export default function Home() {
     alert('April historical reports imported into MongoDB successfully!');
   };
 
-  const clearAllHistory = async () => {
-    if (window.confirm('Are you SURE you want to delete ALL historical records?')) {
-      setReportHistory([]);
-      await apiClient.clearAllHistory();
+  const availableYears = useMemo(() => {
+    const yearSet = new Set<string>();
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 3; y <= currentYear + 2; y++) {
+      yearSet.add(String(y));
     }
+    reportHistory.forEach(r => {
+      const parts = parseUniversalDateParts(r.date);
+      if (parts && parts.year) yearSet.add(String(parts.year));
+    });
+    return Array.from(yearSet).sort((a, b) => Number(b) - Number(a));
+  }, [reportHistory]);
+
+  const promptDeleteAllData = () => {
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'all',
+      title: 'Delete All Data',
+      description: 'Are you sure you want to delete ALL historical records? This will permanently wipe all daily production entries, machine statistics, and incentive records across all sheds.',
+      targetInfo: 'Entire historical database (All Sheds & All Months)'
+    });
   };
 
-  const clearMonthData = async () => {
-    if (window.confirm(`Delete all data for month ${clearMonth}/${clearYear}?`)) {
-      await apiClient.clearMonthData(clearMonth, clearYear);
-      const refreshed = await apiClient.fetchInitialData();
-      if (refreshed.history) setReportHistory(refreshed.history);
-      alert('Month data deleted.');
+  const promptDeleteMonthData = () => {
+    const monthName = getClearMonthName(clearMonth);
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'month',
+      title: 'Delete Monthly Data',
+      description: `Are you sure you want to delete all historical records for ${monthName} ${clearYear}? Only reports belonging to this specific month and year will be deleted.`,
+      targetInfo: `Target Period: ${monthName} ${clearYear} (${clearMonth}/${clearYear})`
+    });
+  };
+
+  const promptDeleteWorkers = () => {
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'workers',
+      title: 'Delete Worker Master',
+      description: 'Are you sure you want to delete ALL employee records? This will remove all worker profiles, verification photos, and machine assignments from the database.',
+      targetInfo: `Total Staff: ${workers.length} registered employees`
+    });
+  };
+
+  const executeConfirmedDelete = async () => {
+    setDeleteConfirmModal(prev => ({ ...prev, isProcessing: true }));
+    try {
+      if (deleteConfirmModal.type === 'all') {
+        setReportHistory([]);
+        await apiClient.clearAllHistory();
+        setDeleteConfirmModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+        setSyncResultModal({
+          show: true,
+          title: 'All Data Cleared',
+          message: 'All daily reports and incentive history records have been permanently cleared from MongoDB.',
+          success: true
+        });
+      } else if (deleteConfirmModal.type === 'month') {
+        await apiClient.clearMonthData(clearMonth, clearYear);
+        const targetMonth = Number(clearMonth);
+        const targetYear = Number(clearYear);
+        setReportHistory(prev => prev.filter(r => {
+          const parts = parseUniversalDateParts(r.date);
+          return !(parts && parts.month === targetMonth && parts.year === targetYear);
+        }));
+        const refreshed = await apiClient.fetchInitialData();
+        if (refreshed.history) setReportHistory(refreshed.history);
+        setDeleteConfirmModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+        setSyncResultModal({
+          show: true,
+          title: 'Month Data Cleared',
+          message: `All records for ${getClearMonthName(clearMonth)} ${clearYear} have been deleted from MongoDB.`,
+          success: true
+        });
+      } else if (deleteConfirmModal.type === 'workers') {
+        setWorkers([]);
+        await apiClient.clearAllWorkers();
+        setDeleteConfirmModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+        setSyncResultModal({
+          show: true,
+          title: 'Workers Cleared',
+          message: 'All worker master profiles have been removed from MongoDB.',
+          success: true
+        });
+      }
+    } catch (err: any) {
+      alert(`Delete operation failed: ${err?.message || 'Unknown error'}`);
+      setDeleteConfirmModal(prev => ({ ...prev, isProcessing: false }));
     }
   };
 
@@ -1704,25 +1795,20 @@ export default function Home() {
       case 'best-shift':
         return <BestShift report={activeDailyReport} workers={currentShedWorkers} rules={incentiveRules} isTvMode={isTvMode} />;
 
-      case 'best': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
+      case 'best':
         return (
           <BestSider
             history={currentShedHistory}
             workers={currentShedWorkers}
             isTvMode={isTvMode}
             rules={incentiveRules}
-            month={tvActiveMonth}
-            year={tvActiveYear}
+            month={selectedMonth}
+            year={selectedYear}
             showMonthOnTv={settings.tvShowBestSiderMonth !== false}
           />
         );
-      }
 
-      case 'best-operators-em': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
+      case 'best-operators-em':
         return (
           <BestOperatorsEm
             history={currentShedHistory}
@@ -1730,26 +1816,22 @@ export default function Home() {
             rules={incentiveRules}
             machineEm={machineEm}
             isTvMode={isTvMode}
-            month={tvActiveMonth}
-            year={tvActiveYear}
+            month={selectedMonth}
+            year={selectedYear}
           />
         );
-      }
 
-      case 'em-outliers-compare': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
+      case 'em-outliers-compare':
         return (
           <EmOutliersCompare
             history={currentShedHistory}
             workers={currentShedWorkers}
             machineEm={machineEm}
             isTvMode={isTvMode}
-            month={tvActiveMonth}
-            year={tvActiveYear}
+            month={selectedMonth}
+            year={selectedYear}
           />
         );
-      }
 
       case 'counts':
         return (
@@ -2656,36 +2738,155 @@ export default function Home() {
             </div>
 
             {/* Danger Zone */}
-            <div className="p-10 bg-red-50 rounded-[3rem] border border-red-100 border-dashed">
-              <h2 className="text-2xl font-black text-red-900 uppercase tracking-tight mb-2">Danger Zone</h2>
-              <p className="text-[10px] font-bold text-red-700/60 uppercase tracking-widest mb-8">Database Operations</p>
+            <div className="p-8 sm:p-10 bg-gradient-to-br from-red-50/90 via-rose-50/50 to-orange-50/30 rounded-3xl border-2 border-red-200/80 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-red-200/60">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-red-600 text-white flex items-center justify-center shadow-lg shadow-red-500/20">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-black text-red-950 uppercase tracking-tight">Danger Zone</h2>
+                      <p className="text-[11px] font-bold text-red-600 uppercase tracking-widest">Database Deletion Operations</p>
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-red-700 bg-red-100/80 px-3.5 py-1.5 rounded-full border border-red-200 self-start sm:self-auto flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  Irreversible Actions
+                </span>
+              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <button
-                  onClick={clearAllWorkers}
-                  className="flex flex-col items-start gap-4 p-6 bg-white rounded-2xl border border-red-200 hover:bg-red-50 transition-all text-left cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600">
-                    <Users size={20} />
-                  </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 1. Delete Monthly Data */}
+                <div className="bg-white rounded-2xl border-2 border-red-100 p-6 flex flex-col justify-between shadow-sm hover:border-red-300 transition-all">
                   <div>
-                    <h4 className="text-sm font-black text-stone-900 uppercase tracking-widest">Delete Worker Master</h4>
-                    <p className="text-[10px] text-stone-400 font-bold mt-1 uppercase tracking-tight">Clear all employees from MongoDB</p>
-                  </div>
-                </button>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center border border-amber-200/60">
+                        <Calendar size={20} />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-amber-100 text-amber-800 rounded-lg">
+                        Selective Month
+                      </span>
+                    </div>
+                    <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete Particular Month</h4>
+                    <p className="text-xs text-stone-500 mb-5">
+                      Select a month and year to wipe only that period's production and incentive records.
+                    </p>
 
-                <button
-                  onClick={clearAllHistory}
-                  className="flex flex-col items-start gap-4 p-6 bg-white rounded-2xl border border-red-200 hover:bg-red-50 transition-all text-left cursor-pointer"
-                >
-                  <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-red-600">
-                    <Trash2 size={20} />
+                    <div className="space-y-3 mb-6 bg-stone-50 p-3.5 rounded-xl border border-stone-200">
+                      <div>
+                        <label className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">Select Month</label>
+                        <select
+                          value={clearMonth}
+                          onChange={(e) => setClearMonth(e.target.value)}
+                          className="w-full bg-white border border-stone-300 rounded-lg px-3 py-2 text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                        >
+                          <option value="01">01 - January</option>
+                          <option value="02">02 - February</option>
+                          <option value="03">03 - March</option>
+                          <option value="04">04 - April</option>
+                          <option value="05">05 - May</option>
+                          <option value="06">06 - June</option>
+                          <option value="07">07 - July</option>
+                          <option value="08">08 - August</option>
+                          <option value="09">09 - September</option>
+                          <option value="10">10 - October</option>
+                          <option value="11">11 - November</option>
+                          <option value="12">12 - December</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">Select Year</label>
+                        <select
+                          value={clearYear}
+                          onChange={(e) => setClearYear(e.target.value)}
+                          className="w-full bg-white border border-stone-300 rounded-lg px-3 py-2 text-xs font-bold text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                        >
+                          {availableYears.map(yr => (
+                            <option key={yr} value={yr}>{yr}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={promptDeleteMonthData}
+                    className="w-full py-3 px-4 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-amber-600/20 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 size={15} /> Delete {getClearMonthName(clearMonth)} Data
+                  </button>
+                </div>
+
+                {/* 2. Delete All Data */}
+                <div className="bg-white rounded-2xl border-2 border-red-200 p-6 flex flex-col justify-between shadow-sm hover:border-red-400 transition-all">
                   <div>
-                    <h4 className="text-sm font-black text-stone-900 uppercase tracking-widest">Clear Incentive History</h4>
-                    <p className="text-[10px] text-stone-400 font-bold mt-1 uppercase tracking-tight">Wipe all daily reports & historical incentives</p>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-red-100 text-red-600 rounded-xl flex items-center justify-center border border-red-200">
+                        <Trash2 size={20} />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-red-100 text-red-800 rounded-lg">
+                        Entire History
+                      </span>
+                    </div>
+                    <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete All Data</h4>
+                    <p className="text-xs text-stone-500 mb-5">
+                      Wipe all daily reports, machine production entries, and historical incentive statements across all sheds.
+                    </p>
+
+                    <div className="p-3.5 bg-red-50/70 border border-red-200/60 rounded-xl mb-6">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={15} className="text-red-600 shrink-0 mt-0.5" />
+                        <p className="text-[11px] font-semibold text-red-800 leading-relaxed">
+                          This will permanently delete all {reportHistory.length} recorded daily reports from the database.
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={promptDeleteAllData}
+                    className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-red-600/25 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 size={15} /> Delete All Data
+                  </button>
+                </div>
+
+                {/* 3. Delete Worker Master */}
+                <div className="bg-white rounded-2xl border-2 border-red-100 p-6 flex flex-col justify-between shadow-sm hover:border-red-300 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center border border-rose-200/60">
+                        <Users size={20} />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-rose-100 text-rose-800 rounded-lg">
+                        Employees
+                      </span>
+                    </div>
+                    <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete Worker Master</h4>
+                    <p className="text-xs text-stone-500 mb-5">
+                      Clear all registered employee records, verification photos, and profiles from MongoDB.
+                    </p>
+
+                    <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-xl mb-6">
+                      <p className="text-[11px] font-medium text-stone-600 leading-relaxed">
+                        Currently registered: <strong className="text-stone-900 font-bold">{workers.length} employees</strong> in the master database.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={promptDeleteWorkers}
+                    className="w-full py-3 px-4 bg-stone-800 hover:bg-black active:bg-stone-900 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Users size={15} /> Delete Worker Master
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -2702,6 +2903,7 @@ export default function Home() {
         <TvDashboard
           dailyReport={activeDailyReport}
           history={currentShedHistory}
+          allShedsHistory={reportHistory}
           workers={currentShedWorkers}
           rules={incentiveRules}
           selectedShed={selectedShed}
@@ -2907,6 +3109,99 @@ export default function Home() {
                       )}
                     >
                       OK, Got It!
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Danger Zone Delete Confirmation Modal */}
+        <AnimatePresence>
+          {deleteConfirmModal.isOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm flex items-center justify-center p-4 z-[1000] no-print"
+              onClick={() => {
+                if (!deleteConfirmModal.isProcessing) {
+                  setDeleteConfirmModal(prev => ({ ...prev, isOpen: false }));
+                }
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0, y: 15 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 15 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-red-200 overflow-hidden relative"
+              >
+                {/* Header */}
+                <div className="bg-gradient-to-r from-red-600 to-rose-700 p-6 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 bg-white/20 rounded-2xl flex items-center justify-center shrink-0 border border-white/20">
+                      <AlertTriangle size={24} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-black uppercase tracking-wider">{deleteConfirmModal.title}</h3>
+                      <p className="text-[10px] font-bold text-red-100 uppercase tracking-widest mt-0.5">Confirmation Required</p>
+                    </div>
+                  </div>
+                  <button
+                    disabled={deleteConfirmModal.isProcessing}
+                    onClick={() => setDeleteConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                    className="p-1.5 rounded-xl hover:bg-white/20 text-white/80 hover:text-white transition-colors cursor-pointer disabled:opacity-40"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-6 space-y-4">
+                  <p className="text-xs font-semibold text-stone-700 leading-relaxed">
+                    {deleteConfirmModal.description}
+                  </p>
+
+                  {deleteConfirmModal.targetInfo && (
+                    <div className="p-3 bg-red-50/80 border border-red-200 rounded-xl">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-red-700 block mb-0.5">Target Scope</span>
+                      <p className="text-xs font-bold text-red-950">{deleteConfirmModal.targetInfo}</p>
+                    </div>
+                  )}
+
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800">
+                    <AlertTriangle size={15} className="shrink-0 text-amber-600" />
+                    <span className="text-[11px] font-bold">This operation is irreversible and cannot be undone.</span>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      disabled={deleteConfirmModal.isProcessing}
+                      onClick={() => setDeleteConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                      className="px-4 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-bold text-xs hover:bg-stone-100 transition-all cursor-pointer disabled:opacity-40"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleteConfirmModal.isProcessing}
+                      onClick={executeConfirmedDelete}
+                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {deleteConfirmModal.isProcessing ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={14} />
+                          Yes, Delete Data
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
