@@ -343,48 +343,75 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
       </div>
 
       {/* KPI Stats Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 no-print">
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Users size={16} />
+      <div className={cn(
+        "grid grid-cols-2 md:grid-cols-4 no-print",
+        isTvMode ? "gap-5 mb-5" : "gap-3"
+      )}>
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          isTvMode ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0",
+            isTvMode ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <Users size={isTvMode ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Active Personnel</p>
-            <p className="text-lg font-black text-stone-900 tabular-nums mt-0.5">{aiWorkers.length}</p>
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", isTvMode ? "text-xs md:text-sm" : "text-[10px]")}>Active Personnel</p>
+            <p className={cn("font-black text-stone-900 tabular-nums mt-1", isTvMode ? "text-3xl md:text-4xl" : "text-lg")}>{aiWorkers.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <Coins size={16} />
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          isTvMode ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0",
+            isTvMode ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <Coins size={isTvMode ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", isTvMode ? "text-xs md:text-sm" : "text-[10px]")}>
               {metricType === 'incentive' ? 'Total AI Payout' : 'Average Utility'}
             </p>
-            <p className="text-lg font-black text-stone-900 tabular-nums mt-0.5">
+            <p className={cn("font-black text-emerald-850 tabular-nums mt-1", isTvMode ? "text-3xl md:text-4xl" : "text-lg")}>
               {metricType === 'incentive' ? `₹${Math.round(grandTotalOrAvg).toLocaleString()}` : `${Math.round(grandTotalOrAvg)}%`}
             </p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <BarChart3 size={16} />
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          isTvMode ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0",
+            isTvMode ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <BarChart3 size={isTvMode ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Selected Month</p>
-            <p className="text-xs font-black text-stone-900 uppercase tracking-tight mt-0.5">{dataMonthDisplay}</p>
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", isTvMode ? "text-xs md:text-sm" : "text-[10px]")}>Selected Month</p>
+            <p className={cn("font-black text-stone-900 uppercase tracking-tight mt-1", isTvMode ? "text-base md:text-xl" : "text-xs")}>{dataMonthDisplay}</p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <Award size={16} />
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          isTvMode ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0",
+            isTvMode ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <Award size={isTvMode ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Top Performer</p>
-            <p className="text-xs font-black text-stone-900 truncate mt-0.5">
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", isTvMode ? "text-xs md:text-sm" : "text-[10px]")}>Top Performer</p>
+            <p className={cn("font-black text-stone-900 truncate mt-1", isTvMode ? "text-base md:text-xl" : "text-xs")}>
               {topPerformer ? `${topPerformer.name} (₹${Math.round(topPerformer.total).toLocaleString()})` : 'None'}
             </p>
           </div>
@@ -392,17 +419,23 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
       </div>
 
       {/* Main Table Card */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 shadow-xs overflow-hidden">
+      <div className={cn(
+        "bg-white border border-stone-200/90 shadow-xs overflow-hidden",
+        isTvMode ? "rounded-3xl" : "rounded-2xl"
+      )}>
         {/* Card Header */}
-        <div className="p-4 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className={cn(
+          "border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2",
+          isTvMode ? "p-6" : "p-4"
+        )}>
           <div>
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse" />
-              <h3 className="text-sm font-black text-stone-900 uppercase tracking-tight">
+              <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse" />
+              <h3 className={cn("font-black text-stone-900 uppercase tracking-tight", isTvMode ? "text-xl md:text-2xl" : "text-sm")}>
                 AI Cone Linkconer Incentive Ledger
               </h3>
             </div>
-            <p className="text-[11px] text-stone-400 font-bold uppercase tracking-wider mt-0.5">
+            <p className={cn("text-stone-400 font-bold uppercase tracking-wider mt-1", isTvMode ? "text-xs md:text-sm" : "text-[11px]")}>
               {dataMonthDisplay} • Showing {metricType === 'incentive' ? 'Daily Incentives (₹)' : 'Daily Utilisation Average (U%)'}
             </p>
           </div>
@@ -416,11 +449,14 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
 
         {/* Scrollable Table */}
         <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
-          <table className="w-full text-center border-collapse text-xs">
+          <table className={cn("w-full text-center border-collapse", isTvMode ? "text-base md:text-lg" : "text-xs")}>
             <thead>
-              <tr className="bg-stone-50 border-b border-stone-200 text-stone-600 font-black uppercase tracking-wider text-[11px] h-10 sticky top-0 z-30">
-                <th className="w-16 px-2 py-1 sticky left-0 z-40 bg-stone-50 border-r border-stone-200">TK No</th>
-                <th className="w-40 px-3 py-1 sticky left-16 z-40 bg-stone-50 border-r border-stone-200 text-left">Operator Name</th>
+              <tr className={cn(
+                "bg-stone-50 border-b border-stone-200 text-stone-600 font-black uppercase tracking-wider sticky top-0 z-30",
+                isTvMode ? "h-14 text-base md:text-lg" : "h-10 text-[11px]"
+              )}>
+                <th className={cn("sticky left-0 z-40 bg-stone-50 border-r border-stone-200", isTvMode ? "w-24 px-3 py-2" : "w-16 px-2 py-1")}>TK No</th>
+                <th className={cn("sticky left-16 z-40 bg-stone-50 border-r border-stone-200 text-left", isTvMode ? "w-56 px-4 py-2" : "w-40 px-3 py-1")}>Operator Name</th>
                 {displayedDays.map(day => (
                   <th 
                     key={day} 
@@ -431,7 +467,8 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
                       }
                     }}
                     className={cn(
-                      "px-1.5 py-1 border-r border-stone-200/80 hover:bg-stone-100 transition-colors w-12",
+                      "border-r border-stone-200/80 hover:bg-stone-100 transition-colors",
+                      isTvMode ? "px-2.5 py-2 w-16" : "px-1.5 py-1 w-12",
                       !isTvMode && "cursor-pointer"
                     )}
                     title={!isTvMode ? `Jump to ${day}/${selectedMonth}/${selectedYear}` : undefined}
@@ -439,24 +476,24 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
                     <span className="hover:text-emerald-700 transition-colors">{day}</span>
                   </th>
                 ))}
-                <th className="w-24 px-3 py-1 text-stone-900 bg-stone-100/90 sticky right-0 z-40 border-l border-stone-200 font-black">
+                <th className={cn("text-stone-900 bg-stone-100/90 sticky right-0 z-40 border-l border-stone-200 font-black", isTvMode ? "w-36 px-4 py-2" : "w-24 px-3 py-1")}>
                   {metricType === 'incentive' ? 'Total (₹)' : 'Avg (U%)'}
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
               {rowsWithTotals.map((row) => (
-                <tr key={row.id} className="hover:bg-purple-50/20 transition-colors h-9">
-                  <td className="px-2 py-1 text-xs font-black text-stone-900 sticky left-0 z-20 border-r border-stone-200 bg-white">
+                <tr key={row.id} className={cn("hover:bg-purple-50/20 transition-colors", isTvMode ? "h-14" : "h-9")}>
+                  <td className={cn("font-black text-stone-900 sticky left-0 z-20 border-r border-stone-200 bg-white", isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1 text-xs")}>
                     {row.tNo}
                   </td>
-                  <td className="px-3 py-1 text-xs font-bold text-stone-800 sticky left-16 z-20 border-r border-stone-200 uppercase truncate text-left bg-white">
+                  <td className={cn("font-bold text-stone-800 sticky left-16 z-20 border-r border-stone-200 uppercase truncate text-left bg-white", isTvMode ? "px-4 py-2 text-base md:text-lg" : "px-3 py-1 text-xs")}>
                     {row.name}
                   </td>
                   {displayedDays.map(day => {
                     const val = getAiMetricByDay(day, row.id, row.tNo);
                     return (
-                      <td key={day} className="px-1 py-1 border-r border-stone-100 tabular-nums text-stone-600 font-semibold text-xs">
+                      <td key={day} className={cn("border-r border-stone-100 tabular-nums text-stone-600 font-bold", isTvMode ? "px-2 py-2 text-base md:text-lg" : "px-1 py-1 text-xs")}>
                         {val !== null ? (
                           metricType === 'incentive' ? (
                             <span className="font-bold text-stone-900">{Math.round(val).toLocaleString()}</span>
@@ -469,7 +506,7 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
                       </td>
                     );
                   })}
-                  <td className="px-3 py-1 font-black tabular-nums text-right bg-stone-50/70 sticky right-0 z-20 border-l border-stone-200 text-stone-900">
+                  <td className={cn("font-black tabular-nums text-right bg-stone-50/70 sticky right-0 z-20 border-l border-stone-200 text-stone-900", isTvMode ? "px-4 py-2 text-lg md:text-xl" : "px-3 py-1 text-xs")}>
                     {metricType === 'incentive' ? `₹${Math.round(row.total).toLocaleString()}` : `${Math.round(row.total)}%`}
                   </td>
                 </tr>

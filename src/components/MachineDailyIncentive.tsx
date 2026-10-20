@@ -442,35 +442,35 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               {/* Shift Headers Row */}
               <tr className="border-b-2 border-stone-900 text-center font-black bg-stone-100 uppercase tracking-wider">
                 <th colSpan={2} className="px-2 py-1.5 border-r-2 border-stone-900"></th>
-                <th colSpan={3} className="px-2 py-1.5 border-r-2 border-stone-900 text-stone-900 text-xs md:text-sm bg-stone-50">
+                <th colSpan={3} className={cn("border-r-2 border-stone-900 text-stone-900 bg-stone-50", isTvMode ? "px-4 py-3 text-base md:text-lg font-black" : "px-2 py-1.5 text-xs md:text-sm")}>
                   Shift 1 (I)
                 </th>
-                <th colSpan={3} className="px-2 py-1.5 border-r-2 border-stone-900 text-stone-900 text-xs md:text-sm bg-stone-100">
+                <th colSpan={3} className={cn("border-r-2 border-stone-900 text-stone-900 bg-stone-100", isTvMode ? "px-4 py-3 text-base md:text-lg font-black" : "px-2 py-1.5 text-xs md:text-sm")}>
                   Shift 2 (II)
                 </th>
-                <th colSpan={3} className="px-2 py-1.5 text-stone-900 text-xs md:text-sm bg-stone-50">
+                <th colSpan={3} className={cn("text-stone-900 bg-stone-50", isTvMode ? "px-4 py-3 text-base md:text-lg font-black" : "px-2 py-1.5 text-xs md:text-sm")}>
                   Shift 3 (III)
                 </th>
               </tr>
               {/* Detail Headers Row */}
-              <tr className="border-b-2 border-stone-900 text-xs bg-stone-200 uppercase tracking-wider font-black text-center">
-                <th className="px-2 py-1.5 border-r-2 border-stone-900 text-left min-w-[70px]">Rf no</th>
-                <th className="px-2 py-1.5 border-r-2 border-stone-900 text-left min-w-[90px]">Count</th>
+              <tr className={cn("border-b-2 border-stone-900 bg-stone-200 uppercase tracking-wider font-black text-center", isTvMode ? "text-sm md:text-base" : "text-xs")}>
+                <th className={cn("border-r-2 border-stone-900 text-left min-w-[70px]", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Rf no</th>
+                <th className={cn("border-r-2 border-stone-900 text-left min-w-[90px]", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Count</th>
                 
                 {/* Shift 1 Details */}
-                <th className="px-1.5 py-1.5 border-r border-stone-300 w-[60px]">GPS</th>
-                <th className="px-2 py-1.5 border-r border-stone-300 min-w-[100px] text-left">Name</th>
-                <th className="px-2 py-1.5 border-r-2 border-stone-900 w-[80px] text-right">Incentive</th>
+                <th className={cn("border-r border-stone-300 w-[70px]", isTvMode ? "px-2 py-2.5" : "px-1.5 py-1.5")}>GPS</th>
+                <th className={cn("border-r border-stone-300 min-w-[110px] text-left", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Name</th>
+                <th className={cn("border-r-2 border-stone-900 w-[95px] text-right", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Incentive</th>
                 
                 {/* Shift 2 Details */}
-                <th className="px-1.5 py-1.5 border-r border-stone-300 w-[60px]">GPS</th>
-                <th className="px-2 py-1.5 border-r border-stone-300 min-w-[100px] text-left">Name</th>
-                <th className="px-2 py-1.5 border-r-2 border-stone-900 w-[80px] text-right">Incentive</th>
+                <th className={cn("border-r border-stone-300 w-[70px]", isTvMode ? "px-2 py-2.5" : "px-1.5 py-1.5")}>GPS</th>
+                <th className={cn("border-r border-stone-300 min-w-[110px] text-left", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Name</th>
+                <th className={cn("border-r-2 border-stone-900 w-[95px] text-right", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Incentive</th>
                 
                 {/* Shift 3 Details */}
-                <th className="px-1.5 py-1.5 border-r border-stone-300 w-[60px]">GPS</th>
-                <th className="px-2 py-1.5 border-r border-stone-300 min-w-[100px] text-left">Name</th>
-                <th className="px-2 py-1.5 w-[80px] text-right">Incentive</th>
+                <th className={cn("border-r border-stone-300 w-[70px]", isTvMode ? "px-2 py-2.5" : "px-1.5 py-1.5")}>GPS</th>
+                <th className={cn("border-r border-stone-300 min-w-[110px] text-left", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Name</th>
+                <th className={cn("w-[95px] text-right", isTvMode ? "px-3 py-2.5" : "px-2 py-1.5")}>Incentive</th>
               </tr>
             </thead>
             <tbody>
@@ -478,10 +478,10 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               {tableRows.map((row, idx) => (
                 <tr 
                   key={`mach-${row.frameNo}-${row.slotIdx}-${idx}`}
-                  className="border-b border-stone-200 text-xs md:text-sm hover:bg-stone-50 transition-colors font-bold text-stone-800"
+                  className={cn("border-b border-stone-200 hover:bg-stone-50 transition-colors font-bold text-stone-800", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}
                 >
                   {/* Machine Rf No */}
-                  <td className="px-2 py-1 border-r-2 border-stone-900 font-black text-stone-900 bg-stone-50/50 uppercase">
+                  <td className={cn("border-r-2 border-stone-900 font-black text-stone-900 bg-stone-50/50 uppercase", isTvMode ? "px-3 py-2 text-lg md:text-xl font-black" : "px-2 py-1")}>
                     <div className="flex items-center gap-1">
                       <span>{row.frameNo}</span>
                       {row.totalSlots > 1 && (
@@ -495,21 +495,22 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                     </div>
                   </td>
                   {/* Count */}
-                  <td className="px-2 py-1 border-r-2 border-stone-900 text-stone-600 bg-stone-50/20 truncate max-w-[110px]" title={row.displayCount}>
+                  <td className={cn("border-r-2 border-stone-900 text-stone-600 bg-stone-50/20 truncate max-w-[110px]", isTvMode ? "px-3 py-2 text-base md:text-lg font-bold" : "px-2 py-1")} title={row.displayCount}>
                     {row.displayCount}
                   </td>
 
                   {/* Shift 1 Data */}
-                  <td className="px-1.5 py-1 border-r border-stone-300 text-center tabular-nums text-stone-700">
+                  <td className={cn("border-r border-stone-300 text-center tabular-nums text-stone-700", isTvMode ? "px-2 py-2 text-base md:text-lg font-bold" : "px-1.5 py-1")}>
                     {row.shiftsData.I.gps > 0 ? Math.round(row.shiftsData.I.gps) : '-'}
                   </td>
                   <td className={cn(
-                    "px-2 py-1 border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    "border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1",
                     row.shiftsData.I.assigned ? "text-stone-900 font-black" : "text-stone-300 italic"
                   )}>
                     {row.shiftsData.I.name || '-'}
                   </td>
-                  <td className="px-2 py-1 border-r-2 border-stone-900 text-right tabular-nums text-xs md:text-sm font-black text-indigo-900">
+                  <td className={cn("border-r-2 border-stone-900 text-right tabular-nums font-black text-indigo-900", isTvMode ? "px-3 py-2 text-lg md:text-xl" : "px-2 py-1 text-xs md:text-sm")}>
                     {row.shiftsData.I.assigned && row.shiftsData.I.incentive > 0 ? (
                       `₹${row.shiftsData.I.incentive.toLocaleString()}`
                     ) : (
@@ -518,16 +519,17 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                   </td>
 
                   {/* Shift 2 Data */}
-                  <td className="px-1.5 py-1 border-r border-stone-300 text-center tabular-nums text-stone-700">
+                  <td className={cn("border-r border-stone-300 text-center tabular-nums text-stone-700", isTvMode ? "px-2 py-2 text-base md:text-lg font-bold" : "px-1.5 py-1")}>
                     {row.shiftsData.II.gps > 0 ? Math.round(row.shiftsData.II.gps) : '-'}
                   </td>
                   <td className={cn(
-                    "px-2 py-1 border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    "border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1",
                     row.shiftsData.II.assigned ? "text-stone-900 font-black" : "text-stone-300 italic"
                   )}>
                     {row.shiftsData.II.name || '-'}
                   </td>
-                  <td className="px-2 py-1 border-r-2 border-stone-900 text-right tabular-nums text-xs md:text-sm font-black text-indigo-900">
+                  <td className={cn("border-r-2 border-stone-900 text-right tabular-nums font-black text-indigo-900", isTvMode ? "px-3 py-2 text-lg md:text-xl" : "px-2 py-1 text-xs md:text-sm")}>
                     {row.shiftsData.II.assigned && row.shiftsData.II.incentive > 0 ? (
                       `₹${row.shiftsData.II.incentive.toLocaleString()}`
                     ) : (
@@ -536,16 +538,17 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                   </td>
 
                   {/* Shift 3 Data */}
-                  <td className="px-1.5 py-1 border-r border-stone-300 text-center tabular-nums text-stone-700">
+                  <td className={cn("border-r border-stone-300 text-center tabular-nums text-stone-700", isTvMode ? "px-2 py-2 text-base md:text-lg font-bold" : "px-1.5 py-1")}>
                     {row.shiftsData.III.gps > 0 ? Math.round(row.shiftsData.III.gps) : '-'}
                   </td>
                   <td className={cn(
-                    "px-2 py-1 border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    "border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1",
                     row.shiftsData.III.assigned ? "text-stone-900 font-black" : "text-stone-300 italic"
                   )}>
                     {row.shiftsData.III.name || '-'}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-xs md:text-sm font-black text-indigo-900">
+                  <td className={cn("text-right tabular-nums font-black text-indigo-900", isTvMode ? "px-3 py-2 text-lg md:text-xl" : "px-2 py-1 text-xs md:text-sm")}>
                     {row.shiftsData.III.assigned && row.shiftsData.III.incentive > 0 ? (
                       `₹${row.shiftsData.III.incentive.toLocaleString()}`
                     ) : (
@@ -559,26 +562,27 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               {gaiterRows.map((row, gIdx) => (
                 <tr 
                   key={`gaiter-row-${gIdx}`}
-                  className="border-b border-stone-200 bg-amber-50/15 text-xs md:text-sm hover:bg-stone-100/30 transition-colors font-bold text-stone-800"
+                  className={cn("border-b border-stone-200 bg-amber-50/15 hover:bg-stone-100/30 transition-colors font-bold text-stone-800", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}
                 >
-                  <td className="px-2 py-1 border-r-2 border-stone-900 font-black text-stone-900 bg-amber-50 uppercase flex items-center gap-1">
-                    <Zap size={12} className="text-amber-500 shrink-0" /> Gaiter
+                  <td className={cn("border-r-2 border-stone-900 font-black text-stone-900 bg-amber-50 uppercase flex items-center gap-1", isTvMode ? "px-3 py-2 text-lg" : "px-2 py-1")}>
+                    <Zap size={14} className="text-amber-500 shrink-0" /> Gaiter
                   </td>
-                  <td className="px-2 py-1 border-r-2 border-stone-900 text-amber-700 bg-amber-50/30 font-black text-[10px] uppercase tracking-wider">
+                  <td className={cn("border-r-2 border-stone-900 text-amber-700 bg-amber-50/30 font-black uppercase tracking-wider", isTvMode ? "px-3 py-2 text-xs" : "px-2 py-1 text-[10px]")}>
                     Support
                   </td>
 
                   {/* Shift 1 Gaiter */}
-                  <td className="px-1.5 py-1 border-r border-stone-300 text-center tabular-nums text-amber-700">
+                  <td className={cn("border-r border-stone-300 text-center tabular-nums text-amber-700", isTvMode ? "px-2 py-2 text-base md:text-lg font-bold" : "px-1.5 py-1")}>
                     {row.shiftsData.I.gps > 0 ? Math.round(row.shiftsData.I.gps) : '-'}
                   </td>
                   <td className={cn(
-                    "px-2 py-1 border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    "border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1",
                     row.shiftsData.I.assigned ? "text-amber-950 font-black" : "text-stone-300 italic"
                   )}>
                     {row.shiftsData.I.name || '-'}
                   </td>
-                  <td className="px-2 py-1 border-r-2 border-stone-900 text-right tabular-nums text-xs md:text-sm font-black text-amber-800">
+                  <td className={cn("border-r-2 border-stone-900 text-right tabular-nums font-black text-amber-800", isTvMode ? "px-3 py-2 text-lg md:text-xl" : "px-2 py-1 text-xs md:text-sm")}>
                     {row.shiftsData.I.assigned && row.shiftsData.I.incentive > 0 ? (
                       `₹${row.shiftsData.I.incentive.toLocaleString()}`
                     ) : (
@@ -587,16 +591,17 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                   </td>
 
                   {/* Shift 2 Gaiter */}
-                  <td className="px-1.5 py-1 border-r border-stone-300 text-center tabular-nums text-amber-700">
+                  <td className={cn("border-r border-stone-300 text-center tabular-nums text-amber-700", isTvMode ? "px-2 py-2 text-base md:text-lg font-bold" : "px-1.5 py-1")}>
                     {row.shiftsData.II.gps > 0 ? Math.round(row.shiftsData.II.gps) : '-'}
                   </td>
                   <td className={cn(
-                    "px-2 py-1 border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    "border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1",
                     row.shiftsData.II.assigned ? "text-amber-950 font-black" : "text-stone-300 italic"
                   )}>
                     {row.shiftsData.II.name || '-'}
                   </td>
-                  <td className="px-2 py-1 border-r-2 border-stone-900 text-right tabular-nums text-xs md:text-sm font-black text-amber-800">
+                  <td className={cn("border-r-2 border-stone-900 text-right tabular-nums font-black text-amber-800", isTvMode ? "px-3 py-2 text-lg md:text-xl" : "px-2 py-1 text-xs md:text-sm")}>
                     {row.shiftsData.II.assigned && row.shiftsData.II.incentive > 0 ? (
                       `₹${row.shiftsData.II.incentive.toLocaleString()}`
                     ) : (
@@ -605,16 +610,17 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                   </td>
 
                   {/* Shift 3 Gaiter */}
-                  <td className="px-1.5 py-1 border-r border-stone-300 text-center tabular-nums text-amber-700">
+                  <td className={cn("border-r border-stone-300 text-center tabular-nums text-amber-700", isTvMode ? "px-2 py-2 text-base md:text-lg font-bold" : "px-1.5 py-1")}>
                     {row.shiftsData.III.gps > 0 ? Math.round(row.shiftsData.III.gps) : '-'}
                   </td>
                   <td className={cn(
-                    "px-2 py-1 border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    "border-r border-stone-300 uppercase truncate max-w-[120px]",
+                    isTvMode ? "px-3 py-2 text-base md:text-lg" : "px-2 py-1",
                     row.shiftsData.III.assigned ? "text-amber-950 font-black" : "text-stone-300 italic"
                   )}>
                     {row.shiftsData.III.name || '-'}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-xs md:text-sm font-black text-amber-800">
+                  <td className={cn("text-right tabular-nums font-black text-amber-800", isTvMode ? "px-3 py-2 text-lg md:text-xl" : "px-2 py-1 text-xs md:text-sm")}>
                     {row.shiftsData.III.assigned && row.shiftsData.III.incentive > 0 ? (
                       `₹${row.shiftsData.III.incentive.toLocaleString()}`
                     ) : (
@@ -625,42 +631,42 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               ))}
 
               {/* Shift wise Sums Row */}
-              <tr className="bg-stone-100 border-t-2 border-stone-900 font-black text-stone-900 text-xs md:text-sm">
-                <td colSpan={2} className="px-2 py-1.5 border-r-2 border-stone-900 uppercase tracking-tight text-stone-700 text-xs text-center font-black">
+              <tr className={cn("bg-stone-100 border-t-2 border-stone-900 font-black text-stone-900", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}>
+                <td colSpan={2} className={cn("border-r-2 border-stone-900 uppercase tracking-tight text-stone-700 text-center font-black", isTvMode ? "px-3 py-3 text-sm md:text-base" : "px-2 py-1.5 text-xs")}>
                   Total Incentive Amount
                 </td>
 
                 {/* Shift 1 Sum */}
-                <td colSpan={2} className="px-2 py-1.5 border-r border-stone-300 text-right text-stone-600 font-bold text-xs uppercase">
+                <td colSpan={2} className={cn("border-r border-stone-300 text-right text-stone-600 font-bold uppercase", isTvMode ? "px-3 py-3 text-sm" : "px-2 py-1.5 text-xs")}>
                   Shift I Total:
                 </td>
-                <td className="px-2 py-1.5 border-r-2 border-stone-900 text-right tabular-nums bg-yellow-400 text-stone-950 text-xs md:text-sm font-black">
+                <td className={cn("border-r-2 border-stone-900 text-right tabular-nums bg-yellow-400 text-stone-950 font-black", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5 text-xs md:text-sm")}>
                   ₹{shiftTotals.I.toLocaleString()}
                 </td>
 
                 {/* Shift 2 Sum */}
-                <td colSpan={2} className="px-2 py-1.5 border-r border-stone-300 text-right text-stone-600 font-bold text-xs uppercase">
+                <td colSpan={2} className={cn("border-r border-stone-300 text-right text-stone-600 font-bold uppercase", isTvMode ? "px-3 py-3 text-sm" : "px-2 py-1.5 text-xs")}>
                   Shift II Total:
                 </td>
-                <td className="px-2 py-1.5 border-r-2 border-stone-900 text-right tabular-nums bg-yellow-400 text-stone-950 text-xs md:text-sm font-black">
+                <td className={cn("border-r-2 border-stone-900 text-right tabular-nums bg-yellow-400 text-stone-950 font-black", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5 text-xs md:text-sm")}>
                   ₹{shiftTotals.II.toLocaleString()}
                 </td>
 
                 {/* Shift 3 Sum */}
-                <td colSpan={2} className="px-2 py-1.5 border-r border-stone-300 text-right text-stone-600 font-bold text-xs uppercase">
+                <td colSpan={2} className={cn("border-r border-stone-300 text-right text-stone-600 font-bold uppercase", isTvMode ? "px-3 py-3 text-sm" : "px-2 py-1.5 text-xs")}>
                   Shift III Total:
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums bg-yellow-400 text-stone-950 text-xs md:text-sm font-black">
+                <td className={cn("text-right tabular-nums bg-yellow-400 text-stone-950 font-black", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5 text-xs md:text-sm")}>
                   ₹{shiftTotals.III.toLocaleString()}
                 </td>
               </tr>
 
               {/* Grand Total Row */}
               <tr className="bg-stone-900 font-black text-white">
-                <td colSpan={8} className="px-3 py-2 text-center text-xs md:text-sm uppercase tracking-wider text-rose-400 font-black">
+                <td colSpan={8} className={cn("text-center uppercase tracking-wider text-rose-400 font-black", isTvMode ? "px-4 py-3.5 text-base md:text-lg" : "px-3 py-2 text-xs md:text-sm")}>
                   Total Incentive Amount for the Day
                 </td>
-                <td colSpan={3} className="px-3 py-2 text-right tabular-nums text-sm md:text-base font-black bg-rose-600 text-white leading-none">
+                <td colSpan={3} className={cn("text-right tabular-nums font-black bg-rose-600 text-white leading-none", isTvMode ? "px-4 py-3.5 text-lg md:text-2xl" : "px-3 py-2 text-sm md:text-base")}>
                   ₹{grandTotal.toLocaleString()}
                 </td>
               </tr>

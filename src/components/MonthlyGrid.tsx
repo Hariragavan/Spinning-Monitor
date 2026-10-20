@@ -574,7 +574,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
 
   if (isTvMode) {
     return (
-      <div className="bg-white p-6 md:p-8 xl:p-12 min-h-screen text-stone-900 font-sans overflow-hidden">
+      <div className="w-full h-full bg-white rounded-3xl border border-stone-200 p-6 xl:p-8 text-stone-900 font-sans flex flex-col justify-between overflow-hidden shadow-xs animate-in fade-in duration-300">
         {/* Top Header */}
         <div className="text-center mb-10 relative">
           <div className="flex items-center justify-center gap-2 text-emerald-700 font-extrabold text-sm uppercase tracking-widest mb-2">

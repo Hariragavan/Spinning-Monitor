@@ -362,21 +362,21 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
   // TV mode component
   if (isTvMode) {
     return (
-      <div className="bg-white p-6 md:p-12 xl:p-16 min-h-screen text-stone-900 font-sans overflow-hidden">
+      <div className="w-full h-full bg-white rounded-3xl border border-stone-200 p-6 xl:p-8 text-stone-900 font-sans flex flex-col justify-between overflow-hidden shadow-xs animate-in fade-in duration-300">
         {/* Top Header */}
-        <div className="text-center mb-12 relative">
+        <div className="text-center mb-8 relative">
           <div className="flex items-center justify-center gap-2 text-emerald-700 font-extrabold text-sm uppercase tracking-widest mb-2">
             <Sparkles size={16} className="animate-spin text-amber-500" />
             Live Consolidated Incentive abstract {totalTvPages > 1 && `(Page ${currentTvPage + 1} of ${totalTvPages})`}
           </div>
-          <h1 className="text-5xl md:text-6xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-800 via-teal-700 to-emerald-950 drop-shadow-md pb-4">
+          <h1 className="text-4xl md:text-5xl font-black uppercase tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-800 via-teal-700 to-emerald-950 drop-shadow-md pb-3">
             Monthly Incentive Abstract {reportMonthYear}
           </h1>
           <div className="bg-gradient-to-r from-transparent via-emerald-600 to-transparent h-1.5 w-1/2 mx-auto rounded-full" />
         </div>
 
-        {/* Dynamic High Contrast Screen Grid for 52-Inch TV */}
-        <div className="max-w-[98%] mx-auto grid grid-cols-1 xl:grid-cols-2 gap-12 items-start">
+        {/* Dynamic High Contrast Screen Grid */}
+        <div className="max-w-[98%] mx-auto grid grid-cols-1 xl:grid-cols-2 gap-8 items-start flex-1 overflow-hidden">
           
           {/* Left Table Panel */}
           <motion.div 

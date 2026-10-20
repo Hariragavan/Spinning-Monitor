@@ -102,7 +102,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, isTvMode = false
   return (
     <div className={cn(
       "bg-white border border-stone-200 shadow-sm overflow-hidden font-sans",
-      isTvMode ? "p-2 border-0 rounded-none flex flex-col h-[95vh] bg-stone-50" : "p-3.5 md:p-4 mb-4 rounded-2xl"
+      isTvMode ? "p-6 rounded-3xl border border-stone-200 flex flex-col w-full bg-white shadow-xs" : "p-3.5 md:p-4 mb-4 rounded-2xl"
     )}>
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">

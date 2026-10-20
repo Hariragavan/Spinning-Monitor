@@ -262,17 +262,17 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
           <div className="overflow-x-auto rounded-xl border-2 border-emerald-950 shadow-md">
             <table className="w-full text-center border-collapse table-fixed">
               <thead>
-                <tr className="bg-emerald-950 text-white border-b-2 border-emerald-950 h-14">
+                <tr className={cn("bg-emerald-950 text-white border-b-2 border-emerald-950", isTvMode ? "h-20" : "h-14")}>
                   {/* First cell with high-contrast text */}
-                  <th className="w-44 px-3 border-r border-emerald-900 bg-emerald-900 text-white">
-                    <div className="text-yellow-300 tracking-wider uppercase text-[11px] font-black leading-tight">Incentive Amount</div>
-                    <div className="text-emerald-100 uppercase tracking-wider text-[9px] font-bold">(in Rupees / Rs)</div>
+                  <th className={cn("border-r border-emerald-900 bg-emerald-900 text-white", isTvMode ? "w-56 px-4" : "w-44 px-3")}>
+                    <div className={cn("text-yellow-300 tracking-wider uppercase font-black leading-tight", isTvMode ? "text-sm md:text-base" : "text-[11px]")}>Incentive Amount</div>
+                    <div className={cn("text-emerald-100 uppercase tracking-wider font-bold", isTvMode ? "text-xs" : "text-[9px]")}>(in Rupees / Rs)</div>
                   </th>
                   {payoutColumns.map(amount => (
                     <th key={amount} className="px-3 border-r border-emerald-900 bg-emerald-950 text-white last:border-r-0">
                       <div className="flex flex-col items-center justify-center">
-                        <span className="text-lg md:text-xl font-black tabular-nums tracking-tight text-yellow-300">₹{amount}</span>
-                        <span className="text-[9px] font-bold text-emerald-200 uppercase tracking-wider">Payout Amt</span>
+                        <span className={cn("font-black tabular-nums tracking-tight text-yellow-300", isTvMode ? "text-2xl md:text-3xl" : "text-lg md:text-xl")}>₹{amount}</span>
+                        <span className={cn("font-bold text-emerald-200 uppercase tracking-wider", isTvMode ? "text-xs" : "text-[9px]")}>Payout Amt</span>
                       </div>
                     </th>
                   ))}
@@ -286,26 +286,28 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
                   
                   return (
                     <tr key={`std-rule-${count}-${idx}`} className={cn(
-                      "border-b last:border-b-0 border-emerald-950/80 h-12 hover:bg-emerald-50/20 transition-colors",
+                      "border-b last:border-b-0 border-emerald-950/80 hover:bg-emerald-50/20 transition-colors",
+                      isTvMode ? "h-16 md:h-18" : "h-12",
                       isActive && "bg-emerald-50/10"
                     )}>
                       {/* Count Name Column */}
-                      <td className="px-3 py-2 text-xs md:text-sm font-black text-white border-r border-emerald-950 bg-emerald-900 sticky left-0 z-10 font-mono text-left uppercase">
+                      <td className={cn("font-black text-white border-r border-emerald-950 bg-emerald-900 sticky left-0 z-10 font-mono text-left uppercase", isTvMode ? "px-4 py-3 text-base md:text-xl" : "px-3 py-2 text-xs md:text-sm")}>
                         <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-2">
                             <div className={cn(
-                              "w-2 h-2 rounded-full shrink-0",
+                              "rounded-full shrink-0",
+                              isTvMode ? "w-3 h-3" : "w-2 h-2",
                               isActive ? "bg-yellow-300 animate-pulse animate-duration-1000" : "bg-stone-500"
                             )} />
                             <span>{count}</span>
                           </div>
                           {isActive && (
-                            <span className="text-[8px] font-black text-yellow-300 tracking-wider uppercase ml-3.5 leading-none">
+                            <span className={cn("font-black text-yellow-300 tracking-wider uppercase leading-none", isTvMode ? "text-[11px] ml-5" : "text-[8px] ml-3.5")}>
                               ● Live
                             </span>
                           )}
                           {isPlaceholder && (
-                            <span className="text-[8px] font-black text-orange-300 tracking-wider uppercase ml-3.5 leading-none animate-pulse">
+                            <span className={cn("font-black text-orange-300 tracking-wider uppercase leading-none animate-pulse", isTvMode ? "text-[11px] ml-5" : "text-[8px] ml-3.5")}>
                               ⚠️ Missing
                             </span>
                           )}
@@ -335,15 +337,15 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
                           return (
                             <td 
                               key={amount} 
-                              className="px-2 py-2 text-xs font-bold text-stone-900 border-r border-emerald-200/60 last:border-r-0 bg-white tabular-nums font-mono"
+                              className={cn("border-r border-emerald-200/60 last:border-r-0 bg-white tabular-nums font-mono", isTvMode ? "px-3 py-3" : "px-2 py-2")}
                             >
                               {threshold !== null ? (
                                 <div className="flex flex-col items-center justify-center">
-                                  <span className="text-sm md:text-base font-black text-emerald-950 tracking-tight">{threshold}</span>
-                                  <span className="text-[8px] font-bold tracking-wider text-emerald-700 uppercase">GPS Min</span>
+                                  <span className={cn("font-black text-emerald-950 tracking-tight", isTvMode ? "text-xl md:text-2xl" : "text-sm md:text-base")}>{threshold}</span>
+                                  <span className={cn("font-bold tracking-wider text-emerald-700 uppercase", isTvMode ? "text-[10px]" : "text-[8px]")}>GPS Min</span>
                                 </div>
                               ) : (
-                                <span className="text-stone-300 font-bold text-sm">—</span>
+                                <span className={cn("text-stone-300 font-bold", isTvMode ? "text-lg" : "text-sm")}>—</span>
                               )}
                             </td>
                           );

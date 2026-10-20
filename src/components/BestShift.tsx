@@ -329,10 +329,10 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
      ========================================== */
   if (isTvMode) {
     return (
-      <div className="fixed inset-0 z-[100] bg-white text-stone-900 flex flex-col justify-between overflow-hidden p-6 font-sans select-none">
+      <div className="w-full h-full bg-white text-stone-900 flex flex-col justify-between overflow-hidden p-4 rounded-3xl border border-stone-200 font-sans select-none animate-in fade-in duration-300">
         
         {/* Header Ribbon */}
-        <div className="flex justify-between items-center bg-stone-50 border border-stone-200 rounded-[2rem] p-4 px-8 shadow-md">
+        <div className="flex justify-between items-center bg-stone-50 border border-stone-200 rounded-[2rem] p-4 px-8 shadow-xs">
           <div className="flex items-center gap-5">
             <div className="h-16 w-16 bg-gradient-to-br from-amber-500 to-yellow-400 rounded-2xl flex items-center justify-center shadow-md">
               <Trophy size={36} className="text-stone-950" fill="currentColor" />
@@ -353,9 +353,9 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
               <span className="text-stone-500 font-extrabold text-xs uppercase tracking-widest">SHIFT</span>
               <span className="text-amber-800 text-3xl font-black font-mono leading-none">{shiftVal}</span>
             </div>
-            <div className="bg-emerald-55 border border-emerald-200 px-6 py-2.5 rounded-2xl flex items-center gap-3">
+            <div className="bg-emerald-50 border border-emerald-200 px-6 py-2.5 rounded-2xl flex items-center gap-3">
               <span className="text-stone-500 font-extrabold text-xs uppercase tracking-widest">PRODUCTION</span>
-              <span className="text-emerald-850 text-3xl font-black font-mono leading-none tabular-nums">
+              <span className="text-emerald-800 text-3xl font-black font-mono leading-none tabular-nums">
                 {totalProduction.toLocaleString()} KG
               </span>
             </div>
@@ -363,7 +363,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
 
           {/* Clock Info */}
           <div className="text-right">
-            <span className="text-lg font-extrabold text-stone-550 uppercase tracking-widest block">{report.date}</span>
+            <span className="text-lg font-extrabold text-stone-500 uppercase tracking-widest block">{report.date}</span>
             <span className="text-2xl font-black text-amber-600 font-mono tabular-nums leading-none">
               {tickerTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
             </span>

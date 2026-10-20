@@ -892,7 +892,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const tvDatesToRender = updatedDates.length > 0 ? updatedDates : calendarDates;
 
     return (
-      <div className="bg-stone-50 p-8 xl:p-12 min-h-screen text-stone-900 font-sans overflow-hidden flex flex-col justify-between gap-6">
+      <div className="w-full h-full bg-white rounded-3xl border border-stone-200 p-6 xl:p-8 text-stone-900 font-sans flex flex-col justify-between gap-4 overflow-hidden shadow-xs animate-in fade-in duration-300">
         {/* Header */}
         <div className="flex justify-between items-center border-b border-stone-200 pb-6">
           <div className="flex flex-col gap-1.5">

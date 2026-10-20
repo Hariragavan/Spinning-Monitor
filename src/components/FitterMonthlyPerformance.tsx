@@ -225,44 +225,71 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
       )}
 
       {/* KPI METRICS CARDS */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 no-print">
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <Percent size={16} />
+      <div className={cn(
+        "grid grid-cols-2 md:grid-cols-4 no-print",
+        activeTv ? "gap-5 mb-5" : "gap-3"
+      )}>
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          activeTv ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0",
+            activeTv ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <Percent size={activeTv ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Plant Utilisation</p>
-            <p className="text-lg font-black text-blue-900 tabular-nums mt-0.5">{activeData.avgUtil}%</p>
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", activeTv ? "text-xs md:text-sm" : "text-[10px]")}>Plant Utilisation</p>
+            <p className={cn("font-black text-blue-900 tabular-nums mt-1", activeTv ? "text-3xl md:text-4xl lg:text-5xl" : "text-lg")}>{activeData.avgUtil}%</p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <Activity size={16} />
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          activeTv ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0",
+            activeTv ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <Activity size={activeTv ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Average Slip %</p>
-            <p className="text-lg font-black text-amber-900 tabular-nums mt-0.5">{activeData.avgSlip}%</p>
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", activeTv ? "text-xs md:text-sm" : "text-[10px]")}>Average Slip %</p>
+            <p className={cn("font-black text-amber-900 tabular-nums mt-1", activeTv ? "text-3xl md:text-4xl lg:text-5xl" : "text-lg")}>{activeData.avgSlip}%</p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-            <AlertCircle size={16} />
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          activeTv ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0",
+            activeTv ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <AlertCircle size={activeTv ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Average Idle %</p>
-            <p className="text-lg font-black text-rose-900 tabular-nums mt-0.5">{activeData.avgIdle}%</p>
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", activeTv ? "text-xs md:text-sm" : "text-[10px]")}>Average Idle %</p>
+            <p className={cn("font-black text-rose-900 tabular-nums mt-1", activeTv ? "text-3xl md:text-4xl lg:text-5xl" : "text-lg")}>{activeData.avgIdle}%</p>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-stone-200/90 shadow-2xs flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-            <Wrench size={16} />
+        <div className={cn(
+          "bg-white rounded-2xl border border-stone-200/90 shadow-2xs flex items-center",
+          activeTv ? "p-5 md:p-6 rounded-3xl gap-4" : "p-3.5 gap-3"
+        )}>
+          <div className={cn(
+            "rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0",
+            activeTv ? "w-14 h-14 rounded-2xl" : "w-9 h-9"
+          )}>
+            <Wrench size={activeTv ? 26 : 16} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-wider text-stone-400 leading-none">Average Rogue %</p>
-            <p className="text-lg font-black text-purple-900 tabular-nums mt-0.5">{activeData.avgRogue}%</p>
+            <p className={cn("font-black uppercase tracking-wider text-stone-400 leading-none", activeTv ? "text-xs md:text-sm" : "text-[10px]")}>Average Rogue %</p>
+            <p className={cn("font-black text-purple-900 tabular-nums mt-1", activeTv ? "text-3xl md:text-4xl lg:text-5xl" : "text-lg")}>{activeData.avgRogue}%</p>
           </div>
         </div>
       </div>
@@ -350,55 +377,64 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
       )}
 
       {/* MAIN LEDGER CARD */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-stone-100 flex items-center justify-between">
+      <div className={cn(
+        "bg-white border border-stone-200/90 shadow-xs overflow-hidden",
+        activeTv ? "rounded-3xl" : "rounded-2xl"
+      )}>
+        <div className={cn(
+          "border-b border-stone-100 flex items-center justify-between",
+          activeTv ? "p-6" : "p-4"
+        )}>
           <div>
-            <h3 className="text-xs font-black uppercase tracking-tight text-stone-900 flex items-center gap-1.5">
-              <Wrench size={14} className="text-blue-600" />
+            <h3 className={cn("font-black uppercase tracking-tight text-stone-900 flex items-center gap-2", activeTv ? "text-xl md:text-2xl" : "text-xs")}>
+              <Wrench size={activeTv ? 24 : 14} className="text-blue-600" />
               <span>Fitter Mechanical Diagnostics Ledger</span>
             </h3>
-            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-wider mt-0.5">
+            <p className={cn("text-stone-400 font-bold uppercase tracking-wider mt-1", activeTv ? "text-xs md:text-sm" : "text-[10px]")}>
               {reportMonthYear} • {selectedWorkerObj ? `${selectedWorkerObj.name} [${selectedWorkerObj.tNo}]` : 'All Plant Fitters'}
             </p>
           </div>
         </div>
 
         <div className="overflow-x-auto max-h-[60vh]">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className={cn("w-full text-left border-collapse", activeTv ? "text-lg md:text-xl" : "text-xs")}>
             <thead>
-              <tr className="bg-stone-50 text-stone-600 uppercase tracking-wider font-black text-[10px] border-b border-stone-200 h-9 sticky top-0 z-10">
-                <th className="px-4 py-1">Date</th>
-                <th className="px-4 py-1 text-center">Shifts Logged</th>
-                <th className="px-4 py-1 text-center">Utilisation (U%)</th>
-                <th className="px-4 py-1 text-center">Slip %</th>
-                <th className="px-4 py-1 text-center">Idle %</th>
-                <th className="px-4 py-1 text-center">Rogue %</th>
-                {onUpdateReport && <th className="px-4 py-1 text-center w-20 no-print">Action</th>}
+              <tr className={cn(
+                "bg-stone-50 text-stone-700 uppercase tracking-wider font-black border-b border-stone-200 sticky top-0 z-10",
+                activeTv ? "h-14 text-base md:text-lg" : "h-9 text-[10px]"
+              )}>
+                <th className={activeTv ? "px-6 py-3" : "px-4 py-1"}>Date</th>
+                <th className={cn("text-center", activeTv ? "px-6 py-3" : "px-4 py-1")}>Shifts Logged</th>
+                <th className={cn("text-center", activeTv ? "px-6 py-3" : "px-4 py-1")}>Utilisation (U%)</th>
+                <th className={cn("text-center", activeTv ? "px-6 py-3" : "px-4 py-1")}>Slip %</th>
+                <th className={cn("text-center", activeTv ? "px-6 py-3" : "px-4 py-1")}>Idle %</th>
+                <th className={cn("text-center", activeTv ? "px-6 py-3" : "px-4 py-1")}>Rogue %</th>
+                {!activeTv && onUpdateReport && <th className="px-4 py-1 text-center w-20 no-print">Action</th>}
               </tr>
             </thead>
-            <tbody className="divide-y divide-stone-100">
+            <tbody className="divide-y divide-stone-100 font-bold">
               {activeData.rows.map((row) => (
-                <tr key={row.date} className="hover:bg-blue-50/20 transition-colors h-10">
-                  <td className="px-4 py-1 font-bold text-stone-900 flex items-center gap-1.5">
-                    <ChevronRight size={13} className="text-blue-600 shrink-0" />
+                <tr key={row.date} className={cn("hover:bg-blue-50/20 transition-colors", activeTv ? "h-14" : "h-10")}>
+                  <td className={cn("font-black text-stone-900 flex items-center gap-1.5", activeTv ? "px-6 py-3.5" : "px-4 py-1")}>
+                    <ChevronRight size={activeTv ? 18 : 13} className="text-blue-600 shrink-0" />
                     <span>{row.date}</span>
                   </td>
-                  <td className="px-4 py-1 text-center font-bold text-stone-500 tabular-nums">
+                  <td className={cn("text-center font-bold text-stone-500 tabular-nums", activeTv ? "px-6 py-3.5" : "px-4 py-1")}>
                     {row.shiftsLogged} shifts
                   </td>
-                  <td className="px-4 py-1 text-center font-black text-blue-900 tabular-nums">
+                  <td className={cn("text-center font-black text-blue-900 tabular-nums", activeTv ? "px-6 py-3.5 text-xl md:text-2xl" : "px-4 py-1")}>
                     {row.dayUtilization}%
                   </td>
-                  <td className="px-4 py-1 text-center font-bold text-amber-800 tabular-nums">
+                  <td className={cn("text-center font-black text-amber-800 tabular-nums", activeTv ? "px-6 py-3.5 text-xl md:text-2xl" : "px-4 py-1")}>
                     {row.slipPercent}%
                   </td>
-                  <td className="px-4 py-1 text-center font-bold text-rose-800 tabular-nums">
+                  <td className={cn("text-center font-black text-rose-800 tabular-nums", activeTv ? "px-6 py-3.5 text-xl md:text-2xl" : "px-4 py-1")}>
                     {row.idlePercent}%
                   </td>
-                  <td className="px-4 py-1 text-center font-bold text-purple-800 tabular-nums">
+                  <td className={cn("text-center font-black text-purple-800 tabular-nums", activeTv ? "px-6 py-3.5 text-xl md:text-2xl" : "px-4 py-1")}>
                     {row.roguePercent}%
                   </td>
-                  {onUpdateReport && (
+                  {!activeTv && onUpdateReport && (
                     <td className="px-4 py-1 text-center no-print">
                       <button
                         onClick={() => {

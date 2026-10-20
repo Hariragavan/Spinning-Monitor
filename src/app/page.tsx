@@ -1966,7 +1966,7 @@ export default function Home() {
                       TV Dashboard Pages & Sub-Pages Rotation Timing
                     </h3>
                     <p className="text-xs text-stone-500 font-bold mt-0.5">
-                      Configure rotation duration (in seconds) for each of the 10 Main Chapters and 17 Sub-Pages, or toggle views on/off
+                      Configure rotation duration (in seconds) for each of the {TV_MAIN_PAGES.length} Main Chapters and {TV_MAIN_PAGES.reduce((acc, m) => acc + m.subPages.length, 0)} Sub-Pages, or toggle views on/off
                     </p>
                   </div>
                 </div>
@@ -2077,10 +2077,10 @@ export default function Home() {
                   return (
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black uppercase tracking-wider">
-                        {activeChapterCount} / 10 Chapters Active
+                        {activeChapterCount} / {TV_MAIN_PAGES.length} Chapters Active
                       </span>
                       <span className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-black uppercase tracking-wider">
-                        {activeSubCount} / 17 Sub-Pages Rotating
+                        {activeSubCount} / {TV_MAIN_PAGES.reduce((acc, m) => acc + m.subPages.length, 0)} Sub-Pages Rotating
                       </span>
                       <span className="px-3 py-1.5 rounded-xl bg-stone-100 text-stone-900 border border-stone-300 text-xs font-black uppercase tracking-wider font-mono">
                         Cycle: {mins}m {remSecs}s
@@ -2090,7 +2090,7 @@ export default function Home() {
                 })()}
               </div>
 
-              {/* 10 Chapters and 17 Sub-Pages Timing Cards */}
+              {/* TV Chapters and Sub-Pages Timing Cards */}
               <div className="space-y-4">
                 {TV_MAIN_PAGES.map((chapter) => {
                   const ChapterIcon = chapter.icon;

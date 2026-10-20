@@ -541,23 +541,23 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
         <div className="overflow-x-auto">
           <table className="w-full border-2 border-stone-900 border-collapse">
             <thead>
-              <tr className="border-b-2 border-stone-900 text-xs font-black uppercase tracking-wider bg-stone-100">
-                <th className="px-3 py-1.5 border-r-2 border-stone-900 text-left w-[90px]">T.No</th>
-                <th className="px-3 py-1.5 border-r-2 border-stone-900 text-left">Name</th>
-                <th className="px-3 py-1.5 border-r-2 border-stone-900 text-left w-[100px]">MC No</th>
-                <th className="px-2 py-1.5 border-r-2 border-stone-900 text-center w-[50px]">Sh</th>
-                <th className="px-3 py-1.5 border-r-2 border-stone-900 text-center w-[90px]">Count</th>
-                <th className="px-3 py-1.5 border-r-2 border-stone-900 text-center w-[90px]">GPSS</th>
-                <th className="px-3 py-1.5 border-r-2 border-stone-900 text-right w-[130px]">Incentive</th>
-                <th className="px-2 py-1.5 font-black text-center bg-stone-200 w-[50px] no-print"></th>
+              <tr className={cn("border-b-2 border-stone-900 font-black uppercase tracking-wider bg-stone-100", isTvMode ? "text-base md:text-lg" : "text-xs")}>
+                <th className={cn("border-r-2 border-stone-900 text-left", isTvMode ? "px-4 py-3 w-[110px]" : "px-3 py-1.5 w-[90px]")}>T.No</th>
+                <th className={cn("border-r-2 border-stone-900 text-left", isTvMode ? "px-4 py-3" : "px-3 py-1.5")}>Name</th>
+                <th className={cn("border-r-2 border-stone-900 text-left", isTvMode ? "px-4 py-3 w-[120px]" : "px-3 py-1.5 w-[100px]")}>MC No</th>
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-3 py-3 w-[60px]" : "px-2 py-1.5 w-[50px]")}>Sh</th>
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[110px]" : "px-3 py-1.5 w-[90px]")}>Count</th>
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[110px]" : "px-3 py-1.5 w-[90px]")}>GPSS</th>
+                <th className={cn("border-r-2 border-stone-900 text-right", isTvMode ? "px-4 py-3 w-[160px]" : "px-3 py-1.5 w-[130px]")}>Incentive</th>
+                {!isTvMode && <th className="px-2 py-1.5 font-black text-center bg-stone-200 w-[50px] no-print"></th>}
               </tr>
             </thead>
             <tbody>
               {incentiveData.length > 0 || gaiterData.length > 0 ? (
                 <>
                   {incentiveData.map((data, idx) => (
-                    <tr key={`entry-${idx}`} className="border-b border-stone-200 text-xs md:text-sm group hover:bg-stone-50 transition-colors">
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap">
+                    <tr key={`entry-${idx}`} className={cn("border-b border-stone-200 group hover:bg-stone-50 transition-colors", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}>
+                      <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap", isTvMode ? "px-4 py-3 text-lg md:text-xl font-black" : "px-3 py-1.5")}>
                         {editingIdx === idx ? (
                            <input 
                             className="w-full bg-yellow-50 outline-none p-1 font-bold text-xs"
@@ -566,7 +566,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                            />
                         ) : (data.worker?.tNo || data.siderId)}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap">
+                      <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-xl font-black" : "px-3 py-1.5")}>
                         {editingIdx === idx ? (
                            <input 
                             className="w-full bg-yellow-50 outline-none p-1 font-bold text-xs"
@@ -575,16 +575,16 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                            />
                         ) : (data.worker?.name || data.siderName)}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-stone-900 font-bold text-center whitespace-nowrap">
+                      <td className={cn("border-r-2 border-stone-900 text-stone-900 font-bold text-center whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-lg font-black" : "px-3 py-1.5")}>
                         {data.frameNo}
                       </td>
-                      <td className="px-2 py-1.5 border-r-2 border-stone-900 text-center font-bold text-stone-900">
+                      <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5")}>
                         {data.shift === 'II' ? '2' : data.shift === 'III' ? '3' : '1'}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-center text-stone-700 font-bold whitespace-nowrap">
+                      <td className={cn("border-r-2 border-stone-900 text-center text-stone-700 font-bold whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-lg" : "px-3 py-1.5")}>
                         {data.count}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-center font-bold text-stone-900 tabular-nums">
+                      <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl font-black" : "px-3 py-1.5")}>
                         {editingIdx === idx ? (
                           <input 
                             type="number"
@@ -594,7 +594,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                           />
                         ) : (Math.round(data.gpsActual) || '')}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-right font-black text-stone-900 text-sm md:text-base tabular-nums">
+                      <td className={cn("border-r-2 border-stone-900 text-right font-black text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-emerald-800" : "px-3 py-1.5 text-sm md:text-base")}>
                         {editingIdx === idx ? (
                            <input 
                             type="number"
@@ -606,48 +606,52 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                            <span className="text-stone-300 font-medium italic">0</span>
                         ))}
                       </td>
-                      <td className="px-2 py-1.5 text-center bg-stone-50/50 no-print">
-                        {editingIdx === idx ? (
-                          <div className="flex items-center justify-center gap-1.5">
-                             <button onClick={handleSave} className="text-emerald-600 hover:scale-110 transition-transform"><Save size={16} /></button>
-                             <button onClick={() => setEditingIdx(null)} className="text-stone-400 hover:scale-110 transition-transform"><X size={16} /></button>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => startEdit(idx, data)}
-                            className="text-stone-400 hover:text-emerald-600 transition-colors p-1"
-                          >
-                            <Edit3 size={14} />
-                          </button>
-                        )}
-                      </td>
+                      {!isTvMode && (
+                        <td className="px-2 py-1.5 text-center bg-stone-50/50 no-print">
+                          {editingIdx === idx ? (
+                            <div className="flex items-center justify-center gap-1.5">
+                               <button onClick={handleSave} className="text-emerald-600 hover:scale-110 transition-transform"><Save size={16} /></button>
+                               <button onClick={() => setEditingIdx(null)} className="text-stone-400 hover:scale-110 transition-transform"><X size={16} /></button>
+                            </div>
+                          ) : (
+                            <button 
+                              onClick={() => startEdit(idx, data)}
+                              className="text-stone-400 hover:text-emerald-600 transition-colors p-1"
+                            >
+                              <Edit3 size={14} />
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
 
                   {/* Render Gaiters */}
                   {gaiterData.map((data, gIdx) => (
-                    <tr key={`gaiter-${data.id}-${data.shift}-${gIdx}`} className="border-b border-stone-200 text-xs md:text-sm bg-amber-50/30 group hover:bg-amber-100/50 transition-colors">
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap">
+                    <tr key={`gaiter-${data.id}-${data.shift}-${gIdx}`} className={cn("border-b border-stone-200 bg-amber-50/30 group hover:bg-amber-100/50 transition-colors", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}>
+                      <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap", isTvMode ? "px-4 py-3 text-lg md:text-xl font-black" : "px-3 py-1.5")}>
                         {data.tNo}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap italic">
-                        {data.name} <span className="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded ml-1.5 not-italic font-black">GAITER</span>
+                      <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap italic", isTvMode ? "px-4 py-3 text-base md:text-xl font-black" : "px-3 py-1.5")}>
+                        {data.name} <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded ml-1.5 not-italic font-black">GAITER</span>
                       </td>
-                      <td colSpan={2} className="px-3 py-1.5 border-r-2 border-stone-900 text-amber-700 font-black text-center text-xs uppercase tracking-wider bg-amber-50/50">
+                      <td colSpan={2} className={cn("border-r-2 border-stone-900 text-amber-700 font-black text-center uppercase tracking-wider bg-amber-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
                         Shift Support ({data.shift === 'II' ? '2' : data.shift === 'III' ? '3' : '1'})
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-center text-stone-500 font-bold text-xs">
+                      <td className={cn("border-r-2 border-stone-900 text-center text-stone-500 font-bold", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
                         Min Shift GPS
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-center font-black text-amber-700 tabular-nums">
+                      <td className={cn("border-r-2 border-stone-900 text-center font-black text-amber-700 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl" : "px-3 py-1.5")}>
                         {Math.round(data.minGpsInShift)}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-right font-black text-stone-900 text-sm md:text-base tabular-nums">
+                      <td className={cn("border-r-2 border-stone-900 text-right font-black text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-emerald-800" : "px-3 py-1.5 text-sm md:text-base")}>
                         {data.incentive > 0 ? `₹${data.incentive.toLocaleString()}` : <span className="text-stone-300 font-medium italic">0</span>}
                       </td>
-                      <td className="px-2 py-1.5 text-center bg-amber-50/50 no-print">
-                        <Zap size={14} className="mx-auto text-amber-500" />
-                      </td>
+                      {!isTvMode && (
+                        <td className="px-2 py-1.5 text-center bg-amber-50/50 no-print">
+                          <Zap size={14} className="mx-auto text-amber-500" />
+                        </td>
+                      )}
                     </tr>
                   ))}
 
@@ -655,20 +659,20 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                   {aiConeData.map((data, aIdx) => (
                     <tr
                       key={`ai-cone-${data.id}-${data.shift}-${aIdx}`}
-                      className="border-b border-stone-200 text-xs md:text-sm bg-purple-50/30 group hover:bg-purple-100/50 transition-colors"
+                      className={cn("border-b border-stone-200 bg-purple-50/30 group hover:bg-purple-100/50 transition-colors", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}
                     >
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap">
+                      <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap", isTvMode ? "px-4 py-3 text-lg md:text-xl font-black" : "px-3 py-1.5")}>
                         {data.tNo}
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap italic">
+                      <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap italic", isTvMode ? "px-4 py-3 text-base md:text-xl font-black" : "px-3 py-1.5")}>
                         {data.name}{" "}
-                        <span className="text-[9px] bg-purple-200 text-purple-900 px-1.5 py-0.5 rounded ml-1.5 not-italic font-black">
+                        <span className="text-[10px] bg-purple-200 text-purple-900 px-2 py-0.5 rounded ml-1.5 not-italic font-black">
                           AI CONE
                         </span>
                       </td>
                       <td
                         colSpan={2}
-                        className="px-3 py-1.5 border-r-2 border-stone-900 text-purple-700 font-black text-center text-xs uppercase tracking-wider bg-purple-50/50"
+                        className={cn("border-r-2 border-stone-900 text-purple-700 font-black text-center uppercase tracking-wider bg-purple-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}
                       >
                         AI Cone Support (
                         {data.shift === "II"
@@ -678,13 +682,13 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                             : "1"}
                         )
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-center text-stone-500 font-bold text-xs leading-none">
+                      <td className={cn("border-r-2 border-stone-900 text-center text-stone-500 font-bold", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs leading-none")}>
                         Avg Shift Util
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-center font-black text-purple-700 tabular-nums">
+                      <td className={cn("border-r-2 border-stone-900 text-center font-black text-purple-700 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl" : "px-3 py-1.5")}>
                         {Math.round(data.avgUtilityInShift)}%
                       </td>
-                      <td className="px-3 py-1.5 border-r-2 border-stone-900 text-right font-black text-stone-950 text-sm md:text-base tabular-nums">
+                      <td className={cn("border-r-2 border-stone-900 text-right font-black text-stone-950 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-purple-900" : "px-3 py-1.5 text-sm md:text-base")}>
                         {data.incentive > 0 ? (
                           `₹${data.incentive.toLocaleString()}`
                         ) : (
@@ -693,17 +697,19 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                           </span>
                         )}
                       </td>
-                      <td className="px-2 py-1.5 text-center bg-purple-50/50 no-print">
-                        <Zap size={14} className="mx-auto text-purple-500" />
-                      </td>
+                      {!isTvMode && (
+                        <td className="px-2 py-1.5 text-center bg-purple-50/50 no-print">
+                          <Zap size={14} className="mx-auto text-purple-500" />
+                        </td>
+                      )}
                     </tr>
                   ))}
 
                   <tr className="bg-stone-50 border-t-4 border-stone-900 font-black">
-                    <td colSpan={6} className="px-4 py-2.5 text-center text-rose-600 text-xs md:text-sm border-r-2 border-stone-900 uppercase tracking-wider">
+                    <td colSpan={6} className={cn("text-center text-rose-600 border-r-2 border-stone-900 uppercase tracking-wider", isTvMode ? "px-6 py-4 text-lg md:text-2xl" : "px-4 py-2.5 text-xs md:text-sm")}>
                       Total Incentive Amount For the Day
                     </td>
-                    <td colSpan={2} className="px-4 py-2.5 text-right text-rose-600 text-sm md:text-lg tabular-nums print:col-span-1">
+                    <td colSpan={isTvMode ? 1 : 2} className={cn("text-right text-rose-600 tabular-nums font-mono print:col-span-1", isTvMode ? "px-6 py-4 text-2xl md:text-3xl font-black" : "px-4 py-2.5 text-sm md:text-lg")}>
                       ₹{totalIncentive.toLocaleString()}
                     </td>
                   </tr>

@@ -273,25 +273,51 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
 
       {/* TV VIEW */}
       {activeTv && currentTvWorker ? (
-        <div className="bg-stone-900 text-white rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-6">
-            <div>
-              <span className="bg-purple-600 text-white font-extrabold text-[10px] uppercase tracking-widest px-2.5 py-0.5 rounded-md">
-                AI Linkconer Performance Slide
-              </span>
-              <h2 className="text-2xl font-black uppercase tracking-tight mt-1">
-                {currentTvWorker.worker.name} <span className="text-purple-400">[{currentTvWorker.worker.tNo}]</span>
-              </h2>
+        <div className="bg-white text-stone-900 rounded-3xl p-8 border border-stone-200 shadow-xs animate-in fade-in duration-300">
+          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-stone-200 pb-6 mb-6 gap-4">
+            <div className="flex items-center gap-5">
+              {currentTvWorker.worker.photoUrl ? (
+                <img 
+                  src={currentTvWorker.worker.photoUrl} 
+                  alt={currentTvWorker.worker.name} 
+                  className="w-24 h-24 rounded-2xl object-cover border-2 border-purple-200 shadow-sm shrink-0" 
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-2xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700 font-serif italic text-4xl font-black shrink-0 shadow-inner">
+                  {currentTvWorker.worker.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="bg-purple-100 text-purple-900 font-extrabold text-xs uppercase tracking-widest px-3 py-1 rounded-full border border-purple-200">
+                    AI Linkconer Performance Slide
+                  </span>
+                  <span className="bg-stone-900 text-white font-extrabold text-xs uppercase tracking-wider px-2.5 py-1 rounded-lg">
+                    Ticket #{currentTvWorker.worker.tNo}
+                  </span>
+                </div>
+                <h2 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-stone-900">
+                  {currentTvWorker.worker.name}
+                </h2>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <p className="text-[10px] text-stone-400 uppercase font-bold">Total Earnings</p>
-                <p className="text-xl font-black text-emerald-400 font-mono">₹{Math.round(currentTvWorker.total).toLocaleString()}</p>
+            
+            <div className="flex items-center gap-6">
+              <div className="bg-stone-50 border border-stone-200 px-5 py-3 rounded-2xl text-center">
+                <p className="text-xs text-stone-400 uppercase font-black tracking-wider">Duties Logged</p>
+                <p className="text-2xl font-black text-stone-900">{currentTvWorker.workingDays}</p>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-200 px-6 py-3 rounded-2xl text-center">
+                <p className="text-xs text-emerald-700 uppercase font-black tracking-wider">Total Earnings</p>
+                <p className="text-3xl md:text-4xl font-black text-emerald-800 font-mono">
+                  ₹{Math.round(currentTvWorker.total).toLocaleString()}
+                </p>
               </div>
               {localTvMode && (
                 <button
                   onClick={() => setLocalTvMode(false)}
-                  className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-bold"
+                  className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold border border-stone-200"
                 >
                   Exit TV
                 </button>
@@ -300,22 +326,22 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-stone-800 text-stone-300 uppercase tracking-wider h-9">
-                  <th className="px-3 py-1">Date</th>
-                  <th className="px-3 py-1 text-center">Shift</th>
-                  <th className="px-3 py-1 text-center">Utilisation</th>
-                  <th className="px-3 py-1 text-right">Incentive</th>
+                <tr className="bg-stone-100 text-stone-700 uppercase tracking-wider h-12 text-base font-black border-b border-stone-200">
+                  <th className="px-5 py-3">Date</th>
+                  <th className="px-5 py-3 text-center">Shift</th>
+                  <th className="px-5 py-3 text-center">Utilisation</th>
+                  <th className="px-5 py-3 text-right">Incentive</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-800">
+              <tbody className="divide-y divide-stone-100 text-lg md:text-xl font-bold">
                 {currentTvWorker.rows.map((row, idx) => (
-                  <tr key={idx} className="h-8 hover:bg-stone-800/50">
-                    <td className="px-3 py-1 font-bold">{row.date}</td>
-                    <td className="px-3 py-1 text-center font-bold text-stone-400">{row.shift}</td>
-                    <td className="px-3 py-1 text-center font-bold text-blue-400">{Math.round(row.utility)}%</td>
-                    <td className="px-3 py-1 text-right font-black text-emerald-400 font-mono">₹{Math.round(row.incentive).toLocaleString()}</td>
+                  <tr key={idx} className="h-12 hover:bg-purple-50/30 transition-colors">
+                    <td className="px-5 py-3 font-black text-stone-900">{row.date}</td>
+                    <td className="px-5 py-3 text-center font-bold text-stone-600">{row.shift}</td>
+                    <td className="px-5 py-3 text-center font-bold text-blue-700">{Math.round(row.utility)}%</td>
+                    <td className="px-5 py-3 text-right font-black text-emerald-800 font-mono">₹{Math.round(row.incentive).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>

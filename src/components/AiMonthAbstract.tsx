@@ -234,7 +234,7 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
 
   if (isTvMode) {
     return (
-      <div className="bg-white p-6 md:p-8 xl:p-12 min-h-screen text-stone-900 font-sans overflow-hidden">
+      <div className="w-full h-full bg-white rounded-3xl border border-stone-200 p-6 xl:p-8 text-stone-900 font-sans flex flex-col justify-between overflow-hidden shadow-xs animate-in fade-in duration-300">
         {/* Top Header */}
         <div className="text-center mb-8 relative">
           <div className="flex items-center justify-center gap-2 text-purple-700 font-extrabold text-sm uppercase tracking-widest mb-2">
@@ -247,35 +247,35 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
           <div className="bg-gradient-to-r from-transparent via-purple-600 to-transparent h-1.5 w-1/2 mx-auto rounded-full mt-2" />
         </div>
 
-        <div className="max-w-5xl mx-auto">
-          <div className="bg-stone-50 rounded-2xl border border-stone-200 p-6 shadow-xl">
-            <table className="w-full border-collapse font-sans text-sm">
+        <div className="max-w-6xl mx-auto w-full flex-1 overflow-hidden flex flex-col justify-center">
+          <div className="bg-stone-50 rounded-3xl border border-stone-200 p-6 shadow-xs overflow-x-auto">
+            <table className="w-full border-collapse font-sans text-base md:text-lg">
               <thead>
-                <tr className="bg-purple-800 text-white font-black h-12 text-sm uppercase tracking-wider">
-                  <th className="px-4 text-center w-20 rounded-tl-xl border-r border-purple-700">S. NO</th>
-                  <th className="px-4 text-left w-32 border-r border-purple-700">TK No</th>
+                <tr className="bg-purple-800 text-white font-black h-14 text-base md:text-lg uppercase tracking-wider">
+                  <th className="px-5 text-center w-24 rounded-tl-2xl border-r border-purple-700">S. NO</th>
+                  <th className="px-5 text-left w-36 border-r border-purple-700">TK No</th>
                   <th className="px-6 text-left border-r border-purple-700">Name of Operator</th>
-                  <th className="px-4 text-center w-28 border-r border-purple-700">Days</th>
-                  <th className="px-4 text-center w-28 border-r border-purple-700">Duties</th>
-                  <th className="px-6 text-right w-44 rounded-tr-xl">Incentive (₹)</th>
+                  <th className="px-5 text-center w-32 border-r border-purple-700">Days</th>
+                  <th className="px-5 text-center w-32 border-r border-purple-700">Duties</th>
+                  <th className="px-6 text-right w-48 rounded-tr-2xl">Incentive (₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-200">
+              <tbody className="divide-y divide-stone-200 text-lg md:text-xl font-bold">
                 {aiTotals.map((item, idx) => (
-                  <tr key={item.id} className="h-12 hover:bg-purple-50/30 transition-colors">
-                    <td className="px-4 text-center font-bold text-stone-500 border-r border-stone-200">{idx + 1}</td>
-                    <td className="px-4 text-left font-black text-purple-800 font-mono border-r border-stone-200">{item.tNo}</td>
+                  <tr key={item.id} className="h-14 hover:bg-purple-50/30 transition-colors">
+                    <td className="px-5 text-center font-bold text-stone-500 border-r border-stone-200">{idx + 1}</td>
+                    <td className="px-5 text-left font-black text-purple-800 font-mono border-r border-stone-200">{item.tNo}</td>
                     <td className="px-6 text-left font-bold uppercase text-stone-900 border-r border-stone-200">{item.name}</td>
-                    <td className="px-4 text-center font-bold text-stone-600 border-r border-stone-200">{item.workingDays}</td>
-                    <td className="px-4 text-center font-bold text-stone-600 border-r border-stone-200">{item.duties}</td>
-                    <td className="px-6 text-right font-black text-stone-900 tabular-nums">₹{Math.round(item.amount).toLocaleString()}</td>
+                    <td className="px-5 text-center font-bold text-stone-600 border-r border-stone-200">{item.workingDays}</td>
+                    <td className="px-5 text-center font-bold text-stone-600 border-r border-stone-200">{item.duties}</td>
+                    <td className="px-6 text-right font-black text-emerald-800 tabular-nums">₹{Math.round(item.amount).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-stone-100 font-black h-12 border-t-2 border-stone-300">
-                  <td colSpan={5} className="px-6 text-right uppercase tracking-wider text-stone-700">Grand Total:</td>
-                  <td className="px-6 text-right font-black text-stone-950 text-base tabular-nums">₹{Math.round(grandTotal).toLocaleString()}</td>
+                <tr className="bg-stone-100 font-black h-14 border-t-2 border-stone-300">
+                  <td colSpan={5} className="px-6 text-right uppercase tracking-wider text-stone-700 text-base md:text-lg">Grand Total:</td>
+                  <td className="px-6 text-right font-black text-emerald-900 text-2xl tabular-nums">₹{Math.round(grandTotal).toLocaleString()}</td>
                 </tr>
               </tfoot>
             </table>
