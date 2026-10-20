@@ -275,6 +275,22 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
         description: 'Comparative overview of Shed 1, Shed 2, Shed 3, and KTTM'
       }
     ]
+  },
+  {
+    id: 'main-shift-comparison',
+    chapterNumber: 12,
+    title: 'Three-Shift Production & Efficiency Comparison',
+    subtitle: 'Shift I, Shift II & Shift III comparative telemetry, GPS & output breakdown',
+    icon: Clock,
+    subPages: [
+      {
+        id: 'shift-comparison',
+        title: 'Three-Shift Performance Comparison',
+        shortTitle: 'Shift Comparison',
+        defaultSeconds: 20,
+        description: 'Comparative telemetry across Shift I, Shift II, and Shift III for the selected date'
+      }
+    ]
   }
 ];
 
@@ -319,28 +335,23 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const [showControls, setShowControls] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [isShedDropdownOpen, setIsShedDropdownOpen] = useState(false);
-  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shedDropdownRef = useRef<HTMLDivElement | null>(null);
-  const dateDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Click-outside listener for shed & date selection dropdowns
+  // Click-outside listener for shed selection dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (shedDropdownRef.current && !shedDropdownRef.current.contains(event.target as Node)) {
         setIsShedDropdownOpen(false);
       }
-      if (dateDropdownRef.current && !dateDropdownRef.current.contains(event.target as Node)) {
-        setIsDateDropdownOpen(false);
-      }
     };
-    if (isShedDropdownOpen || isDateDropdownOpen) {
+    if (isShedDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isShedDropdownOpen, isDateDropdownOpen]);
+  }, [isShedDropdownOpen]);
 
   // Auto-request fullscreen on launch
   useEffect(() => {
@@ -519,67 +530,33 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   // Available sheds including KTTM
   const SHEDS_LIST: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
 
-  // 12. Multi-shed comparison calculation across all 4 sheds
+  // 12. Multi-shed comparison calculation across all 4 sheds (strictly matched to safeDailyReport.date)
   const shedComparison = useMemo(() => {
     const sheds: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
-    const searchPool = (allShedsHistory && allShedsHistory.length > 0) ? allShedsHistory : history;
+    const targetDate = safeDailyReport.date;
+    const targetParts = parseUniversalDateParts(targetDate);
+    
+    // Unified search pool prioritizing safeDailyReport
+    const pool = [
+      ...(safeDailyReport ? [safeDailyReport] : []),
+      ...((allShedsHistory && allShedsHistory.length > 0) ? allShedsHistory : []),
+      ...(history && history.length > 0 ? history : [])
+    ];
 
     return sheds.map(shedName => {
-      // 1. Direct date & shed match
-      let reportForShed = searchPool.find(r => r.date === safeDailyReport.date && (r.shed || 'Shed 1') === shedName);
-
-      // 2. If current active shed matches and dailyReport has data, prioritize it
-      if ((selectedShed === shedName || (safeDailyReport.shed || 'Shed 1') === shedName) && safeDailyReport) {
-        if (!reportForShed || (safeDailyReport.totalProductionActual || 0) > (reportForShed.totalProductionActual || 0)) {
-          reportForShed = safeDailyReport;
-        }
-      }
-
-      // 3. Normalized calendar date match (in case date format differs, e.g. YYYY-MM-DD vs DD/MM/YYYY)
-      if (!reportForShed) {
-        const targetParts = parseUniversalDateParts(safeDailyReport.date);
+      // Find report strictly matching this shed on the exact same selected date
+      const reportForShed = pool.find(r => {
+        const s = r.shed || 'Shed 1';
+        if (s !== shedName) return false;
+        if (r.date === targetDate) return true;
         if (targetParts) {
-          reportForShed = searchPool.find(r => {
-            if ((r.shed || 'Shed 1') !== shedName) return false;
-            const rParts = parseUniversalDateParts(r.date);
-            return rParts && rParts.year === targetParts.year && rParts.month === targetParts.month && rParts.day === targetParts.day;
-          });
+          const rp = parseUniversalDateParts(r.date);
+          return rp && rp.year === targetParts.year && rp.month === targetParts.month && rp.day === targetParts.day;
         }
-      }
+        return false;
+      });
 
-      // 4. Same month fallback: if this shed has reports in the same month/year, pick the closest one
-      if (!reportForShed) {
-        const targetParts = parseUniversalDateParts(safeDailyReport.date);
-        if (targetParts) {
-          const sameMonthReports = searchPool.filter(r => {
-            if ((r.shed || 'Shed 1') !== shedName) return false;
-            const rParts = parseUniversalDateParts(r.date);
-            return rParts && rParts.year === targetParts.year && rParts.month === targetParts.month;
-          });
-          if (sameMonthReports.length > 0) {
-            const sorted = [...sameMonthReports].sort((a, b) => {
-              const pa = parseUniversalDateParts(a.date)?.day || 0;
-              const pb = parseUniversalDateParts(b.date)?.day || 0;
-              return pb - pa;
-            });
-            reportForShed = sorted[0];
-          }
-        }
-      }
-
-      // 5. Ultimate fallback: pick the latest populated report for this shed anywhere in searchPool
-      if (!reportForShed) {
-        const shedReports = searchPool.filter(r => (r.shed || 'Shed 1') === shedName && ((r.totalProductionActual || 0) > 0 || (r.entries && r.entries.length > 0) || (r.summaries && r.summaries.length > 0)));
-        if (shedReports.length > 0) {
-          const sorted = [...shedReports].sort((a, b) => {
-            const da = parseUniversalDate(a.date).getTime() || 0;
-            const db = parseUniversalDate(b.date).getTime() || 0;
-            return db - da;
-          });
-          reportForShed = sorted[0];
-        }
-      }
-
+      // If no report exists for this shed on this exact date, report strictly as idle/zero for the selected date
       if (!reportForShed) {
         return {
           shed: shedName,
@@ -590,7 +567,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           avgGps: 0,
           avg40sGps: 0,
           active: false,
-          reportDate: null
+          reportDate: targetDate
         };
       }
 
@@ -623,10 +600,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         avgGps: Number(gps.toFixed(1)),
         avg40sGps: Number(gps40s.toFixed(1)),
         active: aProd > 0 || entries.length > 0,
-        reportDate: reportForShed.date
+        reportDate: reportForShed.date || targetDate
       };
     });
-  }, [allShedsHistory, history, safeDailyReport, selectedShed]);
+  }, [allShedsHistory, history, safeDailyReport]);
 
   const shedAggregate = useMemo(() => {
     const totalActual = shedComparison.reduce((a, b) => a + b.actual, 0);
@@ -640,6 +617,163 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
     return { totalActual, totalTarget, overallEff, avg40sGps, leadingShed };
   }, [shedComparison]);
+
+  // 13. Three-Shift Comparison Calculation (Chapter 12)
+  const shiftComparison = useMemo(() => {
+    const shiftsConfig: { shift: Shift; title: string; timing: string }[] = [
+      { shift: 'I', title: 'Shift I', timing: '07:00 – 15:00' },
+      { shift: 'II', title: 'Shift II', timing: '15:00 – 23:00' },
+      { shift: 'III', title: 'Shift III', timing: '23:00 – 07:00' }
+    ];
+
+    // Determine mill current shift based on current hour
+    const now = new Date();
+    const currentHour = now.getHours();
+    let currentMillShift: Shift = 'I';
+    if (currentHour >= 7 && currentHour < 15) {
+      currentMillShift = 'I';
+    } else if (currentHour >= 15 && currentHour < 23) {
+      currentMillShift = 'II';
+    } else {
+      currentMillShift = 'III';
+    }
+
+    const isToday = safeDailyReport.date === getTodayUniversalDate();
+    const entries = safeDailyReport.entries || [];
+    const shiftOrder: Record<Shift, number> = { 'I': 1, 'II': 2, 'III': 3 };
+    const currentShiftOrder = shiftOrder[currentMillShift];
+
+    const results = shiftsConfig.map(({ shift, title, timing }) => {
+      const shiftEntries = entries.filter(e => e.shift === shift);
+      const isCurrent = isToday && shift === currentMillShift;
+      
+      let status: 'CURRENT' | 'COMPLETED' | 'UPCOMING' = 'COMPLETED';
+      if (isToday) {
+        if (shift === currentMillShift) {
+          status = 'CURRENT';
+        } else if (shiftOrder[shift] < currentShiftOrder) {
+          status = 'COMPLETED';
+        } else {
+          status = shiftEntries.some(e => (e.productionActual || 0) > 0) ? 'COMPLETED' : 'UPCOMING';
+        }
+      } else {
+        status = shiftEntries.length > 0 && shiftEntries.some(e => (e.productionActual || 0) > 0) ? 'COMPLETED' : 'UPCOMING';
+      }
+
+      const actualKg = Math.round(shiftEntries.reduce((acc, e) => acc + (e.productionActual || 0), 0));
+      const targetKg = Math.round(shiftEntries.reduce((acc, e) => acc + (e.productionTarget || 0), 0));
+      const efficiency = targetKg > 0 ? Number(((actualKg / targetKg) * 100).toFixed(1)) : (actualKg > 0 ? 100 : 0);
+
+      // Average GPS & 40s Converted GPS
+      const validGps = shiftEntries.filter(e => (e.gpsActual || 0) > 0);
+      const avgGps = validGps.length > 0 
+        ? Number((validGps.reduce((acc, e) => acc + e.gpsActual, 0) / validGps.length).toFixed(1)) 
+        : 0;
+
+      const valid40sGps = shiftEntries.filter(e => (e.gps40sCon || 0) > 0);
+      const avg40sGps = valid40sGps.length > 0 
+        ? Number((valid40sGps.reduce((acc, e) => acc + e.gps40sCon, 0) / valid40sGps.length).toFixed(1)) 
+        : (avgGps > 0 ? avgGps : 0);
+
+      // EMT Doff (EM), Natural EMT (Breaks), Idle %
+      const validDoffEmt = shiftEntries.filter(e => (e.doffEmt || 0) > 0);
+      const avgDoffEmt = validDoffEmt.length > 0 
+        ? Number((validDoffEmt.reduce((acc, e) => acc + (e.doffEmt || 0), 0) / validDoffEmt.length).toFixed(2)) 
+        : 0;
+
+      const validNaturalEmt = shiftEntries.filter(e => (e.naturalEmt || 0) > 0);
+      const avgNaturalEmt = validNaturalEmt.length > 0 
+        ? Number((validNaturalEmt.reduce((acc, e) => acc + (e.naturalEmt || 0), 0) / validNaturalEmt.length).toFixed(1)) 
+        : 0;
+
+      const validIdle = shiftEntries.filter(e => (e.idlePercent || 0) > 0);
+      const avgIdlePercent = validIdle.length > 0 
+        ? Number((validIdle.reduce((acc, e) => acc + (e.idlePercent || 0), 0) / validIdle.length).toFixed(1)) 
+        : 0;
+
+      // Frames running count
+      const frameSet = new Set<string>();
+      shiftEntries.forEach(e => { if (e.frameNo) frameSet.add(e.frameNo); });
+      const framesCount = frameSet.size;
+
+      // Top Sider performer for this shift
+      const siderMap: Record<string, { name: string; actualKg: number; gps40sSum: number; count: number }> = {};
+      shiftEntries.forEach(e => {
+        const name = (e.siderName || '').trim();
+        if (!name || name.toLowerCase() === 'unassigned') return;
+        if (!siderMap[name]) {
+          siderMap[name] = { name, actualKg: 0, gps40sSum: 0, count: 0 };
+        }
+        siderMap[name].actualKg += (e.productionActual || 0);
+        if (e.gps40sCon) {
+          siderMap[name].gps40sSum += e.gps40sCon;
+          siderMap[name].count += 1;
+        }
+      });
+
+      const sidersSorted = Object.values(siderMap).sort((a, b) => b.actualKg - a.actualKg);
+      const topSider = sidersSorted.length > 0 ? {
+        name: sidersSorted[0].name,
+        actualKg: Math.round(sidersSorted[0].actualKg),
+        avg40sGps: sidersSorted[0].count > 0 ? Number((sidersSorted[0].gps40sSum / sidersSorted[0].count).toFixed(1)) : 0
+      } : null;
+
+      // Crew on duty: Gaiters & Fitters
+      const resolveName = (idOrName: string) => {
+        if (!idOrName) return '';
+        const w = workers.find(item => item.id === idOrName || item.tNo === idOrName || item.name.toLowerCase() === idOrName.toLowerCase());
+        return w ? w.name : idOrName;
+      };
+
+      const gaiters = (safeDailyReport.gaiters?.[shift] || []).filter(Boolean).map(resolveName);
+      const fitters = (safeDailyReport.fitters?.[shift] || []).filter(Boolean).map(resolveName);
+
+      return {
+        shift,
+        title,
+        timing,
+        isCurrent,
+        status,
+        actualKg,
+        targetKg,
+        efficiency,
+        avgGps,
+        avg40sGps,
+        avgDoffEmt,
+        avgNaturalEmt,
+        avgIdlePercent,
+        framesCount,
+        sidersCount: Object.keys(siderMap).length,
+        topSider,
+        gaiters,
+        fitters,
+        isWinningShift: false
+      };
+    });
+
+    // Mark winning shift (highest actual production)
+    const activeShifts = results.filter(s => s.actualKg > 0);
+    if (activeShifts.length > 0) {
+      const highestActual = Math.max(...activeShifts.map(s => s.actualKg));
+      const winner = results.find(s => s.actualKg === highestActual);
+      if (winner) winner.isWinningShift = true;
+    }
+
+    return results;
+  }, [safeDailyReport, workers]);
+
+  const shiftAggregate = useMemo(() => {
+    const totalActual = shiftComparison.reduce((a, b) => a + b.actualKg, 0);
+    const totalTarget = shiftComparison.reduce((a, b) => a + b.targetKg, 0);
+    const overallEff = totalTarget > 0 ? Number(((totalActual / totalTarget) * 100).toFixed(1)) : (totalActual > 0 ? 100 : 0);
+    const activeShifts = shiftComparison.filter(s => s.actualKg > 0);
+    const avg40sGps = activeShifts.length > 0 
+      ? Number((activeShifts.reduce((a, b) => a + b.avg40sGps, 0) / activeShifts.length).toFixed(1)) 
+      : 0;
+    const winningShift = shiftComparison.find(s => s.isWinningShift) || null;
+
+    return { totalActual, totalTarget, overallEff, avg40sGps, winningShift };
+  }, [shiftComparison]);
 
   return (
     <div className="fixed inset-0 z-[99990] bg-stone-100 text-stone-900 flex flex-col h-screen w-screen overflow-hidden font-sans select-none">
@@ -712,75 +846,18 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             )}
           </div>
 
-          {/* Click-to-Open Date Selector Dropdown Button (Shows current date or selected date) */}
-          <div 
-            ref={dateDropdownRef}
-            className="relative"
-          >
-            <button
-              onClick={() => setIsDateDropdownOpen(prev => !prev)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-900 text-sm font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
-              title="Click to change TV report date"
-            >
-              <Calendar size={15} className="text-emerald-600" />
-              <span>{safeDailyReport.date}</span>
-              {safeDailyReport.date === getTodayUniversalDate() ? (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 hidden sm:inline-block">
-                  Current
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 hidden sm:inline-block">
-                  Selected
-                </span>
-              )}
-              {availableDates.length > 0 && (
-                <ChevronDown size={14} className={cn("text-stone-400 transition-transform duration-200", isDateDropdownOpen && "rotate-180")} />
-              )}
-            </button>
-
-            {/* Click Selection Dropdown Menu */}
-            {isDateDropdownOpen && availableDates.length > 0 && (
-              <div className="absolute top-full left-0 mt-2 w-52 max-h-64 overflow-y-auto bg-white rounded-2xl border border-stone-200 shadow-xl py-1.5 z-50">
-                {/* Jump to Current/Today Date option */}
-                <button
-                  onClick={() => {
-                    onSelectDate?.(getTodayUniversalDate());
-                    setIsDateDropdownOpen(false);
-                  }}
-                  className={cn(
-                    "w-full px-4 py-2.5 text-xs font-bold text-left flex items-center justify-between transition-colors cursor-pointer",
-                    safeDailyReport.date === getTodayUniversalDate() ? "bg-emerald-50 text-emerald-700 font-black" : "text-stone-700 hover:bg-stone-100"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                    <span>Current Date ({getTodayUniversalDate()})</span>
-                  </div>
-                  {safeDailyReport.date === getTodayUniversalDate() && <Check size={14} className="text-emerald-600" />}
-                </button>
-                
-                <div className="h-px bg-stone-100 my-1" />
-
-                {availableDates.filter(d => d !== getTodayUniversalDate()).map(d => {
-                  const isSelected = safeDailyReport.date === d;
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => {
-                        onSelectDate?.(d);
-                        setIsDateDropdownOpen(false);
-                      }}
-                      className={cn(
-                        "w-full px-4 py-2.5 text-xs font-bold text-left flex items-center justify-between transition-colors cursor-pointer",
-                        isSelected ? "bg-emerald-50 text-emerald-700 font-black" : "text-stone-700 hover:bg-stone-100"
-                      )}
-                    >
-                      <span>{d}</span>
-                      {isSelected && <Check size={14} className="text-emerald-600" />}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Static Report Date Indicator (Date selection removed as requested) */}
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm font-black uppercase tracking-wider shadow-2xs">
+            <Calendar size={15} className="text-emerald-600" />
+            <span>{safeDailyReport.date}</span>
+            {safeDailyReport.date === getTodayUniversalDate() ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 hidden sm:inline-block">
+                Current Date
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 hidden sm:inline-block">
+                Selected Date
+              </span>
             )}
           </div>
         </div>
@@ -1280,6 +1357,327 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                             <span className="text-sm md:text-base font-black text-emerald-950 uppercase">
                               {shedAggregate.leadingShed.shed} ({shedAggregate.leadingShed.efficiency}%)
                             </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+
+              case 'shift-comparison':
+                return (
+                  <div className="space-y-4 md:space-y-6 flex flex-col h-full">
+                    {/* Top Header Banner */}
+                    <div className="bg-white rounded-3xl p-5 md:p-6 border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-800 tracking-wider">
+                            Chapter 12 • Shift Telemetry
+                          </span>
+                          <span className="text-stone-400 font-bold">•</span>
+                          <span className="text-xs font-black uppercase tracking-wider text-stone-500">
+                            Live Mill Operations
+                          </span>
+                        </div>
+                        <h3 className="text-xl md:text-2xl font-black text-stone-900 uppercase font-serif tracking-tight">
+                          Three-Shift Production & Efficiency Comparison
+                        </h3>
+                        <p className="text-xs font-bold text-stone-500 uppercase tracking-wider mt-0.5">
+                          Shift I (07:00–15:00) • Shift II (15:00–23:00) • Shift III (23:00–07:00) Output Breakdown
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="px-4 py-2 bg-stone-100 text-stone-900 rounded-2xl text-xs md:text-sm font-black border border-stone-200">
+                          Shed: {selectedShed}
+                        </span>
+                        <span className="px-4 py-2 bg-stone-100 text-stone-900 rounded-2xl text-xs md:text-sm font-black border border-stone-200">
+                          Date: {safeDailyReport.date}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3 Shift Cards Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 flex-1 min-h-0">
+                      {shiftComparison.map((s) => {
+                        const shiftColors = {
+                          'I': {
+                            accent: 'emerald',
+                            borderActive: 'border-emerald-500 ring-4 ring-emerald-500/20',
+                            text: 'text-emerald-700',
+                            badge: 'bg-emerald-100 text-emerald-800',
+                            bar: 'bg-emerald-500'
+                          },
+                          'II': {
+                            accent: 'sky',
+                            borderActive: 'border-sky-500 ring-4 ring-sky-500/20',
+                            text: 'text-sky-700',
+                            badge: 'bg-sky-100 text-sky-800',
+                            bar: 'bg-sky-500'
+                          },
+                          'III': {
+                            accent: 'amber',
+                            borderActive: 'border-amber-500 ring-4 ring-amber-500/20',
+                            text: 'text-amber-700',
+                            badge: 'bg-amber-100 text-amber-800',
+                            bar: 'bg-amber-500'
+                          }
+                        }[s.shift];
+
+                        return (
+                          <div 
+                            key={s.shift}
+                            className={cn(
+                              "rounded-3xl p-6 border flex flex-col justify-between shadow-2xs transition-all relative overflow-hidden bg-white",
+                              s.isCurrent 
+                                ? shiftColors.borderActive + " shadow-md"
+                                : "border-stone-200/90"
+                            )}
+                          >
+                            {/* Card Top / Header */}
+                            <div>
+                              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="text-2xl md:text-3xl font-black text-stone-900 uppercase font-serif tracking-tight">
+                                      {s.title}
+                                    </h4>
+                                    {s.isWinningShift && (
+                                      <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 border border-amber-300">
+                                        <Trophy size={11} className="text-amber-700" /> Best Shift
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-stone-400 font-bold uppercase tracking-wider block mt-0.5">
+                                    {s.timing} • {s.framesCount > 0 ? `${s.framesCount} Frames Logged` : 'No frames'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {s.isCurrent ? (
+                                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                                      Live Shift
+                                    </span>
+                                  ) : s.status === 'COMPLETED' ? (
+                                    <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-stone-100 text-stone-700 border border-stone-200">
+                                      Completed
+                                    </span>
+                                  ) : (
+                                    <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-stone-50 text-stone-400 border border-stone-200">
+                                      Upcoming
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Main Production Numbers */}
+                              <div className="my-4 space-y-3">
+                                {/* Actual Production (HUGE) */}
+                                <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/80">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-xs font-black text-stone-500 uppercase tracking-wider">
+                                      Actual Production
+                                    </span>
+                                    <span className="text-xs font-bold text-stone-400 font-mono">
+                                      Target: {s.targetKg.toLocaleString('en-IN')} Kg
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline gap-2">
+                                    <span className={cn("text-4xl md:text-5xl lg:text-6xl font-black font-mono tracking-tight", shiftColors.text)}>
+                                      {s.actualKg.toLocaleString('en-IN')}
+                                    </span>
+                                    <span className="text-lg font-bold text-stone-400 font-sans">Kg</span>
+                                  </div>
+                                </div>
+
+                                {/* Metrics Breakdown Rows */}
+                                <div className="grid grid-cols-2 gap-2.5">
+                                  {/* Shift Efficiency */}
+                                  <div className="bg-stone-50 px-3.5 py-2.5 rounded-2xl border border-stone-200/80">
+                                    <span className="text-[10px] md:text-xs text-stone-500 font-black uppercase tracking-wider block">
+                                      Efficiency
+                                    </span>
+                                    <span className={cn(
+                                      "font-black text-xl md:text-2xl font-mono",
+                                      s.efficiency >= 95 ? "text-emerald-700" : s.efficiency > 0 ? "text-amber-700" : "text-stone-400"
+                                    )}>
+                                      {s.efficiency > 0 ? `${s.efficiency}%` : '-'}
+                                    </span>
+                                  </div>
+
+                                  {/* 40s Converted GPS */}
+                                  <div className="bg-stone-50 px-3.5 py-2.5 rounded-2xl border border-stone-200/80">
+                                    <span className="text-[10px] md:text-xs text-stone-500 font-black uppercase tracking-wider block">
+                                      40s GPS
+                                    </span>
+                                    <span className="font-mono font-black text-sky-700 text-xl md:text-2xl">
+                                      {s.avg40sGps > 0 ? s.avg40sGps : '-'}
+                                    </span>
+                                  </div>
+
+                                  {/* Average GPS */}
+                                  <div className="bg-stone-50 px-3.5 py-2.5 rounded-2xl border border-stone-200/80">
+                                    <span className="text-[10px] md:text-xs text-stone-500 font-black uppercase tracking-wider block">
+                                      Average GPS
+                                    </span>
+                                    <span className="font-mono font-black text-stone-900 text-base md:text-lg">
+                                      {s.avgGps > 0 ? s.avgGps : '-'}
+                                    </span>
+                                  </div>
+
+                                  {/* EMT & Idle */}
+                                  <div className="bg-stone-50 px-3.5 py-2.5 rounded-2xl border border-stone-200/80">
+                                    <span className="text-[10px] md:text-xs text-stone-500 font-black uppercase tracking-wider block">
+                                      Doff EM / Idle %
+                                    </span>
+                                    <span className="font-mono font-black text-stone-900 text-base md:text-lg">
+                                      {s.avgDoffEmt > 0 ? s.avgDoffEmt : '0'} / {s.avgIdlePercent > 0 ? `${s.avgIdlePercent}%` : '0%'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Efficiency Progress Bar */}
+                                <div className="mt-1">
+                                  <div className="w-full bg-stone-100 h-2.5 rounded-full overflow-hidden border border-stone-200/60">
+                                    <div 
+                                      className={cn(
+                                        "h-full rounded-full transition-all duration-1000",
+                                        s.efficiency >= 95 ? "bg-emerald-500" : "bg-amber-500"
+                                      )}
+                                      style={{ width: `${Math.min(100, s.efficiency)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Bottom / Crew & Top Performer */}
+                            <div className="pt-3 border-t border-stone-100 space-y-2 mt-auto">
+                              {/* Top Sider of Shift */}
+                              <div className="flex items-center justify-between text-xs bg-stone-50 px-3 py-2 rounded-xl border border-stone-200/60">
+                                <span className="font-bold text-stone-500 uppercase tracking-wider">Top Sider:</span>
+                                {s.topSider ? (
+                                  <span className="font-black text-stone-900 truncate max-w-[160px]">
+                                    {s.topSider.name} <span className="text-emerald-700 font-mono">({s.topSider.actualKg} Kg)</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-400 font-medium">None logged</span>
+                                )}
+                              </div>
+
+                              {/* Gaiters & Fitters */}
+                              <div className="flex items-center justify-between text-[11px] text-stone-600 px-1">
+                                <div>
+                                  <span className="font-bold text-stone-400 uppercase tracking-wider">Gaiter: </span>
+                                  <span className="font-semibold text-stone-800">
+                                    {s.gaiters.length > 0 ? s.gaiters.join(', ') : 'None'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="font-bold text-stone-400 uppercase tracking-wider">Fitter: </span>
+                                  <span className="font-semibold text-stone-800">
+                                    {s.fitters.length > 0 ? s.fitters.join(', ') : 'None'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Bottom Combined Day Telemetry & Production Share */}
+                    <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-2xs space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-6">
+                          <div>
+                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                              Day Total Production
+                            </span>
+                            <span className="text-2xl md:text-3xl font-black font-mono text-emerald-700">
+                              {shiftAggregate.totalActual.toLocaleString('en-IN')} <span className="text-sm font-bold text-stone-400">Kg</span>
+                            </span>
+                          </div>
+                          <div className="h-8 w-px bg-stone-200" />
+                          <div>
+                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                              Day Target
+                            </span>
+                            <span className="text-xl md:text-2xl font-bold font-mono text-stone-800">
+                              {shiftAggregate.totalTarget.toLocaleString('en-IN')} <span className="text-sm font-bold text-stone-400">Kg</span>
+                            </span>
+                          </div>
+                          <div className="h-8 w-px bg-stone-200 hidden sm:block" />
+                          <div className="hidden sm:block">
+                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                              Day Efficiency
+                            </span>
+                            <span className={cn(
+                              "text-2xl md:text-3xl font-black font-mono",
+                              shiftAggregate.overallEff >= 95 ? "text-emerald-700" : "text-amber-700"
+                            )}>
+                              {shiftAggregate.overallEff}%
+                            </span>
+                          </div>
+                          <div className="h-8 w-px bg-stone-200 hidden md:block" />
+                          <div className="hidden md:block">
+                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                              Day 40s GPS
+                            </span>
+                            <span className="text-xl md:text-2xl font-black font-mono text-sky-700">
+                              {shiftAggregate.avg40sGps}
+                            </span>
+                          </div>
+                        </div>
+
+                        {shiftAggregate.winningShift && (
+                          <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-200 px-4 py-2 rounded-2xl">
+                            <Trophy size={20} className="text-amber-700 shrink-0" />
+                            <div>
+                              <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider block">Best Shift of Day</span>
+                              <span className="text-sm md:text-base font-black text-amber-950 uppercase">
+                                {shiftAggregate.winningShift.title} ({shiftAggregate.winningShift.actualKg.toLocaleString('en-IN')} Kg • {shiftAggregate.winningShift.efficiency}%)
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3-Color Shift Share Stacked Bar */}
+                      {shiftAggregate.totalActual > 0 && (
+                        <div className="space-y-1.5 pt-1 border-t border-stone-100">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-stone-500 uppercase tracking-wider">
+                            <span>Shift Output Contribution</span>
+                            <div className="flex items-center gap-4">
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                                Shift I ({((shiftComparison[0].actualKg / shiftAggregate.totalActual) * 100).toFixed(1)}%)
+                              </span>
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
+                                Shift II ({((shiftComparison[1].actualKg / shiftAggregate.totalActual) * 100).toFixed(1)}%)
+                              </span>
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                                Shift III ({((shiftComparison[2].actualKg / shiftAggregate.totalActual) * 100).toFixed(1)}%)
+                              </span>
+                            </div>
+                          </div>
+                          <div className="w-full bg-stone-100 h-3 rounded-full overflow-hidden flex border border-stone-200/60">
+                            <div 
+                              className="bg-emerald-500 h-full transition-all duration-1000"
+                              style={{ width: `${(shiftComparison[0].actualKg / shiftAggregate.totalActual) * 100}%` }}
+                              title={`Shift I: ${shiftComparison[0].actualKg} Kg`}
+                            />
+                            <div 
+                              className="bg-sky-500 h-full transition-all duration-1000"
+                              style={{ width: `${(shiftComparison[1].actualKg / shiftAggregate.totalActual) * 100}%` }}
+                              title={`Shift II: ${shiftComparison[1].actualKg} Kg`}
+                            />
+                            <div 
+                              className="bg-amber-500 h-full transition-all duration-1000"
+                              style={{ width: `${(shiftComparison[2].actualKg / shiftAggregate.totalActual) * 100}%` }}
+                              title={`Shift III: ${shiftComparison[2].actualKg} Kg`}
+                            />
                           </div>
                         </div>
                       )}

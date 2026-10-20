@@ -386,6 +386,7 @@ export default function Home() {
       'top-workers': 15,
       'champions': 15,
       'sheds': 15,
+      'shift-comparison': 20,
       'monthly': 15,
       'running-counts': 20,
       'daily-incentive': 20,
@@ -398,6 +399,7 @@ export default function Home() {
       'top-workers': true,
       'champions': true,
       'sheds': true,
+      'shift-comparison': true,
       'monthly': true,
       'running-counts': true,
       'daily-incentive': true,
@@ -419,7 +421,9 @@ export default function Home() {
       'best-shift': 15,
       'best': 15,
       'best-operators-em': 15,
-      'em-outliers-compare': 15
+      'em-outliers-compare': 15,
+      'sheds': 20,
+      'shift-comparison': 20
     }
   });
 
