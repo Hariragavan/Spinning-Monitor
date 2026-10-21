@@ -22,8 +22,8 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
         <h3 className={cn("font-black text-stone-900 uppercase tracking-tight mb-6", isTvMode ? "text-2xl md:text-3xl" : "text-sm")}>
           Production Analysis (Actual vs Target)
         </h3>
-        <div className={cn(isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div className={cn("min-w-0", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="name" stroke="#78716c" fontSize={isTvMode ? 16 : 10} fontWeight={isTvMode ? 800 : 600} tickLine={false} axisLine={false} dy={10} />
@@ -45,8 +45,8 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
         <h3 className={cn("font-black text-stone-900 uppercase tracking-tight mb-6", isTvMode ? "text-2xl md:text-3xl" : "text-sm")}>
           Efficiency Trends (%)
         </h3>
-        <div className={cn(isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
-          <ResponsiveContainer width="100%" height="100%">
+        <div className={cn("min-w-0", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="name" stroke="#78716c" fontSize={isTvMode ? 16 : 10} fontWeight={isTvMode ? 800 : 600} tickLine={false} axisLine={false} dy={10} />

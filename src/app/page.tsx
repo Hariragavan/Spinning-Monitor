@@ -33,7 +33,7 @@ import { TvDashboard, TV_MAIN_PAGES } from '@/components/TvDashboard';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate } from '@/lib/parser';
 import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
@@ -998,10 +998,15 @@ export default function Home() {
 
   // Master Data CRUD
   const addWorker = async (worker: Omit<Sider, 'id'>) => {
-    const newWorker: Sider = { ...worker, id: crypto.randomUUID() };
-    const updated = [...workers, newWorker];
-    setWorkers(updated);
-    await apiClient.saveWorker(newWorker);
+    try {
+      const newWorker: Sider = { ...worker, id: generateUUID() };
+      const updated = [...workers, newWorker];
+      setWorkers(updated);
+      await apiClient.saveWorker(newWorker);
+    } catch (err: any) {
+      console.error('Error adding worker:', err);
+      alert(`Error saving worker: ${err?.message || 'Unknown error'}`);
+    }
   };
 
   const updateWorker = async (worker: Sider) => {
