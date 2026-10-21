@@ -281,7 +281,7 @@ export const parseWorkerMaster = async (file: File): Promise<Sider[]> => {
               id: tNo || `w-${idx}-${Date.now()}`,
               name: name,
               tNo: tNo || `T-${1000 + idx}`,
-              photoUrl: `https://picsum.photos/seed/${name}/400/500`
+              photoUrl: ''
             });
           }
         });

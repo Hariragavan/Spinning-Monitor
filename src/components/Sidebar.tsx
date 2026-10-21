@@ -27,6 +27,62 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
+export const NAV_SECTIONS: NavSection[] = [
+  {
+    title: 'Daily Operations',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'all-data', label: 'All Data Master Table', icon: Table },
+      { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
+      { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
+      { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
+      { id: 'daily-incentive-machine', label: 'Daily Incentive (Machine)', icon: Grid3X3 },
+    ]
+  },
+  {
+    title: 'Monthly Analytics',
+    items: [
+      { id: 'month-view', label: 'Monthly Incentive Grid', icon: Calendar },
+      { id: 'month-abstract', label: 'Monthly Abstract', icon: BarChart3 },
+      { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },
+      { id: 'sider-monthly-performance', label: 'Sider Monthly Performance', icon: FileText },
+      { id: 'operator-em-format', label: 'Operator EM Format', icon: FileText },
+    ]
+  },
+  {
+    title: 'AI & Maintenance',
+    items: [
+      { id: 'ai-month-view', label: 'AI Monthly Incentive', icon: Calendar },
+      { id: 'ai-month-abstract', label: 'AI Monthly Abstract', icon: BarChart3 },
+      { id: 'ai-monthly-performance', label: 'AI Monthly Performance', icon: FileText },
+      { id: 'fitter-monthly-performance', label: 'Fitter Monthly Performance', icon: Wrench },
+    ]
+  },
+  {
+    title: 'Performance & Awards',
+    items: [
+      { id: 'running-count-incentives', label: 'Incentive Based in GPS', icon: Coins },
+      { id: 'best-shift', label: 'Best Shift', icon: Star },
+      { id: 'best', label: 'Best Sider of the Month', icon: Trophy },
+      { id: 'best-operators-em', label: 'Best 2 Operators EM', icon: Trophy },
+      { id: 'em-outliers-compare', label: 'EM Outliers Compare', icon: AlertTriangle },
+    ]
+  },
+  {
+    title: 'Master Data & System',
+    items: [
+      { id: 'workers', label: 'Employee Master', icon: Users },
+      { id: 'machine-master', label: 'Machine Master', icon: Wrench },
+      { id: 'counts', label: 'Count Master', icon: Gauge },
+      { id: 'incentive-master', label: 'Incentive Master', icon: Coins },
+      { id: 'upload', label: 'Upload Data', icon: FileUp },
+      { id: 'settings', label: 'Settings', icon: Settings },
+    ]
+  }
+];
+
+export const ALL_NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap(s => s.items);
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
@@ -37,65 +93,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const sections: NavSection[] = [
-    {
-      title: 'Daily Operations',
-      items: [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'all-data', label: 'All Data Master Table', icon: Table },
-        { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
-        { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
-        { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
-        { id: 'daily-incentive-machine', label: 'Daily Incentive (Machine)', icon: Grid3X3 },
-      ]
-    },
-    {
-      title: 'Monthly Analytics',
-      items: [
-        { id: 'month-view', label: 'Monthly Incentive Grid', icon: Calendar },
-        { id: 'month-abstract', label: 'Monthly Abstract', icon: BarChart3 },
-        { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },
-        { id: 'sider-monthly-performance', label: 'Sider Monthly Performance', icon: FileText },
-        { id: 'operator-em-format', label: 'Operator EM Format', icon: FileText },
-      ]
-    },
-    {
-      title: 'AI & Maintenance',
-      items: [
-        { id: 'ai-month-view', label: 'AI Monthly Incentive', icon: Calendar },
-        { id: 'ai-month-abstract', label: 'AI Monthly Abstract', icon: BarChart3 },
-        { id: 'ai-monthly-performance', label: 'AI Monthly Performance', icon: FileText },
-        { id: 'fitter-monthly-performance', label: 'Fitter Monthly Performance', icon: Wrench },
-      ]
-    },
-    {
-      title: 'Performance & Awards',
-      items: [
-        { id: 'running-count-incentives', label: 'Incentive Based in GPS', icon: Coins },
-        { id: 'best-shift', label: 'Best Shift', icon: Star },
-        { id: 'best', label: 'Best Sider of the Month', icon: Trophy },
-        { id: 'best-operators-em', label: 'Best 2 Operators EM', icon: Trophy },
-        { id: 'em-outliers-compare', label: 'EM Outliers Compare', icon: AlertTriangle },
-      ]
-    },
-    {
-      title: 'Master Data & System',
-      items: [
-        { id: 'workers', label: 'Employee Master', icon: Users },
-        { id: 'machine-master', label: 'Machine Master', icon: Wrench },
-        { id: 'counts', label: 'Count Master', icon: Gauge },
-        { id: 'incentive-master', label: 'Incentive Master', icon: Coins },
-        { id: 'upload', label: 'Upload Data', icon: FileUp },
-        { id: 'settings', label: 'Settings', icon: Settings },
-      ]
-    }
-  ];
-
-  const activeItemLabel = sections
+  const activeItemLabel = NAV_SECTIONS
     .flatMap(s => s.items)
     .find(item => item.id === activeTab)?.label || activeTab;
 
-  const filteredSections = sections.map(section => ({
+  const filteredSections = NAV_SECTIONS.map(section => ({
     ...section,
     items: section.items.filter(item =>
       item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -130,13 +132,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {!isCollapsed && (
-          <div className="flex flex-col min-w-0 flex-1 overflow-hidden transition-all duration-300">
-            <h1 className="font-serif italic text-xl font-black tracking-tight text-stone-900 leading-none truncate">
-              SCM
-            </h1>
-            <p className="text-[11px] font-bold text-stone-600 mt-0.5 truncate">
-              {activeItemLabel}
-            </p>
+          <div className="flex items-center min-w-0 flex-1 overflow-hidden transition-all duration-300">
+            <img 
+              src="/scm-logo-horizontal.png" 
+              alt="SCM Textile Spinners" 
+              className="h-9 w-auto max-w-[175px] object-contain drop-shadow-2xs" 
+            />
           </div>
         )}
       </div>

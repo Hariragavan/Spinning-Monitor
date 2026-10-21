@@ -276,7 +276,7 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
         <div className="bg-white text-stone-900 rounded-3xl p-8 border border-stone-200 shadow-xs animate-in fade-in duration-300">
           <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-stone-200 pb-6 mb-6 gap-4">
             <div className="flex items-center gap-5">
-              {currentTvWorker.worker.photoUrl ? (
+              {currentTvWorker.worker.photoUrl && !currentTvWorker.worker.photoUrl.includes('picsum.photos') ? (
                 <img 
                   src={currentTvWorker.worker.photoUrl} 
                   alt={currentTvWorker.worker.name} 
@@ -284,8 +284,8 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <div className="w-24 h-24 rounded-2xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700 font-serif italic text-4xl font-black shrink-0 shadow-inner">
-                  {currentTvWorker.worker.name.charAt(0).toUpperCase()}
+                <div className="w-24 h-24 rounded-2xl bg-white border-2 border-stone-200 flex items-center justify-center p-3 shrink-0 shadow-sm">
+                  <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                 </div>
               )}
               <div>
@@ -365,7 +365,7 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
               {/* Profile Card */}
               <div className="lg:col-span-1 bg-white rounded-2xl border border-stone-200/90 p-5 shadow-xs flex flex-col items-center text-center">
-                {activeWorkerData.worker.photoUrl ? (
+                {activeWorkerData.worker.photoUrl && !activeWorkerData.worker.photoUrl.includes('picsum.photos') ? (
                   <img 
                     src={activeWorkerData.worker.photoUrl} 
                     alt={activeWorkerData.worker.name}
@@ -373,8 +373,8 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="w-28 h-28 rounded-2xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700 font-serif italic text-4xl font-black mb-3 shadow-2xs">
-                    {activeWorkerData.worker.name.charAt(0).toUpperCase()}
+                  <div className="w-28 h-28 rounded-2xl bg-white border-2 border-stone-200 flex items-center justify-center p-3 mb-3 shadow-2xs">
+                    <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                   </div>
                 )}
 

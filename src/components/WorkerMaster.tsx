@@ -185,8 +185,18 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     return Array.from(new Set([...standard, ...Array.from(presentCats)]));
   }, [workersInShedScope]);
 
+  // Validates if worker has an authentic photo (not dummy picsum or placeholder)
+  const isWorkerPhotoValid = (url?: string): boolean => {
+    if (!url) return false;
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+    if (trimmed.includes('picsum.photos')) return false;
+    if (trimmed.includes('scm-emblem') || trimmed.includes('scm-worker-placeholder') || trimmed.includes('scm-logo')) return false;
+    return true;
+  };
+
   const totalWithPhoto = useMemo(() => {
-    return workersInShedScope.filter(w => !!(w.photoUrl && w.photoUrl.trim() !== '')).length;
+    return workersInShedScope.filter(w => isWorkerPhotoValid(w.photoUrl)).length;
   }, [workersInShedScope]);
 
   const totalWithoutPhoto = workersInShedScope.length - totalWithPhoto;
@@ -209,7 +219,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
       }
 
       // Photo filter
-      const hasPhoto = !!(w.photoUrl && w.photoUrl.trim() !== '');
+      const hasPhoto = isWorkerPhotoValid(w.photoUrl);
       if (photoFilter === 'has_photo' && !hasPhoto) return false;
       if (photoFilter === 'no_photo' && hasPhoto) return false;
 
@@ -372,14 +382,18 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
         const text = await file.text();
         const parsed = JSON.parse(text);
         if (Array.isArray(parsed)) {
-          importedWorkers = parsed.map((item, idx) => ({
-            id: item.id || `imp-${idx}-${Date.now()}`,
-            name: String(item.name || '').trim().toUpperCase(),
-            tNo: String(item.tNo || item.ticketNo || '').trim().toUpperCase(),
-            department: item.department || 'Sider',
-            shed: item.shed || currentShed || 'Shed 1',
-            photoUrl: item.photoUrl || ''
-          })).filter(w => w.name && w.tNo);
+          importedWorkers = parsed.map((item, idx) => {
+            const rawPhoto = String(item.photoUrl || '').trim();
+            const cleanPhoto = rawPhoto.includes('picsum.photos') ? '' : rawPhoto;
+            return {
+              id: item.id || `imp-${idx}-${Date.now()}`,
+              name: String(item.name || '').trim().toUpperCase(),
+              tNo: String(item.tNo || item.ticketNo || '').trim().toUpperCase(),
+              department: item.department || 'Sider',
+              shed: item.shed || currentShed || 'Shed 1',
+              photoUrl: cleanPhoto
+            };
+          }).filter(w => w.name && w.tNo);
         }
       } else {
         const data = await file.arrayBuffer();
@@ -392,6 +406,8 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
           const rawTNo = row.TicketNo || row.tNo || row.t_no || row.ticket || row['t.no'] || row.TNo;
           const rawDept = row.Department || row.department || row.dept || row.DEPT || 'Sider';
           const rawShed = row.Shed || row.shed || currentShed || 'Shed 1';
+          const rawPhoto = String(row.PhotoUrl || row.photoUrl || row.Photo || '').trim();
+          const cleanPhoto = rawPhoto.includes('picsum.photos') ? '' : rawPhoto;
 
           return {
             id: `imp-${idx}-${Date.now()}`,
@@ -399,7 +415,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
             tNo: String(rawTNo || '').trim().toUpperCase(),
             department: String(rawDept || 'Sider').trim(),
             shed: String(rawShed).trim(),
-            photoUrl: row.PhotoUrl || row.photoUrl || ''
+            photoUrl: cleanPhoto
           };
         }).filter(w => w.name && w.tNo);
       }
@@ -843,9 +859,12 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-100 flex flex-col items-center justify-center text-emerald-800">
-                          <span className="text-xl font-black">{worker.name.charAt(0).toUpperCase()}</span>
-                          <span className="text-[8px] font-black uppercase text-emerald-700 mt-0.5">Photo</span>
+                        <div className="w-full h-full bg-white flex items-center justify-center p-2.5">
+                          <img 
+                            src="/scm-emblem.png" 
+                            alt="Pending Photo" 
+                            className="w-full h-full object-contain" 
+                          />
                         </div>
                       )}
                       <div className="absolute inset-0 bg-stone-900/60 text-white opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition-opacity">
@@ -955,7 +974,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
               <tbody className="divide-y divide-stone-100 text-xs font-bold text-stone-800">
                 {filteredWorkers.map((worker) => {
                   const isSelected = selectedIds.includes(worker.id);
-                  const hasPhoto = !!(worker.photoUrl && worker.photoUrl.trim() !== '');
+                  const hasPhoto = isWorkerPhotoValid(worker.photoUrl);
 
                   return (
                     <tr 
@@ -976,13 +995,13 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                       <td className="px-3 py-2">
                         <div 
                           onClick={() => handleTriggerCardPhoto(worker.id)}
-                          className="w-10 h-10 rounded-xl border border-stone-200 bg-stone-100 overflow-hidden shrink-0 cursor-pointer hover:border-emerald-500 transition-colors flex items-center justify-center"
-                          title="Click to change photo"
+                          className="w-10 h-10 rounded-xl border border-stone-200 bg-white overflow-hidden shrink-0 cursor-pointer hover:border-emerald-500 transition-colors flex items-center justify-center p-1"
+                          title={hasPhoto ? "Click to change photo" : "Click to upload photo"}
                         >
                           {hasPhoto ? (
                             <img src={worker.photoUrl} alt={worker.name} className="w-full h-full object-cover" />
                           ) : (
-                            <span className="text-xs font-black text-stone-400">{worker.name.charAt(0).toUpperCase()}</span>
+                            <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                           )}
                         </div>
                       </td>
@@ -1105,12 +1124,11 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
               {/* PHOTO UPLOAD BLOCK */}
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 flex items-center gap-4">
                 <div className="w-20 h-20 rounded-2xl border-2 border-stone-200 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs relative">
-                  {formPhotoUrl ? (
+                  {formPhotoUrl && isWorkerPhotoValid(formPhotoUrl) ? (
                     <img src={formPhotoUrl} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="flex flex-col items-center justify-center text-stone-300">
-                      <Camera size={24} />
-                      <span className="text-[8px] font-black uppercase text-stone-400 mt-1">NO PHOTO</span>
+                    <div className="w-full h-full bg-white flex items-center justify-center p-3">
+                      <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                     </div>
                   )}
                 </div>

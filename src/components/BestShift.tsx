@@ -393,7 +393,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
 
                   {/* Center Column: Photo */}
                   <div className="w-24 md:w-32 bg-stone-50 border-r border-stone-200 flex items-center justify-center shrink-0 relative overflow-hidden">
-                    {data.workerPhoto ? (
+                    {data.workerPhoto && !data.workerPhoto.includes('picsum.photos') ? (
                       <div className="w-full h-full relative">
                         <img 
                           src={data.workerPhoto} 
@@ -406,9 +406,9 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
                         </div>
                       </div>
                     ) : (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center">
-                        <div className="w-10 h-10 rounded-full bg-stone-200/80 border border-stone-300 flex items-center justify-center text-stone-500 mb-1">
-                          <Star className="text-amber-500/80" size={16} fill="currentColor" />
+                      <div className="absolute inset-0 bg-white flex flex-col items-center justify-center p-2 text-center">
+                        <div className="w-10 h-10 rounded-full bg-white border border-stone-200 flex items-center justify-center p-1.5 mb-1">
+                          <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                         </div>
                         <span className="text-[10px] text-stone-700 font-extrabold truncate max-w-full uppercase leading-none">
                           {data.assigned ? data.workerName : 'VACANT'}
@@ -472,10 +472,12 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
                       {aiLinkconers.map((w, index) => (
                         <div key={`ai-tv-${index}`} className="flex items-center gap-5 bg-stone-100/55 p-4 rounded-3xl border border-stone-200">
                           <div className="w-44 md:w-56 h-56 md:h-72 rounded-[2rem] bg-purple-100 border border-purple-200 flex items-center justify-center overflow-hidden shrink-0 shadow-md">
-                            {w.photoUrl ? (
+                            {w.photoUrl && !w.photoUrl.includes('picsum.photos') ? (
                               <img src={w.photoUrl} alt={w.name} className="w-full h-full object-cover scale-105" referrerPolicy="no-referrer" />
                             ) : (
-                              <Star className="text-purple-600" size={72} fill="currentColor" />
+                              <div className="w-full h-full bg-white flex items-center justify-center p-6">
+                                <img src="/scm-emblem.png" alt={w.name} className="w-full h-full object-contain" />
+                              </div>
                             )}
                           </div>
                           <div className="min-w-0 flex-1 py-2">
@@ -624,7 +626,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
                 </div>
 
                 <div className="w-28 md:w-44 bg-yellow-300 border-r-2 border-stone-950 flex items-center justify-center shrink-0 relative overflow-hidden group">
-                  {data.workerPhoto ? (
+                  {data.workerPhoto && !data.workerPhoto.includes('picsum.photos') ? (
                     <img 
                       src={data.workerPhoto} 
                       alt={data.workerName || 'Worker'} 
@@ -632,9 +634,9 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    <div className="absolute inset-0 bg-yellow-300 flex flex-col items-center justify-center p-2 text-center select-none font-black font-sans">
-                      <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-2 border-stone-950/20 flex items-center justify-center text-stone-950/30 mb-1">
-                        <Star className="text-yellow-600/60" size={18} fill="currentColor" />
+                    <div className="absolute inset-0 bg-white flex flex-col items-center justify-center p-2 text-center select-none font-black font-sans">
+                      <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border border-stone-200 bg-white flex items-center justify-center p-2 mb-1">
+                        <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                       </div>
                       <span className="text-[10px] md:text-sm text-stone-950 leading-none truncate max-w-full uppercase tracking-tighter">
                         {data.assigned ? data.workerName : 'Photo'}
@@ -701,10 +703,12 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
                   {aiLinkconers.map((w, i) => (
                     <div key={`ai-list-${i}`} className="flex items-center gap-5 bg-stone-50 border border-stone-200 p-4 rounded-3xl">
                       <div className="h-22 w-22 rounded-2xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0 overflow-hidden border border-purple-200 shadow-sm">
-                        {w.photoUrl ? (
+                        {w.photoUrl && !w.photoUrl.includes('picsum.photos') ? (
                           <img src={w.photoUrl} alt={w.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
-                          <Star size={32} fill="currentColor" />
+                          <div className="w-full h-full bg-white flex items-center justify-center p-2">
+                            <img src="/scm-emblem.png" alt={w.name} className="w-full h-full object-contain" />
+                          </div>
                         )}
                       </div>
                       <div className="min-w-0 flex-1">

@@ -291,7 +291,7 @@ export const BestOperatorsEm: React.FC<BestOperatorsEmProps> = ({
                       isTvMode ? "w-48 h-48" : "w-28 h-28",
                       ringColor
                     )}>
-                      {operator.photoUrl ? (
+                      {operator.photoUrl && !operator.photoUrl.includes('picsum.photos') ? (
                         <img 
                           src={operator.photoUrl} 
                           alt={operator.name} 
@@ -299,9 +299,13 @@ export const BestOperatorsEm: React.FC<BestOperatorsEmProps> = ({
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <span className={cn("font-black text-stone-400", isTvMode ? "text-6xl" : "text-3xl")}>
-                          {operator.name.substring(0, 2).toUpperCase()}
-                        </span>
+                        <div className="w-full h-full bg-white flex items-center justify-center p-4">
+                          <img 
+                            src="/scm-emblem.png" 
+                            alt={operator.name} 
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
                       )}
                     </div>
                     {/* Absolute Rank Badge */}

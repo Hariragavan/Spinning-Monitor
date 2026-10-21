@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Play, Pause, ChevronLeft, ChevronRight, Maximize, Minimize, 
   X, Activity, Trophy, BarChart3, Table, TrendingUp, Grid3X3, 
   Calendar, Clock, Check, Users, Gauge, Layers, Star, Zap,
   Award, ArrowUpRight, Sparkles, Medal, UserCheck, Coins, FileText, Target,
-  Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown
+  Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown, Scan
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed } from '../types';
 import { cn, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
@@ -338,6 +339,41 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shedDropdownRef = useRef<HTMLDivElement | null>(null);
 
+  // Auto Align state: dynamically scans display resolution and scales content to fit TV without scrolling
+  const [isAutoAlign, setIsAutoAlign] = useState(true);
+  const [alignScale, setAlignScale] = useState(1);
+  const [alignToast, setAlignToast] = useState<string | null>(null);
+  const mainStageRef = useRef<HTMLElement | null>(null);
+  const contentWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const scanAndAutoAlign = useCallback(() => {
+    if (!isAutoAlign) {
+      setAlignScale(1);
+      return;
+    }
+    if (!mainStageRef.current || !contentWrapperRef.current) return;
+
+    // Available viewport space inside stage
+    const availWidth = mainStageRef.current.clientWidth - 28;
+    const availHeight = mainStageRef.current.clientHeight - 28;
+
+    const naturalHeight = contentWrapperRef.current.scrollHeight;
+    const naturalWidth = contentWrapperRef.current.scrollWidth;
+
+    if (availHeight > 0 && naturalHeight > 0 && availWidth > 0) {
+      const scaleH = availHeight / naturalHeight;
+      const scaleW = availWidth / naturalWidth;
+      const fitScale = Math.min(scaleH, scaleW);
+
+      if (fitScale < 0.98) {
+        const boundedScale = Math.max(0.55, Math.min(1, Number(fitScale.toFixed(2))));
+        setAlignScale(boundedScale);
+      } else {
+        setAlignScale(1);
+      }
+    }
+  }, [isAutoAlign]);
+
   // Click-outside listener for shed selection dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -445,6 +481,36 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     }
     setSubPagesCount(1);
   }, [safeSubIndex, mainIndex, availableMainPages]);
+
+  // Trigger scan when active page/sub-page changes or on window resize
+  useEffect(() => {
+    if (!isAutoAlign) return;
+    const timer = setTimeout(() => {
+      scanAndAutoAlign();
+    }, 70);
+    return () => clearTimeout(timer);
+  }, [mainIndex, subIndex, safeSubIndex, isAutoAlign, scanAndAutoAlign]);
+
+  useEffect(() => {
+    window.addEventListener('resize', scanAndAutoAlign);
+    return () => window.removeEventListener('resize', scanAndAutoAlign);
+  }, [scanAndAutoAlign]);
+
+  const toggleAutoAlign = () => {
+    if (isAutoAlign) {
+      setIsAutoAlign(false);
+      setAlignScale(1);
+      setAlignToast('Auto Align: Disabled (100% Native)');
+      setTimeout(() => setAlignToast(null), 2500);
+    } else {
+      setIsAutoAlign(true);
+      setTimeout(() => {
+        scanAndAutoAlign();
+        setAlignToast('Auto Align: Enabled (Fit to Screen)');
+        setTimeout(() => setAlignToast(null), 2500);
+      }, 50);
+    }
+  };
 
   // 7. Auto-Rotation Timer
   useEffect(() => {
@@ -781,21 +847,25 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       {/* 1. TOP BROADCAST HEADER (White Theme, High-Visibility for TV Displays) */}
       <header className="h-16 md:h-18 bg-white border-b border-stone-200/90 px-6 flex items-center justify-between shrink-0 shadow-2xs relative z-40">
         
-        {/* Left: Mill Branding + Live Dot + Click Shed Selection Button */}
-        <div className="flex items-center gap-5 min-w-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-2xs">
-              <currentMain.icon size={22} />
+        {/* Left: Mill Branding with SCM Logo + Live Dot + Shed Selector */}
+        <div className="flex items-center gap-4 sm:gap-5 min-w-0">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="h-10 md:h-11 flex items-center shrink-0">
+              <img 
+                src="/scm-logo-horizontal.png" 
+                alt="SCM Textile Spinners" 
+                className="h-9 md:h-10 w-auto object-contain drop-shadow-2xs" 
+              />
             </div>
-            <div>
-              <div className="flex items-center gap-2 leading-none">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-700">SpinMonitor AI</span>
+            <div className="hidden lg:block h-6 w-px bg-stone-200" />
+            <div className="hidden md:block">
+              <div className="flex items-center gap-1.5 leading-none">
                 <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-[10px] font-black uppercase text-emerald-800 tracking-wider">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
                   Live TV
                 </span>
               </div>
-              <h2 className="text-base md:text-lg font-black tracking-tight text-stone-900 uppercase truncate mt-0.5 leading-tight">
+              <h2 className="text-xs sm:text-sm font-black tracking-tight text-stone-900 uppercase truncate mt-0.5 leading-tight">
                 {currentMain.title}
               </h2>
             </div>
@@ -846,35 +916,24 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             )}
           </div>
 
-          {/* Static Report Date Indicator (Date selection removed as requested) */}
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm font-black uppercase tracking-wider shadow-2xs">
+          {/* Static Report Date Indicator */}
+          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm font-black uppercase tracking-wider shadow-2xs">
             <Calendar size={15} className="text-emerald-600" />
             <span>{safeDailyReport.date}</span>
-            {safeDailyReport.date === getTodayUniversalDate() ? (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 hidden sm:inline-block">
-                Current Date
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-800 hidden sm:inline-block">
-                Selected Date
-              </span>
-            )}
           </div>
         </div>
 
-        {/* Center: Main Chapter & Sub-Page Badge */}
+        {/* Center: PAGE Number (Without page name next to it) */}
         <div className="flex items-center gap-3 px-3 truncate min-w-0">
-          <span className="text-xs md:text-sm font-black uppercase tracking-wider text-stone-500">
-            Chapter {currentMain.chapterNumber} of {availableMainPages.length}
-          </span>
-          <span className="text-stone-300">•</span>
-          <span className="text-sm md:text-base font-black uppercase tracking-tight text-emerald-700 truncate">
-            {currentSub.title}
-          </span>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 shadow-2xs">
+            <span className="text-xs md:text-sm font-black uppercase tracking-widest text-emerald-700">
+              PAGE {currentMain.chapterNumber} OF {availableMainPages.length}
+            </span>
+          </div>
 
           {/* Sub-page stepper pills if Chapter has multiple subpages */}
           {currentMain.subPages.length > 1 && (
-            <div className="hidden md:flex items-center gap-2 ml-2">
+            <div className="hidden md:flex items-center gap-1.5 ml-1">
               {currentMain.subPages.map((sp, idx) => (
                 <button
                   key={sp.id}
@@ -883,29 +942,51 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     setSubPagesCount(1);
                   }}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
                     idx === safeSubIndex
                       ? "bg-emerald-600 text-white shadow-2xs"
                       : "bg-stone-100 text-stone-600 hover:text-stone-900"
                   )}
+                  title={`Part ${idx + 1}`}
                 >
                   <span className={cn("w-1.5 h-1.5 rounded-full", idx === safeSubIndex ? "bg-white" : "bg-stone-400")} />
-                  <span>{sp.shortTitle}</span>
+                  <span>Part {idx + 1}</span>
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Right: Countdown Timer, Clock & Date */}
-        <div className="flex items-center gap-5 shrink-0">
+        {/* Right: Auto Align Button, Countdown Timer, Clock */}
+        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+          {/* Auto Align Button */}
+          <button
+            type="button"
+            onClick={toggleAutoAlign}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs border",
+              isAutoAlign
+                ? "bg-emerald-600 text-white border-emerald-700 shadow-emerald-600/20"
+                : "bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200"
+            )}
+            title="Scan screen size and auto-fit all content without scrollbars"
+          >
+            <Scan size={14} className={isAutoAlign ? "animate-pulse" : ""} />
+            <span className="hidden sm:inline">Auto Align</span>
+            {isAutoAlign && alignScale < 1 && (
+              <span className="px-1.5 py-0.5 rounded bg-emerald-700 text-[10px] font-mono font-bold">
+                {Math.round(alignScale * 100)}%
+              </span>
+            )}
+          </button>
+
           {/* Subpage Countdown Badge */}
-          <div className="flex items-center gap-3 bg-stone-50 px-3.5 py-1.5 rounded-2xl border border-stone-200">
+          <div className="flex items-center gap-2.5 bg-stone-50 px-3 py-1.5 rounded-2xl border border-stone-200">
             <div className="text-right">
-              <div className="text-[10px] font-black uppercase tracking-widest text-stone-400 leading-tight">Next Page</div>
-              <div className="text-base md:text-lg font-black text-emerald-700 tabular-nums leading-tight">{timeRemaining}s</div>
+              <div className="text-[9.5px] font-black uppercase tracking-widest text-stone-400 leading-tight">Next</div>
+              <div className="text-sm md:text-base font-black text-emerald-700 tabular-nums leading-tight">{timeRemaining}s</div>
             </div>
-            <div className="relative w-7 h-7 flex items-center justify-center">
+            <div className="relative w-6 h-6 flex items-center justify-center">
               <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="14" fill="none" className="stroke-stone-200" strokeWidth="3" />
                 <circle
@@ -922,8 +1003,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
           {/* Live Digital Clock */}
           <div className="text-right hidden sm:block">
-            <div className="text-base md:text-xl font-black text-stone-900 tabular-nums tracking-tight leading-tight">{currentTime}</div>
-            <div className="text-xs font-bold text-stone-500 uppercase tracking-wider leading-tight">{currentDateStr}</div>
+            <div className="text-sm md:text-base font-black text-stone-900 tabular-nums tracking-tight leading-tight">{currentTime}</div>
+            <div className="text-[10px] font-bold text-stone-500 uppercase tracking-wider leading-tight">{currentDateStr}</div>
           </div>
         </div>
       </header>
@@ -937,10 +1018,36 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       </div>
 
       {/* 3. MAIN TV STAGE (Renders Active View Component) */}
-      <main className="flex-1 overflow-y-auto bg-stone-100 text-stone-900 relative">
-        <div className="w-full h-full p-3 md:p-5 lg:p-6">
-          {(() => {
-            switch (currentSub.id) {
+      <main ref={mainStageRef} className="flex-1 overflow-y-auto bg-stone-100 text-stone-900 relative">
+        {/* Auto Align Toast Notification */}
+        {alignToast && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-stone-900/95 backdrop-blur-md text-white text-xs font-black uppercase tracking-wider rounded-2xl shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-3 border border-stone-700">
+            <Scan size={14} className="text-emerald-400 animate-pulse" />
+            <span>{alignToast}</span>
+          </div>
+        )}
+
+        <div 
+          ref={contentWrapperRef}
+          className="w-full h-full p-3 md:p-5 lg:p-6 transition-all duration-300 ease-out origin-top"
+          style={isAutoAlign && alignScale < 1 ? {
+            transform: `scale(${alignScale})`,
+            transformOrigin: 'top center',
+            width: `${(100 / alignScale)}%`,
+            marginBottom: `${(alignScale - 1) * 60}%`
+          } : undefined}
+        >
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${currentMain.id}-${currentSub.id}-${safeSubIndex}`}
+              initial={{ opacity: 0, y: 12, scale: 0.992 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.992 }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="w-full"
+            >
+              {(() => {
+                switch (currentSub.id) {
               case 'dashboard':
                 return (
                   <div className="space-y-5">
@@ -1695,6 +1802,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 );
             }
           })()}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </main>
 

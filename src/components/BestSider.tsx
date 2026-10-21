@@ -279,7 +279,7 @@ export const BestSider: React.FC<BestSiderProps> = ({
                     isTvMode ? "w-52 h-52 xl:w-56 xl:h-56 border-8 shadow-2xl" : "w-28 h-28 border-4 shadow-md",
                     idx === 0 ? "ring-8 ring-amber-400/40" : idx === 1 ? "ring-8 ring-slate-400/40" : idx === 2 ? "ring-8 ring-orange-400/40" : ""
                   )}>
-                    {performer.photoUrl ? (
+                    {performer.photoUrl && !performer.photoUrl.includes('picsum.photos') ? (
                       <img
                         src={performer.photoUrl}
                         alt={performer.name}
@@ -287,10 +287,12 @@ export const BestSider: React.FC<BestSiderProps> = ({
                         referrerPolicy="no-referrer"
                       />
                     ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-stone-200 to-stone-300 flex flex-col items-center justify-center text-stone-500 font-black">
-                        <span className={cn("tracking-tighter uppercase", isTvMode ? "text-5xl" : "text-3xl")}>
-                          {performer.name.substring(0, 2)}
-                        </span>
+                      <div className="w-full h-full bg-white flex items-center justify-center p-4">
+                        <img 
+                          src="/scm-emblem.png" 
+                          alt={performer.name} 
+                          className="w-full h-full object-contain" 
+                        />
                       </div>
                     )}
                   </div>

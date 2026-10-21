@@ -469,7 +469,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                   {/* Top Stats Profile */}
                   <div className="flex items-center justify-between border-b pb-4 mb-4 border-stone-200 bg-[#eefcf3] p-4 rounded-3xl">
                     <div className="flex items-center gap-6">
-                      {currentPair.sider1.worker.photoUrl ? (
+                      {currentPair.sider1.worker.photoUrl && !currentPair.sider1.worker.photoUrl.includes('picsum.photos') ? (
                         <img 
                           src={currentPair.sider1.worker.photoUrl} 
                           alt={currentPair.sider1.worker.name}
@@ -477,8 +477,8 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-48 h-48 rounded-[2.5rem] bg-emerald-100 border border-emerald-250 flex items-center justify-center text-emerald-800 font-black text-5xl shrink-0 shadow-inner">
-                          {currentPair.sider1.worker.name.charAt(0).toUpperCase()}
+                        <div className="w-48 h-48 rounded-[2.5rem] bg-white border border-emerald-250 flex items-center justify-center p-6 shrink-0 shadow-inner">
+                          <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                         </div>
                       )}
                       <div>
@@ -571,7 +571,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                   {/* Top Stats Profile */}
                   <div className="flex items-center justify-between border-b pb-4 mb-4 border-stone-200 bg-[#eefcf3] p-4 rounded-3xl">
                     <div className="flex items-center gap-6">
-                      {currentPair.sider2.worker.photoUrl ? (
+                      {currentPair.sider2.worker.photoUrl && !currentPair.sider2.worker.photoUrl.includes('picsum.photos') ? (
                         <img 
                           src={currentPair.sider2.worker.photoUrl} 
                           alt={currentPair.sider2.worker.name}
@@ -579,8 +579,8 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-48 h-48 rounded-[2.5rem] bg-emerald-100 border border-emerald-250 flex items-center justify-center text-emerald-800 font-black text-5xl shrink-0 shadow-inner">
-                          {currentPair.sider2.worker.name.charAt(0).toUpperCase()}
+                        <div className="w-48 h-48 rounded-[2.5rem] bg-white border border-emerald-250 flex items-center justify-center p-6 shrink-0 shadow-inner">
+                          <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                         </div>
                       )}
                       <div>
@@ -708,7 +708,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
               <div className="lg:col-span-1 bg-white rounded-[2.5rem] border border-stone-200 p-8 shadow-sm flex flex-col items-center text-center relative overflow-hidden">
                 <div className="absolute top-0 left-0 right-0 h-2 bg-emerald-700" />
                 
-                {activeWorkerData.worker.photoUrl ? (
+                {activeWorkerData.worker.photoUrl && !activeWorkerData.worker.photoUrl.includes('picsum.photos') ? (
                   <img 
                     src={activeWorkerData.worker.photoUrl} 
                     alt={activeWorkerData.worker.name}
@@ -716,8 +716,8 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="w-44 h-44 rounded-[2.5rem] bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-800 font-serif italic text-6xl font-black mb-6 shadow-md">
-                    {activeWorkerData.worker.name.charAt(0).toUpperCase()}
+                  <div className="w-44 h-44 rounded-[2.5rem] bg-white border border-emerald-200 flex items-center justify-center p-6 mb-6 shadow-md">
+                    <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain" />
                   </div>
                 )}
 

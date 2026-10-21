@@ -27,7 +27,7 @@ import { FitterMonthlyPerformance } from '@/components/FitterMonthlyPerformance'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OperatorEmFormat } from '@/components/OperatorEmFormat';
 import { PerformanceChart } from '@/components/PerformanceChart';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, ALL_NAV_ITEMS } from '@/components/Sidebar';
 import { MasterDataTable } from '@/components/MasterDataTable';
 import { TvDashboard, TV_MAIN_PAGES } from '@/components/TvDashboard';
 
@@ -2966,18 +2966,23 @@ export default function Home() {
           {/* Top Utility Header Bar */}
           {!isTvMode && !isSupervisorMode && (
             <header className="bg-white border-b border-stone-200/80 px-4 h-14 flex items-center justify-between no-print shadow-xs z-30 shrink-0 gap-3">
-              {/* Left Section: SCM & Tab name when sidebar is closed (hidden when sidebar is open) */}
+              {/* Left Section: Active Page Name (Outside the menu section) */}
               <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                {isSidebarCollapsed && (
-                  <div className="flex flex-col min-w-0 transition-all duration-300">
-                    <span className="font-serif italic text-lg font-black tracking-tight text-stone-900 leading-none">
-                      SCM
-                    </span>
-                    <span className="text-[11px] font-bold text-stone-700 mt-0.5 truncate">
-                      {navItems.find(item => item.id === activeTab)?.label || activeTab}
-                    </span>
-                  </div>
-                )}
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-700 shadow-2xs shrink-0">
+                  {(() => {
+                    const currentNav = ALL_NAV_ITEMS.find(item => item.id === activeTab);
+                    const NavIcon = currentNav?.icon || LayoutDashboard;
+                    return <NavIcon size={16} />;
+                  })()}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[9.5px] font-black uppercase tracking-widest text-stone-400 leading-none">
+                    Page
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-stone-900 tracking-tight leading-tight truncate mt-0.5 max-w-[140px] sm:max-w-[200px]">
+                    {ALL_NAV_ITEMS.find(item => item.id === activeTab)?.label || activeTab}
+                  </span>
+                </div>
               </div>
 
               {/* Center Section: Horizontal Slide Bar for Shed 1, Shed 2, Shed 3, KTTM */}

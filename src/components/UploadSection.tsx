@@ -890,10 +890,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 <td className="py-2 px-4 text-stone-400 font-mono">{idx + 1}</td>
                 <td className="py-2 px-4">
                   <div className="w-7 h-7 rounded-full bg-stone-100 border border-stone-200 overflow-hidden flex items-center justify-center">
-                    {w.photoUrl ? (
+                    {w.photoUrl && !w.photoUrl.includes('picsum.photos') ? (
                       <img src={w.photoUrl} alt={w.name} className="w-full h-full object-cover" />
                     ) : (
-                      <Users size={12} className="text-stone-400" />
+                      <img src="/scm-emblem.png" alt="Pending" className="w-full h-full object-contain p-0.5 bg-white" />
                     )}
                   </div>
                 </td>
