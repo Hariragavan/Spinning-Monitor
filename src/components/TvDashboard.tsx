@@ -339,8 +339,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shedDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto Align state: dynamically scans display resolution and scales content to fit TV without scrolling
-  const [isAutoAlign, setIsAutoAlign] = useState(true);
+  // Auto Align state: dynamically scans display resolution and scales content to fit TV without scrolling (OFF by default)
+  const [isAutoAlign, setIsAutoAlign] = useState(false);
   const [alignScale, setAlignScale] = useState(1);
   const [alignToast, setAlignToast] = useState<string | null>(null);
   const mainStageRef = useRef<HTMLElement | null>(null);
@@ -532,6 +532,71 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
     return () => clearInterval(interval);
   }, [isPaused, goToNext, currentSubDuration]);
+
+  // 7.5. Smooth TV Auto-Scroll for Content Exceeding Page Height (Tables, Ledger, Cards)
+  useEffect(() => {
+    const stage = mainStageRef.current;
+    if (!stage) return;
+
+    // Instantly reset to top on page or view transition
+    stage.scrollTop = 0;
+
+    let animId: number;
+    let elapsedMs = 0;
+    let lastTime = performance.now();
+    let userInteractedUntil = 0;
+
+    const onUserScroll = () => {
+      userInteractedUntil = performance.now() + 3500;
+    };
+
+    stage.addEventListener('wheel', onUserScroll, { passive: true });
+    stage.addEventListener('touchmove', onUserScroll, { passive: true });
+
+    // Allow slight buffer for initial DOM mount and layout reflow
+    const initTimer = setTimeout(() => {
+      const scrollStep = () => {
+        const now = performance.now();
+        const delta = now - lastTime;
+        lastTime = now;
+
+        if (!isPaused) {
+          elapsedMs += delta;
+        }
+
+        const maxScroll = stage.scrollHeight - stage.clientHeight;
+        const totalMs = currentSubDuration * 1000;
+
+        // If content height exceeds viewport height and user isn't manually scrolling
+        if (maxScroll > 15 && now > userInteractedUntil) {
+          // Pause at top for 2.2s (or 15% of duration), pause at bottom for 2.0s
+          const topPause = Math.min(2200, totalMs * 0.15);
+          const bottomPause = Math.min(2000, totalMs * 0.15);
+          const scrollWindow = Math.max(1000, totalMs - topPause - bottomPause);
+
+          if (elapsedMs <= topPause) {
+            stage.scrollTop = 0;
+          } else if (elapsedMs >= totalMs - bottomPause) {
+            stage.scrollTop = maxScroll;
+          } else {
+            const progress = (elapsedMs - topPause) / scrollWindow;
+            stage.scrollTop = Math.round(progress * maxScroll);
+          }
+        }
+
+        animId = requestAnimationFrame(scrollStep);
+      };
+
+      animId = requestAnimationFrame(scrollStep);
+    }, 120);
+
+    return () => {
+      clearTimeout(initTimer);
+      cancelAnimationFrame(animId);
+      stage.removeEventListener('wheel', onUserScroll);
+      stage.removeEventListener('touchmove', onUserScroll);
+    };
+  }, [mainIndex, subIndex, safeSubIndex, currentSub?.id, currentSubDuration, isPaused, selectedShed]);
 
   // 8. Auto-Hide Floating Controls on Mouse Inactivity
   const handleUserActivity = useCallback(() => {
@@ -851,17 +916,22 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       {/* 1. TOP BROADCAST HEADER (White Theme, High-Visibility for TV Displays) */}
       <header className="h-16 md:h-18 bg-white border-b border-stone-200/90 px-6 flex items-center justify-between shrink-0 shadow-2xs relative z-40">
         
-        {/* Left: Mill Branding with SCM Emblem Logo + Live Dot + Shed Selector */}
+        {/* Left: Mill Branding with SCM Emblem Logo + Red SCM Brand Text + Live Dot + Shed Selector */}
         <div className="flex items-center gap-4 sm:gap-5 min-w-0">
           <div className="flex items-center gap-3 shrink-0">
-            <div className="h-11 md:h-12 w-11 md:w-12 rounded-2xl bg-white border border-stone-200/90 shadow-2xs p-1 flex items-center justify-center shrink-0">
-              <img 
-                src="/scm-emblem.png" 
-                alt="SCM Logo" 
-                className="w-full h-full object-contain drop-shadow-2xs" 
-              />
+            <div className="flex flex-col items-center justify-center shrink-0">
+              <div className="h-9 md:h-10 w-9 md:w-10 rounded-xl bg-white border border-stone-200/90 shadow-2xs p-0.5 flex items-center justify-center">
+                <img 
+                  src="/scm-emblem.png" 
+                  alt="SCM Logo" 
+                  className="w-full h-full object-contain drop-shadow-2xs" 
+                />
+              </div>
+              <span className="text-[10px] md:text-[11.5px] font-black italic font-serif text-red-600 tracking-wider leading-none mt-1 select-none drop-shadow-2xs">
+                SCM
+              </span>
             </div>
-            <div className="hidden lg:block h-6 w-px bg-stone-200" />
+            <div className="hidden lg:block h-7 w-px bg-stone-200" />
             <div className="hidden md:block">
               <div className="flex items-center gap-1.5 leading-none">
                 <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 text-[10px] font-black uppercase text-emerald-800 tracking-wider">

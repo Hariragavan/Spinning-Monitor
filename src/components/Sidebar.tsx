@@ -136,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img 
               src="/scm-logo-horizontal.png" 
               alt="SCM Textile Spinners" 
-              className="h-11 w-auto max-w-[195px] object-contain drop-shadow-2xs" 
+              className="h-10.5 w-auto max-w-[195px] object-contain drop-shadow-2xs" 
             />
           </div>
         )}
