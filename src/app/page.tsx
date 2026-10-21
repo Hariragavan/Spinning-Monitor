@@ -2967,19 +2967,22 @@ export default function Home() {
           {!isTvMode && !isSupervisorMode && (
             <header className="bg-white border-b border-stone-200/80 px-4 h-14 flex items-center justify-between no-print shadow-xs z-30 shrink-0 gap-3">
               {/* Left Section: Active Page Name (Outside the menu section) */}
-              <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-700 shadow-2xs shrink-0">
-                  {(() => {
-                    const currentNav = ALL_NAV_ITEMS.find(item => item.id === activeTab);
-                    const NavIcon = currentNav?.icon || LayoutDashboard;
-                    return <NavIcon size={16} />;
-                  })()}
-                </div>
+              <div className="flex items-center gap-3 min-w-0 shrink-0">
+                {isSidebarCollapsed && (
+                  <>
+                    <img 
+                      src="/scm-logo-horizontal.png" 
+                      alt="SCM Textile Spinners" 
+                      className="h-10 w-auto max-w-[185px] object-contain drop-shadow-2xs shrink-0" 
+                    />
+                    <div className="h-6 w-px bg-stone-200 shrink-0" />
+                  </>
+                )}
                 <div className="flex flex-col min-w-0">
                   <span className="text-[9.5px] font-black uppercase tracking-widest text-stone-400 leading-none">
                     Page
                   </span>
-                  <span className="text-xs sm:text-sm font-black text-stone-900 tracking-tight leading-tight truncate mt-0.5 max-w-[140px] sm:max-w-[200px]">
+                  <span className="text-xs sm:text-sm font-black text-stone-900 tracking-tight leading-tight truncate mt-0.5 max-w-[150px] sm:max-w-[220px]">
                     {ALL_NAV_ITEMS.find(item => item.id === activeTab)?.label || activeTab}
                   </span>
                 </div>

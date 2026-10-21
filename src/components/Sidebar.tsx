@@ -115,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Brand Header */}
       <div className={cn(
         "h-14 border-b border-stone-200/80 bg-white shrink-0 flex items-center transition-all duration-300",
-        isCollapsed ? "justify-center px-1.5" : "px-3.5 gap-2.5"
+        isCollapsed ? "justify-center px-1.5" : "px-3 gap-2"
       )}>
         {onToggleCollapse && (
           <button
@@ -136,7 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img 
               src="/scm-logo-horizontal.png" 
               alt="SCM Textile Spinners" 
-              className="h-9 w-auto max-w-[175px] object-contain drop-shadow-2xs" 
+              className="h-11 w-auto max-w-[195px] object-contain drop-shadow-2xs" 
             />
           </div>
         )}

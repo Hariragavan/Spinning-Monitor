@@ -351,28 +351,32 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       setAlignScale(1);
       return;
     }
-    if (!mainStageRef.current || !contentWrapperRef.current) return;
+    const stage = mainStageRef.current;
+    const content = contentWrapperRef.current;
+    if (!stage || !content) return;
 
-    // Available viewport space inside stage
-    const availWidth = mainStageRef.current.clientWidth - 28;
-    const availHeight = mainStageRef.current.clientHeight - 28;
+    // Available viewport space inside stage (with safety buffer)
+    const availWidth = stage.clientWidth - 24;
+    const availHeight = stage.clientHeight - 24;
 
-    const naturalHeight = contentWrapperRef.current.scrollHeight;
-    const naturalWidth = contentWrapperRef.current.scrollWidth;
+    // True unscaled height & width
+    const curScale = alignScale > 0 ? alignScale : 1;
+    const unscaledH = curScale < 1 ? content.scrollHeight / curScale : content.scrollHeight;
+    const unscaledW = curScale < 1 ? content.scrollWidth / curScale : content.scrollWidth;
 
-    if (availHeight > 0 && naturalHeight > 0 && availWidth > 0) {
-      const scaleH = availHeight / naturalHeight;
-      const scaleW = availWidth / naturalWidth;
+    if (availHeight > 50 && unscaledH > 50 && availWidth > 50 && unscaledW > 50) {
+      const scaleH = availHeight / unscaledH;
+      const scaleW = availWidth / unscaledW;
       const fitScale = Math.min(scaleH, scaleW);
 
       if (fitScale < 0.98) {
-        const boundedScale = Math.max(0.55, Math.min(1, Number(fitScale.toFixed(2))));
+        const boundedScale = Math.max(0.60, Math.min(1, Number(fitScale.toFixed(2))));
         setAlignScale(boundedScale);
       } else {
         setAlignScale(1);
       }
     }
-  }, [isAutoAlign]);
+  }, [isAutoAlign, alignScale]);
 
   // Click-outside listener for shed selection dropdown
   useEffect(() => {
@@ -847,14 +851,14 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       {/* 1. TOP BROADCAST HEADER (White Theme, High-Visibility for TV Displays) */}
       <header className="h-16 md:h-18 bg-white border-b border-stone-200/90 px-6 flex items-center justify-between shrink-0 shadow-2xs relative z-40">
         
-        {/* Left: Mill Branding with SCM Logo + Live Dot + Shed Selector */}
+        {/* Left: Mill Branding with SCM Emblem Logo + Live Dot + Shed Selector */}
         <div className="flex items-center gap-4 sm:gap-5 min-w-0">
           <div className="flex items-center gap-3 shrink-0">
-            <div className="h-10 md:h-11 flex items-center shrink-0">
+            <div className="h-11 md:h-12 w-11 md:w-12 rounded-2xl bg-white border border-stone-200/90 shadow-2xs p-1 flex items-center justify-center shrink-0">
               <img 
-                src="/scm-logo-horizontal.png" 
-                alt="SCM Textile Spinners" 
-                className="h-9 md:h-10 w-auto object-contain drop-shadow-2xs" 
+                src="/scm-emblem.png" 
+                alt="SCM Logo" 
+                className="w-full h-full object-contain drop-shadow-2xs" 
               />
             </div>
             <div className="hidden lg:block h-6 w-px bg-stone-200" />
@@ -1029,12 +1033,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
         <div 
           ref={contentWrapperRef}
-          className="w-full h-full p-3 md:p-5 lg:p-6 transition-all duration-300 ease-out origin-top"
+          className="w-full p-3 md:p-5 lg:p-6 transition-all duration-300 ease-out origin-top"
           style={isAutoAlign && alignScale < 1 ? {
-            transform: `scale(${alignScale})`,
-            transformOrigin: 'top center',
-            width: `${(100 / alignScale)}%`,
-            marginBottom: `${(alignScale - 1) * 60}%`
+            zoom: alignScale,
+            transformOrigin: 'top center'
           } : undefined}
         >
           <AnimatePresence mode="wait">

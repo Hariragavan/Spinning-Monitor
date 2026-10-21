@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  Upload, FileCheck, AlertCircle, Loader2, Users, Gauge, 
+  Upload, FileCheck, AlertCircle, AlertTriangle, Loader2, Users, Gauge, 
   Contact, FileUp, Coins, Download, Info, X, Calendar, 
   CheckCircle2, ChevronRight, Hash 
 } from 'lucide-react';
@@ -351,6 +351,43 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     }
   };
 
+  const handleConfirmCurrentShedOnly = async () => {
+    if (!previewModal) return;
+    const { category, shed, date, dailyReport, monthlyReports, emData } = previewModal;
+
+    try {
+      const activeReport = monthlyReports
+        ? (monthlyReports.find(r => r.shed === shed) || monthlyReports[0])
+        : dailyReport;
+
+      if (!activeReport) return;
+
+      const finalReport: DailyReport = {
+        ...activeReport,
+        shed,
+        date: activeReport.date || date,
+        entries: (activeReport.entries || []).map(e => ({ ...e, shed })),
+        summaries: (activeReport.summaries || []).map(s => ({ ...s, shed })),
+        emData: emData || activeReport.emData
+      };
+
+      if (finalReport.emData && onMachineEmUpdate) {
+        await onMachineEmUpdate(finalReport.emData);
+      }
+
+      setPendingReports(prev => ({
+        ...prev,
+        [category]: finalReport
+      }));
+      onUploadSuccess(finalReport);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      setPreviewModal(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to commit extracted data for this shed.');
+    }
+  };
+
   const handleSaveAll = () => {
     const reports = Object.values(pendingReports) as DailyReport[];
     if (reports.length === 0) return;
@@ -472,7 +509,142 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     { id: 'worker_master', title: 'Worker Master Update', icon: Contact, color: 'text-rose-500' },
   ];
 
+  const getReportSummaries = (report?: DailyReport | null): FrameDailySummary[] => {
+    if (!report) return [];
+    if (report.summaries && report.summaries.length > 0) {
+      return report.summaries;
+    }
+    if (!report.entries || report.entries.length === 0) return [];
+
+    const frameMap = new Map<string, FrameDailySummary>();
+    report.entries.forEach(e => {
+      let s = frameMap.get(e.frameNo);
+      if (!s) {
+        s = {
+          frameNo: e.frameNo,
+          count: e.count || '—',
+          stdGps: e.gpsTarget || 0,
+          targetProd: 0,
+          actualProd: 0,
+          shiftGps: { I: 0, II: 0, III: 0 },
+          avgGps: 0,
+          shiftUtil: { I: 0, II: 0, III: 0 },
+          avgUtil: 0,
+          shiftNaturalEmt: { I: 0, II: 0, III: 0 },
+          shiftRestartBreaks: { I: 0, II: 0, III: 0 },
+          shiftDoffEmt: { I: 0, II: 0, III: 0 },
+          shiftIdle: { I: 0, II: 0, III: 0 },
+          shiftWorst: { I: 0, II: 0, III: 0 },
+          shiftSlip: { I: 0, II: 0, III: 0 },
+          shiftUkg: { I: 0, II: 0, III: 0 },
+          shiftNoOfDoff: { I: 0, II: 0, III: 0 },
+          shiftAvgDoffTime: { I: 0, II: 0, III: 0 },
+          shiftNoOfStop: { I: 0, II: 0, III: 0 },
+          shiftNormalStopMin: { I: 0, II: 0, III: 0 },
+          shiftProductionKg: { I: 0, II: 0, III: 0 },
+          shiftUtilizationPinter: { I: 0, II: 0, III: 0 },
+          shed: report.shed
+        };
+        frameMap.set(e.frameNo, s);
+      }
+      s.targetProd += (e.productionTarget || 0);
+      s.actualProd += (e.productionActual || 0);
+      if (e.shift === 'I') {
+        s.shiftProductionKg.I = e.productionActual || 0;
+        s.shiftGps.I = e.gpsActual || 0;
+        s.shiftUtil.I = e.utility || 0;
+      } else if (e.shift === 'II') {
+        s.shiftProductionKg.II = e.productionActual || 0;
+        s.shiftGps.II = e.gpsActual || 0;
+        s.shiftUtil.II = e.utility || 0;
+      } else if (e.shift === 'III') {
+        s.shiftProductionKg.III = e.productionActual || 0;
+        s.shiftGps.III = e.gpsActual || 0;
+        s.shiftUtil.III = e.utility || 0;
+      }
+    });
+
+    frameMap.forEach(s => {
+      const gpsVals = [s.shiftGps.I, s.shiftGps.II, s.shiftGps.III].filter(v => v > 0);
+      s.avgGps = gpsVals.length > 0 ? Number((gpsVals.reduce((a, b) => a + b, 0) / gpsVals.length).toFixed(1)) : 0;
+      const utilVals = [s.shiftUtil.I, s.shiftUtil.II, s.shiftUtil.III].filter(v => v > 0);
+      s.avgUtil = utilVals.length > 0 ? Number((utilVals.reduce((a, b) => a + b, 0) / utilVals.length).toFixed(1)) : 0;
+    });
+
+    return Array.from(frameMap.values()).sort((a, b) => a.frameNo.localeCompare(b.frameNo));
+  };
+
   const renderModalKpis = (modal: ExtractedPreview) => {
+    // 1. Daily Report (Production Statement) - Show KPIs for the ACTIVE SHED
+    if (modal.category === 'daily_report') {
+      const activeRep = modal.monthlyReports
+        ? (modal.monthlyReports.find(r => r.shed === modal.shed) || modal.monthlyReports[0])
+        : modal.dailyReport;
+
+      const distinctSheds = modal.monthlyReports
+        ? (Array.from(new Set(modal.monthlyReports.map(r => r.shed))).filter(Boolean) as Shed[])
+        : [modal.shed];
+
+      const summaries = getReportSummaries(activeRep);
+      const targetKg = activeRep?.totalProductionTarget || summaries.reduce((s, r) => s + (r.targetProd || 0), 0);
+      const actualKg = activeRep?.totalProductionActual || summaries.reduce((s, r) => s + (r.actualProd || 0), 0);
+      const eff = targetKg > 0 ? (actualKg / targetKg) * 100 : (actualKg > 0 ? 100 : 0);
+      const avgGps = summaries.length > 0
+        ? summaries.reduce((a, b) => a + (b.avgGps || 0), 0) / summaries.length
+        : 0;
+
+      return (
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
+                Target Prod ({modal.shed})
+              </span>
+              <span className="text-sm font-black text-stone-800 font-mono">{targetKg.toFixed(1)} Kg</span>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
+                Actual Prod ({modal.shed})
+              </span>
+              <span className="text-sm font-black text-emerald-600 font-mono">{actualKg.toFixed(1)} Kg</span>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
+                Efficiency ({modal.shed})
+              </span>
+              <span className="text-sm font-black text-stone-900 font-mono">{eff.toFixed(1)}%</span>
+            </div>
+            <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">
+                Avg GPSS / Frames
+              </span>
+              <span className="text-sm font-black text-stone-900 font-mono">
+                {avgGps.toFixed(1)} <span className="text-[10px] text-stone-400 font-sans">({summaries.length} M/C)</span>
+              </span>
+            </div>
+          </div>
+
+          {distinctSheds.length > 1 && (
+            <div className="bg-emerald-50/90 border border-emerald-200/90 px-3.5 py-2 rounded-xl flex items-center justify-between text-xs text-emerald-950 font-bold">
+              <span>
+                📁 Multi-Shed File: Extracted {distinctSheds.length} Sheds ({distinctSheds.join(', ')}). Switch sheds using the buttons above to view each shed.
+              </span>
+              <span className="bg-emerald-600 text-white px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-wider font-black">
+                {summaries.length} Frames in {modal.shed}
+              </span>
+            </div>
+          )}
+
+          {modal.emData && Object.keys(modal.emData).length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 px-3.5 py-2 rounded-xl flex items-center justify-between text-xs text-blue-900 font-bold">
+              <span>⚡ Machine EM Included: {Object.keys(modal.emData[Object.keys(modal.emData)[0]] || {}).length} Machines with Shift I, II, III EM values</span>
+              <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">Sync Ready</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     if (modal.monthlyReports && modal.monthlyReports.length > 0) {
       const reports = modal.monthlyReports;
       const totalTarget = reports.reduce((sum, r) => sum + (r.totalProductionTarget || 0), 0);
@@ -502,41 +674,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           {modal.emData && Object.keys(modal.emData).length > 0 && (
             <div className="col-span-2 sm:col-span-4 bg-blue-50 border border-blue-200 p-2.5 rounded-xl flex items-center justify-between text-xs text-blue-900 font-bold">
               <span>⚡ Machine EM Included for {distinctSheds.join(', ')}: Shift I, II, III EM values ready</span>
-              <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">Sync Ready</span>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (modal.category === 'daily_report' && modal.dailyReport) {
-      const rep = modal.dailyReport;
-      const eff = rep.totalProductionTarget > 0 ? (rep.totalProductionActual / rep.totalProductionTarget) * 100 : 0;
-      const avgGps = rep.summaries.length > 0 
-        ? rep.summaries.reduce((a, b) => a + (b.avgGps || 0), 0) / rep.summaries.length 
-        : 0;
-
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Target Production</span>
-            <span className="text-sm font-black text-stone-800 font-mono">{rep.totalProductionTarget.toFixed(1)} Kg</span>
-          </div>
-          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Actual Production</span>
-            <span className="text-sm font-black text-emerald-600 font-mono">{rep.totalProductionActual.toFixed(1)} Kg</span>
-          </div>
-          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Plant Efficiency</span>
-            <span className="text-sm font-black text-stone-900 font-mono">{eff.toFixed(1)}%</span>
-          </div>
-          <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-            <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block">Avg GPSS / Frames</span>
-            <span className="text-sm font-black text-stone-900 font-mono">{avgGps.toFixed(1)} <span className="text-[10px] text-stone-400 font-sans">({rep.summaries.length} M/C)</span></span>
-          </div>
-          {modal.emData && Object.keys(modal.emData).length > 0 && (
-            <div className="col-span-2 sm:col-span-4 bg-blue-50 border border-blue-200 p-2.5 rounded-xl flex items-center justify-between text-xs text-blue-900 font-bold">
-              <span>⚡ Machine EM Included: {Object.keys(modal.emData[Object.keys(modal.emData)[0]] || {}).length} Machines with Shift I, II, III EM values</span>
               <span className="bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] uppercase tracking-wider">Sync Ready</span>
             </div>
           )}
@@ -644,7 +781,123 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   const renderModalTable = (modal: ExtractedPreview) => {
-    // 1. Monthly reports dataset
+    // 1. Production Statement (daily_report) - Show extracted frame data for the selected shed!
+    if (modal.category === 'daily_report') {
+      const activeReport = modal.monthlyReports
+        ? (modal.monthlyReports.find(r => r.shed === modal.shed) || modal.monthlyReports[0])
+        : modal.dailyReport;
+
+      const summaries = getReportSummaries(activeReport);
+
+      if (!activeReport || summaries.length === 0) {
+        const detectedSheds = modal.monthlyReports
+          ? Array.from(new Set(modal.monthlyReports.map(r => r.shed))).filter(Boolean)
+          : [modal.shed];
+        return (
+          <div className="p-8 text-center bg-stone-50 rounded-2xl border border-stone-200">
+            <AlertTriangle size={28} className="mx-auto text-amber-500 mb-2" />
+            <h4 className="text-sm font-black text-stone-900 uppercase tracking-tight">
+              No Extracted Telemetry for {modal.shed}
+            </h4>
+            <p className="text-xs text-stone-500 mt-1">
+              The uploaded file does not contain a production statement section for {modal.shed}.
+            </p>
+            {detectedSheds.length > 0 && (
+              <p className="text-xs text-emerald-700 font-bold mt-2">
+                Available sheds in file: {detectedSheds.join(', ')} (click tabs above to switch).
+              </p>
+            )}
+          </div>
+        );
+      }
+
+      const totalTarget = activeReport.totalProductionTarget || summaries.reduce((s, r) => s + (r.targetProd || 0), 0);
+      const totalAchieved = activeReport.totalProductionActual || summaries.reduce((s, r) => s + (r.actualProd || 0), 0);
+      const totalShiftI = summaries.reduce((s, r) => s + (r.shiftProductionKg?.I || 0), 0);
+      const totalShiftII = summaries.reduce((s, r) => s + (r.shiftProductionKg?.II || 0), 0);
+      const totalShiftIII = summaries.reduce((s, r) => s + (r.shiftProductionKg?.III || 0), 0);
+      const avgGpsAll = summaries.length > 0 ? summaries.reduce((a, b) => a + (b.avgGps || 0), 0) / summaries.length : 0;
+      const avgUtilAll = summaries.length > 0 ? summaries.reduce((a, b) => a + (b.avgUtil || 0), 0) / summaries.length : 0;
+
+      return (
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-stone-100/90 text-stone-600 font-black text-[10px] uppercase tracking-wider sticky top-0 z-10 border-b border-stone-200">
+              <th className="py-2.5 px-3">Frame</th>
+              <th className="py-2.5 px-3">Count</th>
+              <th className="py-2.5 px-3 text-right">STD GPS</th>
+              <th className="py-2.5 px-3 text-right">Target (Kg)</th>
+              <th className="py-2.5 px-3 text-right">Shift I</th>
+              <th className="py-2.5 px-3 text-right">Shift II</th>
+              <th className="py-2.5 px-3 text-right">Shift III</th>
+              <th className="py-2.5 px-3 text-right font-black text-emerald-800">Total Ach</th>
+              <th className="py-2.5 px-3 text-right">GPS I</th>
+              <th className="py-2.5 px-3 text-right">GPS II</th>
+              <th className="py-2.5 px-3 text-right">GPS III</th>
+              <th className="py-2.5 px-3 text-right font-bold text-stone-900">Avg GPS</th>
+              <th className="py-2.5 px-3 text-right">U% I</th>
+              <th className="py-2.5 px-3 text-right">U% II</th>
+              <th className="py-2.5 px-3 text-right">U% III</th>
+              <th className="py-2.5 px-3 text-right font-bold text-stone-900">Avg U%</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-100">
+            {summaries.map((s, idx) => (
+              <tr key={s.frameNo || idx} className="hover:bg-emerald-50/40 transition-colors font-medium">
+                <td className="py-2 px-3 font-black text-stone-900">{s.frameNo}</td>
+                <td className="py-2 px-3 text-stone-700">{s.count || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.stdGps?.toFixed(1) || '0.0'}</td>
+                <td className="py-2 px-3 text-right font-mono font-bold text-stone-700">{s.targetProd?.toFixed(1) || '0.0'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftProductionKg?.I?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftProductionKg?.II?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftProductionKg?.III?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono font-black text-emerald-700">{s.actualProd?.toFixed(1) || '0.0'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftGps?.I?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftGps?.II?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftGps?.III?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono font-bold text-stone-900">{s.avgGps?.toFixed(1) || '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftUtil?.I ? `${s.shiftUtil.I.toFixed(1)}%` : '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftUtil?.II ? `${s.shiftUtil.II.toFixed(1)}%` : '—'}</td>
+                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftUtil?.III ? `${s.shiftUtil.III.toFixed(1)}%` : '—'}</td>
+                <td className="py-2 px-3 text-right font-mono font-bold text-stone-900">{s.avgUtil ? `${s.avgUtil.toFixed(1)}%` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="sticky bottom-0 bg-stone-900 text-white font-black text-xs z-10">
+            <tr>
+              <td className="py-2.5 px-3 uppercase tracking-wider" colSpan={3}>
+                Total ({summaries.length} M/C - {modal.shed})
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-amber-300">
+                {totalTarget.toFixed(1)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-stone-300">
+                {totalShiftI.toFixed(1)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-stone-300">
+                {totalShiftII.toFixed(1)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-stone-300">
+                {totalShiftIII.toFixed(1)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-emerald-300">
+                {totalAchieved.toFixed(1)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-stone-400" colSpan={3}>—</td>
+              <td className="py-2.5 px-3 text-right font-mono text-white">
+                {avgGpsAll.toFixed(1)}
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono text-stone-400" colSpan={3}>—</td>
+              <td className="py-2.5 px-3 text-right font-mono text-white">
+                {avgUtilAll.toFixed(1)}%
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      );
+    }
+
+    // 2. Multi-Day / Monthly Reports (for other report categories)
     if (modal.monthlyReports && modal.monthlyReports.length > 0) {
       return (
         <table className="w-full text-left border-collapse text-xs">
@@ -687,76 +940,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 {modal.monthlyReports.reduce((s, r) => s + r.totalProductionActual, 0).toFixed(1)}
               </td>
               <td className="py-2.5 px-3 text-right font-mono text-white" colSpan={2}>—</td>
-            </tr>
-          </tfoot>
-        </table>
-      );
-    }
-
-    // 2. Production Statement Daily Report
-    if (modal.category === 'daily_report' && modal.dailyReport) {
-      return (
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="bg-stone-100/90 text-stone-600 font-black text-[10px] uppercase tracking-wider sticky top-0 z-10 border-b border-stone-200">
-              <th className="py-2.5 px-3">Frame</th>
-              <th className="py-2.5 px-3">Count</th>
-              <th className="py-2.5 px-3 text-right">STD GPS</th>
-              <th className="py-2.5 px-3 text-right">Target (Kg)</th>
-              <th className="py-2.5 px-3 text-right">Shift I</th>
-              <th className="py-2.5 px-3 text-right">Shift II</th>
-              <th className="py-2.5 px-3 text-right">Shift III</th>
-              <th className="py-2.5 px-3 text-right font-black text-emerald-800">Total Ach</th>
-              <th className="py-2.5 px-3 text-right">GPS I</th>
-              <th className="py-2.5 px-3 text-right">GPS II</th>
-              <th className="py-2.5 px-3 text-right">GPS III</th>
-              <th className="py-2.5 px-3 text-right font-bold text-stone-900">Avg GPS</th>
-              <th className="py-2.5 px-3 text-right">U% I</th>
-              <th className="py-2.5 px-3 text-right">U% II</th>
-              <th className="py-2.5 px-3 text-right">U% III</th>
-              <th className="py-2.5 px-3 text-right font-bold text-stone-900">Avg U%</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-stone-100">
-            {modal.dailyReport.summaries.map((s, idx) => (
-              <tr key={s.frameNo || idx} className="hover:bg-emerald-50/40 transition-colors font-medium">
-                <td className="py-2 px-3 font-black text-stone-900">{s.frameNo}</td>
-                <td className="py-2 px-3 text-stone-700">{s.count || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.stdGps?.toFixed(1) || '0.0'}</td>
-                <td className="py-2 px-3 text-right font-mono font-bold text-stone-700">{s.targetProd?.toFixed(1) || '0.0'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftProductionKg?.I?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftProductionKg?.II?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftProductionKg?.III?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono font-black text-emerald-700">{s.actualProd?.toFixed(1) || '0.0'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftGps?.I?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftGps?.II?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftGps?.III?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono font-bold text-stone-900">{s.avgGps?.toFixed(1) || '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftUtil?.I ? `${s.shiftUtil.I.toFixed(1)}%` : '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftUtil?.II ? `${s.shiftUtil.II.toFixed(1)}%` : '—'}</td>
-                <td className="py-2 px-3 text-right font-mono text-stone-600">{s.shiftUtil?.III ? `${s.shiftUtil.III.toFixed(1)}%` : '—'}</td>
-                <td className="py-2 px-3 text-right font-mono font-bold text-stone-900">{s.avgUtil ? `${s.avgUtil.toFixed(1)}%` : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot className="sticky bottom-0 bg-stone-900 text-white font-black text-xs z-10">
-            <tr>
-              <td className="py-2.5 px-3 uppercase tracking-wider" colSpan={3}>Grand Total</td>
-              <td className="py-2.5 px-3 text-right font-mono text-amber-300">
-                {modal.dailyReport.totalProductionTarget.toFixed(1)}
-              </td>
-              <td className="py-2.5 px-3 text-right font-mono text-stone-400" colSpan={3}>—</td>
-              <td className="py-2.5 px-3 text-right font-mono text-emerald-300">
-                {modal.dailyReport.totalProductionActual.toFixed(1)}
-              </td>
-              <td className="py-2.5 px-3 text-right font-mono text-stone-400" colSpan={3}>—</td>
-              <td className="py-2.5 px-3 text-right font-mono text-white">
-                {(modal.dailyReport.summaries.reduce((a, b) => a + (b.avgGps || 0), 0) / (modal.dailyReport.summaries.length || 1)).toFixed(1)}
-              </td>
-              <td className="py-2.5 px-3 text-right font-mono text-stone-400" colSpan={3}>—</td>
-              <td className="py-2.5 px-3 text-right font-mono text-white">
-                {(modal.dailyReport.summaries.reduce((a, b) => a + (b.avgUtil || 0), 0) / (modal.dailyReport.summaries.length || 1)).toFixed(1)}%
-              </td>
             </tr>
           </tfoot>
         </table>
@@ -1151,22 +1334,45 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                     Shed No:
                   </span>
                   <div className="flex items-center bg-white p-0.5 rounded-xl border border-stone-200 shadow-2xs">
-                    {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(s => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setPreviewModal(prev => prev ? ({ ...prev, shed: s }) : null)}
-                        className={cn(
-                          "px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1",
-                          previewModal.shed === s
-                            ? "bg-emerald-600 text-white shadow-2xs"
-                            : "text-stone-600 hover:text-stone-900 font-bold hover:bg-stone-100"
-                        )}
-                      >
-                        <span className={cn("w-1.5 h-1.5 rounded-full", previewModal.shed === s ? "bg-white" : "bg-stone-400")} />
-                        {s}
-                      </button>
-                    ))}
+                    {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(s => {
+                      const repForShed = previewModal.monthlyReports?.find(r => r.shed === s) || (previewModal.dailyReport?.shed === s ? previewModal.dailyReport : null);
+                      const mCount = repForShed ? (repForShed.summaries?.length || new Set(repForShed.entries?.map(e => e.frameNo)).size) : 0;
+                      const isSelected = previewModal.shed === s;
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setPreviewModal(prev => {
+                            if (!prev) return null;
+                            if (prev.dailyReport && !prev.monthlyReports) {
+                              return {
+                                ...prev,
+                                shed: s,
+                                dailyReport: { ...prev.dailyReport, shed: s }
+                              };
+                            }
+                            return { ...prev, shed: s };
+                          })}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                            isSelected
+                              ? "bg-emerald-600 text-white shadow-2xs"
+                              : "text-stone-600 hover:text-stone-900 font-bold hover:bg-stone-100"
+                          )}
+                        >
+                          <span className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-white" : mCount > 0 ? "bg-emerald-500" : "bg-stone-300")} />
+                          <span>{s}</span>
+                          {mCount > 0 && (
+                            <span className={cn(
+                              "text-[9.5px] px-1.5 py-0.2 rounded-full font-mono font-bold",
+                              isSelected ? "bg-emerald-700 text-white" : "bg-stone-100 text-stone-600"
+                            )}>
+                              {mCount} M/C
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1208,7 +1414,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               <div className="text-xs text-stone-500 font-medium flex items-center gap-2">
                 <Info size={14} className="text-stone-400 shrink-0" />
                 <span>
-                  Confirming will upload and apply this telemetry for <strong className="text-stone-900 font-bold">{previewModal.shed}</strong>.
+                  {previewModal.category === 'daily_report' && previewModal.monthlyReports && previewModal.monthlyReports.length > 1 ? (
+                    <>Extracted telemetry for <strong className="text-emerald-700 font-bold">{previewModal.monthlyReports.length} Sheds</strong> ({previewModal.monthlyReports.map(r => r.shed).join(', ')}). You can save all sheds together or save individual shed.</>
+                  ) : (
+                    <>Confirming will upload and apply this telemetry for <strong className="text-stone-900 font-bold">{previewModal.shed}</strong>.</>
+                  )}
                 </span>
               </div>
 
@@ -1220,13 +1430,25 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 >
                   Cancel
                 </button>
+                {previewModal.category === 'daily_report' && previewModal.monthlyReports && previewModal.monthlyReports.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleConfirmCurrentShedOnly}
+                    className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-800 font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    title={`Commit only ${previewModal.shed} data`}
+                  >
+                    Save Only {previewModal.shed}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleConfirmPreview}
                   className="flex-1 sm:flex-none px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <CheckCircle2 size={15} />
-                  Confirm & Save to {previewModal.shed}
+                  {previewModal.category === 'daily_report' && previewModal.monthlyReports && previewModal.monthlyReports.length > 1
+                    ? `Confirm & Save All (${previewModal.monthlyReports.length} Sheds)`
+                    : `Confirm & Save to ${previewModal.shed}`}
                 </button>
               </div>
             </div>
