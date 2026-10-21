@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileCheck, AlertCircle, AlertTriangle, Loader2, Users, Gauge, 
   Contact, FileUp, Coins, Download, Info, X, Calendar, 
@@ -18,6 +18,13 @@ interface UploadSectionProps {
   onMachineEmUpdate?: (data: MachineEmData) => Promise<void>;
   countConversions?: CountConversion[];
   initialShed?: Shed;
+  history?: DailyReport[];
+}
+
+interface ToastNotification {
+  type: 'success' | 'error' | 'warning';
+  title: string;
+  message?: string;
 }
 
 interface ExtractedPreview {
@@ -38,15 +45,115 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   onWorkersUpdate,
   onMachineEmUpdate,
   countConversions = [],
-  initialShed = 'Shed 1'
+  initialShed = 'Shed 1',
+  history = []
 }) => {
   const [isUploading, setIsUploading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [targetShed, setTargetShed] = useState<Shed>(initialShed);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [pendingReports, setPendingReports] = useState<Record<string, DailyReport>>({});
-  const [showSuccess, setShowSuccess] = useState(false);
   const [previewModal, setPreviewModal] = useState<ExtractedPreview | null>(null);
+
+  // Top-Right Toast Notification state
+  const [toast, setToast] = useState<ToastNotification | null>(null);
+
+  const showToast = (type: 'success' | 'error' | 'warning', title: string, message?: string) => {
+    setToast({ type, title, message });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Leave / Factory Holiday Registry State
+  const [leaveDates, setLeaveDates] = useState<string[]>(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('spinning_leave_dates') : null;
+    let dates: string[] = [];
+    if (saved) {
+      try {
+        dates = JSON.parse(saved);
+      } catch {}
+    }
+    return Array.isArray(dates) ? dates : [];
+  });
+  const [leaveSelectedDate, setLeaveSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedLeaveFilter, setSelectedLeaveFilter] = useState('');
+
+  // Sync leave dates when history changes
+  useEffect(() => {
+    if (history && history.length > 0) {
+      const historyLeaves = history
+        .filter(r => (!r.entries || r.entries.length === 0) && (!r.totalProductionActual || r.totalProductionActual === 0) && r.date)
+        .map(r => r.date);
+      if (historyLeaves.length > 0) {
+        setLeaveDates(prev => {
+          const combined = Array.from(new Set([...prev, ...historyLeaves])).sort((a, b) => {
+            const pA = a.split(/[/.-]/).reverse().join('-');
+            const pB = b.split(/[/.-]/).reverse().join('-');
+            return pB.localeCompare(pA);
+          });
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('spinning_leave_dates', JSON.stringify(combined));
+          }
+          return combined;
+        });
+      }
+    }
+  }, [history]);
+
+  const handleMarkLeave = () => {
+    if (!leaveSelectedDate) {
+      showToast('error', 'Files not uploaded', 'Please select a date from the calendar first.');
+      return;
+    }
+    const [year, month, day] = leaveSelectedDate.split('-');
+    const formattedDate = `${day}/${month}/${year}`;
+
+    if (leaveDates.includes(formattedDate)) {
+      showToast('warning', 'Files not supported', `${formattedDate} is already marked as Leave.`);
+      return;
+    }
+
+    const zeroReport: DailyReport = {
+      date: formattedDate,
+      shed: targetShed,
+      entries: [],
+      summaries: [],
+      totalProductionTarget: 0,
+      totalProductionActual: 0
+    };
+
+    onUploadSuccess(zeroReport);
+
+    const updated = Array.from(new Set([formattedDate, ...leaveDates])).sort((a, b) => {
+      const pA = a.split(/[/.-]/).reverse().join('-');
+      const pB = b.split(/[/.-]/).reverse().join('-');
+      return pB.localeCompare(pA);
+    });
+    setLeaveDates(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('spinning_leave_dates', JSON.stringify(updated));
+    }
+
+    showToast('success', 'Successfully uploaded', `Marked ${formattedDate} as Leave.`);
+  };
+
+  const handleRemoveLeave = (dateToRemove: string) => {
+    const updated = leaveDates.filter(d => d !== dateToRemove);
+    setLeaveDates(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('spinning_leave_dates', JSON.stringify(updated));
+    }
+    if (selectedLeaveFilter === dateToRemove) {
+      setSelectedLeaveFilter('');
+    }
+    showToast('success', 'Successfully uploaded', `Removed ${dateToRemove} from Leave dates.`);
+  };
 
   const downloadTemplate = (type: 'daily_report' | 'incentive' | 'worker' | 'em') => {
     let data: any[] = [];
@@ -148,14 +255,22 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, category: string) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      showToast('error', 'Files not uploaded', 'No file was selected.');
+      return;
+    }
 
     // Reset input so user can select the same file again if desired
     event.target.value = '';
 
+    // Check file format/extension
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
+      showToast('warning', 'Files not supported', `".${ext || 'unknown'}" is not supported. Please upload an .xlsx, .xls, or .csv spreadsheet.`);
+      return;
+    }
+
     setIsUploading(category);
-    setError(null);
-    setShowSuccess(false);
 
     try {
       if (category === 'worker_master') {
@@ -279,8 +394,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           });
         }
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to parse ${category} file. Please check the spreadsheet headers.`);
+    } catch (err: any) {
+      showToast('error', 'Formate not supported', err?.message || 'Spreadsheet structure or column headers are not recognized.');
     } finally {
       setIsUploading(null);
     }
@@ -288,7 +403,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
   const handleConfirmPreview = async () => {
     if (!previewModal) return;
-    const { category, shed, date, workers, emData, dailyReport, monthlyReports } = previewModal;
+    const { category, categoryTitle, shed, date, workers, emData, dailyReport, monthlyReports } = previewModal;
 
     try {
       if (category === 'worker_master' && workers) {
@@ -343,17 +458,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         }));
         onUploadSuccess(finalReport);
       }
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      showToast('success', 'Successfully uploaded', `${categoryTitle} records saved successfully.`);
       setPreviewModal(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to commit extracted data.');
+    } catch (err: any) {
+      showToast('error', 'Files not uploaded', err?.message || 'Failed to commit extracted data.');
     }
   };
 
   const handleConfirmCurrentShedOnly = async () => {
     if (!previewModal) return;
-    const { category, shed, date, dailyReport, monthlyReports, emData } = previewModal;
+    const { category, categoryTitle, shed, date, dailyReport, monthlyReports, emData } = previewModal;
 
     try {
       const activeReport = monthlyReports
@@ -380,11 +494,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         [category]: finalReport
       }));
       onUploadSuccess(finalReport);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      showToast('success', 'Successfully uploaded', `${categoryTitle} for ${shed} saved successfully.`);
       setPreviewModal(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to commit extracted data for this shed.');
+    } catch (err: any) {
+      showToast('error', 'Files not uploaded', err?.message || 'Failed to commit extracted data for this shed.');
     }
   };
 
@@ -496,10 +609,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       totalProductionActual: totalActual
     };
 
-    onUploadSuccess(finalReport);
-    setPendingReports({});
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+    try {
+      onUploadSuccess(finalReport);
+      setPendingReports({});
+      showToast('success', 'Successfully uploaded', 'All pending statements committed successfully.');
+    } catch (err: any) {
+      showToast('error', 'Files not uploaded', err?.message || 'Failed to save pending statements.');
+    }
   };
 
   const uploadCategories = [
@@ -1109,9 +1225,44 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto mt-4 space-y-4">
+    <div className="max-w-4xl mx-auto mt-4 space-y-5 relative">
+      {/* Top-Right Notification Message Toast */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-[99999] max-w-sm w-full animate-in slide-in-from-top-3 fade-in duration-300">
+          <div className={cn(
+            "p-4 rounded-2xl shadow-2xl border flex items-start gap-3 backdrop-blur-md",
+            toast.type === 'success' ? "bg-emerald-950/95 border-emerald-500/50 text-white" :
+            toast.type === 'warning' ? "bg-amber-950/95 border-amber-500/50 text-white" :
+            "bg-rose-950/95 border-rose-500/50 text-white"
+          )}>
+            <div className={cn(
+              "w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5",
+              toast.type === 'success' ? "bg-emerald-500/20 text-emerald-400" :
+              toast.type === 'warning' ? "bg-amber-500/20 text-amber-400" :
+              "bg-rose-500/20 text-rose-400"
+            )}>
+              {toast.type === 'success' ? <CheckCircle2 size={18} /> :
+               toast.type === 'warning' ? <AlertTriangle size={18} /> :
+               <AlertCircle size={18} />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-black uppercase tracking-wider">{toast.title}</h4>
+              {toast.message && (
+                <p className="text-xs text-stone-300 font-medium mt-0.5 leading-relaxed">{toast.message}</p>
+              )}
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="text-stone-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header & Date Picker */}
-      <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white p-5 sm:p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-black text-stone-900 uppercase tracking-tight">Data Ingestion Center</h2>
           <p className="text-[11px] font-bold text-stone-400 uppercase tracking-wider mt-0.5">Unified Production Telemetry Log</p>
@@ -1127,47 +1278,58 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </div>
       </div>
 
+      {/* Upload Cards Grid with properly aligned buttons */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {uploadCategories.map((cat) => (
-          <div key={cat.id} className={cn(
-            "bg-white p-5 rounded-2xl border shadow-xs transition-all group relative overflow-hidden",
-            pendingReports[cat.id] ? "border-emerald-500 bg-emerald-50/10" : "border-stone-200"
-          )}>
-            <div className={cn(
-              "w-10 h-10 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform opacity-80",
-              pendingReports[cat.id] ? "bg-emerald-100 text-emerald-600" : "bg-stone-50 " + cat.color
-            )}>
-              {pendingReports[cat.id] ? <FileCheck size={20} /> : <cat.icon size={20} />}
+          <div
+            key={cat.id}
+            className={cn(
+              "bg-white p-5 rounded-2xl border shadow-xs transition-all group relative overflow-hidden flex flex-col justify-between",
+              pendingReports[cat.id] ? "border-emerald-500 bg-emerald-50/10" : "border-stone-200"
+            )}
+          >
+            <div className="flex-1 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform opacity-80 shrink-0",
+                  pendingReports[cat.id] ? "bg-emerald-100 text-emerald-600" : "bg-stone-50 " + cat.color
+                )}>
+                  {pendingReports[cat.id] ? <FileCheck size={20} /> : <cat.icon size={20} />}
+                </div>
+
+                <button 
+                  onClick={() => downloadTemplate(
+                    cat.id === 'daily_report' ? 'daily_report' :
+                    cat.id === 'worker_master' ? 'worker' : 
+                    cat.id === 'machine_em' ? 'em' : 'incentive'
+                  )}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-xl border border-emerald-200/80 transition-colors cursor-pointer"
+                  title={`Download sample template for ${cat.title}`}
+                >
+                  <Download size={12} />
+                  Template
+                </button>
+              </div>
+
+              <div className="mb-2">
+                <h3 className="text-base font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
+                  <span>{cat.title}</span>
+                  {pendingReports[cat.id] && <span className="text-[9px] bg-emerald-500 text-white px-2 py-0.5 rounded-full font-black">READY</span>}
+                </h3>
+              </div>
+
+              <p className="text-xs text-stone-500 font-medium leading-relaxed flex-1 mb-4">
+                {cat.id === 'daily_report' 
+                  ? 'Upload all sheds Daily Production Statement (Shed 1, Shed 2, Shed 3, KTTM) for telemetry, GPS, and production totals.' 
+                  : cat.id === 'incentive_report'
+                  ? 'Upload Daily Incentive Amount sheet for manual sider payouts and assignments.'
+                  : cat.id === 'machine_em'
+                  ? 'Upload Machine EM spreadsheet to update machine efficiency maintenance in the cloud.'
+                  : 'Upload employee registry to sync names and ticket numbers.'}
+              </p>
             </div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-black text-stone-900 uppercase tracking-tight">
-                {cat.title}
-                {pendingReports[cat.id] && <span className="ml-2 text-[9px] bg-emerald-500 text-white px-2 py-0.5 rounded-full align-middle">READY</span>}
-              </h3>
-              <button 
-                onClick={() => downloadTemplate(
-                  cat.id === 'daily_report' ? 'daily_report' :
-                  cat.id === 'worker_master' ? 'worker' : 
-                  cat.id === 'machine_em' ? 'em' : 'incentive'
-                )}
-                className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
-                title={`Download sample template for ${cat.title}`}
-              >
-                <Download size={12} />
-                Template
-              </button>
-            </div>
-            <p className="text-xs text-stone-500 font-medium leading-normal mb-4">
-              {cat.id === 'daily_report' 
-                ? 'Upload all sheds Daily Production Statement (Shed 1, Shed 2, Shed 3, KTTM) for telemetry, GPS, and production totals.' 
-                : cat.id === 'incentive_report'
-                ? 'Upload Daily Incentive Amount sheet for manual sider payouts and assignments.'
-                : cat.id === 'machine_em'
-                ? 'Upload Machine EM spreadsheet to update machine efficiency maintenance in the cloud.'
-                : 'Upload employee registry to sync names and ticket numbers.'}
-            </p>
             
-            <div className="relative">
+            <div className="relative mt-auto pt-3 border-t border-stone-100">
               <input 
                 type="file" 
                 className="absolute inset-0 opacity-0 cursor-pointer z-10" 
@@ -1176,17 +1338,27 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 disabled={!!isUploading}
               />
               <button className={cn(
-                "w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+                "w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs",
                 isUploading === cat.id ? "bg-stone-100 text-stone-400" : 
-                pendingReports[cat.id] ? "bg-emerald-600 text-white shadow-sm" :
-                "bg-stone-900 text-stone-50 hover:bg-stone-800 shadow-xs"
+                pendingReports[cat.id] ? "bg-emerald-600 text-white" :
+                "bg-stone-900 text-stone-50 hover:bg-stone-800"
               )}>
                 {isUploading === cat.id ? (
-                  <span className="flex items-center justify-center gap-2">
+                  <>
                     <Loader2 className="animate-spin" size={14} />
                     Processing...
-                  </span>
-                ) : pendingReports[cat.id] ? 'REPLACE FILE' : 'Upload Excel Sheet'}
+                  </>
+                ) : pendingReports[cat.id] ? (
+                  <>
+                    <FileCheck size={14} />
+                    REPLACE FILE
+                  </>
+                ) : (
+                  <>
+                    <Upload size={14} />
+                    Upload Excel Sheet
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1221,65 +1393,110 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </motion.div>
       )}
 
-      {/* Manual / Holiday Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="bg-stone-900 p-10 rounded-[3rem] text-stone-50 overflow-hidden relative">
-          <div className="relative z-10">
-            <h3 className="text-xl font-black uppercase tracking-tight mb-4">Zero-Production Event</h3>
-            <p className="text-sm text-stone-400 font-bold uppercase tracking-widest leading-relaxed mb-8">Mark today as a holiday or maintenance period with no recorded output.</p>
-            <button
-              onClick={() => {
-                const [year, month, day] = selectedDate.split('-');
-                const formattedDate = `${day}/${month}/${year}`;
-                onUploadSuccess({
-                  date: formattedDate,
-                  shed: targetShed,
-                  entries: [],
-                  summaries: [],
-                  totalProductionTarget: 0,
-                  totalProductionActual: 0
-                });
-                setShowSuccess(true);
-                setTimeout(() => setShowSuccess(false), 3000);
-              }}
-              disabled={!!isUploading}
-              className="px-8 py-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] transition-all cursor-pointer"
-            >
-              Log Holiday Protocol
-            </button>
+      {/* Leave & Factory Holiday Registry (Replaces Zero-Production Event & Ingestion Status) */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-300 text-amber-700 flex items-center justify-center shrink-0">
+              <Calendar size={20} className="text-amber-600" />
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-black text-stone-900 uppercase tracking-tight">
+                Leave &amp; Factory Holiday Registry
+              </h3>
+              <p className="text-xs text-stone-500 font-bold mt-0.5">
+                Mark dates as leave or maintenance and inspect all registered leave dates in dropdown
+              </p>
+            </div>
           </div>
-          <AlertCircle size={120} className="absolute -bottom-10 -right-10 text-white/5 rotate-12" />
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="px-3 py-1 bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-black uppercase tracking-wider">
+              {leaveDates.length} Leave Dates Marked
+            </span>
+          </div>
         </div>
 
-        <div className={cn(
-          "p-10 rounded-[3rem] flex items-center justify-between transition-all duration-500",
-          showSuccess ? "bg-emerald-500 text-white scale-[1.02]" : "bg-emerald-700/10 border border-emerald-100 text-emerald-900"
-        )}>
-          <div>
-            <h3 className="text-xl font-black uppercase tracking-tight mb-2">
-              {showSuccess ? "Upload Successful!" : "Ingestion Status"}
-            </h3>
-            <p className={cn(
-              "text-xs font-bold uppercase tracking-widest leading-relaxed",
-              showSuccess ? "text-emerald-100" : "text-emerald-900/50"
-            )}>
-              {showSuccess ? "The database has been updated with new telemetry." : "System ready for multi-tenant data sync. Pipeline active."}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+          {/* Date Picker & Mark as Leave Button */}
+          <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
+            <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500">
+              1. Select Date to Mark as Leave
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={leaveSelectedDate}
+                onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
+                onChange={(e) => setLeaveSelectedDate(e.target.value)}
+                className="flex-1 bg-white border border-stone-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-stone-800 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={handleMarkLeave}
+                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95 whitespace-nowrap"
+              >
+                Mark as Leave
+              </button>
+            </div>
+            <p className="text-[11px] text-stone-400 font-medium">
+              Selected date will be saved to the database as a factory holiday with zero output.
             </p>
           </div>
-          <motion.div
-            animate={showSuccess ? { scale: [1, 1.2, 1], rotate: [0, 360] } : {}}
-          >
-            <FileCheck size={48} className={showSuccess ? "text-white" : "text-emerald-500/30"} />
-          </motion.div>
+
+          {/* Dropdown showing the leave dates */}
+          <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500">
+                2. Marked Leave Dates Dropdown
+              </label>
+              {leaveDates.length > 0 && (
+                <span className="text-[10px] font-bold text-emerald-700">
+                  {leaveDates.length} recorded
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedLeaveFilter}
+                onChange={(e) => setSelectedLeaveFilter(e.target.value)}
+                className="flex-1 bg-white border border-stone-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-stone-800 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer"
+              >
+                <option value="">
+                  {leaveDates.length === 0 ? 'No dates marked as leave yet' : `Select Leave Date (${leaveDates.length} Marked)`}
+                </option>
+                {leaveDates.map((d) => (
+                  <option key={d} value={d}>
+                    📅 {d} — Holiday / Leave
+                  </option>
+                ))}
+              </select>
+
+              {selectedLeaveFilter && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveLeave(selectedLeaveFilter)}
+                  className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap"
+                  title="Remove this leave date"
+                >
+                  Unmark
+                </button>
+              )}
+            </div>
+
+            {selectedLeaveFilter ? (
+              <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-amber-200 text-xs">
+                <span className="font-bold text-stone-800">Selected: <strong className="font-mono text-amber-800">{selectedLeaveFilter}</strong></span>
+                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Holiday Logged</span>
+              </div>
+            ) : (
+              <p className="text-[11px] text-stone-400 font-medium">
+                Choose any marked date from the dropdown to review or unmark.
+              </p>
+            )}
+          </div>
         </div>
       </div>
-
-      {error && (
-        <div className="p-6 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-4 text-red-600 animate-pulse">
-           <AlertCircle size={20} />
-           <span className="text-xs font-black uppercase tracking-widest">{error}</span>
-        </div>
-      )}
 
       {/* EXTRACTED DATA PREVIEW MODAL FOR ALL 4 UPLOADS */}
       {previewModal && (

@@ -45,7 +45,7 @@ import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Coins, Trophy, BarChart3,
   Monitor, Zap, Star, AlertTriangle, X, CloudUpload, Loader2, Grid3X3,
   FileText, Check, MessageSquare, Play, Wrench, RotateCcw, History, Menu,
-  ArrowLeft, Table, Search
+  ArrowLeft, Table, Search, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
@@ -428,6 +428,7 @@ export default function Home() {
   });
 
   const [isTvMode, setIsTvMode] = useState(false);
+  const [isTvSettingsOpen, setIsTvSettingsOpen] = useState(false);
   const [tvStarted, setTvStarted] = useState(false);
   const [isSupervisorMode, setIsSupervisorMode] = useState(false);
   const [subPagesCount, setSubPagesCount] = useState(1);
@@ -463,7 +464,7 @@ export default function Home() {
   const [settingsMachineShed, setSettingsMachineShed] = useState<string>('All');
   const [settingsMachineSearch, setSettingsMachineSearch] = useState<string>('');
 
-  // Load Initial Data from MongoDB
+  // Load Initial Data from Database
   useEffect(() => {
     async function loadData() {
       try {
@@ -499,7 +500,7 @@ export default function Home() {
         if (data.frozenMonths) setFrozenMonths(data.frozenMonths);
         setIsSystemReady(true);
       } catch (err: any) {
-        console.error('Failed to load initial data from MongoDB:', err);
+        console.error('Failed to load initial data from Database:', err);
         setLastError(err?.message || 'Database connection error');
         setIsSystemReady(true);
       }
@@ -545,7 +546,7 @@ export default function Home() {
   }, [dailyReport.date]);
 
 
-  // Manual Sync to MongoDB
+  // Manual Sync to Database
   const forceSync = async () => {
     setIsManualSyncing(true);
     setSaveStatus('saving');
@@ -563,7 +564,7 @@ export default function Home() {
       setSyncResultModal({
         show: true,
         title: 'Sync Complete',
-        message: 'All daily statements, worker allocations, and system settings have been securely saved to MongoDB.',
+        message: 'All daily statements, worker allocations, and system settings have been securely saved to Database.',
         success: true
       });
       setTimeout(() => setSaveStatus('idle'), 3000);
@@ -573,7 +574,7 @@ export default function Home() {
       setSyncResultModal({
         show: true,
         title: 'Sync Error',
-        message: `Failed to save changes to MongoDB: ${err?.message || 'Connection error'}`,
+        message: `Failed to save changes to Database: ${err?.message || 'Connection error'}`,
         success: false
       });
     } finally {
@@ -618,7 +619,7 @@ export default function Home() {
 
       setSettings(updatedSettings);
       await apiClient.saveSettings(updatedSettings);
-      alert('Google Sheet data synchronized successfully to MongoDB!');
+      alert('Google Sheet data synchronized successfully to Database!');
     } catch (err: any) {
       console.error(err);
       alert('Error syncing from Google Sheets. Check console and URL.');
@@ -1163,7 +1164,7 @@ export default function Home() {
     await apiClient.seedHistoricalApril();
     const refreshed = await apiClient.fetchInitialData();
     if (refreshed.history) setReportHistory(refreshed.history);
-    alert('April historical reports imported into MongoDB successfully!');
+    alert('April historical reports imported into Database successfully!');
   };
 
   const availableYears = useMemo(() => {
@@ -1220,7 +1221,7 @@ export default function Home() {
         setSyncResultModal({
           show: true,
           title: 'All Data Cleared',
-          message: 'All daily reports and incentive history records have been permanently cleared from MongoDB.',
+          message: 'All daily reports and incentive history records have been permanently cleared from Database.',
           success: true
         });
       } else if (deleteConfirmModal.type === 'month') {
@@ -1237,7 +1238,7 @@ export default function Home() {
         setSyncResultModal({
           show: true,
           title: 'Month Data Cleared',
-          message: `All records for ${getClearMonthName(clearMonth)} ${clearYear} have been deleted from MongoDB.`,
+          message: `All records for ${getClearMonthName(clearMonth)} ${clearYear} have been deleted from Database.`,
           success: true
         });
       } else if (deleteConfirmModal.type === 'workers') {
@@ -1247,7 +1248,7 @@ export default function Home() {
         setSyncResultModal({
           show: true,
           title: 'Workers Cleared',
-          message: 'All worker master profiles have been removed from MongoDB.',
+          message: 'All worker master profiles have been removed from Database.',
           success: true
         });
       }
@@ -1304,17 +1305,8 @@ export default function Home() {
     (machines || []).forEach(m => {
       if (m.rfNo) list.add(m.rfNo);
     });
-    (activeDailyReport.entries || []).forEach(e => {
-      if (e.frameNo) list.add(e.frameNo);
-    });
-    Object.keys(settings.machineSiderCounts || {}).forEach(k => {
-      if (k) list.add(k);
-    });
-    if (list.size === 0) {
-      ['SP023', 'SP025', 'SP026', 'SP027', 'SP029', 'SP030', 'SP031', 'SP032', 'SP033', 'SP034', 'SP035', 'SP036', 'SP037', 'SP038', 'SP045', 'SP046', 'SP047', 'SP048', 'SP049', 'SP050', 'SP051', 'SP052', 'SP053', 'SP054', 'SP055', 'SP056'].forEach(m => list.add(m));
-    }
     return Array.from(list).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [machines, activeDailyReport.entries, settings.machineSiderCounts]);
+  }, [machines]);
 
   const updateMachineSides = (rfNo: string, newSides: number) => {
     const updatedCounts = {
@@ -1845,18 +1837,6 @@ export default function Home() {
       case 'counts':
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50 border border-emerald-200 rounded-2xl shadow-sm gap-4">
-              <div className="flex items-center gap-3">
-                <Database size={18} className="text-emerald-600" />
-                <div>
-                  <h4 className="text-xs font-black text-stone-800 uppercase tracking-wider">Count Master Database (MongoDB Live)</h4>
-                  <p className="text-[10px] text-stone-500 font-bold">🟢 Online Auto-Update Enabled (Changes sync instantly to MongoDB database)</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider rounded-xl self-start sm:self-center">
-                <CloudUpload size={12} /> Live MongoDB Sync Active
-              </div>
-            </div>
             <CountMaster
               conversions={countConversions}
               onSave={saveCountConversion}
@@ -1869,18 +1849,6 @@ export default function Home() {
       case 'incentive-master':
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50 border border-emerald-200 rounded-2xl shadow-sm gap-4">
-              <div className="flex items-center gap-3">
-                <Database size={18} className="text-emerald-600" />
-                <div>
-                  <h4 className="text-xs font-black text-stone-800 uppercase tracking-wider">Incentive Master Database (MongoDB Live)</h4>
-                  <p className="text-[10px] text-stone-500 font-bold">🟢 Online Auto-Update Enabled (Changes sync instantly to MongoDB database)</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider rounded-xl self-start sm:self-center">
-                <CloudUpload size={12} /> Live MongoDB Sync Active
-              </div>
-            </div>
             <IncentiveMaster
               rules={incentiveRules}
               onUpdate={updateIncentiveRulesOnline}
@@ -1896,18 +1864,6 @@ export default function Home() {
       case 'workers':
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50 border border-emerald-200 rounded-2xl shadow-sm gap-4">
-              <div className="flex items-center gap-3">
-                <Database size={18} className="text-emerald-600" />
-                <div>
-                  <h4 className="text-xs font-black text-stone-800 uppercase tracking-wider">Employee Master Database (MongoDB Live)</h4>
-                  <p className="text-[10px] text-stone-500 font-bold">🟢 Online Auto-Update Enabled (Changes sync instantly to MongoDB database)</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider rounded-xl self-start sm:self-center">
-                <CloudUpload size={12} /> Live MongoDB Sync Active
-              </div>
-            </div>
             <WorkerMaster
               workers={workers}
               currentShed={selectedShed}
@@ -1923,18 +1879,6 @@ export default function Home() {
       case 'machine-master':
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-emerald-50 border border-emerald-200 rounded-2xl shadow-sm gap-4">
-              <div className="flex items-center gap-3">
-                <Database size={18} className="text-emerald-600" />
-                <div>
-                  <h4 className="text-xs font-black text-stone-800 uppercase tracking-wider">Ring Frame Machine Master Registry</h4>
-                  <p className="text-[10px] text-stone-500 font-bold">🟢 Active Hardware Configuration (Ring Frame Numbers, Counts & Crew Assignment)</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider rounded-xl self-start sm:self-center">
-                <Wrench size={12} /> Machine Telemetry Active
-              </div>
-            </div>
             <MachineMaster
               machines={machines}
               currentShed={selectedShed}
@@ -1971,8 +1915,6 @@ export default function Home() {
                 const refreshed = await apiClient.fetchInitialData();
                 if (refreshed.history) setReportHistory(refreshed.history);
                 if (refreshed.dailyReport) setDailyReport(refreshed.dailyReport);
-                const distinctSheds = Array.from(new Set(reportOrReports.map(r => r.shed))).filter(Boolean);
-                alert(`Data successfully uploaded and stored in MongoDB for ${distinctSheds.length > 1 ? distinctSheds.join(', ') : (reportOrReports[0]?.shed || selectedShed)}!`);
               } else {
                 await apiClient.saveDailyReport(reportOrReports);
                 if (reportOrReports.emData) {
@@ -1988,9 +1930,7 @@ export default function Home() {
                   ...prev.filter(r => !(r.date === reportOrReports.date && (r.shed || 'Shed 1') === (reportOrReports.shed || selectedShed))),
                   reportOrReports
                 ]);
-                alert(`Daily Statement uploaded and stored in MongoDB for ${reportOrReports.shed || selectedShed}!`);
               }
-              setActiveTab('dashboard');
             }}
             onWorkersUpdate={async (newWorkers) => {
               const updated = mergeDuplicateWorkers([...workers, ...newWorkers]);
@@ -2003,6 +1943,7 @@ export default function Home() {
               await apiClient.saveMachineEm(merged);
             }}
             countConversions={countConversions}
+            history={reportHistory}
           />
         );
 
@@ -2031,9 +1972,9 @@ export default function Home() {
                     onClick={async () => {
                       try {
                         await apiClient.saveSettings(settings);
-                        alert('System settings have been successfully saved and updated to MongoDB!');
+                        alert('System settings have been successfully saved and updated to Database!');
                       } catch {
-                        alert('Failed to save settings. Please check your MongoDB connection.');
+                        alert('Failed to save settings. Please check your Database connection.');
                       }
                     }}
                     className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer"
@@ -2046,23 +1987,50 @@ export default function Home() {
             </div>
 
             {/* TV Dashboard Pages & Sub-Pages Rotation Timing Configuration */}
-            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
+            <div className="bg-stone-50/70 rounded-3xl border border-stone-200 shadow-2xs overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setIsTvSettingsOpen(prev => !prev)}
+                className="w-full p-6 sm:p-7 flex flex-col md:flex-row md:items-center justify-between gap-4 text-left hover:bg-stone-100/60 transition-colors cursor-pointer"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 bg-emerald-500/10 border border-emerald-300 text-emerald-700 rounded-2xl flex items-center justify-center shrink-0">
                     <Monitor size={22} className="text-emerald-600" />
                   </div>
                   <div>
-                    <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
-                      TV Dashboard Pages & Sub-Pages Rotation Timing
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
+                        TV Dashboard Pages &amp; Sub-Pages Rotation Timing
+                      </h3>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        {isTvSettingsOpen ? 'Click to collapse' : 'Click to dropdown & edit'}
+                      </span>
+                    </div>
                     <p className="text-xs text-stone-500 font-bold mt-0.5">
-                      Configure rotation duration (in seconds) for each of the {TV_MAIN_PAGES.length} Main Chapters and {TV_MAIN_PAGES.reduce((acc, m) => acc + m.subPages.length, 0)} Sub-Pages, or toggle views on/off
+                      Configure rotation duration for {TV_MAIN_PAGES.length} Chapters &amp; {TV_MAIN_PAGES.reduce((acc, m) => acc + m.subPages.length, 0)} Sub-Pages, or toggle views on/off
                     </p>
                   </div>
                 </div>
 
-                {/* Preset Timing Buttons */}
+                <div className="flex items-center gap-3 self-end md:self-center">
+                  <div className="px-3.5 py-1.5 bg-white border border-stone-200 rounded-xl text-xs font-black text-stone-700 uppercase tracking-wider shadow-2xs">
+                    Target: {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][(settings.tvMonth || 9) - 1]} {settings.tvYear || 2026}
+                  </div>
+                  <div className="w-9 h-9 rounded-xl bg-white border border-stone-200 flex items-center justify-center text-stone-600 shadow-2xs">
+                    {isTvSettingsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </div>
+                </div>
+              </button>
+
+              {isTvSettingsOpen && (
+                <div className="p-6 sm:p-8 pt-0 border-t border-stone-200/80 space-y-6 mt-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
+                    <div>
+                      <h4 className="text-sm font-black text-stone-800 uppercase tracking-tight">Preset Timing Profiles</h4>
+                      <p className="text-xs text-stone-500 font-medium">Quickly apply uniform cycle durations across all active views</p>
+                    </div>
+
+                    {/* Preset Timing Buttons */}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setAllTvSubPagesDuration(10)}
@@ -2346,6 +2314,8 @@ export default function Home() {
                 })}
               </div>
             </div>
+          )}
+        </div>
             <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200/80 pb-5">
                 <div className="flex items-center gap-3">
@@ -2468,7 +2438,7 @@ export default function Home() {
                       Machine Configuration & Side Allotments
                     </h3>
                     <p className="text-xs text-stone-500 font-bold mt-0.5">
-                      Spinning Frame Operator & Side Allotment Master (LH & RH Allocation)
+                      Spinning Frame Operator & Side Allotment Master (Showing Only Registered Machines)
                     </p>
                   </div>
                 </div>
@@ -2558,7 +2528,8 @@ export default function Home() {
                 if (filtered.length === 0) {
                   return (
                     <div className="text-center py-12 bg-white rounded-2xl border border-stone-200">
-                      <p className="text-sm font-bold text-stone-400">No spinning frames found matching filters.</p>
+                      <p className="text-sm font-bold text-stone-400">No registered spinning frames found matching filters.</p>
+                      <p className="text-xs text-stone-400 mt-1">Only machines registered in Machine Master are displayed here.</p>
                     </div>
                   );
                 }
@@ -2579,7 +2550,12 @@ export default function Home() {
                         >
                           <div className="flex items-center justify-between gap-1 mb-3 pb-2 border-b border-stone-100">
                             <div>
-                              <div className="font-black text-stone-900 text-sm tracking-tight">{rfNo}</div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-black text-stone-900 text-sm tracking-tight">{rfNo}</span>
+                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  Registered
+                                </span>
+                              </div>
                               <span className="text-[9px] font-black uppercase text-stone-400">{mShed}</span>
                             </div>
                             <span
@@ -2657,73 +2633,14 @@ export default function Home() {
               })()}
             </div>
 
-            {/* WhatsApp Dispatch Section */}
-            <div className="p-6 sm:p-8 bg-stone-50/70 rounded-3xl border border-stone-200 space-y-4">
-              <h4 className="text-sm font-black text-emerald-800 uppercase tracking-widest flex items-center gap-2">
-                <MessageSquare size={18} className="text-emerald-600" /> WhatsApp Notifications & Dispatch
-              </h4>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-stone-200/80 shadow-2xs">
-                  <div>
-                    <div className="text-xs font-bold text-stone-800">1. Daily Production Statement</div>
-                    <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppProdPhone}</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const phone = (settings.whatsAppProdPhone || '+919944711575').replace(/[^0-9+]/g, '');
-                      const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateWhatsAppMessage(dailyReport)}`;
-                      window.open(url, '_blank');
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer hover:bg-emerald-700 transition-colors shadow-2xs"
-                  >
-                    <Play size={10} /> Send Now
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-stone-200/80 shadow-2xs">
-                  <div>
-                    <div className="text-xs font-bold text-stone-800">2. Daily EM Statement</div>
-                    <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppEmPhone}</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const phone = (settings.whatsAppEmPhone || '+919944711575').replace(/[^0-9+]/g, '');
-                      const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateEmStatementMessage(dailyReport)}`;
-                      window.open(url, '_blank');
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer hover:bg-emerald-700 transition-colors shadow-2xs"
-                  >
-                    <Play size={10} /> Send Now
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-stone-200/80 shadow-2xs">
-                  <div>
-                    <div className="text-xs font-bold text-stone-800">3. Daily Incentive Ledger</div>
-                    <div className="text-[10px] text-stone-400 font-bold">{settings.whatsAppIncentivePhone}</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const phone = (settings.whatsAppIncentivePhone || '+919944711575').replace(/[^0-9+]/g, '');
-                      const url = `https://api.whatsapp.com/send?phone=${phone}&text=${generateIncentiveStatementMessage(dailyReport)}`;
-                      window.open(url, '_blank');
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer hover:bg-emerald-700 transition-colors shadow-2xs"
-                  >
-                    <Play size={10} /> Send Now
-                  </button>
-                </div>
-              </div>
-            </div>
-
             {/* Backup & Recovery */}
             <div>
-              <h2 className="text-3xl font-black text-stone-900 uppercase tracking-tight mb-2">MongoDB Backup & Recovery</h2>
+              <h2 className="text-3xl font-black text-stone-900 uppercase tracking-tight mb-2">Database Backup & Recovery</h2>
               <div className="p-8 bg-amber-50 rounded-[2.5rem] border border-amber-200 grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
                 <div className="p-6 bg-white rounded-2xl border border-amber-100 shadow-sm flex flex-col justify-between">
                   <div>
                     <h4 className="text-sm font-black text-amber-900 uppercase tracking-widest mb-2">Export Current Database</h4>
-                    <p className="text-xs text-stone-500 font-semibold mb-6">Download full JSON snapshot from MongoDB.</p>
+                    <p className="text-xs text-stone-500 font-semibold mb-6">Download full JSON snapshot from Database.</p>
                   </div>
                   <button
                     onClick={downloadBackup}
@@ -2736,7 +2653,7 @@ export default function Home() {
                 <div className="p-6 bg-white rounded-2xl border border-stone-200 shadow-sm flex flex-col justify-between">
                   <div>
                     <h4 className="text-sm font-black text-stone-900 uppercase tracking-widest mb-2">Import / Restore Backup</h4>
-                    <p className="text-xs text-stone-500 font-semibold mb-6">Upload JSON file to restore into MongoDB.</p>
+                    <p className="text-xs text-stone-500 font-semibold mb-6">Upload JSON file to restore into Database.</p>
                   </div>
                   <label className="w-full py-3 bg-stone-900 hover:bg-black text-white rounded-xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-md">
                     <FileUp size={14} /> Import JSON Backup
@@ -2878,7 +2795,7 @@ export default function Home() {
                     </div>
                     <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete Worker Master</h4>
                     <p className="text-xs text-stone-500 mb-5">
-                      Clear all registered employee records, verification photos, and profiles from MongoDB.
+                      Clear all registered employee records, verification photos, and profiles from Database.
                     </p>
 
                     <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-xl mb-6">
@@ -3065,7 +2982,7 @@ export default function Home() {
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-100">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[9px] font-black uppercase tracking-widest">Live MongoDB Syncing</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Live Database Syncing</span>
                 </div>
                 <button
                   onClick={() => {
@@ -3087,7 +3004,7 @@ export default function Home() {
                   <div className="w-20 h-20 bg-stone-100 rounded-[2rem] flex items-center justify-center text-stone-300 mb-6 animate-pulse">
                     <RefreshCw size={40} className="animate-spin text-emerald-600" />
                   </div>
-                  <h2 className="text-xl font-black text-stone-900 uppercase tracking-tighter mb-2">Connecting to MongoDB</h2>
+                  <h2 className="text-xl font-black text-stone-900 uppercase tracking-tighter mb-2">Connecting to Database</h2>
                   <p className="text-stone-400 font-bold uppercase tracking-[0.3em] text-[10px]">Loading Spinning Mill Data...</p>
                 </div>
               )}
@@ -3112,7 +3029,7 @@ export default function Home() {
                   </div>
                   <div>
                     <h3 className="text-lg font-black uppercase tracking-wider">{syncResultModal.title}</h3>
-                    <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mt-0.5">MongoDB Database Action</p>
+                    <p className="text-[10px] font-bold opacity-80 uppercase tracking-widest mt-0.5">Database Action</p>
                   </div>
                 </div>
                 <div className="p-8 space-y-6">

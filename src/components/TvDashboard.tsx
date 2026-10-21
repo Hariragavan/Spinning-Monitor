@@ -72,7 +72,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
     id: 'main-statement',
     chapterNumber: 2,
     title: 'Daily Production Statement',
-    subtitle: 'Technical shift statement across all ring frames (K01–K06)',
+    subtitle: 'Technical shift statement across all registered ring frames',
     icon: FileText,
     subPages: [
       {
@@ -103,7 +103,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
         title: 'Machine-Wise Frame Incentive Summary',
         shortTitle: 'Machine Allocation',
         defaultSeconds: 15,
-        description: 'Machine frame (K01–K06) payouts, sider allocations & frame incentive sums'
+        description: 'Machine frame payouts, sider allocations & frame incentive sums'
       }
     ]
   },

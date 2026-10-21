@@ -245,7 +245,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex justify-center w-full">
                 <button
                   onClick={() => {
-                    if (window.confirm('Import historical data for April 2026? This will merge with MongoDB history.')) {
+                    if (window.confirm('Import historical data for April 2026? This will merge with Database history.')) {
                       onSeedData();
                     }
                   }}
@@ -270,7 +270,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <>
               <button
                 onClick={() => {
-                  if (window.confirm('Import historical data for April 2026? This will merge with MongoDB history.')) {
+                  if (window.confirm('Import historical data for April 2026? This will merge with Database history.')) {
                     onSeedData();
                   }
                 }}
@@ -298,7 +298,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         isCollapsed ? "p-3 flex justify-center" : "p-3.5"
       )}>
         {isCollapsed ? (
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 overflow-hidden border border-emerald-200 font-black text-xs uppercase shadow-2xs cursor-default" title="Direct Access • MongoDB Connected">
+          <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 overflow-hidden border border-emerald-200 font-black text-xs uppercase shadow-2xs cursor-default" title="Direct Access • Database Connected">
             AD
           </div>
         ) : (
@@ -310,7 +310,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <p className="text-[11px] font-black text-stone-900 truncate uppercase leading-tight">Direct Access</p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[9px] font-bold text-emerald-700 uppercase tracking-widest leading-none">MongoDB Connected</p>
+                <p className="text-[9px] font-bold text-emerald-700 uppercase tracking-widest leading-none">Database Connected</p>
               </div>
             </div>
           </div>

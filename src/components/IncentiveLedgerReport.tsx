@@ -1662,6 +1662,11 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
             <div className="space-y-8">
               {/* Report Header */}
               <div className="text-center pb-6 border-b-4 border-stone-950/15">
+                <img
+                  src="/scm-logo-horizontal.png"
+                  alt="SCM Textile Spinners"
+                  className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs mx-auto mb-3"
+                />
                 <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">KTTM Ring frame Operator Incentive Abstract</h1>
                 <div className="mt-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
                   Month: <span className="text-stone-950 font-black text-sm">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span>
@@ -1870,29 +1875,13 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
               {/* SCM TEXTILE SPINNERS Report Header Layout */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-4 border-stone-950/15 gap-6">
                 <div className="flex items-center gap-5">
-                  {/* Stylized custom SVG peacock emblem */}
-                  <div className="w-20 h-20 rounded-full border-2 border-indigo-950/20 flex items-center justify-center p-1.5 bg-indigo-50/50 shrink-0">
-                    <svg className="w-14 h-14 text-indigo-950" viewBox="0 0 100 100" fill="currentColor">
-                      <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 3" />
-                      <path d="M50 20 C60 20, 65 30, 65 45 C65 60, 50 75, 50 85" fill="none" stroke="currentColor" strokeWidth="3" />
-                      <path d="M50 20 C40 20, 35 30, 35 45 C35 60, 50 75, 50 85" fill="none" stroke="currentColor" strokeWidth="3" />
-                      <path d="M50 45 L30 25 M50 45 L20 38 M50 45 L22 55 M50 45 L32 70 M50 45 L70 25 M50 45 L80 38 M50 45 L78 55 M50 45 L68 70" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                      <circle cx="30" cy="25" r="3" />
-                      <circle cx="20" cy="38" r="3" />
-                      <circle cx="22" cy="55" r="3" />
-                      <circle cx="32" cy="70" r="3" />
-                      <circle cx="70" cy="25" r="3" />
-                      <circle cx="80" cy="38" r="3" />
-                      <circle cx="78" cy="55" r="3" />
-                      <circle cx="68" cy="70" r="3" />
-                      <ellipse cx="50" cy="52" rx="7" ry="15" fill="currentColor" />
-                      <path d="M50 37 C47 37, 46 30, 50 25 C54 30, 53 37, 50 37 Z" fill="currentColor" />
-                      <polygon points="49,25 51,25 50,21" fill="currentColor" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl md:text-4xl font-serif font-black tracking-[0.05em] text-indigo-950 uppercase leading-none">SCM TEXTILE SPINNERS</h1>
-                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800 mt-2">KTTM Ringframe Production Report</h2>
+                  <img
+                    src="/scm-logo-horizontal.png"
+                    alt="SCM Textile Spinners"
+                    className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs"
+                  />
+                  <div className="border-l-2 border-stone-300 pl-4">
+                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">KTTM Ringframe Production Report</h2>
                   </div>
                 </div>
 
@@ -2074,29 +2063,13 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
               {/* Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-4 border-stone-950/15 gap-6">
                 <div className="flex items-center gap-5">
-                  {/* Peacock logo (deep purple) */}
-                  <div className="w-20 h-20 rounded-full border-2 border-purple-950/20 flex items-center justify-center p-1.5 bg-purple-50/50 shrink-0">
-                    <svg className="w-14 h-14 text-purple-900" viewBox="0 0 100 100" fill="currentColor">
-                      <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="3 3" />
-                      <path d="M50 20 C60 20, 65 30, 65 45 C65 60, 50 75, 50 85" fill="none" stroke="currentColor" strokeWidth="3" />
-                      <path d="M50 20 C40 20, 35 30, 35 45 C35 60, 50 75, 50 85" fill="none" stroke="currentColor" strokeWidth="3" />
-                      <path d="M50 45 L30 25 M50 45 L20 38 M50 45 L22 55 M50 45 L32 70 M50 45 L70 25 M50 45 L80 38 M50 45 L78 55 M50 45 L68 70" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                      <circle cx="30" cy="25" r="3" />
-                      <circle cx="20" cy="38" r="3" />
-                      <circle cx="22" cy="55" r="3" />
-                      <circle cx="32" cy="70" r="3" />
-                      <circle cx="70" cy="25" r="3" />
-                      <circle cx="80" cy="38" r="3" />
-                      <circle cx="78" cy="55" r="3" />
-                      <circle cx="68" cy="70" r="3" />
-                      <ellipse cx="50" cy="52" rx="7" ry="15" fill="currentColor" />
-                      <path d="M50 37 C47 37, 46 30, 50 25 C54 30, 53 37, 50 37 Z" fill="currentColor" />
-                      <polygon points="49,25 51,25 50,21" fill="currentColor" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h1 className="text-3xl md:text-4xl font-serif font-black tracking-[0.05em] text-purple-900 uppercase leading-none">SCM TEXTILE SPINNERS</h1>
-                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800 mt-2">KTTM Ringframe Production Report</h2>
+                  <img
+                    src="/scm-logo-horizontal.png"
+                    alt="SCM Textile Spinners"
+                    className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs"
+                  />
+                  <div className="border-l-2 border-stone-300 pl-4">
+                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">KTTM Ringframe Production Report</h2>
                   </div>
                 </div>
 
@@ -2571,6 +2544,11 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           {abstractChunks.map((chunk, chunkIdx) => (
             <div key={`abstract-chunk-${chunkIdx}`} className="print-page-break p-5 border-2 border-black rounded-lg min-h-[238mm] flex flex-col mb-8">
               <div className="text-center pb-2 border-b-2 border-black mb-3">
+                <img
+                  src="/scm-logo-horizontal.png"
+                  alt="SCM Textile Spinners"
+                  className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
+                />
                 <h1 className="text-2xl font-black text-black uppercase tracking-tight">KTTM Ring frame Operator Incentive Abstract</h1>
                 <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-4">
                   <span>
