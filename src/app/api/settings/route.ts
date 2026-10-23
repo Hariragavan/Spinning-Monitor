@@ -18,9 +18,12 @@ const DEFAULT_SETTINGS: SystemSettings = {
   machineEmGoogleSheetUrl: '',
   lastMachineEmSyncDate: null,
   emHighLimit: 4,
-  whatsAppProdPhone: '+919944711575',
-  whatsAppEmPhone: '+919944711575',
-  whatsAppIncentivePhone: '+919944711575',
+  shed40sFormulas: {
+    'Shed 1': '40s GPS = Actual GPS × Multiplication Factor',
+    'Shed 2': '40s GPS = Actual GPS × Multiplication Factor',
+    'Shed 3': '40s GPS = Actual GPS × Multiplication Factor',
+    'KTTM': '40s GPS = (Actual GPS × Count) / 40',
+  },
 };
 
 export async function GET() {

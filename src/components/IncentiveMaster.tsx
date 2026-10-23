@@ -9,8 +9,8 @@ import { cn } from '../lib/utils';
 
 interface BuilderSlotItem {
   id: string;
-  amount: number;
-  fromGps: number;
+  amount: number | string;
+  fromGps: number | string;
   toGps: string; // string so it can hold "GPSS Target" or number as string
 }
 
@@ -146,11 +146,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   }, [selectedCount, builderShed, selectedShedTab, rules]);
 
   // Handle slot modifications in builder
-  const handleUpdateSlotAmount = (index: number, val: number) => {
+  const handleUpdateSlotAmount = (index: number, val: number | string) => {
     setBuilderSlots(prev => prev.map((s, idx) => idx === index ? { ...s, amount: val } : s));
   };
 
-  const handleUpdateSlotFrom = (index: number, val: number) => {
+  const handleUpdateSlotFrom = (index: number, val: number | string) => {
     setBuilderSlots(prev => {
       const next = [...prev];
       next[index] = { ...next[index], fromGps: val };
@@ -162,6 +162,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   };
 
   const handleUpdateSlotTo = (index: number, val: string) => {
+    if (val !== '' && !isNaN(Number(val)) && Number(val) < 0) return;
     setBuilderSlots(prev => prev.map((s, idx) => idx === index ? { ...s, toGps: val } : s));
   };
 
@@ -175,8 +176,8 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
 
   const handleAddBuilderSlot = () => {
     const lastSlot = builderSlots[builderSlots.length - 1];
-    const newAmount = lastSlot ? Math.max(10, lastSlot.amount - 10) : 50;
-    const newFrom = lastSlot ? Math.max(50, lastSlot.fromGps - 5) : 175;
+    const newAmount = lastSlot ? (typeof lastSlot.amount === 'number' ? Math.max(10, lastSlot.amount - 10) : 50) : 50;
+    const newFrom = lastSlot ? (typeof lastSlot.fromGps === 'number' ? Math.max(50, lastSlot.fromGps - 5) : 175) : 175;
     const newTo = lastSlot ? String(lastSlot.fromGps) : '180';
 
     setBuilderSlots(prev => [
@@ -197,13 +198,15 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     const payouts: IncentivePayout[] = builderSlots.map((s, idx) => {
       const toVal = parseFloat(s.toGps);
       const isTop = idx === 0 || s.toGps === 'GPSS Target';
-      const condText = isTop ? `for GPSS ${s.fromGps}` : `for GPS ${s.fromGps} to ${s.toGps}`;
-      const ruleTxt = `Rs ${s.amount} ${condText}`;
+      const fromNum = typeof s.fromGps === 'string' ? (parseFloat(s.fromGps) || 0) : s.fromGps;
+      const amountNum = typeof s.amount === 'string' ? (parseFloat(s.amount) || 0) : s.amount;
+      const condText = isTop ? `for GPSS ${fromNum}` : `for GPS ${fromNum} to ${s.toGps}`;
+      const ruleTxt = `Rs ${amountNum} ${condText}`;
 
       return {
-        gpsThreshold: s.fromGps,
-        amount: s.amount,
-        fromGps: s.fromGps,
+        gpsThreshold: fromNum,
+        amount: amountNum,
+        fromGps: fromNum,
         toGps: isNaN(toVal) ? undefined : toVal,
         conditionText: condText,
         ruleText: ruleTxt
@@ -521,8 +524,28 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                         </span>
                         <input
                           type="number"
-                          value={slot.amount}
-                          onChange={(e) => handleUpdateSlotAmount(idx, parseFloat(e.target.value) || 0)}
+                          min="0"
+                          placeholder="0"
+                          value={slot.amount === 0 ? '' : slot.amount}
+                          onFocus={() => {
+                            if (slot.amount === 0 || slot.amount === '0') {
+                              handleUpdateSlotAmount(idx, '');
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === '-' || e.key === 'Minus') e.preventDefault();
+                          }}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '') {
+                              handleUpdateSlotAmount(idx, '');
+                            } else {
+                              const parsed = parseFloat(val);
+                              if (!isNaN(parsed) && parsed >= 0) {
+                                handleUpdateSlotAmount(idx, val);
+                              }
+                            }
+                          }}
                           className="w-full pl-7 pr-2 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-bold text-stone-900 focus:bg-white focus:border-emerald-500 outline-none"
                         />
                       </div>
@@ -532,8 +555,28 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                     <div className="col-span-3">
                       <input
                         type="number"
-                        value={slot.fromGps}
-                        onChange={(e) => handleUpdateSlotFrom(idx, parseFloat(e.target.value) || 0)}
+                        min="0"
+                        placeholder="0"
+                        value={slot.fromGps === 0 ? '' : slot.fromGps}
+                        onFocus={() => {
+                          if (slot.fromGps === 0 || slot.fromGps === '0') {
+                            handleUpdateSlotFrom(idx, '');
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === '-' || e.key === 'Minus') e.preventDefault();
+                        }}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            handleUpdateSlotFrom(idx, '');
+                          } else {
+                            const parsed = parseFloat(val);
+                            if (!isNaN(parsed) && parsed >= 0) {
+                              handleUpdateSlotFrom(idx, val);
+                            }
+                          }
+                        }}
                         className="w-full px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-bold text-stone-900 focus:bg-white focus:border-emerald-500 outline-none"
                       />
                     </div>
@@ -542,9 +585,22 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                     <div className="col-span-3">
                       <input
                         type="text"
-                        value={slot.toGps}
-                        onChange={(e) => handleUpdateSlotTo(idx, e.target.value)}
                         placeholder="GPSS Target"
+                        value={slot.toGps}
+                        onFocus={() => {
+                          if (slot.toGps === '0') {
+                            handleUpdateSlotTo(idx, '');
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === '-' || e.key === 'Minus') e.preventDefault();
+                        }}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (!val.includes('-')) {
+                            handleUpdateSlotTo(idx, val);
+                          }
+                        }}
                         className="w-full px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-bold text-stone-500 focus:bg-white focus:border-emerald-500 outline-none"
                       />
                     </div>

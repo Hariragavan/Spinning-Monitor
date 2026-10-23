@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  RotateCcw, Plus, Edit2, Trash2, Settings, Save, 
-  X, Check, AlertCircle, Layers, Cpu, Wrench 
+  RotateCcw, Plus, Edit2, Trash2, Save, Check, AlertCircle 
 } from 'lucide-react';
 import { MachineMasterItem, Sider, CountConversion, Shed } from '../types';
 import { cn } from '../lib/utils';
@@ -16,6 +15,13 @@ export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
 export const ALL_STANDARD_MACHINES: MachineMasterItem[] = [];
 
 export const STANDARD_12_MACHINES = ALL_STANDARD_MACHINES;
+
+export const SHED_REAL_COUNTS: Record<string, string[]> = {
+  'Shed 1': ['030/1-PH-PC', '040/1-PH-PC', '34/1-PH-PV', '042/1-CH-NY', '038/1-CH-NY', '034/1-PH-PC'],
+  'Shed 2': ['32/1-CH-CY', '34/1CHY-OCY', '30/1CH', '20/1-CW-WVG'],
+  'Shed 3': ['26/1-CHY', '40s'],
+  'KTTM': ['60s CW', '40s'],
+};
 
 interface MachineMasterProps {
   machines: MachineMasterItem[];
@@ -38,19 +44,18 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 }) => {
   const [selectedShedTab, setSelectedShedTab] = useState<string>(currentShed || 'All Sheds');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<Omit<MachineMasterItem, 'id'>>({
+  const [formData, setFormData] = useState<{
+    rfNo: string;
+    description: string;
+    shed: string;
+    count: string;
+  }>({
     rfNo: '',
     description: '',
     shed: currentShed || 'Shed 1',
-    count: '32/1-CH-CY',
-    stdGps: 340,
-    actualGps: 340,
-    productionKg: 1500,
-    assignedSider: '-',
-    assignedGaiter: '-'
+    count: '32/1-CH-CY'
   });
   const [error, setError] = useState<string | null>(null);
-  const [quickConfigMachine, setQuickConfigMachine] = useState<MachineMasterItem | null>(null);
 
   // Sync tab with currentShed if currentShed prop changes
   useEffect(() => {
@@ -59,13 +64,37 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Available count options
-  const defaultCounts = ['32/1-CH-CY', '34/1CHY-OCY', '30/1CH', '20/1-CW-WVG', '40s Combed', '34/1 CH', '24/1 Carded', '60s Super Combed', '50s Compact', '40s Micro Weft', '30s Warp', '32s Hosiery', '40s Compact'];
-  const availableCounts = Array.from(new Set([
-    ...defaultCounts,
-    ...countConversions.map(c => c.count),
-    ...machines.map(m => m.count)
-  ])).filter(Boolean);
+  // Get available counts specifically for the chosen shed (no dummy names)
+  const getAvailableCountsForShed = (targetShed: string): string[] => {
+    const s = targetShed && targetShed !== 'All Sheds' ? targetShed : 'Shed 1';
+    
+    // Counts defined in Count Master for this shed (or All Sheds)
+    const fromConversions = countConversions
+      .filter(c => c.shed === s || c.shed === 'All Sheds')
+      .map(c => c.count.trim());
+
+    // Counts currently running on machines in this shed
+    const fromMachines = machines
+      .filter(m => (m.shed || 'Shed 1') === s)
+      .map(m => m.count.trim());
+
+    // Real standard counts for this specific shed
+    const defaults = SHED_REAL_COUNTS[s] || ['40s'];
+
+    const combined = Array.from(new Set([
+      ...defaults,
+      ...fromConversions,
+      ...fromMachines
+    ].filter(Boolean)));
+
+    return combined.length > 0 ? combined : defaults;
+  };
+
+  const activeFormShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
+  const availableCountsForShed = Array.from(new Set([
+    ...getAvailableCountsForShed(activeFormShed),
+    ...(formData.count ? [formData.count] : [])
+  ].filter(Boolean)));
 
   // Filter machines based on selected shed tab
   const filteredMachines = machines.filter(m => {
@@ -73,23 +102,15 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     return (m.shed || 'Shed 1') === selectedShedTab;
   });
 
-  // Filter workers based on form machine's shed
-  const targetShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
-  const sidersList = workers.filter(w => (!w.shed || w.shed === targetShed) && (!w.department || w.department.toLowerCase().includes('sider')));
-  const gaitersList = workers.filter(w => (!w.shed || w.shed === targetShed) && w.department && w.department.toLowerCase().includes('gaiter'));
-
   const handleStartEdit = (machine: MachineMasterItem) => {
     setEditingId(machine.id);
+    const mShed = machine.shed || currentShed || 'Shed 1';
+    const shedCounts = getAvailableCountsForShed(mShed);
     setFormData({
       rfNo: machine.rfNo,
       description: machine.description || '',
-      shed: machine.shed || currentShed || 'Shed 1',
-      count: machine.count,
-      stdGps: machine.stdGps,
-      actualGps: machine.actualGps,
-      productionKg: machine.productionKg,
-      assignedSider: machine.assignedSider || '-',
-      assignedGaiter: machine.assignedGaiter || '-'
+      shed: mShed,
+      count: machine.count || shedCounts[0] || '40s'
     });
     setError(null);
   };
@@ -97,16 +118,12 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   const handleCancelEdit = () => {
     setEditingId(null);
     const activeShed = selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1');
+    const shedCounts = getAvailableCountsForShed(activeShed);
     setFormData({
       rfNo: '',
       description: '',
       shed: activeShed,
-      count: availableCounts[0] || '32/1-CH-CY',
-      stdGps: 340,
-      actualGps: 340,
-      productionKg: 1500,
-      assignedSider: '-',
-      assignedGaiter: '-'
+      count: shedCounts[0] || '40s'
     });
     setError(null);
   };
@@ -128,17 +145,18 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       return;
     }
 
+    const existing = machines.find(m => m.id === editingId);
     const item: MachineMasterItem = {
       id: editingId || `m-${cleanRfNo.toLowerCase()}-${Date.now()}`,
       rfNo: cleanRfNo,
       description: formData.description?.trim() || `RING FRAME ${cleanRfNo} - ${cleanShed.toUpperCase()}`,
       shed: cleanShed,
       count: formData.count,
-      stdGps: Number(formData.stdGps) || 0,
-      actualGps: Number(formData.actualGps) || 0,
-      productionKg: Number(formData.productionKg) || 0,
-      assignedSider: formData.assignedSider || '-',
-      assignedGaiter: formData.assignedGaiter || '-'
+      stdGps: existing?.stdGps ?? 0,
+      actualGps: existing?.actualGps ?? 0,
+      productionKg: existing?.productionKg ?? 0,
+      assignedSider: existing?.assignedSider || '-',
+      assignedGaiter: existing?.assignedGaiter || '-'
     };
 
     onSaveMachine(item);
@@ -229,7 +247,15 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               </label>
               <select
                 value={formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1')}
-                onChange={(e) => setFormData(prev => ({ ...prev, shed: e.target.value }))}
+                onChange={(e) => {
+                  const newShed = e.target.value;
+                  const newShedCounts = getAvailableCountsForShed(newShed);
+                  setFormData(prev => ({
+                    ...prev,
+                    shed: newShed,
+                    count: newShedCounts.includes(prev.count) ? prev.count : (newShedCounts[0] || '40s')
+                  }));
+                }}
                 className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
               >
                 {['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(sh => (
@@ -269,104 +295,33 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               />
             </div>
 
-            {/* ROW 1: RUNNING COUNT & STD GPS */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  RUNNING COUNT
-                </label>
-                <select
-                  value={formData.count}
-                  onChange={(e) => setFormData(prev => ({ ...prev, count: e.target.value }))}
-                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
-                >
-                  {availableCounts.map(cnt => (
-                    <option key={cnt} value={cnt}>{cnt}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  STD GPS
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.stdGps}
-                  onChange={(e) => setFormData(prev => ({ ...prev, stdGps: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                />
-              </div>
+            {/* RUNNING COUNT */}
+            <div>
+              <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
+                RUNNING COUNT ({activeFormShed}) *
+              </label>
+              <select
+                value={formData.count}
+                onChange={(e) => setFormData(prev => ({ ...prev, count: e.target.value }))}
+                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
+              >
+                {availableCountsForShed.map(cnt => (
+                  <option key={cnt} value={cnt}>{cnt}</option>
+                ))}
+              </select>
+              <span className="block text-[10px] text-stone-400 font-medium mt-1">
+                Active yarn counts registered for {activeFormShed}
+              </span>
             </div>
 
-            {/* ROW 2: ACTUAL GPS & PRODUCTION IN KG */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  ACTUAL GPS
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={formData.actualGps}
-                  onChange={(e) => setFormData(prev => ({ ...prev, actualGps: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  PRODUCTION IN KG
-                </label>
-                <input
-                  type="number"
-                  step="1"
-                  value={formData.productionKg}
-                  onChange={(e) => setFormData(prev => ({ ...prev, productionKg: parseFloat(e.target.value) || 0 }))}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all"
-                />
-              </div>
-            </div>
-
-            {/* ROW 3: ASSIGNED SIDER & ASSIGNED GAITER */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  ASSIGNED SIDER ({targetShed})
-                </label>
-                <select
-                  value={formData.assignedSider || '-'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, assignedSider: e.target.value }))}
-                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
-                >
-                  <option value="-">Default Sider</option>
-                  {sidersList.map(s => (
-                    <option key={s.id} value={s.name}>{s.name} ({s.tNo})</option>
-                  ))}
-                  {workers.filter(w => (!w.shed || w.shed === targetShed) && !sidersList.some(s => s.id === w.id)).map(w => (
-                    <option key={w.id} value={w.name}>{w.name} ({w.tNo})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                  ASSIGNED GAITER ({targetShed})
-                </label>
-                <select
-                  value={formData.assignedGaiter || '-'}
-                  onChange={(e) => setFormData(prev => ({ ...prev, assignedGaiter: e.target.value }))}
-                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
-                >
-                  <option value="-">Default Gaiter</option>
-                  {gaitersList.map(g => (
-                    <option key={g.id} value={g.name}>{g.name} ({g.tNo})</option>
-                  ))}
-                  {workers.filter(w => (!w.shed || w.shed === targetShed) && !gaitersList.some(g => g.id === w.id)).map(w => (
-                    <option key={w.id} value={w.name}>{w.name} ({w.tNo})</option>
-                  ))}
-                </select>
+            {/* AUTOMATED TELEMETRY INFO */}
+            <div className="p-3.5 bg-emerald-50/80 border border-emerald-100 rounded-xl text-emerald-900 text-xs flex items-start gap-2.5">
+              <Check size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-emerald-950">Automated Production Statement Telemetry</p>
+                <p className="text-[11px] text-emerald-800 leading-relaxed font-medium">
+                  Actual GPS, Target GPS, and Production (kg) are automatically ingested from your uploaded Excel production statements for each machine across all sheds (Shed 1, Shed 2, Shed 3, and KTTM).
+                </p>
               </div>
             </div>
 
@@ -425,7 +380,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-stone-500 font-medium truncate mt-0.5">
-                      {m.description || `RING FRAME ${m.rfNo}`} · Count: <span className="font-bold text-stone-700">{m.count}</span> · Sider: <span className="font-bold text-stone-700">{m.assignedSider || '-'}</span> · Gaiter: <span className="font-bold text-stone-700">{m.assignedGaiter || '-'}</span>
+                      {m.description || `RING FRAME ${m.rfNo}`} · Running Count: <span className="font-bold text-emerald-700">{m.count}</span>
                     </p>
                   </div>
                 </div>
@@ -440,15 +395,6 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                   >
                     <Edit2 size={13} />
                     <span>Edit</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setQuickConfigMachine(m)}
-                    className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-stone-200/60 rounded-lg transition-colors cursor-pointer"
-                    title="Quick Configure"
-                  >
-                    <Settings size={14} />
                   </button>
 
                   <button
@@ -476,91 +422,6 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
         </div>
 
       </div>
-
-      {/* QUICK CONFIGURE MODAL */}
-      {quickConfigMachine && (
-        <div className="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black font-mono">
-                  {quickConfigMachine.rfNo}
-                </span>
-                <h3 className="text-sm font-black text-stone-900 uppercase">
-                  Machine Quick Settings
-                </h3>
-              </div>
-              <button
-                onClick={() => setQuickConfigMachine(null)}
-                className="text-stone-400 hover:text-stone-700"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-stone-600 block mb-1">Standard GPS Target</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  defaultValue={quickConfigMachine.stdGps}
-                  id="qc-stdGps"
-                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-mono font-bold"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-stone-600 block mb-1">Running Count</label>
-                <select
-                  defaultValue={quickConfigMachine.count}
-                  id="qc-count"
-                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold cursor-pointer"
-                >
-                  {availableCounts.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="font-bold text-stone-600 block mb-1">Assigned Gaiter</label>
-                <input
-                  type="text"
-                  defaultValue={quickConfigMachine.assignedGaiter || ''}
-                  id="qc-gaiter"
-                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl font-bold"
-                />
-              </div>
-            </div>
-
-            <div className="mt-5 flex gap-2 justify-end">
-              <button
-                onClick={() => setQuickConfigMachine(null)}
-                className="px-4 py-2 text-stone-500 font-bold text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const stdGps = parseFloat((document.getElementById('qc-stdGps') as HTMLInputElement)?.value) || quickConfigMachine.stdGps;
-                  const count = (document.getElementById('qc-count') as HTMLSelectElement)?.value || quickConfigMachine.count;
-                  const gaiter = (document.getElementById('qc-gaiter') as HTMLInputElement)?.value || quickConfigMachine.assignedGaiter;
-
-                  onSaveMachine({
-                    ...quickConfigMachine,
-                    stdGps,
-                    count,
-                    assignedGaiter: gaiter
-                  });
-                  setQuickConfigMachine(null);
-                }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -31,7 +31,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
   const [isEditing, setIsEditing] = useState(false);
 
   // Quick Verification State
-  const [testGps, setTestGps] = useState<number>(160);
+  const [testGps, setTestGps] = useState<string>('160');
 
   // Inline Row Factors State for immediate Apply
   const [rowFactors, setRowFactors] = useState<Record<string, string>>({});
@@ -57,7 +57,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
     conversions.forEach(c => {
       const shedKey = c.shed || 'Shed 1';
       const key = `${c.count}__${shedKey}`;
-      map[key] = c.multiplicationFactor !== undefined ? String(c.multiplicationFactor) : '1.0';
+      map[key] = c.multiplicationFactor !== undefined ? (c.multiplicationFactor === 0 ? '' : String(c.multiplicationFactor)) : '1.0';
     });
     setRowFactors(map);
   }, [conversions]);
@@ -93,7 +93,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
 
   const handleEditRow = (rule: CountConversion) => {
     setNewCount(rule.count);
-    setNewFactor(String(rule.multiplicationFactor));
+    setNewFactor(rule.multiplicationFactor === 0 ? '' : String(rule.multiplicationFactor));
     setDescription(rule.description || '');
     setTargetShed(rule.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1'));
     setIsEditing(true);
@@ -122,7 +122,8 @@ export const CountMaster: React.FC<CountMasterProps> = ({
 
   // Quick Verification Calculation
   const factorForCalc = parseFloat(newFactor) || 1.0;
-  const quick40sResult = (testGps * factorForCalc).toFixed(2);
+  const testGpsNum = parseFloat(testGps) || 0;
+  const quick40sResult = (testGpsNum * factorForCalc).toFixed(2);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -244,9 +245,21 @@ export const CountMaster: React.FC<CountMasterProps> = ({
                 <input
                   type="number"
                   step="0.0001"
+                  min="0"
                   placeholder="e.g. 1.0000 or 0.6400"
                   value={newFactor}
-                  onChange={(e) => setNewFactor(e.target.value)}
+                  onFocus={(e) => {
+                    if (e.target.value === '0') setNewFactor('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === '-' || e.key === 'Minus') e.preventDefault();
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || parseFloat(val) >= 0) {
+                      setNewFactor(val);
+                    }
+                  }}
                   className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all font-mono pr-10"
                   required
                 />
@@ -290,8 +303,21 @@ export const CountMaster: React.FC<CountMasterProps> = ({
             <div className="flex items-center gap-2 p-3 bg-stone-50 border border-stone-200 rounded-xl">
               <input
                 type="number"
+                min="0"
+                placeholder="0"
                 value={testGps}
-                onChange={(e) => setTestGps(Number(e.target.value) || 0)}
+                onFocus={(e) => {
+                  if (e.target.value === '0') setTestGps('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === '-' || e.key === 'Minus') e.preventDefault();
+                }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || parseFloat(val) >= 0) {
+                    setTestGps(val);
+                  }
+                }}
                 className="w-16 px-2 py-1 bg-white border border-stone-300 rounded-lg text-xs font-mono font-black text-center text-stone-900 outline-none focus:border-emerald-500"
               />
               <span className="text-xs font-mono font-bold text-stone-400">×</span>
@@ -393,14 +419,24 @@ export const CountMaster: React.FC<CountMasterProps> = ({
                             <input
                               type="number"
                               step="0.0001"
+                              min="0"
+                              placeholder="0"
                               value={currentVal}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setRowFactors(prev => ({ ...prev, [rowKey]: val }));
+                              onFocus={(e) => {
+                                if (e.target.value === '0') {
+                                  setRowFactors(prev => ({ ...prev, [rowKey]: '' }));
+                                }
                               }}
                               onKeyDown={(e) => {
+                                if (e.key === '-' || e.key === 'Minus') e.preventDefault();
                                 if (e.key === 'Enter') {
                                   handleApplyRowFactor(rule);
+                                }
+                              }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === '' || parseFloat(val) >= 0) {
+                                  setRowFactors(prev => ({ ...prev, [rowKey]: val }));
                                 }
                               }}
                               className="w-20 px-1.5 py-1 bg-white border border-emerald-300 rounded-lg text-xs font-mono font-black text-emerald-950 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-center"

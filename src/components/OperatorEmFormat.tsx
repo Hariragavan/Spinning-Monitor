@@ -1098,66 +1098,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
               </div>
             </div>
 
-            {/* Google Sheets update block */}
-            <div className="bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm flex flex-col gap-4">
-              <div className="flex items-center gap-3 border-b border-stone-100 pb-4">
-                <Settings className="text-emerald-600" size={20} />
-                <h3 className="font-serif italic text-xl tracking-tight text-stone-850">Update Machine EM from Google link</h3>
-              </div>
-
-              <div className="flex flex-col lg:flex-row gap-4 items-end">
-                <div className="flex-1 flex flex-col gap-1 w-full">
-                  <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Google Sheet URL</label>
-                  <input
-                    type="text"
-                    value={sheetUrl}
-                    onChange={(e) => setSheetUrl(e.target.value)}
-                    placeholder="https://docs.google.com/spreadsheets/d/.../edit"
-                    className="w-full bg-stone-50 border border-stone-200 text-stone-700 text-xs font-medium rounded-xl px-4 py-3 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  onClick={handleSync}
-                  disabled={isSyncing}
-                  className="w-full lg:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white font-black text-xs uppercase tracking-wider px-6 py-3.5 rounded-2xl hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} />
-                  {isSyncing ? "Syncing..." : "Update from Sheet"}
-                </button>
-              </div>
-
-              {syncStatus && (
-                <div className={`mt-2 p-4 rounded-xl border flex items-start gap-3 text-xs font-bold leading-relaxed ${
-                  syncStatus.success 
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-100' 
-                    : 'bg-rose-50 text-rose-800 border-rose-100'
-                }`}>
-                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                  <div className="flex flex-col gap-1">
-                    <div>{syncStatus.message}</div>
-                    {syncStatus.success && syncStatus.dates && syncStatus.dates.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1 items-center">
-                        <span className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold">Synced dates:</span>
-                        {syncStatus.dates.map(d => (
-                          <span key={d} className="bg-emerald-100 text-emerald-800 text-[9px] font-mono px-1.5 py-0.5 rounded">
-                            {d}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Grid Table display */}
             <div className="bg-white p-10 rounded-[3rem] border border-stone-200 shadow-sm overflow-x-auto relative">
               {selectedMonthDates.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center text-stone-400">
                   <Calendar size={40} className="stroke-1 text-stone-300 mb-3" />
                   <p className="font-serif italic text-lg text-stone-500">No machine EM entries matched this month.</p>
-                  <p className="text-[10px] font-black uppercase tracking-wider mt-1 text-stone-400">Please sync from Google Sheet above to load EM records.</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider mt-1 text-stone-400">Machine EM entries will appear here once telemetry data is loaded.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">

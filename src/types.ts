@@ -22,9 +22,9 @@ export interface MachineMasterItem {
   rfNo: string;
   description?: string;
   count: string;
-  stdGps: number;
-  actualGps: number;
-  productionKg: number;
+  stdGps?: number;
+  actualGps?: number;
+  productionKg?: number;
   assignedSider?: string;
   assignedGaiter?: string;
   shed?: string;
@@ -52,8 +52,10 @@ export interface ProductionEntry {
   incentiveAmount?: number; // Added for manual incentive uploads
   remarks?: string;
   siderId?: string; // Link to worker by ID (kept for backward compatibility or singular use)
-  siderIds?: string[]; // Multiple siders assigned to this machine/entry
+  siderIds?: string[]; // Multiple siders assigned to this machine/entry (slot 0: LH, slot 1: RH)
   siderName?: string; // Link to worker by Name (extracted from Excel)
+  gaiterId?: string; // Link to machine-specific gaiter by worker ID
+  gaiterName?: string; // Link to machine-specific gaiter by worker Name
   shed?: string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3'
 }
 
@@ -117,6 +119,7 @@ export interface CountConversion {
   multiplicationFactor: number; // Factor to multiply Actual GPSS to get 40s GPSS
   description?: string;
   shed?: string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM', 'All Sheds'
+  formula?: string; // Custom 40s conversion formula for this count/shed
 }
 
 export interface DailyReport {
@@ -162,6 +165,7 @@ export interface SystemSettings {
   whatsAppIncentivePhone?: string;
   tvSlideIntervals?: Record<string, number>;
   tvSlideEnabled?: Record<string, boolean>;
+  shed40sFormulas?: Record<string, string>;
 }
 
 export interface FrozenMonthAbstractItem {

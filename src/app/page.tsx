@@ -922,6 +922,77 @@ export default function Home() {
     });
   };
 
+  const assignMachineGaiter = (entryIndex: number | number[], gaiterId: string) => {
+    const indices = Array.isArray(entryIndex) ? entryIndex : [entryIndex];
+    if (indices.length === 0) return;
+
+    if (gaiterId) {
+      let conflictMsg: string | null = null;
+      const worker = workers.find(w => w.id === gaiterId);
+      const name = worker ? worker.name : gaiterId;
+      const targetShift = dailyReport.entries[indices[0]]?.shift;
+
+      dailyReport.entries.forEach((entry, idx) => {
+        if (indices.includes(idx)) return;
+        if (entry.siderId === gaiterId || (entry.siderIds && entry.siderIds.includes(gaiterId))) {
+          conflictMsg = `${name} is already assigned as a Sider on Machine ${entry.frameNo} in Shift ${entry.shift} today.`;
+        }
+        if (entry.gaiterId === gaiterId && entry.shift !== targetShift) {
+          conflictMsg = `${name} is already assigned as a Gaiter in Shift ${entry.shift} today.`;
+        }
+      });
+
+      if (dailyReport.aiCones) {
+        (['I', 'II', 'III'] as Shift[]).forEach(shift => {
+          const aiConeIds = dailyReport.aiCones?.[shift] || [];
+          if (aiConeIds.includes(gaiterId)) {
+            conflictMsg = `${name} is already assigned as an AI Linkconer in Shift ${shift} today.`;
+          }
+        });
+      }
+
+      if (conflictMsg) {
+        alert(`Duplicate Allocation Blocked:\n\n${conflictMsg}\n\nA worker can only be allotted once per day and cannot work in another shift.`);
+        return;
+      }
+    }
+
+    setDailyReport(prev => {
+      const newEntries = [...prev.entries];
+      const worker = workers.find(w => w.id === gaiterId);
+      const targetShift = newEntries[indices[0]]?.shift || 'I';
+
+      indices.forEach(idx => {
+        if (newEntries[idx]) {
+          newEntries[idx] = {
+            ...newEntries[idx],
+            gaiterId: gaiterId || '',
+            gaiterName: worker ? worker.name : ''
+          };
+        }
+      });
+
+      // Synchronize overall shift gaiters list
+      const shiftGaiters = Array.from(new Set(
+        newEntries
+          .filter(e => e.shift === targetShift && e.gaiterId)
+          .map(e => e.gaiterId as string)
+      ));
+
+      const updated = {
+        ...prev,
+        entries: newEntries,
+        gaiters: {
+          ...(prev.gaiters || { I: [], II: [], III: [] }),
+          [targetShift]: shiftGaiters.length > 0 ? shiftGaiters : (gaiterId ? [gaiterId] : [])
+        } as Record<Shift, string[]>,
+        timestamp: Date.now()
+      };
+      apiClient.saveDailyReport(updated).catch(() => {});
+      return updated;
+    });
+  };
+
   const copyAllocationsFromReport = (sourceDate: string, targetShift?: Shift | 'ALL') => {
     const sourceReport = reportHistory.find(r => r.date === sourceDate);
     if (!sourceReport) {
@@ -938,7 +1009,9 @@ export default function Home() {
             ...targetEntry,
             siderId: sourceEntry.siderId || '',
             siderName: sourceEntry.siderName || '',
-            siderIds: sourceEntry.siderIds ? [...sourceEntry.siderIds] : []
+            siderIds: sourceEntry.siderIds ? [...sourceEntry.siderIds] : [],
+            gaiterId: sourceEntry.gaiterId || '',
+            gaiterName: sourceEntry.gaiterName || ''
           };
         }
         return targetEntry;
@@ -1570,6 +1643,7 @@ export default function Home() {
             gaiterCounts={settings.gaiterCounts}
             assignWorker={assignWorkerToMachine}
             assignGaiter={assignGaiter}
+            assignMachineGaiter={assignMachineGaiter}
             assignAiCone={assignAiCone}
             assignFitter={assignFitter}
             dates={availableReportDates}

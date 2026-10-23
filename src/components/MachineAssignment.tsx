@@ -1,6 +1,22 @@
 import React, { useState } from 'react';
 import { Sider, Shift, ProductionEntry, DailyReport } from '../types';
-import { UserCheck, Zap, Activity, Users, Calendar, Filter, Copy, Check, ChevronDown, ChevronUp, Smartphone, Share2, QrCode, X, ExternalLink } from 'lucide-react';
+import { 
+  UserCheck, 
+  Zap, 
+  Activity, 
+  Users, 
+  Calendar, 
+  Filter, 
+  Copy, 
+  Check, 
+  ChevronDown, 
+  ChevronUp, 
+  Cpu, 
+  Layers, 
+  Sparkles, 
+  RotateCcw,
+  AlertCircle
+} from 'lucide-react';
 import { cn, findDuplicatesInReport } from '../lib/utils';
 import { CalendarDatePicker } from './CalendarPickers';
 
@@ -14,6 +30,7 @@ interface MachineAssignmentProps {
   gaiterCounts: Record<Shift, number>;
   assignWorker: (entryIndex: number, siderId: string, slotIndex: number) => void;
   assignGaiter: (shift: Shift, gaiterIds: string[]) => void;
+  assignMachineGaiter?: (entryIndex: number | number[], gaiterId: string) => void;
   assignAiCone?: (shift: Shift, aiConeIds: string[]) => void;
   assignFitter?: (shift: Shift, fitterIds: string[]) => void;
   dates: string[];
@@ -34,6 +51,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   gaiterCounts = { I: 1, II: 1, III: 1 },
   assignWorker,
   assignGaiter,
+  assignMachineGaiter,
   assignAiCone = () => {},
   assignFitter = () => {},
   dates,
@@ -43,21 +61,23 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   onChangeReportDate,
   isSupervisorMode = false,
 }) => {
-  const [selectedShift, setSelectedShift] = useState<Shift | 'ALL'>('ALL');
+  const [selectedShift, setSelectedShift] = useState<Shift | 'ALL'>('I');
   const [showCopyPanel, setShowCopyPanel] = useState(false);
   const [chosenCopyDate, setChosenCopyDate] = useState('');
   const [chosenCopyShift, setChosenCopyShift] = useState<Shift | 'ALL'>('ALL');
-  const shifts: Shift[] = ['I', 'II', 'III'];
-  const activeGaiterShifts = selectedShift === 'ALL' ? shifts : [selectedShift as Shift];
+  const [batchGaiterModalOpen, setBatchGaiterModalOpen] = useState(false);
+  const [selectedBatchGaiter, setSelectedBatchGaiter] = useState('');
 
-  // We map indices of the original entries array to preserve them
+  const shifts: Shift[] = ['I', 'II', 'III'];
+
+  // Map original indices to preserve references
   const mappedEntriesWithIndex = entries.map((entry, idx) => ({ entry, idx }));
   
   const filteredEntriesWithIndex = selectedShift === 'ALL'
     ? mappedEntriesWithIndex
     : mappedEntriesWithIndex.filter(item => item.entry.shift === selectedShift);
 
-  // Helper to parse DD/MM/YYYY into JS Date safely
+  // Helper to parse dates
   const parseDateString = (dateStr: string): Date => {
     if (!dateStr) return new Date(0);
     const clean = dateStr.trim();
@@ -86,10 +106,8 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const selectedDateObj = parseDateString(selectedDate);
   const otherDates = dates.filter(d => d !== selectedDate);
 
-  // Find chronologically closest previous date
   let defaultCopyDate = '';
   let minDiff = Infinity;
-
   otherDates.forEach(d => {
     const dObj = parseDateString(d);
     const diff = selectedDateObj.getTime() - dObj.getTime();
@@ -99,7 +117,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
     }
   });
 
-  // Fallback if no prior date, just pick the most recent other date
   if (!defaultCopyDate && otherDates.length > 0) {
     const sorted = [...otherDates].sort((a, b) => parseDateString(b).getTime() - parseDateString(a).getTime());
     defaultCopyDate = sorted[0];
@@ -124,6 +141,64 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
     }
   };
 
+  // Safe machine gaiter update
+  const handleAssignMachineGaiter = (entryIdx: number, gaiterId: string) => {
+    if (assignMachineGaiter) {
+      assignMachineGaiter(entryIdx, gaiterId);
+    } else {
+      const entry = entries[entryIdx];
+      if (!entry) return;
+      const targetShift = entry.shift;
+      const curGaiters = gaiters[targetShift] || [];
+      const updated = Array.from(new Set([...curGaiters, gaiterId].filter(Boolean)));
+      assignGaiter(targetShift, updated);
+    }
+  };
+
+  // Batch assign gaiter to all filtered machines
+  const handleBatchAssignGaiter = () => {
+    if (!selectedBatchGaiter) return;
+    const indices = filteredEntriesWithIndex.map(item => item.idx);
+    if (assignMachineGaiter) {
+      assignMachineGaiter(indices, selectedBatchGaiter);
+    } else {
+      const targetShift = selectedShift !== 'ALL' ? selectedShift : 'I';
+      assignGaiter(targetShift, [selectedBatchGaiter]);
+    }
+    setBatchGaiterModalOpen(false);
+    setSelectedBatchGaiter('');
+  };
+
+  // Handle "Same as LH" (Both sides)
+  const handleCopyLhToRh = (idx: number, lhId: string) => {
+    if (!lhId) return;
+    assignWorker(idx, lhId, 1);
+  };
+
+  // Department-specific worker groupings
+  const aiLinkconerWorkers = workers.filter(w => w.department?.toLowerCase().includes('ai'));
+  const otherAiWorkers = workers.filter(w => !w.department?.toLowerCase().includes('ai'));
+
+  const siderDeptWorkers = workers.filter(w => 
+    w.department?.toLowerCase().includes('sider') || 
+    w.department?.toLowerCase().includes('ring') ||
+    w.department?.toLowerCase().includes('spin')
+  );
+  const otherSiderWorkers = workers.filter(w => 
+    !w.department?.toLowerCase().includes('sider') && 
+    !w.department?.toLowerCase().includes('ring') &&
+    !w.department?.toLowerCase().includes('spin')
+  );
+
+  const gaiterDeptWorkers = workers.filter(w => w.department?.toLowerCase().includes('gaiter'));
+  const otherGaiterWorkers = workers.filter(w => !w.department?.toLowerCase().includes('gaiter'));
+
+  // Calculate allocation statistics for current view
+  const totalMachinesInView = filteredEntriesWithIndex.length;
+  const staffedLhCount = filteredEntriesWithIndex.filter(({ entry }) => (entry.siderIds?.[0] || entry.siderId)).length;
+  const staffedRhCount = filteredEntriesWithIndex.filter(({ entry }) => entry.siderIds?.[1]).length;
+  const staffedGaiterCount = filteredEntriesWithIndex.filter(({ entry }) => entry.gaiterId || gaiters[entry.shift]?.[0]).length;
+
   const currentReport = {
     date: selectedDate,
     entries,
@@ -137,109 +212,31 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const duplicates = findDuplicatesInReport(currentReport, workers);
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
-      {/* Active Duplicate Allocations Warnings & Resolvers */}
-      {duplicates.length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 rounded-[2.5rem] p-10 space-y-6">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200">
-              <Zap size={22} className="text-rose-600 fill-rose-600 animate-pulse" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-rose-950 uppercase tracking-tight">Active Allocation Conflicts Detected</h3>
-              <p className="text-xs font-bold text-rose-600 uppercase tracking-widest mt-1">
-                The following worker is assigned to multiple active duties on {selectedDate}. Use the quick resolve buttons to correct the statements.
-              </p>
-            </div>
-          </div>
-
-          <div className="divide-y divide-rose-200/40">
-            {duplicates.map((dup) => (
-              <div key={dup.workerId} className="py-6 first:pt-0 last:pb-0 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                <div>
-                  <h4 className="text-sm font-black text-stone-900 uppercase flex items-center gap-2">
-                    {dup.workerName} 
-                    <span className="text-stone-400 font-bold">({dup.tNo})</span>
-                    <span className="bg-rose-100 text-rose-700 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border border-rose-200">Duplicate</span>
-                  </h4>
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {dup.allotments.map((alloc, aIdx) => (
-                      <span key={aIdx} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-rose-200/60 text-stone-700 rounded-xl text-xs font-black uppercase tracking-tight shadow-sm">
-                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
-                        {alloc.shift}: {alloc.detail}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  {dup.allotments.map((alloc, aIdx) => {
-                    const buttonLabel = alloc.role === 'OPERATOR' 
-                      ? `Clear Operator: ${alloc.detail}` 
-                      : alloc.role === 'GAITER' 
-                      ? `Clear Gaiter Role` 
-                      : `Clear AI Cone Role`;
-
-                    const shiftValue = alloc.shift as Shift;
-
-                    return (
-                      <button
-                        key={aIdx}
-                        onClick={() => {
-                          if (alloc.role === 'OPERATOR') {
-                            const frameNo = alloc.detail.replace('Frame ', '').trim();
-                            const entryIdx = entries.findIndex(e => e.frameNo === frameNo && e.shift === shiftValue);
-                            if (entryIdx !== -1) {
-                              const entry = entries[entryIdx];
-                              let slotIdx = 0;
-                              if (entry.siderIds) {
-                                const foundIdx = entry.siderIds.indexOf(dup.workerId);
-                                if (foundIdx !== -1) slotIdx = foundIdx;
-                              } else if (entry.siderId === dup.workerId) {
-                                slotIdx = 0;
-                              }
-                              assignWorker(entryIdx, "", slotIdx);
-                            }
-                          } else if (alloc.role === 'GAITER') {
-                            const currentGaiters = gaiters[shiftValue] || [];
-                            const newGaiters = currentGaiters.map(id => id === dup.workerId ? "" : id);
-                            assignGaiter(shiftValue, newGaiters);
-                          } else if (alloc.role === 'AI LINKCONER') {
-                            if (assignAiCone) {
-                              const currentCones = aiCones[shiftValue] || [];
-                              const newCones = currentCones.map(id => id === dup.workerId ? "" : id);
-                              assignAiCone(shiftValue, newCones);
-                            }
-                          }
-                        }}
-                        className="px-4 py-2.5 bg-white hover:bg-rose-500 hover:text-white text-rose-700 border border-rose-200 hover:border-rose-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-sm hover:shadow-rose-600/10"
-                      >
-                        {buttonLabel}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* Date & Shift Filtering Controls */}
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-4 md:p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+      {/* ========================================================================= */}
+      {/* 1. TOP HEADER: DATE & ROSTER COPY HELPER                                 */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs p-4 md:p-5 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-            <Filter size={18} />
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
+            <Calendar size={18} />
           </div>
           <div>
-            <h3 className="text-base font-black text-stone-900 uppercase tracking-tight">Allocation Selector</h3>
-            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-wider leading-none mt-0.5">Select date and shift wise filter</p>
+            <h1 className="text-base md:text-lg font-black text-stone-900 uppercase tracking-tight">
+              MACHINE ALLOCATION ROSTER
+            </h1>
+            <p className="text-[10px] text-stone-400 font-bold uppercase tracking-wider leading-none mt-0.5">
+              Assign Siders (LH & RH), Gaiters & Top AI Linkconer
+            </p>
           </div>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-stretch sm:items-center">
           {/* Target Date Calendar Picker */}
-          <div className="flex-1 sm:flex-none">
-            <label className="block text-[9px] font-black text-stone-400 uppercase tracking-wider mb-1 ml-1">Sider Assigned Date</label>
+          <div>
+            <label className="block text-[9px] font-black text-stone-400 uppercase tracking-wider mb-1 ml-1">
+              ALLOCATION DATE
+            </label>
             <div className="flex items-center gap-2">
               <CalendarDatePicker
                 value={selectedDate}
@@ -258,260 +255,263 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                       onChangeReportDate(selectedDate, newDateStr.trim());
                     }
                   }}
-                  className="px-3 py-1.5 bg-stone-900 text-white hover:bg-stone-800 rounded-xl text-[10px] font-black uppercase tracking-wider border border-stone-800 hover:border-stone-700 transition-all active:scale-95 whitespace-nowrap cursor-pointer"
+                  className="px-3 py-2 bg-stone-900 text-white hover:bg-black rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 whitespace-nowrap cursor-pointer shadow-xs"
                   title="Change date of current report"
                 >
-                  Rename Date
+                  Rename
                 </button>
               )}
             </div>
           </div>
 
-          {/* Shift Wise Dropdown */}
-          <div className="flex-1 sm:flex-none">
-            <label className="block text-[9px] font-black text-stone-400 uppercase tracking-widest mb-1.5 ml-1">Target Shift</label>
-            <div className="relative">
-              <select
-                value={selectedShift}
-                onChange={(e) => setSelectedShift(e.target.value as Shift | 'ALL')}
-                className="w-full sm:w-48 px-5 py-3.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider text-stone-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all cursor-pointer appearance-none"
-              >
-                <option value="ALL">ALL SHIFTS</option>
-                <option value="I">SHIFT I</option>
-                <option value="II">SHIFT II</option>
-                <option value="III">SHIFT III</option>
-              </select>
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400">
-                <span className="text-xs">⚙️</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Copy Allocation Quick-bar / Dialog */}
-      {otherDates.length > 0 && (
-        <div className="bg-stone-50 rounded-[2rem] border border-stone-200 p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-[10px] font-black uppercase tracking-wider text-amber-800 rounded-lg">
-                📋 Roster Helper
-              </span>
-              <p className="text-xs text-stone-500 font-bold uppercase tracking-wide">
-                Assigning same persons for 6 days? Quickly carry forward shift patterns.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              {defaultCopyDate && (
-                <button
-                  onClick={handleQuickCopy}
-                  className="px-5 py-3 bg-stone-900 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-stone-800/95 active:scale-95 transition-all shadow-md flex items-center gap-2"
-                >
-                  <Copy size={13} className="text-amber-400" />
-                  Copy {selectedShift === 'ALL' ? 'ALL' : `Shift ${selectedShift}`} from {defaultCopyDate}
-                </button>
-              )}
-              
+          {/* Quick Copy Previous Day Button */}
+          {defaultCopyDate && (
+            <div className="flex flex-col justify-end">
+              <label className="block text-[9px] font-black text-transparent uppercase tracking-wider mb-1 hidden sm:block">
+                Copy
+              </label>
               <button
-                onClick={() => setShowCopyPanel(!showCopyPanel)}
-                className="px-5 py-3 bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-colors"
+                type="button"
+                onClick={handleQuickCopy}
+                className="px-4 py-2 bg-stone-900 hover:bg-black text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
+                title={`Copy roster from ${defaultCopyDate}`}
               >
-                {showCopyPanel ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                Custom Copy Options
+                <Copy size={13} className="text-amber-400" />
+                <span>Copy from {defaultCopyDate}</span>
               </button>
             </div>
-          </div>
+          )}
 
-          {showCopyPanel && (
-            <div className="bg-white border border-stone-200 rounded-2xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
-              {/* Source Date Select */}
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5">Copy From Date</label>
-                <div className="relative">
-                  <select
-                    value={activeCopyDate}
-                    onChange={(e) => setChosenCopyDate(e.target.value)}
-                    className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold uppercase tracking-wider text-stone-700 focus:outline-none focus:ring-2 focus:ring-stone-500/20"
-                  >
-                    {otherDates.map(d => (
-                      <option key={d} value={d}>
-                        {d} {d === defaultCopyDate ? '(Previous Day)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Source Shift Select */}
-              <div>
-                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-1.5">Apply To Shift</label>
-                <div className="relative">
-                  <select
-                    value={chosenCopyShift}
-                    onChange={(e) => setChosenCopyShift(e.target.value as Shift | 'ALL')}
-                    className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold uppercase tracking-wider text-stone-700 focus:outline-none focus:ring-2 focus:ring-stone-500/20"
-                  >
-                    <option value="ALL">ALL SHIFTS</option>
-                    <option value="I">SHIFT I Only</option>
-                    <option value="II">SHIFT II Only</option>
-                    <option value="III">SHIFT III Only</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Action Button */}
-              <div className="flex items-end">
-                <button
-                  onClick={handleCustomCopy}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors shadow-lg shadow-emerald-600/15"
-                >
-                  <Check size={14} />
-                  Execute Allocation Copy
-                </button>
-              </div>
+          {otherDates.length > 1 && (
+            <div className="flex flex-col justify-end">
+              <label className="block text-[9px] font-black text-transparent uppercase tracking-wider mb-1 hidden sm:block">
+                Options
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowCopyPanel(!showCopyPanel)}
+                className="px-3 py-2 bg-stone-100 border border-stone-200 text-stone-700 hover:bg-stone-200 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {showCopyPanel ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                <span>Options</span>
+              </button>
             </div>
           )}
         </div>
-      )}
-
-      {/* Gaiter Assignment Section */}
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden animate-in fade-in duration-300">
-        <div className="p-4 md:p-5 border-b border-stone-100 bg-amber-50/30 flex justify-between items-center">
-          <div>
-            <h2 className="text-base md:text-lg font-black text-stone-900 tracking-tight uppercase">Shift Gaiter Allocation</h2>
-            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mt-0.5">Gaiters help all operators in the selected shift</p>
-          </div>
-          <div className="bg-amber-100 text-amber-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-amber-200">
-            <Zap size={14} />
-            <span className="text-[10px] font-black uppercase tracking-wider">Support Role</span>
-          </div>
-        </div>
-        
-        <div className={cn(
-          "p-4 md:p-5 grid gap-4 md:gap-5",
-          activeGaiterShifts.length === 1 ? "grid-cols-1 max-w-md" : "grid-cols-1 md:grid-cols-3"
-        )}>
-          {activeGaiterShifts.map(shift => {
-            const gaiterDeptWorkers = workers.filter(w => w.department?.toLowerCase().includes('gaiter'));
-            const otherGaiterWorkers = workers.filter(w => !w.department?.toLowerCase().includes('gaiter'));
-
-            return (
-              <div key={shift} className="space-y-2">
-                <label className="flex items-center gap-1.5 text-[10px] font-black text-stone-600 uppercase tracking-wider mb-1">
-                  <span className="bg-stone-900 text-white w-5 h-5 flex items-center justify-center rounded text-[10px]">
-                    {shift}
-                  </span>
-                  Shift {shift} Gaiters
-                </label>
-                
-                <div className="space-y-2">
-                  {Array.from({ length: gaiterCounts[shift] ?? 1 }).map((_, gIdx) => (
-                    <div key={gIdx} className="relative">
-                      <select
-                        value={gaiters[shift]?.[gIdx] || ''}
-                        onChange={(e) => {
-                          const currentCount = gaiterCounts[shift] ?? 1;
-                          const newGaiters = Array.from({ length: currentCount }, (_, i) => (gaiters[shift]?.[i] || ""));
-                          newGaiters[gIdx] = e.target.value || "";
-                          assignGaiter(shift, newGaiters);
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold text-stone-800 focus:ring-2 focus:ring-amber-500/10 focus:border-amber-500 outline-none transition-all cursor-pointer appearance-none shadow-xs"
-                      >
-                        <option value="">-- No Gaiter Assigned --</option>
-                        {gaiterDeptWorkers.length > 0 && (
-                          <optgroup label="Gaiter Department">
-                            {gaiterDeptWorkers.map((worker) => (
-                              <option key={worker.id} value={worker.id}>
-                                {worker.name} ({worker.tNo})
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        <optgroup label={gaiterDeptWorkers.length > 0 ? "All Other Workers" : "All Workers"}>
-                          {(gaiterDeptWorkers.length > 0 ? otherGaiterWorkers : workers).map((worker) => (
-                            <option key={worker.id} value={worker.id}>
-                              {worker.name} ({worker.tNo}) {worker.department ? `[${worker.department}]` : ''}
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-500">
-                        <Zap size={13} />
-                      </div>
-                    </div>
-                  ))}
-                  {(gaiterCounts[shift] ?? 1) === 0 && (
-                    <p className="text-[10px] text-stone-400 font-bold uppercase italic text-center p-2.5 border border-dashed border-stone-200 rounded-xl">No gaiters configured in settings</p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </div>
 
-      {/* Shift AI Cone Assignments */}
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden mb-6">
-        <div className="bg-purple-50/50 p-4 md:p-5 border-b border-purple-100 flex items-center justify-between flex-wrap gap-3">
-          <div className="text-left">
-            <h2 className="text-base md:text-lg font-black text-purple-900 uppercase tracking-tight flex items-center gap-2">
-              <Users size={18} className="text-purple-600 shrink-0" />
-              <span>Shift AI Cone Allocations</span>
-            </h2>
-            <p className="text-[10px] font-bold text-purple-600 uppercase tracking-wider mt-0.5">Select AI Linkconer operator per shift</p>
+      {/* CUSTOM COPY PANEL COLLAPSIBLE */}
+      {showCopyPanel && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-5 grid grid-cols-1 md:grid-cols-3 gap-4 animate-in slide-in-from-top-2 duration-200 shadow-2xs">
+          <div>
+            <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5">
+              Copy From Date
+            </label>
+            <select
+              value={activeCopyDate}
+              onChange={(e) => setChosenCopyDate(e.target.value)}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold uppercase text-stone-800 outline-none focus:border-emerald-500"
+            >
+              {otherDates.map(d => (
+                <option key={d} value={d}>
+                  {d} {d === defaultCopyDate ? '(Previous Day)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="bg-purple-100 text-purple-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-purple-200 shrink-0">
-            <Zap size={14} />
-            <span className="text-[10px] font-black uppercase tracking-wider">AI Role</span>
+
+          <div>
+            <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5">
+              Apply To Shift
+            </label>
+            <select
+              value={chosenCopyShift}
+              onChange={(e) => setChosenCopyShift(e.target.value as Shift | 'ALL')}
+              className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold uppercase text-stone-800 outline-none focus:border-emerald-500"
+            >
+              <option value="ALL">ALL SHIFTS</option>
+              <option value="I">SHIFT I Only</option>
+              <option value="II">SHIFT II Only</option>
+              <option value="III">SHIFT III Only</option>
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={handleCustomCopy}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+            >
+              <Check size={14} />
+              <span>Execute Copy</span>
+            </button>
           </div>
         </div>
-        
-        <div className={cn(
-          "p-4 md:p-5 grid gap-4 md:gap-5",
-          activeGaiterShifts.length === 1 ? "grid-cols-1 max-w-md" : "grid-cols-1 md:grid-cols-3"
-        )}>
-          {activeGaiterShifts.map(shift => {
+      )}
+
+      {/* ========================================================================= */}
+      {/* CONFLICT WARNINGS                                                        */}
+      {/* ========================================================================= */}
+      {duplicates.length > 0 && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200">
+              <Zap size={20} className="text-rose-600 fill-rose-600 animate-pulse" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-rose-950 uppercase tracking-tight">
+                Active Allocation Conflicts Detected ({duplicates.length})
+              </h3>
+              <p className="text-[11px] font-bold text-rose-700 mt-0.5">
+                Workers allocated to multiple duties on {selectedDate}. Use buttons below to clear conflicts.
+              </p>
+            </div>
+          </div>
+
+          <div className="divide-y divide-rose-200/50">
+            {duplicates.map((dup) => (
+              <div key={dup.workerId} className="py-3 first:pt-0 last:pb-0 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-black text-stone-900 uppercase flex items-center gap-2">
+                    <span>{dup.workerName}</span>
+                    <span className="text-stone-400 font-bold font-mono">({dup.tNo})</span>
+                    <span className="bg-rose-200/60 text-rose-800 text-[9px] font-black uppercase px-1.5 py-0.5 rounded">
+                      Double Booked
+                    </span>
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {dup.allotments.map((alloc, aIdx) => (
+                      <span key={aIdx} className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-rose-200 text-stone-700 rounded-md text-[10px] font-black uppercase">
+                        <span className="w-1.5 h-1.5 bg-rose-500 rounded-full"></span>
+                        {alloc.shift}: {alloc.detail}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {dup.allotments.map((alloc, aIdx) => {
+                    const shiftValue = alloc.shift as Shift;
+                    return (
+                      <button
+                        key={aIdx}
+                        type="button"
+                        onClick={() => {
+                          if (alloc.role === 'OPERATOR') {
+                            const frameNo = alloc.detail.replace('Frame ', '').trim();
+                            const entryIdx = entries.findIndex(e => e.frameNo === frameNo && e.shift === shiftValue);
+                            if (entryIdx !== -1) {
+                              const entry = entries[entryIdx];
+                              if (entry.siderIds) {
+                                const foundIdx = entry.siderIds.indexOf(dup.workerId);
+                                if (foundIdx !== -1) assignWorker(entryIdx, "", foundIdx);
+                              } else {
+                                assignWorker(entryIdx, "", 0);
+                              }
+                            }
+                          } else if (alloc.role === 'GAITER') {
+                            const entryIdx = entries.findIndex(e => e.gaiterId === dup.workerId && e.shift === shiftValue);
+                            if (entryIdx !== -1) {
+                              handleAssignMachineGaiter(entryIdx, "");
+                            } else {
+                              const currentGaiters = gaiters[shiftValue] || [];
+                              assignGaiter(shiftValue, currentGaiters.map(id => id === dup.workerId ? "" : id));
+                            }
+                          } else if (alloc.role === 'AI LINKCONER') {
+                            assignAiCone(shiftValue, [""]);
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-rose-600 hover:text-white text-rose-700 border border-rose-200 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs"
+                      >
+                        Clear {alloc.role}: {alloc.detail}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. SECTION 1: AI LINKCONER ALLOCATION (TOP AS REQUESTED)                 */}
+      {/* ========================================================================= */}
+      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-sm border border-purple-800/40">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-800/50 mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-400/20">
+              <Cpu size={18} />
+            </div>
+            <div>
+              <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
+                AI LINKCONER ALLOCATIONS
+              </h2>
+              <p className="text-[11px] text-purple-200 font-medium">
+                1 dedicated Linkconer operator per shift
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 bg-purple-500/20 text-purple-200 border border-purple-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
+            TOP PRIORITY ALLOCATION
+          </span>
+        </div>
+
+        {/* 3 Shift Cards side-by-side */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {shifts.map(shift => {
             const currentSelected = aiCones[shift]?.[0] || '';
-            const aiLinkconerWorkers = workers.filter(w => w.department?.toLowerCase().includes('ai'));
-            const otherWorkers = workers.filter(w => !w.department?.toLowerCase().includes('ai'));
+            const assignedWorker = workers.find(w => w.id === currentSelected);
 
             return (
-              <div key={shift} className="space-y-2">
-                <label className="flex items-center gap-1.5 text-[10px] font-black text-stone-600 uppercase tracking-wider mb-1">
-                  <span className="bg-purple-900 text-white w-5 h-5 flex items-center justify-center rounded text-[10px]">
-                    {shift}
+              <div 
+                key={`ai-cone-${shift}`} 
+                className={cn(
+                  "p-3.5 rounded-xl border transition-all",
+                  selectedShift === shift 
+                    ? "bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/30" 
+                    : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-purple-400/40"
+                )}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-purple-200">
+                    <span className="w-5 h-5 rounded-md bg-purple-400 text-purple-950 flex items-center justify-center text-[10px] font-black">
+                      {shift}
+                    </span>
+                    Shift {shift} Linkconer
                   </span>
-                  Shift {shift} AI Cone
-                </label>
-                
+                  {assignedWorker && (
+                    <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                      T.No {assignedWorker.tNo}
+                    </span>
+                  )}
+                </div>
+
                 <div className="relative">
                   <select
                     value={currentSelected}
-                    onChange={(e) => {
-                      assignAiCone(shift, [e.target.value || ""]);
-                    }}
-                    className="w-full px-3 py-2 bg-white border border-purple-200 rounded-xl text-xs font-bold text-stone-800 focus:ring-2 focus:ring-purple-500/10 focus:border-purple-500 outline-none transition-all cursor-pointer appearance-none shadow-xs"
+                    onChange={(e) => assignAiCone(shift, [e.target.value || ''])}
+                    className="w-full px-3 py-2 bg-purple-950/90 border border-purple-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer appearance-none"
                   >
-                    <option value="">-- No Worker Assigned --</option>
+                    <option value="" className="bg-stone-900 text-stone-400">-- No Linkconer Assigned --</option>
                     {aiLinkconerWorkers.length > 0 && (
-                      <optgroup label="AI Linkconer Department">
-                        {aiLinkconerWorkers.map((worker) => (
-                          <option key={worker.id} value={worker.id}>
-                            {worker.name} ({worker.tNo})
+                      <optgroup label="AI Linkconer Department" className="bg-stone-900 text-purple-300 font-bold">
+                        {aiLinkconerWorkers.map(w => (
+                          <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                            {w.name} ({w.tNo})
                           </option>
                         ))}
                       </optgroup>
                     )}
-                    <optgroup label={aiLinkconerWorkers.length > 0 ? "All Other Workers" : "All Workers"}>
-                      {(aiLinkconerWorkers.length > 0 ? otherWorkers : workers).map((worker) => (
-                        <option key={worker.id} value={worker.id}>
-                          {worker.name} ({worker.tNo}) {worker.department ? `[${worker.department}]` : ''}
+                    <optgroup label="All Other Workers" className="bg-stone-900 text-stone-400">
+                      {otherAiWorkers.map(w => (
+                        <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                          {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
                         </option>
                       ))}
                     </optgroup>
                   </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-500">
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-400">
                     <Zap size={13} />
                   </div>
                 </div>
@@ -521,109 +521,395 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
         </div>
       </div>
 
-      {/* Daily Shift Assignments - Ringframe Machine Sider Allocations */}
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-        <div className="p-4 md:p-5 border-b border-stone-100 bg-stone-50/50 flex justify-between items-center flex-wrap gap-3">
-          <div>
-            <h2 className="text-base md:text-lg font-black text-stone-900 tracking-tight uppercase flex items-center gap-2">
-              <Users size={18} className="text-emerald-700 shrink-0" />
-              <span>Ringframe Machine Sider Allocations</span>
-            </h2>
-            <p className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mt-0.5">
-              Assign Siders to Ringframes ({selectedShift === 'ALL' ? 'All Shifts' : `Shift ${selectedShift}`})
-            </p>
+      {/* ========================================================================= */}
+      {/* 3. SECTION 2: SHIFT SELECTION BAR (TO SEPARATE BY SHIFT)                 */}
+      {/* ========================================================================= */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs">
+        <div>
+          <h3 className="text-xs font-black uppercase tracking-wider text-stone-900 flex items-center gap-2">
+            <Filter size={15} className="text-emerald-700" />
+            <span>SELECT SHIFT FOR MACHINE ALLOCATIONS</span>
+          </h3>
+          <p className="text-[11px] text-stone-500 font-medium mt-0.5">
+            Switch shifts below to allocate LH Sider, RH Sider & Gaiter per machine
+          </p>
+        </div>
+
+        {/* Shift Tabs */}
+        <div className="inline-flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 self-stretch sm:self-auto justify-center">
+          {(['I', 'II', 'III', 'ALL'] as (Shift | 'ALL')[]).map(s => {
+            const isSelected = selectedShift === s;
+            const countForShift = s === 'ALL' 
+              ? entries.length 
+              : entries.filter(e => e.shift === s).length;
+
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSelectedShift(s)}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5",
+                  isSelected
+                    ? "bg-stone-900 text-white shadow-xs"
+                    : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/50"
+                )}
+              >
+                <span>{s === 'ALL' ? 'ALL SHIFTS' : `SHIFT ${s}`}</span>
+                <span className={cn(
+                  "text-[10px] font-mono px-1.5 py-0.2 rounded font-bold",
+                  isSelected ? "bg-white/20 text-white" : "bg-stone-200 text-stone-600"
+                )}>
+                  {countForShift}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 4. SECTION 3: RINGFRAME MACHINE ALLOCATION TABLE                         */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs overflow-hidden">
+        {/* Table Subheader with Staffing Metrics & Batch Fill Helper */}
+        <div className="p-4 md:p-5 border-b border-stone-100 bg-stone-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+              <Users size={16} />
+            </div>
+            <div>
+              <h3 className="text-sm font-black uppercase tracking-wider text-stone-900 flex items-center gap-2">
+                <span>RINGFRAME MACHINE ALLOCATIONS</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black font-mono">
+                  {selectedShift === 'ALL' ? 'ALL SHIFTS' : `SHIFT ${selectedShift}`}
+                </span>
+              </h3>
+              <p className="text-[11px] text-stone-500 font-medium mt-0.5">
+                Staffing: {staffedLhCount}/{totalMachinesInView} LH · {staffedRhCount}/{totalMachinesInView} RH · {staffedGaiterCount}/{totalMachinesInView} Gaiters
+              </p>
+            </div>
           </div>
-          <div className="bg-emerald-50 text-emerald-800 px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-emerald-200 shrink-0">
-            <UserCheck size={14} />
-            <span className="text-[10px] font-black uppercase tracking-wider">Live Assignment</span>
+
+          {/* Batch Gaiter Quick Fill Action */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setBatchGaiterModalOpen(true)}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all active:scale-95"
+              title="Apply 1 gaiter to all machines in this shift view"
+            >
+              <Zap size={13} />
+              <span>Batch Fill Gaiter ({selectedShift === 'ALL' ? 'All' : `Shift ${selectedShift}`})</span>
+            </button>
           </div>
         </div>
 
+        {/* ALLOCATION GRID */}
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="bg-stone-50/70 border-b border-stone-100">
-                <th className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-wider text-stone-500 w-20">Shift</th>
-                <th className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-wider text-stone-500 w-28">Machine</th>
-                <th className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-wider text-stone-500">Assign Sider Operator(s)</th>
+              <tr className="bg-stone-50/80 border-b border-stone-100 text-[10px] font-black uppercase tracking-wider text-stone-500">
+                <th className="px-4 py-3 w-16">SHIFT</th>
+                <th className="px-4 py-3 w-32">MACHINE</th>
+                <th className="px-4 py-3 min-w-[220px]">
+                  <span className="flex items-center gap-1 text-emerald-800">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                    LH SIDER (50% LEFT)
+                  </span>
+                </th>
+                <th className="px-4 py-3 min-w-[260px]">
+                  <span className="flex items-center gap-1 text-blue-800">
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                    RH SIDER (50% RIGHT)
+                  </span>
+                </th>
+                <th className="px-4 py-3 min-w-[220px]">
+                  <span className="flex items-center gap-1 text-amber-800">
+                    <span className="w-2 h-2 rounded-full bg-amber-600"></span>
+                    GAITER ALLOCATION
+                  </span>
+                </th>
+                <th className="px-4 py-3 text-right w-36">COVERAGE STATUS</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-stone-100">
-              {filteredEntriesWithIndex.map(({ entry, idx }) => {
-                const siderDeptWorkers = workers.filter(w => 
-                  w.department?.toLowerCase().includes('sider') || 
-                  w.department?.toLowerCase().includes('ring') ||
-                  w.department?.toLowerCase().includes('spin')
-                );
-                const otherSiderWorkers = workers.filter(w => 
-                  !w.department?.toLowerCase().includes('sider') && 
-                  !w.department?.toLowerCase().includes('ring') &&
-                  !w.department?.toLowerCase().includes('spin')
-                );
+            <tbody className="divide-y divide-stone-100 text-xs">
+              {filteredEntriesWithIndex.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-12 text-center text-stone-400 italic">
+                    No machine entries found for {selectedShift === 'ALL' ? 'any shift' : `Shift ${selectedShift}`}.
+                  </td>
+                </tr>
+              ) : (
+                filteredEntriesWithIndex.map(({ entry, idx }) => {
+                  const lhWorkerId = entry.siderIds?.[0] || entry.siderId || '';
+                  const rhWorkerId = entry.siderIds?.[1] || '';
+                  const machineGaiterId = entry.gaiterId || (gaiters[entry.shift]?.[0] || '');
 
-                return (
-                  <tr key={`assign-entry-${entry.shift}-${entry.frameNo}-${idx}`} className="hover:bg-emerald-50/20 transition-colors">
-                    <td className="px-4 py-2.5 align-top pt-3">
-                      <span className="w-6 h-6 flex items-center justify-center bg-stone-900 text-stone-50 rounded text-[11px] font-black shadow-xs">
-                        {entry.shift}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 align-top pt-3">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-6 h-6 rounded bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
-                          <Activity size={14} />
+                  const isBothSides = Boolean(lhWorkerId && rhWorkerId && lhWorkerId === rhWorkerId);
+                  const isFullCrew = Boolean(lhWorkerId && rhWorkerId && machineGaiterId);
+
+                  return (
+                    <tr 
+                      key={`assign-row-${entry.shift}-${entry.frameNo}-${idx}`}
+                      className="hover:bg-stone-50/60 transition-colors group"
+                    >
+                      {/* SHIFT */}
+                      <td className="px-4 py-3.5 align-middle">
+                        <span className="w-7 h-7 flex items-center justify-center bg-stone-900 text-stone-50 rounded-lg text-xs font-black shadow-2xs font-mono">
+                          {entry.shift}
+                        </span>
+                      </td>
+
+                      {/* MACHINE */}
+                      <td className="px-4 py-3.5 align-middle">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-black text-sm text-stone-900">
+                              {entry.frameNo}
+                            </span>
+                          </div>
+                          {entry.count && (
+                            <span className="inline-block mt-0.5 font-mono text-[10px] font-bold text-stone-400">
+                              {entry.count}
+                            </span>
+                          )}
                         </div>
-                        <span className="font-black text-stone-900 text-xs md:text-sm">{entry.frameNo}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="space-y-1.5 max-w-xl">
-                        {Array.from({ length: Math.max((machineSiderCounts[entry.frameNo] !== undefined ? machineSiderCounts[entry.frameNo] : 2), (entry.siderIds || []).length) }).map((_, slotIdx) => (
-                          <div key={slotIdx} className="relative">
+                      </td>
+
+                      {/* LH SIDER (50% LEFT) */}
+                      <td className="px-4 py-3.5 align-middle">
+                        <div className="relative">
+                          <select
+                            value={lhWorkerId}
+                            onChange={(e) => assignWorker(idx, e.target.value, 0)}
+                            className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all cursor-pointer font-mono"
+                          >
+                            <option value="">-- No LH Sider Assigned --</option>
+                            {siderDeptWorkers.length > 0 && (
+                              <optgroup label="Sider / Ringframe Department">
+                                {siderDeptWorkers.map((w) => (
+                                  <option key={w.id} value={w.id}>
+                                    {w.name} ({w.tNo})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            <optgroup label="All Other Workers">
+                              {otherSiderWorkers.map((w) => (
+                                <option key={w.id} value={w.id}>
+                                  {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </div>
+                      </td>
+
+                      {/* RH SIDER (50% RIGHT) + BOTH SIDES SHORTCUT */}
+                      <td className="px-4 py-3.5 align-middle">
+                        <div className="flex items-center gap-1.5">
+                          <div className="relative flex-1">
                             <select
-                              value={entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '') || ''}
-                              onChange={(e) => assignWorker(idx, e.target.value, slotIdx)}
-                              className="w-full px-3 py-1.5 bg-white border border-stone-200 rounded-lg text-xs font-bold text-stone-800 focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-600 outline-none transition-all cursor-pointer appearance-none shadow-xs"
+                              value={rhWorkerId}
+                              onChange={(e) => assignWorker(idx, e.target.value, 1)}
+                              className={cn(
+                                "w-full px-3 py-2 border rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all cursor-pointer font-mono",
+                                isBothSides 
+                                  ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-black" 
+                                  : "bg-stone-50 border-stone-200"
+                              )}
                             >
-                              <option value="">-- {slotIdx === 0 ? 'LH Side Operator (50% or 100%)' : slotIdx === 1 ? 'RH Side Operator (50% or 100%)' : `Sider Slot ${slotIdx + 1}`} --</option>
+                              <option value="">-- No RH Sider Assigned --</option>
                               {siderDeptWorkers.length > 0 && (
                                 <optgroup label="Sider / Ringframe Department">
-                                  {siderDeptWorkers.map((worker) => (
-                                    <option key={worker.id} value={worker.id}>
-                                      {worker.name} ({worker.tNo})
+                                  {siderDeptWorkers.map((w) => (
+                                    <option key={w.id} value={w.id}>
+                                      {w.name} ({w.tNo})
                                     </option>
                                   ))}
                                 </optgroup>
                               )}
-                              <optgroup label={siderDeptWorkers.length > 0 ? "All Other Workers" : "All Workers"}>
-                                {(siderDeptWorkers.length > 0 ? otherSiderWorkers : workers).map((worker) => (
-                                  <option key={worker.id} value={worker.id}>
-                                    {worker.name} ({worker.tNo}) {worker.department ? `[${worker.department}]` : ''}
+                              <optgroup label="All Other Workers">
+                                {otherSiderWorkers.map((w) => (
+                                  <option key={w.id} value={w.id}>
+                                    {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
                                   </option>
                                 ))}
                               </optgroup>
                             </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-stone-400">
-                              <Users size={14} />
-                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredEntriesWithIndex.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="py-12 text-center text-sm font-bold text-stone-400 uppercase tracking-widest">
-                    No machine entries found for the selected shift
-                  </td>
-                </tr>
+
+                          {/* Quick Both Sides Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLhToRh(idx, lhWorkerId)}
+                            disabled={!lhWorkerId || isBothSides}
+                            className={cn(
+                              "px-2.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border shrink-0",
+                              isBothSides
+                                ? "bg-emerald-600 text-white border-emerald-600 cursor-default"
+                                : lhWorkerId
+                                ? "bg-white hover:bg-stone-100 text-stone-700 border-stone-200 active:scale-95"
+                                : "bg-stone-100 text-stone-300 border-stone-200 cursor-not-allowed"
+                            )}
+                            title={isBothSides ? "Both sides managed by same sider" : "Click to assign LH Sider to RH side (100% Both Sides)"}
+                          >
+                            {isBothSides ? '= Both' : '+ Both'}
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* GAITER ALLOCATION (PER MACHINE) */}
+                      <td className="px-4 py-3.5 align-middle">
+                        <div className="relative">
+                          <select
+                            value={machineGaiterId}
+                            onChange={(e) => handleAssignMachineGaiter(idx, e.target.value)}
+                            className="w-full px-3 py-2 bg-amber-50/40 border border-amber-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all cursor-pointer font-mono"
+                          >
+                            <option value="">-- No Gaiter Assigned --</option>
+                            {gaiterDeptWorkers.length > 0 && (
+                              <optgroup label="Gaiter Department">
+                                {gaiterDeptWorkers.map((w) => (
+                                  <option key={w.id} value={w.id}>
+                                    {w.name} ({w.tNo})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            <optgroup label="All Other Workers">
+                              {otherGaiterWorkers.map((w) => (
+                                <option key={w.id} value={w.id}>
+                                  {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                </option>
+                              ))}
+                            </optgroup>
+                          </select>
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-500">
+                            <Zap size={13} />
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* COVERAGE STATUS */}
+                      <td className="px-4 py-3.5 align-middle text-right">
+                        {isFullCrew && isBothSides ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-black uppercase">
+                            <Check size={11} className="stroke-[3]" />
+                            <span>Both Sides + Gaiter</span>
+                          </span>
+                        ) : isFullCrew ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase">
+                            <Check size={11} className="stroke-[3]" />
+                            <span>Full Crew</span>
+                          </span>
+                        ) : isBothSides ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase">
+                            <span>Both (No Gaiter)</span>
+                          </span>
+                        ) : lhWorkerId || rhWorkerId ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-black uppercase">
+                            <span>Partial</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-stone-100 text-stone-400 rounded-lg text-[10px] font-bold uppercase">
+                            <span>Unassigned</span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* 5. BATCH GAITER ASSIGN MODAL                                              */}
+      {/* ========================================================================= */}
+      {batchGaiterModalOpen && (
+        <div className="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-2xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <Zap size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-stone-900 uppercase">
+                    BATCH APPLY SHIFT GAITER
+                  </h3>
+                  <p className="text-[10px] text-stone-400 font-bold uppercase">
+                    Target: {selectedShift === 'ALL' ? 'All Active Shifts' : `Shift ${selectedShift}`} ({filteredEntriesWithIndex.length} Machines)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchGaiterModalOpen(false)}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1">
+                  Choose Gaiter to Assign:
+                </label>
+                <select
+                  value={selectedBatchGaiter}
+                  onChange={(e) => setSelectedBatchGaiter(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 outline-none focus:border-amber-500 font-mono"
+                >
+                  <option value="">-- Select Gaiter Operator --</option>
+                  {gaiterDeptWorkers.length > 0 && (
+                    <optgroup label="Gaiter Department">
+                      {gaiterDeptWorkers.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name} ({w.tNo})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="All Other Workers">
+                    {otherGaiterWorkers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                <span className="block text-[10px] text-stone-400 mt-1">
+                  This will set the chosen gaiter for all {filteredEntriesWithIndex.length} ringframes in the current view in one single click.
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setBatchGaiterModalOpen(false)}
+                className="px-4 py-2 text-stone-500 font-bold text-xs cursor-pointer hover:text-stone-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedBatchGaiter}
+                onClick={handleBatchAssignGaiter}
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                Apply to All Machines
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
