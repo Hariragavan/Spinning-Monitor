@@ -1061,12 +1061,10 @@ export default function Home() {
     }
 
     const newReport: DailyReport = createDefaultReportForShed(selectedShed, date);
-
-    setReportHistory(prev => [...prev.filter(r => !(r.date === date && (r.shed || 'Shed 1') === selectedShed)), newReport]);
+    // Set in memory for active editing/viewing; do NOT auto-persist blank 0-metrics to database
     setDailyReport(newReport);
-    apiClient.saveDailyReport(newReport).catch(() => {});
     if (!silent) {
-      alert(`Blank report created for ${date} in ${selectedShed}`);
+      alert(`Blank report initialized for ${date} in ${selectedShed}`);
     }
   };
 

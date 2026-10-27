@@ -82,7 +82,8 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
 
   // Aggregate fitter performance data
   const getFitterMonthlyRows = (workerId: string): { rows: FitterDailyPerformanceRow[]; avgIdle: number; avgSlip: number; avgRogue: number; avgUtil: number } => {
-    const rows: FitterDailyPerformanceRow[] = [];
+    // 1. Group valid active reports by date
+    const dateMap = new Map<string, DailyReport[]>();
 
     history.forEach(report => {
       if (!report || !report.date) return;
@@ -96,20 +97,81 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
 
       if (rDateStr < fromDate || rDateStr > toDate) return;
 
-      const shiftsWorked = 3;
       const entries = report.entries || [];
-      const validIdle = entries.filter(e => typeof e.idlePercent === 'number' && !isNaN(e.idlePercent));
-      const validSlip = entries.filter(e => typeof e.slipPercent === 'number' && !isNaN(e.slipPercent));
-      const validRogue = entries.filter(e => typeof e.worstPercent === 'number' && !isNaN(e.worstPercent));
-      const validUtil = entries.filter(e => typeof e.utility === 'number' && !isNaN(e.utility) && e.utility > 0);
+      // Filter out blank placeholder reports that have zero production and no logged telemetry
+      const hasActualActivity = (report.totalProductionActual && report.totalProductionActual > 0) ||
+        (report.totalProductionTarget && report.totalProductionTarget > 0) ||
+        entries.some(e => (e.productionActual || 0) > 0 || (e.utility || 0) > 0 || (e.idlePercent || 0) > 0 || (e.slipPercent || 0) > 0);
 
-      const idle = validIdle.length > 0 ? validIdle.reduce((s, e) => s + (e.idlePercent || 0), 0) / validIdle.length : 0;
-      const slip = validSlip.length > 0 ? validSlip.reduce((s, e) => s + (e.slipPercent || 0), 0) / validSlip.length : 0;
-      const rogue = validRogue.length > 0 ? validRogue.reduce((s, e) => s + (e.worstPercent || 0), 0) / validRogue.length : 0;
-      const util = validUtil.length > 0 ? validUtil.reduce((s, e) => s + (e.utility || 0), 0) / validUtil.length : 0;
+      if (!hasActualActivity) return;
+
+      if (!dateMap.has(report.date)) {
+        dateMap.set(report.date, []);
+      }
+      dateMap.get(report.date)!.push(report);
+    });
+
+    const rows: FitterDailyPerformanceRow[] = [];
+
+    dateMap.forEach((reportsForDate, date) => {
+      let shiftsWorked = 3;
+
+      // If a specific fitter is selected, check if they worked on this date
+      if (workerId !== 'ALL') {
+        const shiftsPresent = new Set<Shift>();
+        reportsForDate.forEach(report => {
+          (['I', 'II', 'III'] as Shift[]).forEach(shift => {
+            if ((report.fitters?.[shift] || []).includes(workerId)) {
+              shiftsPresent.add(shift);
+            }
+          });
+          (report.entries || []).forEach(e => {
+            if (e.siderId === workerId || (e.siderIds && e.siderIds.includes(workerId))) {
+              shiftsPresent.add(e.shift);
+            }
+          });
+        });
+
+        if (shiftsPresent.size === 0) {
+          // Fitter was not on duty on this date
+          return;
+        }
+        shiftsWorked = shiftsPresent.size;
+      }
+
+      // Collect all entries across the reports for this date
+      const allEntries: ProductionEntry[] = [];
+      reportsForDate.forEach(r => {
+        if (r.entries) allEntries.push(...r.entries);
+      });
+
+      const validIdle = allEntries.filter(e => typeof e.idlePercent === 'number' && !isNaN(e.idlePercent) && e.idlePercent > 0);
+      const validSlip = allEntries.filter(e => typeof e.slipPercent === 'number' && !isNaN(e.slipPercent) && e.slipPercent > 0);
+      const validRogue = allEntries.filter(e => typeof e.worstPercent === 'number' && !isNaN(e.worstPercent) && e.worstPercent > 0);
+      const validUtil = allEntries.filter(e => typeof e.utility === 'number' && !isNaN(e.utility) && e.utility > 0);
+
+      const allWithIdle = allEntries.filter(e => typeof e.idlePercent === 'number' && !isNaN(e.idlePercent));
+      const allWithSlip = allEntries.filter(e => typeof e.slipPercent === 'number' && !isNaN(e.slipPercent));
+      const allWithRogue = allEntries.filter(e => typeof e.worstPercent === 'number' && !isNaN(e.worstPercent));
+
+      const idle = validIdle.length > 0
+        ? validIdle.reduce((s, e) => s + (e.idlePercent || 0), 0) / validIdle.length
+        : (allWithIdle.length > 0 ? allWithIdle.reduce((s, e) => s + (e.idlePercent || 0), 0) / allWithIdle.length : 0);
+
+      const slip = validSlip.length > 0
+        ? validSlip.reduce((s, e) => s + (e.slipPercent || 0), 0) / validSlip.length
+        : (allWithSlip.length > 0 ? allWithSlip.reduce((s, e) => s + (e.slipPercent || 0), 0) / allWithSlip.length : 0);
+
+      const rogue = validRogue.length > 0
+        ? validRogue.reduce((s, e) => s + (e.worstPercent || 0), 0) / validRogue.length
+        : (allWithRogue.length > 0 ? allWithRogue.reduce((s, e) => s + (e.worstPercent || 0), 0) / allWithRogue.length : 0);
+
+      const util = validUtil.length > 0
+        ? validUtil.reduce((s, e) => s + (e.utility || 0), 0) / validUtil.length
+        : 0;
 
       rows.push({
-        date: report.date,
+        date,
         idlePercent: Number(idle.toFixed(2)),
         slipPercent: Number(slip.toFixed(2)),
         roguePercent: Number(rogue.toFixed(2)),
