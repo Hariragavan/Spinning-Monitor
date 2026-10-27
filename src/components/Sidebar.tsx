@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Users, Coins, Trophy,
   Gauge, Monitor, BarChart3, Calendar, Database, Grid3X3, Wrench, UserCheck,
-  FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft
+  FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -32,6 +32,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Daily Operations',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { id: 'count-summary', label: 'Count Summary', icon: Layers },
       { id: 'all-data', label: 'All Data Master Table', icon: Table },
       { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
       { id: 'reports', label: 'Daily Statement', icon: TrendingUp },

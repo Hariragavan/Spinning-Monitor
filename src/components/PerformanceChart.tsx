@@ -9,12 +9,27 @@ interface PerformanceChartProps {
 }
 
 export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTvMode = false }) => {
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const chartData = report.summaries.map(s => ({
     name: s.frameNo,
     Target: s.targetProd,
     Actual: s.actualProd,
     Efficiency: s.avgUtil // Using avgUtil for efficiency trends
   }));
+
+  if (!isMounted) {
+    return (
+      <div className={cn("grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12", isTvMode && "gap-6 mb-6")}>
+        <div className={cn("bg-white rounded-3xl border border-stone-200 animate-pulse", isTvMode ? "h-[500px]" : "h-[350px]")} />
+        <div className={cn("bg-white rounded-3xl border border-stone-200 animate-pulse", isTvMode ? "h-[500px]" : "h-[350px]")} />
+      </div>
+    );
+  }
 
   return (
     <div className={cn("grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12", isTvMode && "gap-6 mb-6")}>

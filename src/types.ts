@@ -52,7 +52,7 @@ export interface ProductionEntry {
   incentiveAmount?: number; // Added for manual incentive uploads
   remarks?: string;
   siderId?: string; // Link to worker by ID (kept for backward compatibility or singular use)
-  siderIds?: string[]; // Multiple siders assigned to this machine/entry (slot 0: LH, slot 1: RH)
+  siderIds?: string[]; // Multiple siders assigned to this machine/entry (slot 0: LH, slot 1: RH, slot 2: S3, slot 3: S4)
   siderName?: string; // Link to worker by Name (extracted from Excel)
   gaiterId?: string; // Link to machine-specific gaiter by worker ID
   gaiterName?: string; // Link to machine-specific gaiter by worker Name

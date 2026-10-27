@@ -30,12 +30,14 @@ import { PerformanceChart } from '@/components/PerformanceChart';
 import { Sidebar, ALL_NAV_ITEMS } from '@/components/Sidebar';
 import { MasterDataTable } from '@/components/MasterDataTable';
 import { TvDashboard, TV_MAIN_PAGES } from '@/components/TvDashboard';
+import { CountSummary } from '@/components/CountSummary';
+import { CountWiseFrames } from '@/components/CountWiseFrames';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
 import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
-import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate } from '@/lib/parser';
+import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, parseExcelReport } from '@/lib/parser';
 import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
 
@@ -407,6 +409,8 @@ export default function Home() {
     },
     tvPageIntervals: {
       'dashboard': 15,
+      'count-summary': 20,
+      'count-frames': 20,
       'daily-incentive': 15,
       'daily-incentive-machine': 15,
       'reports': 20,
@@ -463,6 +467,8 @@ export default function Home() {
   // Settings Machine Configuration filter state
   const [settingsMachineShed, setSettingsMachineShed] = useState<string>('All');
   const [settingsMachineSearch, setSettingsMachineSearch] = useState<string>('');
+  const [isUploadingSettingsStatement, setIsUploadingSettingsStatement] = useState<boolean>(false);
+  const settingsStatementInputRef = useRef<HTMLInputElement>(null);
 
   // Load Initial Data from Database
   useEffect(() => {
@@ -486,16 +492,33 @@ export default function Home() {
         }
         if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
         if (data.counts && data.counts.length > 0) setCountConversions(data.counts);
+        
+        let localSiderCounts: Record<string, number> = {};
+        if (typeof window !== 'undefined') {
+          try {
+            const localSaved = localStorage.getItem('spinning_settings');
+            if (localSaved) {
+              const parsed = JSON.parse(localSaved);
+              if (parsed.machineSiderCounts) localSiderCounts = parsed.machineSiderCounts;
+            }
+          } catch (e) {}
+        }
+
         if (data.settings) {
           setSettings(prev => ({ 
             ...prev, 
             ...data.settings,
+            machineSiderCounts: (data.settings.machineSiderCounts && Object.keys(data.settings.machineSiderCounts).length > 0)
+              ? data.settings.machineSiderCounts
+              : (Object.keys(localSiderCounts).length > 0 ? localSiderCounts : (data.settings.machineSiderCounts || {})),
             gaiterCounts: {
               I: data.settings.gaiterCounts?.I ?? 1,
               II: data.settings.gaiterCounts?.II ?? 1,
               III: 1
             }
           }));
+        } else if (Object.keys(localSiderCounts).length > 0) {
+          setSettings(prev => ({ ...prev, machineSiderCounts: localSiderCounts }));
         }
         if (data.frozenMonths) setFrozenMonths(data.frozenMonths);
         setIsSystemReady(true);
@@ -1373,32 +1396,140 @@ export default function Home() {
     reader.readAsText(file);
   };
 
-  const configurableMachines = useMemo(() => {
-    const list = new Set<string>();
-    (machines || []).forEach(m => {
-      if (m.rfNo) list.add(m.rfNo);
+  const configurableMachinesList = useMemo(() => {
+    const map = new Map<string, { rfNo: string; shed: string; count?: string; fromStatement?: boolean }>();
+
+    const targetDate = activeDailyReport?.date || dailyReport?.date || getTodayUniversalDate();
+
+    // 1. Gather all reports for targetDate across all sheds (Shed 1, Shed 2, Shed 3, KTTM)
+    const reportsForDay: DailyReport[] = [
+      activeDailyReport,
+      dailyReport,
+      ...reportHistory.filter(r => r.date === targetDate)
+    ].filter(Boolean) as DailyReport[];
+
+    reportsForDay.forEach(rep => {
+      (rep.entries || []).forEach(e => {
+        if (e.frameNo) {
+          const clean = e.frameNo.trim().toUpperCase();
+          const machineShed = e.shed || rep.shed || 'Shed 1';
+          if (!map.has(clean)) {
+            map.set(clean, {
+              rfNo: clean,
+              shed: machineShed,
+              count: e.count || '',
+              fromStatement: true
+            });
+          } else {
+            const existing = map.get(clean)!;
+            if (!existing.count && e.count) existing.count = e.count;
+            if (e.shed && (!existing.shed || existing.shed === 'Shed 1')) existing.shed = e.shed;
+          }
+        }
+      });
+
+      (rep.summaries || []).forEach(s => {
+        if (s.frameNo) {
+          const clean = s.frameNo.trim().toUpperCase();
+          const machineShed = s.shed || rep.shed || 'Shed 1';
+          if (!map.has(clean)) {
+            map.set(clean, {
+              rfNo: clean,
+              shed: machineShed,
+              count: s.count || '',
+              fromStatement: true
+            });
+          } else {
+            const existing = map.get(clean)!;
+            if (!existing.count && s.count) existing.count = s.count;
+          }
+        }
+      });
     });
-    return Array.from(list).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [machines]);
+
+    // 2. Also include any registered machines from Machine Master that weren't in today's statement
+    (machines || []).forEach(m => {
+      if (m.rfNo) {
+        const clean = m.rfNo.trim().toUpperCase();
+        const existing = map.get(clean);
+        if (!existing) {
+          map.set(clean, {
+            rfNo: clean,
+            shed: m.shed || 'Shed 1',
+            count: m.count || '',
+            fromStatement: false
+          });
+        } else if (!existing.count && m.count) {
+          existing.count = m.count;
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.rfNo.localeCompare(b.rfNo, undefined, { numeric: true }));
+  }, [activeDailyReport, dailyReport, reportHistory, machines]);
+
+  const configurableMachines = useMemo(() => {
+    return configurableMachinesList.map(m => m.rfNo);
+  }, [configurableMachinesList]);
 
   const updateMachineSides = (rfNo: string, newSides: number) => {
     const updatedCounts = {
       ...(settings.machineSiderCounts || {}),
-      [rfNo]: Math.max(1, Math.min(3, newSides))
+      [rfNo]: Math.max(1, Math.min(4, newSides))
     };
     const updated = { ...settings, machineSiderCounts: updatedCounts };
     setSettings(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('spinning_settings', JSON.stringify(updated));
+    }
     apiClient.saveSettings(updated).catch(() => {});
   };
 
   const setAllMachinesSides = (sides: number) => {
     const updatedCounts = { ...(settings.machineSiderCounts || {}) };
-    configurableMachines.forEach(rfNo => {
-      updatedCounts[rfNo] = sides;
+    configurableMachinesList.forEach(m => {
+      if (settingsMachineShed === 'All' || (m.shed || 'Shed 1') === settingsMachineShed) {
+        updatedCounts[m.rfNo] = Math.max(1, Math.min(4, sides));
+      }
     });
     const updated = { ...settings, machineSiderCounts: updatedCounts };
     setSettings(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('spinning_settings', JSON.stringify(updated));
+    }
     apiClient.saveSettings(updated).catch(() => {});
+  };
+
+  const handleSettingsStatementUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingSettingsStatement(true);
+    try {
+      const targetShed = (settingsMachineShed === 'All' ? selectedShed : settingsMachineShed as Shed);
+      const reportData = await parseExcelReport(file, countConversions, targetShed);
+      if (Array.isArray(reportData)) {
+        for (const r of reportData) {
+          await apiClient.saveDailyReport(r);
+        }
+        const refreshed = await apiClient.fetchInitialData();
+        if (refreshed.history) setReportHistory(refreshed.history);
+        if (refreshed.dailyReport) setDailyReport(refreshed.dailyReport);
+        alert(`Successfully imported production statement with ${reportData.length} records! Today's machines and running counts are now shown below for side allocation.`);
+      } else {
+        await apiClient.saveDailyReport(reportData);
+        setDailyReport(reportData);
+        setReportHistory(prev => [
+          ...prev.filter(r => !(r.date === reportData.date && (r.shed || 'Shed 1') === (reportData.shed || selectedShed))),
+          reportData
+        ]);
+        alert(`Successfully imported production statement for ${reportData.date} (${reportData.shed || 'Shed 1'})! Machines and running counts are now shown below.`);
+      }
+    } catch (err: any) {
+      alert(`Failed to parse production statement: ${err?.message || 'Invalid file format'}`);
+    } finally {
+      setIsUploadingSettingsStatement(false);
+      if (settingsStatementInputRef.current) settingsStatementInputRef.current.value = '';
+    }
   };
 
   const updateTvSubPageDuration = (subId: string, seconds: number) => {
@@ -1576,6 +1707,33 @@ export default function Home() {
           </motion.div>
         );
 
+      case 'count-summary':
+        return (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
+            <CountSummary
+              report={activeDailyReport}
+              countConversions={countConversions}
+              isTvMode={isTvMode}
+              onSelectDate={handleTopDateChange}
+              availableDates={availableReportDates}
+            />
+          </motion.div>
+        );
+
+      case 'count-frames':
+        return (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
+            <CountWiseFrames
+              report={activeDailyReport}
+              workers={currentShedWorkers}
+              countConversions={countConversions}
+              isTvMode={isTvMode}
+              onSelectDate={handleTopDateChange}
+              availableDates={availableReportDates}
+            />
+          </motion.div>
+        );
+
       case 'all-data':
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
@@ -1594,7 +1752,15 @@ export default function Home() {
         return (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={cn('flex justify-center', isTvMode ? 'p-0' : 'py-6')}>
             <div className={cn('w-full', !isTvMode && 'max-w-7xl')}>
-              <ReportView report={activeDailyReport} isTvMode={isTvMode} />
+              <ReportView
+                report={activeDailyReport}
+                isTvMode={isTvMode}
+                allReports={reportHistory}
+                currentShed={selectedShed}
+                onSelectShed={(shed) => setSelectedShed(shed as Shed)}
+                onSelectDate={handleTopDateChange}
+                availableDates={availableReportDates}
+              />
             </div>
           </motion.div>
         );
@@ -1628,6 +1794,7 @@ export default function Home() {
             isTvMode={isTvMode}
             onSelectDate={handleTopDateChange}
             machineSiderCounts={settings.machineSiderCounts}
+            shed={selectedShed}
           />
         );
 
@@ -2518,6 +2685,33 @@ export default function Home() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={settingsStatementInputRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleSettingsStatementUpload}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => settingsStatementInputRef.current?.click()}
+                    disabled={isUploadingSettingsStatement}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                    title="Upload production statement Excel file to immediately populate machines and running counts"
+                  >
+                    {isUploadingSettingsStatement ? (
+                      <Loader2 size={13} className="animate-spin text-emerald-200" />
+                    ) : (
+                      <CloudUpload size={13} className="text-emerald-200" />
+                    )}
+                    <span>{isUploadingSettingsStatement ? 'Uploading...' : 'Upload Statement'}</span>
+                  </button>
+                  <button
+                    onClick={() => setAllMachinesSides(4)}
+                    className="px-3.5 py-2 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check size={13} className="text-indigo-300" />
+                    <span>Set All 4 Sides</span>
+                  </button>
                   <button
                     onClick={() => setAllMachinesSides(2)}
                     className="px-3.5 py-2 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
@@ -2535,11 +2729,18 @@ export default function Home() {
               </div>
 
               {/* Explanatory Banner */}
-              <div className="bg-blue-50/80 border border-blue-200/70 rounded-2xl p-4 flex items-start gap-3">
-                <Monitor size={18} className="text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-950 font-medium leading-relaxed">
-                  <strong>Standard Mill Rule:</strong> All frames default to 2 sides (Left Hand <code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-[11px] font-bold">LH</code> & Right Hand <code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono text-[11px] font-bold">RH</code>). Siders operating both sides receive 100% machine incentive. 1 side assignment earns 50%.
-                </p>
+              <div className="bg-blue-50/80 border border-blue-200/70 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <Monitor size={18} className="text-blue-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-blue-950 font-medium leading-relaxed">
+                    <strong>Operator Allocation Rule:</strong> Machines loaded from today's production statement file automatically appear here with their running counts. You can set 1, 2, 3, or up to <strong>4 Siders</strong> per machine. Settings save automatically for future daily allocations.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
+                  <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-900 shadow-2xs font-mono">
+                    Statement Date: {activeDailyReport?.date || 'Today'}
+                  </span>
+                </div>
               </div>
 
               {/* Shed Filter Tabs & Search Bar */}
@@ -2548,11 +2749,8 @@ export default function Home() {
                   {(['All', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shedTab => {
                     const isSelected = settingsMachineShed === shedTab;
                     const countInTab = shedTab === 'All'
-                      ? configurableMachines.length
-                      : configurableMachines.filter(rf => {
-                          const m = machines.find(x => x.rfNo === rf);
-                          return (m?.shed || 'Shed 1') === shedTab;
-                        }).length;
+                      ? configurableMachinesList.length
+                      : configurableMachinesList.filter(m => (m.shed || 'Shed 1') === shedTab).length;
 
                     return (
                       <button
@@ -2581,7 +2779,7 @@ export default function Home() {
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
                   <input
                     type="text"
-                    placeholder="Search frame (e.g. SP023)..."
+                    placeholder="Search frame (e.g. 01, RF-1)..."
                     value={settingsMachineSearch}
                     onChange={(e) => setSettingsMachineSearch(e.target.value)}
                     className="w-full bg-white border border-stone-200 rounded-xl pl-9 pr-3 py-2 text-xs font-bold text-stone-800 placeholder-stone-400 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
@@ -2591,28 +2789,27 @@ export default function Home() {
 
               {/* Filtered Machine Cards Grid */}
               {(() => {
-                const filtered = configurableMachines.filter(rfNo => {
-                  const m = machines.find(x => x.rfNo === rfNo);
-                  const mShed = m?.shed || 'Shed 1';
+                const filtered = configurableMachinesList.filter(item => {
+                  const mShed = item.shed || 'Shed 1';
                   const matchesShed = settingsMachineShed === 'All' || mShed === settingsMachineShed;
-                  const matchesSearch = !settingsMachineSearch || rfNo.toLowerCase().includes(settingsMachineSearch.toLowerCase());
+                  const matchesSearch = !settingsMachineSearch || item.rfNo.toLowerCase().includes(settingsMachineSearch.toLowerCase());
                   return matchesShed && matchesSearch;
                 });
 
                 if (filtered.length === 0) {
                   return (
                     <div className="text-center py-12 bg-white rounded-2xl border border-stone-200">
-                      <p className="text-sm font-bold text-stone-400">No registered spinning frames found matching filters.</p>
-                      <p className="text-xs text-stone-400 mt-1">Only machines registered in Machine Master are displayed here.</p>
+                      <p className="text-sm font-bold text-stone-400">No spinning frames found matching filters.</p>
+                      <p className="text-xs text-stone-400 mt-1">Upload a daily production statement or register machines in Machine Master.</p>
                     </div>
                   );
                 }
 
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
-                    {filtered.map(rfNo => {
-                      const m = machines.find(x => x.rfNo === rfNo);
-                      const mShed = m?.shed || 'Shed 1';
+                    {filtered.map(item => {
+                      const rfNo = item.rfNo;
+                      const mShed = item.shed || 'Shed 1';
                       const currentSides = settings.machineSiderCounts?.[rfNo] !== undefined 
                         ? settings.machineSiderCounts[rfNo] 
                         : 2;
@@ -2625,21 +2822,36 @@ export default function Home() {
                           <div className="flex items-center justify-between gap-1 mb-3 pb-2 border-b border-stone-100">
                             <div>
                               <div className="flex items-center gap-1.5">
-                                <span className="font-black text-stone-900 text-sm tracking-tight">{rfNo}</span>
-                                <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                  Registered
-                                </span>
+                                <span className="font-black text-stone-900 text-sm tracking-tight font-mono">{rfNo}</span>
+                                {item.fromStatement ? (
+                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    Statement
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200">
+                                    Master
+                                  </span>
+                                )}
                               </div>
-                              <span className="text-[9px] font-black uppercase text-stone-400">{mShed}</span>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[9px] font-black uppercase text-stone-400">{mShed}</span>
+                                {item.count && (
+                                  <span className="text-[9px] font-mono font-bold text-stone-500 truncate max-w-[90px]">
+                                    · {item.count}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <span
                               className={cn(
-                                "text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider",
+                                "text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider font-mono",
                                 currentSides === 2 
                                   ? "bg-blue-100 text-blue-800 border border-blue-200"
                                   : currentSides === 1
                                   ? "bg-stone-100 text-stone-700 border border-stone-200"
-                                  : "bg-purple-100 text-purple-800 border border-purple-200"
+                                  : currentSides === 3
+                                  ? "bg-purple-100 text-purple-800 border border-purple-200"
+                                  : "bg-indigo-100 text-indigo-900 border border-indigo-200"
                               )}
                             >
                               {currentSides === 2 ? 'LH + RH' : currentSides === 1 ? 'LH' : `${currentSides} SIDES`}
@@ -2647,22 +2859,27 @@ export default function Home() {
                           </div>
 
                           {/* Visual Side Pills */}
-                          <div className="flex items-center justify-center gap-1.5 mb-3">
+                          <div className="flex items-center justify-center gap-1 mb-3 flex-wrap">
                             <span className={cn(
-                              "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
+                              "px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
                               currentSides >= 1 ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-400"
                             )}>
                               LH
                             </span>
                             <span className={cn(
-                              "px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
+                              "px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
                               currentSides >= 2 ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-400"
                             )}>
                               RH
                             </span>
                             {currentSides >= 3 && (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white">
                                 S3
+                              </span>
+                            )}
+                            {currentSides >= 4 && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white">
+                                S4
                               </span>
                             )}
                           </div>
@@ -2682,16 +2899,16 @@ export default function Home() {
                               -
                             </button>
 
-                            <span className="text-xl font-black text-stone-900 tabular-nums">
+                            <span className="text-xl font-black text-stone-900 tabular-nums font-mono">
                               {currentSides}
                             </span>
 
                             <button
                               onClick={() => updateMachineSides(rfNo, currentSides + 1)}
-                              disabled={currentSides >= 3}
+                              disabled={currentSides >= 4}
                               className={cn(
                                 "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
-                                currentSides >= 3
+                                currentSides >= 4
                                   ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
                                   : "bg-blue-600 hover:bg-blue-700 text-white active:scale-90 cursor-pointer shadow-xs"
                               )}

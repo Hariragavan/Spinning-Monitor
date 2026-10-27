@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Sider, Shift, ProductionEntry, DailyReport } from '../types';
 import { 
   UserCheck, 
@@ -193,10 +193,27 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const gaiterDeptWorkers = workers.filter(w => w.department?.toLowerCase().includes('gaiter'));
   const otherGaiterWorkers = workers.filter(w => !w.department?.toLowerCase().includes('gaiter'));
 
+  // Check the maximum number of siders needed across all machines in the current view (supports 1, 2, 3, or 4 siders)
+  const maxSidesInView = useMemo(() => {
+    let maxSides = 2;
+    filteredEntriesWithIndex.forEach(({ entry }) => {
+      const configured = machineSiderCounts[entry.frameNo];
+      if (configured !== undefined && configured > maxSides) {
+        maxSides = configured;
+      }
+    });
+    return maxSides;
+  }, [filteredEntriesWithIndex, machineSiderCounts]);
+
   // Calculate allocation statistics for current view
   const totalMachinesInView = filteredEntriesWithIndex.length;
   const staffedLhCount = filteredEntriesWithIndex.filter(({ entry }) => (entry.siderIds?.[0] || entry.siderId)).length;
-  const staffedRhCount = filteredEntriesWithIndex.filter(({ entry }) => entry.siderIds?.[1]).length;
+  const rhNeededCount = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 2).length;
+  const staffedRhCount = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 2 && entry.siderIds?.[1]).length;
+  const s3NeededCount = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 3).length;
+  const staffedS3Count = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 3 && entry.siderIds?.[2]).length;
+  const s4NeededCount = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 4).length;
+  const staffedS4Count = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 4 && entry.siderIds?.[3]).length;
   const staffedGaiterCount = filteredEntriesWithIndex.filter(({ entry }) => entry.gaiterId || gaiters[entry.shift]?.[0]).length;
 
   const currentReport = {
@@ -586,7 +603,10 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                 </span>
               </h3>
               <p className="text-[11px] text-stone-500 font-medium mt-0.5">
-                Staffing: {staffedLhCount}/{totalMachinesInView} LH · {staffedRhCount}/{totalMachinesInView} RH · {staffedGaiterCount}/{totalMachinesInView} Gaiters
+                Staffing: {staffedLhCount}/{totalMachinesInView} LH · {staffedRhCount}/{rhNeededCount} RH
+                {s3NeededCount > 0 && ` · ${staffedS3Count}/${s3NeededCount} S3`}
+                {s4NeededCount > 0 && ` · ${staffedS4Count}/${s4NeededCount} S4`}
+                 · {staffedGaiterCount}/{totalMachinesInView} Gaiters
               </p>
             </div>
           </div>
@@ -612,19 +632,35 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
               <tr className="bg-stone-50/80 border-b border-stone-100 text-[10px] font-black uppercase tracking-wider text-stone-500">
                 <th className="px-4 py-3 w-16">SHIFT</th>
                 <th className="px-4 py-3 w-32">MACHINE</th>
-                <th className="px-4 py-3 min-w-[220px]">
+                <th className="px-4 py-3 min-w-[210px]">
                   <span className="flex items-center gap-1 text-emerald-800">
                     <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
                     LH SIDER (50% LEFT)
                   </span>
                 </th>
-                <th className="px-4 py-3 min-w-[260px]">
+                <th className="px-4 py-3 min-w-[240px]">
                   <span className="flex items-center gap-1 text-blue-800">
                     <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                     RH SIDER (50% RIGHT)
                   </span>
                 </th>
-                <th className="px-4 py-3 min-w-[220px]">
+                {maxSidesInView >= 3 && (
+                  <th className="px-4 py-3 min-w-[200px]">
+                    <span className="flex items-center gap-1 text-purple-800">
+                      <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                      SIDER 3 (S3)
+                    </span>
+                  </th>
+                )}
+                {maxSidesInView >= 4 && (
+                  <th className="px-4 py-3 min-w-[200px]">
+                    <span className="flex items-center gap-1 text-indigo-800">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
+                      SIDER 4 (S4)
+                    </span>
+                  </th>
+                )}
+                <th className="px-4 py-3 min-w-[210px]">
                   <span className="flex items-center gap-1 text-amber-800">
                     <span className="w-2 h-2 rounded-full bg-amber-600"></span>
                     GAITER ALLOCATION
@@ -636,18 +672,34 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
             <tbody className="divide-y divide-stone-100 text-xs">
               {filteredEntriesWithIndex.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-stone-400 italic">
+                  <td colSpan={4 + (maxSidesInView >= 3 ? 1 : 0) + (maxSidesInView >= 4 ? 1 : 0)} className="py-12 text-center text-stone-400 italic">
                     No machine entries found for {selectedShift === 'ALL' ? 'any shift' : `Shift ${selectedShift}`}.
                   </td>
                 </tr>
               ) : (
                 filteredEntriesWithIndex.map(({ entry, idx }) => {
+                  const targetSides = machineSiderCounts[entry.frameNo] !== undefined 
+                    ? machineSiderCounts[entry.frameNo] 
+                    : 2;
+
                   const lhWorkerId = entry.siderIds?.[0] || entry.siderId || '';
                   const rhWorkerId = entry.siderIds?.[1] || '';
+                  const s3WorkerId = entry.siderIds?.[2] || '';
+                  const s4WorkerId = entry.siderIds?.[3] || '';
                   const machineGaiterId = entry.gaiterId || (gaiters[entry.shift]?.[0] || '');
 
-                  const isBothSides = Boolean(lhWorkerId && rhWorkerId && lhWorkerId === rhWorkerId);
-                  const isFullCrew = Boolean(lhWorkerId && rhWorkerId && machineGaiterId);
+                  const activeAssignedSlots = [
+                    lhWorkerId,
+                    targetSides >= 2 ? rhWorkerId : null,
+                    targetSides >= 3 ? s3WorkerId : null,
+                    targetSides >= 4 ? s4WorkerId : null,
+                  ].filter(Boolean) as string[];
+
+                  const assignedCount = activeAssignedSlots.length;
+                  const isSidersFull = assignedCount >= targetSides;
+                  const isBothSides = targetSides === 2 && Boolean(lhWorkerId && rhWorkerId && lhWorkerId === rhWorkerId);
+                  const isFullCrew = isSidersFull && Boolean(machineGaiterId);
+                  const isStaffedWithoutGaiter = isSidersFull && !machineGaiterId;
 
                   return (
                     <tr 
@@ -674,10 +726,24 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                               {entry.count}
                             </span>
                           )}
+                          <div className="mt-1">
+                            <span className={cn(
+                              "text-[9px] font-black uppercase px-1.5 py-0.5 rounded border tracking-wider",
+                              targetSides === 4 
+                                ? "bg-indigo-50 text-indigo-800 border-indigo-200" 
+                                : targetSides === 3 
+                                ? "bg-purple-50 text-purple-800 border-purple-200" 
+                                : targetSides === 1 
+                                ? "bg-stone-100 text-stone-600 border-stone-200" 
+                                : "bg-blue-50 text-blue-800 border-blue-200"
+                            )}>
+                              {targetSides} Sider{targetSides > 1 ? 's' : ''}
+                            </span>
+                          </div>
                         </div>
                       </td>
 
-                      {/* LH SIDER (50% LEFT) */}
+                      {/* LH SIDER (50% LEFT / SLOT 0) */}
                       <td className="px-4 py-3.5 align-middle">
                         <div className="relative">
                           <select
@@ -706,59 +772,139 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                         </div>
                       </td>
 
-                      {/* RH SIDER (50% RIGHT) + BOTH SIDES SHORTCUT */}
+                      {/* RH SIDER (50% RIGHT / SLOT 1) + BOTH SIDES SHORTCUT */}
                       <td className="px-4 py-3.5 align-middle">
-                        <div className="flex items-center gap-1.5">
-                          <div className="relative flex-1">
-                            <select
-                              value={rhWorkerId}
-                              onChange={(e) => assignWorker(idx, e.target.value, 1)}
-                              className={cn(
-                                "w-full px-3 py-2 border rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all cursor-pointer font-mono",
-                                isBothSides 
-                                  ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-black" 
-                                  : "bg-stone-50 border-stone-200"
-                              )}
-                            >
-                              <option value="">-- No RH Sider Assigned --</option>
-                              {siderDeptWorkers.length > 0 && (
-                                <optgroup label="Sider / Ringframe Department">
-                                  {siderDeptWorkers.map((w) => (
+                        {targetSides >= 2 ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="relative flex-1">
+                              <select
+                                value={rhWorkerId}
+                                onChange={(e) => assignWorker(idx, e.target.value, 1)}
+                                className={cn(
+                                  "w-full px-3 py-2 border rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all cursor-pointer font-mono",
+                                  isBothSides 
+                                    ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-black" 
+                                    : "bg-stone-50 border-stone-200"
+                                )}
+                              >
+                                <option value="">-- No RH Sider Assigned --</option>
+                                {siderDeptWorkers.length > 0 && (
+                                  <optgroup label="Sider / Ringframe Department">
+                                    {siderDeptWorkers.map((w) => (
+                                      <option key={w.id} value={w.id}>
+                                        {w.name} ({w.tNo})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="All Other Workers">
+                                  {otherSiderWorkers.map((w) => (
                                     <option key={w.id} value={w.id}>
-                                      {w.name} ({w.tNo})
+                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
                                     </option>
                                   ))}
                                 </optgroup>
-                              )}
-                              <optgroup label="All Other Workers">
-                                {otherSiderWorkers.map((w) => (
-                                  <option key={w.id} value={w.id}>
-                                    {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            </select>
-                          </div>
+                              </select>
+                            </div>
 
-                          {/* Quick Both Sides Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleCopyLhToRh(idx, lhWorkerId)}
-                            disabled={!lhWorkerId || isBothSides}
-                            className={cn(
-                              "px-2.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border shrink-0",
-                              isBothSides
-                                ? "bg-emerald-600 text-white border-emerald-600 cursor-default"
-                                : lhWorkerId
-                                ? "bg-white hover:bg-stone-100 text-stone-700 border-stone-200 active:scale-95"
-                                : "bg-stone-100 text-stone-300 border-stone-200 cursor-not-allowed"
-                            )}
-                            title={isBothSides ? "Both sides managed by same sider" : "Click to assign LH Sider to RH side (100% Both Sides)"}
-                          >
-                            {isBothSides ? '= Both' : '+ Both'}
-                          </button>
-                        </div>
+                            {/* Quick Both Sides Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLhToRh(idx, lhWorkerId)}
+                              disabled={!lhWorkerId || isBothSides}
+                              className={cn(
+                                "px-2.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap border shrink-0",
+                                isBothSides
+                                  ? "bg-emerald-600 text-white border-emerald-600 cursor-default"
+                                  : lhWorkerId
+                                  ? "bg-white hover:bg-stone-100 text-stone-700 border-stone-200 active:scale-95"
+                                  : "bg-stone-100 text-stone-300 border-stone-200 cursor-not-allowed"
+                              )}
+                              title={isBothSides ? "Both sides managed by same sider" : "Click to assign LH Sider to RH side (100% Both Sides)"}
+                            >
+                              {isBothSides ? '= Both' : '+ Both'}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="px-3 py-2 bg-stone-100/60 border border-dashed border-stone-200 rounded-xl text-center text-stone-400 text-xs font-bold italic">
+                            1 Side (LH Only)
+                          </div>
+                        )}
                       </td>
+
+                      {/* SIDER 3 (SLOT 2) - WHEN SHOWN */}
+                      {maxSidesInView >= 3 && (
+                        <td className="px-4 py-3.5 align-middle">
+                          {targetSides >= 3 ? (
+                            <div className="relative">
+                              <select
+                                value={s3WorkerId}
+                                onChange={(e) => assignWorker(idx, e.target.value, 2)}
+                                className="w-full px-3 py-2 bg-purple-50/50 border border-purple-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all cursor-pointer font-mono"
+                              >
+                                <option value="">-- No S3 Sider Assigned --</option>
+                                {siderDeptWorkers.length > 0 && (
+                                  <optgroup label="Sider / Ringframe Department">
+                                    {siderDeptWorkers.map((w) => (
+                                      <option key={w.id} value={w.id}>
+                                        {w.name} ({w.tNo})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="All Other Workers">
+                                  {otherSiderWorkers.map((w) => (
+                                    <option key={w.id} value={w.id}>
+                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="px-3 py-2 text-center text-stone-300 text-xs font-medium italic">
+                              —
+                            </div>
+                          )}
+                        </td>
+                      )}
+
+                      {/* SIDER 4 (SLOT 3) - WHEN SHOWN */}
+                      {maxSidesInView >= 4 && (
+                        <td className="px-4 py-3.5 align-middle">
+                          {targetSides >= 4 ? (
+                            <div className="relative">
+                              <select
+                                value={s4WorkerId}
+                                onChange={(e) => assignWorker(idx, e.target.value, 3)}
+                                className="w-full px-3 py-2 bg-indigo-50/50 border border-indigo-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all cursor-pointer font-mono"
+                              >
+                                <option value="">-- No S4 Sider Assigned --</option>
+                                {siderDeptWorkers.length > 0 && (
+                                  <optgroup label="Sider / Ringframe Department">
+                                    {siderDeptWorkers.map((w) => (
+                                      <option key={w.id} value={w.id}>
+                                        {w.name} ({w.tNo})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="All Other Workers">
+                                  {otherSiderWorkers.map((w) => (
+                                    <option key={w.id} value={w.id}>
+                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              </select>
+                            </div>
+                          ) : (
+                            <div className="px-3 py-2 text-center text-stone-300 text-xs font-medium italic">
+                              —
+                            </div>
+                          )}
+                        </td>
+                      )}
 
                       {/* GAITER ALLOCATION (PER MACHINE) */}
                       <td className="px-4 py-3.5 align-middle">
@@ -802,15 +948,19 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                         ) : isFullCrew ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase">
                             <Check size={11} className="stroke-[3]" />
-                            <span>Full Crew</span>
+                            <span>{targetSides}/{targetSides} Full Crew</span>
                           </span>
-                        ) : isBothSides ? (
+                        ) : isStaffedWithoutGaiter && isBothSides ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase">
                             <span>Both (No Gaiter)</span>
                           </span>
-                        ) : lhWorkerId || rhWorkerId ? (
+                        ) : isStaffedWithoutGaiter ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase">
+                            <span>{targetSides}/{targetSides} Staffed</span>
+                          </span>
+                        ) : assignedCount > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-black uppercase">
-                            <span>Partial</span>
+                            <span>Partial ({assignedCount}/{targetSides})</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-stone-100 text-stone-400 rounded-lg text-[10px] font-bold uppercase">

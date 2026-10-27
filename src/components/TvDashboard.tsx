@@ -16,7 +16,7 @@ import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } 
 // Import the 17 core application components
 import { KPIStats } from './KPIStats';
 import { PerformanceChart } from './PerformanceChart';
-import { ReportView } from './ReportView';
+import { ReportView, AllShedSpinningReportTable, computeAllShedReport } from './ReportView';
 import { DailyIncentive } from './DailyIncentive';
 import { MachineDailyIncentive } from './MachineDailyIncentive';
 import { RunningCountIncentives } from './RunningCountIncentives';
@@ -32,6 +32,8 @@ import { BestSider } from './BestSider';
 import { BestOperatorsEm } from './BestOperatorsEm';
 import { EmOutliersCompare } from './EmOutliersCompare';
 import { FitterMonthlyPerformance } from './FitterMonthlyPerformance';
+import { CountSummary } from './CountSummary';
+import { CountWiseFrames } from './CountWiseFrames';
 
 export interface TvSubPageDef {
   id: string; // matches component routing key
@@ -50,7 +52,7 @@ export interface TvMainPageDef {
   subPages: TvSubPageDef[];
 }
 
-// Definition of the 10 Main Pages and their 17 Sub-Pages
+// Definition of the 14 Main Pages and their Sub-Pages
 export const TV_MAIN_PAGES: TvMainPageDef[] = [
   {
     id: 'main-dashboard',
@@ -69,8 +71,40 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
     ]
   },
   {
-    id: 'main-statement',
+    id: 'main-count-summary',
     chapterNumber: 2,
+    title: 'Running Count GPSS Summary',
+    subtitle: 'Plant running yarn counts, standard vs actual GPSS & 40s converted output',
+    icon: Layers,
+    subPages: [
+      {
+        id: 'count-summary',
+        title: 'Running Count GPSS Summary & Plant Operations',
+        shortTitle: 'Count GPSS',
+        defaultSeconds: 20,
+        description: 'Active yarn counts, actual vs std GPSS, 40s converted factor, shift-wise KG & live plant operations'
+      }
+    ]
+  },
+  {
+    id: 'main-count-frames',
+    chapterNumber: 3,
+    title: 'Count-Wise Frame Telemetry & Crew Roster',
+    subtitle: 'Live machine telemetry, standard vs actual GPS, efficiency & assigned operators grouped by count',
+    icon: Activity,
+    subPages: [
+      {
+        id: 'count-frames',
+        title: 'Count-Wise Ring Frame Telemetry & Crew Roster',
+        shortTitle: 'Count Frames',
+        defaultSeconds: 20,
+        description: 'Count-wise sub-pages with individual machine cards, GPS telemetry, target ratios and assigned siders/gaiters'
+      }
+    ]
+  },
+  {
+    id: 'main-statement',
+    chapterNumber: 4,
     title: 'Daily Production Statement',
     subtitle: 'Technical shift statement across all registered ring frames',
     icon: FileText,
@@ -86,7 +120,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-incentives',
-    chapterNumber: 3,
+    chapterNumber: 5,
     title: 'Daily Incentive Intelligence',
     subtitle: 'Operator performance rewards and frame distribution',
     icon: Coins,
@@ -109,7 +143,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-counts',
-    chapterNumber: 4,
+    chapterNumber: 6,
     title: 'Running Count GPS Rules',
     subtitle: 'Standard GPS target matrix & count incentive tiers',
     icon: Layers,
@@ -125,7 +159,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-monthly-payroll',
-    chapterNumber: 5,
+    chapterNumber: 7,
     title: 'Monthly Sider Payroll & Grid',
     subtitle: 'Month-to-date calendar tracking & payroll abstract',
     icon: Calendar,
@@ -148,7 +182,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-sider-performance',
-    chapterNumber: 6,
+    chapterNumber: 8,
     title: 'Sider Monthly Performance',
     subtitle: 'Individual worker trends, duty history & GPS curves',
     icon: TrendingUp,
@@ -164,7 +198,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-em-quality',
-    chapterNumber: 7,
+    chapterNumber: 9,
     title: 'End-Break Quality (EM) & Outliers',
     subtitle: 'Spindle breakages per minute, frame outliers & top operators',
     icon: AlertTriangle,
@@ -194,7 +228,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-ai-coner',
-    chapterNumber: 8,
+    chapterNumber: 10,
     title: 'AI Linkconer Automation',
     subtitle: 'Winding & package automation unit telemetry',
     icon: Zap,
@@ -224,7 +258,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-champions',
-    chapterNumber: 9,
+    chapterNumber: 11,
     title: 'Mill Champions & Shift Awards',
     subtitle: 'Plant leaderboards, winning shift of the day & monthly stars',
     icon: Trophy,
@@ -247,7 +281,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-maintenance',
-    chapterNumber: 10,
+    chapterNumber: 12,
     title: 'Mechanical Maintenance Team',
     subtitle: 'Fitter staff duty allocation and maintenance monitoring',
     icon: Wrench,
@@ -263,7 +297,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-multi-shed',
-    chapterNumber: 11,
+    chapterNumber: 13,
     title: 'Multi-Shed Comparison',
     subtitle: 'Cross-shed performance comparison, production totals & 40s GPS',
     icon: Grid3X3,
@@ -279,7 +313,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-shift-comparison',
-    chapterNumber: 12,
+    chapterNumber: 14,
     title: 'Three-Shift Production & Efficiency Comparison',
     subtitle: 'Shift I, Shift II & Shift III comparative telemetry, GPS & output breakdown',
     icon: Clock,
@@ -417,11 +451,72 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  // Safety Fallback: Use dailyReport, ensure 6 machines so frames are always populated cleanly
+  const safeDailyReport = useMemo(() => {
+    const report = dailyReport || createDefaultReportForShed(selectedShed, getTodayUniversalDate());
+    return ensureSixMachines(report, selectedShed);
+  }, [dailyReport, selectedShed]);
+
   // 3. Active Main Pages & Sub-pages based on settings
   const activeMainPages = useMemo(() => {
+    // Extract actively running counts from safeDailyReport
+    const countMap = new Map<string, Set<string>>();
+    (safeDailyReport.summaries || []).forEach(s => {
+      const c = (s.count || '').trim();
+      if (!c || c === '-' || c === '0') return;
+      const isRunning = (s.actualProd || 0) > 0 || (s.targetProd || 0) > 0 || (s.avgGps || 0) > 0 || (s.avgUtil || 0) > 0;
+      if (isRunning && s.frameNo) {
+        if (!countMap.has(c)) countMap.set(c, new Set());
+        countMap.get(c)!.add(s.frameNo);
+      }
+    });
+    (safeDailyReport.entries || []).forEach(e => {
+      const c = (e.count || '').trim();
+      if (!c || c === '-' || c === '0') return;
+      const isRunning = (e.productionActual || 0) > 0 || (e.productionTarget || 0) > 0 || (e.gpsActual || 0) > 0 || (e.efficiency || 0) > 0;
+      if (isRunning && e.frameNo) {
+        if (!countMap.has(c)) countMap.set(c, new Set());
+        countMap.get(c)!.add(e.frameNo);
+      }
+    });
+
+    // Fallback if data is planned without actual logs yet: include non-dummy counts
+    if (countMap.size === 0) {
+      (safeDailyReport.summaries || []).forEach(s => {
+        const c = (s.count || '').trim();
+        if (c && c !== '-' && c !== '0' && c !== '40s' && s.frameNo) {
+          if (!countMap.has(c)) countMap.set(c, new Set());
+          countMap.get(c)!.add(s.frameNo);
+        }
+      });
+    }
+
+    const runningCountsList: { count: string; frameCount: number }[] = [];
+    countMap.forEach((frames, count) => {
+      if (frames.size > 0) {
+        runningCountsList.push({ count, frameCount: frames.size });
+      }
+    });
+    runningCountsList.sort((a, b) => a.count.localeCompare(b.count, undefined, { numeric: true }));
+
     return TV_MAIN_PAGES.map(main => {
-      const activeSubPages = main.subPages.filter(sub => {
-        const configuredSecs = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
+      let pageSubPages = main.subPages;
+
+      // For Count-Wise Frames: dynamically create sub-pages (parts) for each actively running count!
+      if (main.id === 'main-count-frames' && runningCountsList.length > 0) {
+        pageSubPages = runningCountsList.map((rc, idx) => ({
+          id: `count-frames-${idx}`,
+          title: `Count ${rc.count} (${rc.frameCount} Frames)`,
+          shortTitle: `${rc.count}`,
+          defaultSeconds: 20,
+          description: `Ring frames running count ${rc.count}`
+        }));
+      }
+
+      const activeSubPages = pageSubPages.filter(sub => {
+        const configuredSecs = settings.tvPageIntervals?.[sub.id]
+          ?? (sub.id.startsWith('count-frames') ? settings.tvPageIntervals?.['count-frames'] : undefined)
+          ?? settings.tvSlideIntervals?.[sub.id];
         const isExplicitlyDisabled = settings.tvSlideEnabled?.[sub.id] === false || configuredSecs === 0;
         if (isExplicitlyDisabled) return false;
         const secs = configuredSecs !== undefined ? configuredSecs : sub.defaultSeconds;
@@ -432,7 +527,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         subPages: activeSubPages
       };
     }).filter(main => main.subPages.length > 0);
-  }, [settings.tvPageIntervals, settings.tvSlideIntervals, settings.tvSlideEnabled]);
+  }, [settings.tvPageIntervals, settings.tvSlideIntervals, settings.tvSlideEnabled, safeDailyReport]);
 
   // Fallback if all pages omitted
   const availableMainPages = activeMainPages.length > 0 ? activeMainPages : TV_MAIN_PAGES;
@@ -450,7 +545,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   // 5. Calculate Duration for Current Sub-Page
   const currentSubDuration = useMemo(() => {
     if (!currentSub) return 15;
-    const configuredSecs = settings.tvPageIntervals?.[currentSub.id] ?? settings.tvSlideIntervals?.[currentSub.id];
+    const configuredSecs = settings.tvPageIntervals?.[currentSub.id]
+      ?? (currentSub.id.startsWith('count-frames') ? settings.tvPageIntervals?.['count-frames'] : undefined)
+      ?? settings.tvSlideIntervals?.[currentSub.id];
     const baseSecs = configuredSecs !== undefined ? configuredSecs : currentSub.defaultSeconds;
     return Math.max(5, baseSecs) * Math.max(1, subPagesCount);
   }, [currentSub, settings.tvPageIntervals, settings.tvSlideIntervals, subPagesCount]);
@@ -653,30 +750,32 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     return new Date().getFullYear();
   }, [propYear, dailyReport?.date]);
 
-  // 11. Safety Fallback: Use dailyReport, ensure 6 machines so frames are always populated cleanly
-  const safeDailyReport = useMemo(() => {
-    const report = dailyReport || createDefaultReportForShed(selectedShed, getTodayUniversalDate());
-    return ensureSixMachines(report, selectedShed);
-  }, [dailyReport, selectedShed]);
-
   // Calculate Progress Percentage for the active sub-page
   const progressPercent = Math.max(0, Math.min(100, ((currentSubDuration - timeRemaining) / currentSubDuration) * 100));
 
   // Available sheds including KTTM
   const SHEDS_LIST: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
 
+  // Unified search pool prioritizing safeDailyReport
+  const allReportsPool = useMemo(() => {
+    return [
+      ...(safeDailyReport ? [safeDailyReport] : []),
+      ...((allShedsHistory && allShedsHistory.length > 0) ? allShedsHistory : []),
+      ...(history && history.length > 0 ? history : [])
+    ];
+  }, [safeDailyReport, allShedsHistory, history]);
+
+  // Executive All-Shed Spinning Production Report data (matches uploaded mill image)
+  const allShedExecutiveData = useMemo(() => {
+    return computeAllShedReport(safeDailyReport.date, safeDailyReport, allReportsPool);
+  }, [safeDailyReport.date, safeDailyReport, allReportsPool]);
+
   // 12. Multi-shed comparison calculation across all 4 sheds (strictly matched to safeDailyReport.date)
   const shedComparison = useMemo(() => {
     const sheds: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
     const targetDate = safeDailyReport.date;
     const targetParts = parseUniversalDateParts(targetDate);
-    
-    // Unified search pool prioritizing safeDailyReport
-    const pool = [
-      ...(safeDailyReport ? [safeDailyReport] : []),
-      ...((allShedsHistory && allShedsHistory.length > 0) ? allShedsHistory : []),
-      ...(history && history.length > 0 ? history : [])
-    ];
+    const pool = allReportsPool;
 
     return sheds.map(shedName => {
       // Find report strictly matching this shed on the exact same selected date
@@ -1021,10 +1120,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       ? "bg-emerald-600 text-white shadow-2xs"
                       : "bg-stone-100 text-stone-600 hover:text-stone-900"
                   )}
-                  title={`Part ${idx + 1}`}
+                  title={sp.title}
                 >
                   <span className={cn("w-1.5 h-1.5 rounded-full", idx === safeSubIndex ? "bg-white" : "bg-stone-400")} />
-                  <span>Part {idx + 1}</span>
+                  <span>Part {idx + 1}{sp.shortTitle && sp.shortTitle !== `Part ${idx + 1}` ? `: ${sp.shortTitle}` : ''}</span>
                 </button>
               ))}
             </div>
@@ -1119,7 +1218,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
               className="w-full"
             >
               {(() => {
-                switch (currentSub.id) {
+                const subId = currentSub?.id?.startsWith('count-frames') ? 'count-frames' : (currentSub?.id || 'dashboard');
+                switch (subId) {
               case 'dashboard':
                 return (
                   <div className="space-y-5">
@@ -1143,10 +1243,49 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                   </div>
                 );
 
+              case 'count-summary':
+                return (
+                  <div className="w-full max-w-full">
+                    <CountSummary
+                      report={safeDailyReport}
+                      countConversions={countConversions}
+                      isTvMode={true}
+                      onSelectDate={onSelectDate}
+                      availableDates={availableDates}
+                    />
+                  </div>
+                );
+
+              case 'count-frames':
+                return (
+                  <div className="w-full max-w-full">
+                    <CountWiseFrames
+                      report={safeDailyReport}
+                      workers={workers}
+                      countConversions={countConversions}
+                      isTvMode={true}
+                      activeCountIndex={safeSubIndex}
+                      onSelectCountIndex={(idx) => setSubIndex(idx)}
+                      onPagesDetermined={setSubPagesCount}
+                      tvPageInterval={settings.tvPageIntervals?.['count-frames']}
+                      onSelectDate={onSelectDate}
+                      availableDates={availableDates}
+                    />
+                  </div>
+                );
+
               case 'reports':
                 return (
                   <div className="w-full max-w-full">
-                    <ReportView report={safeDailyReport} isTvMode={true} />
+                    <ReportView
+                      report={safeDailyReport}
+                      isTvMode={true}
+                      allReports={allReportsPool}
+                      currentShed={selectedShed}
+                      onSelectShed={onSelectShed}
+                      onSelectDate={onSelectDate}
+                      availableDates={availableDates}
+                    />
                   </div>
                 );
 
@@ -1171,6 +1310,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     isTvMode={true}
                     onSelectDate={onSelectDate}
                     machineSiderCounts={settings.machineSiderCounts}
+                    shed={selectedShed}
                   />
                 );
 
@@ -1373,6 +1513,16 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           Date: {safeDailyReport.date}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Official Executive Spinning Production Report Table (Matches Mill Format) */}
+                    <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-2xs flex flex-col items-center">
+                      <AllShedSpinningReportTable
+                        data={allShedExecutiveData}
+                        isTvMode={true}
+                        selectedShed={selectedShed}
+                        onSelectShed={onSelectShed}
+                      />
                     </div>
 
                     {/* 4 Sheds Cards Grid */}

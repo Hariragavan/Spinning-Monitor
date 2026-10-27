@@ -11,6 +11,7 @@ interface MachineDailyIncentiveProps {
   onSelectDate: (date: string) => void;
   machineSiderCounts: Record<string, number>;
   isTvMode?: boolean;
+  shed?: string;
 }
 
 export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
@@ -19,8 +20,21 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
   rules,
   onSelectDate,
   machineSiderCounts = {},
-  isTvMode = false
+  isTvMode = false,
+  shed
 }) => {
+  // Determine if current shed is KTTM (or frame belongs to KTTM)
+  const isKttmShed = useMemo(() => {
+    const s = (shed || report.shed || report.entries?.[0]?.shed || '').toLowerCase();
+    return s.includes('kttm');
+  }, [shed, report.shed, report.entries]);
+
+  const checkIsKttmFrame = (frameNo: string) => {
+    if (isKttmShed) return true;
+    const fUpper = String(frameNo || '').trim().toUpperCase();
+    return fUpper.startsWith('K');
+  };
+
   // Convert date to YYYY-MM-DD for <input type="date">
   const dateForInput = useMemo(() => {
     if (!report.date) return '';
@@ -52,6 +66,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
       frameNo: string;
       slotIdx: number;
       totalSlots?: number;
+      isKttm: boolean;
       displayCount: string;
       shiftsData: Record<Shift, {
         gps: number;
@@ -62,7 +77,11 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     }[] = [];
 
     machines.forEach(frameNo => {
-      const numSlots = machineSiderCounts[frameNo] !== undefined ? machineSiderCounts[frameNo] : 2;
+      const isKttm = checkIsKttmFrame(frameNo);
+      // For KTTM, default to 1 slot (single whole-machine sider) if not explicitly set
+      // For other sheds, default to 2 slots (LH and RH)
+      const defaultSlots = isKttm ? 1 : 2;
+      const numSlots = machineSiderCounts[frameNo] !== undefined ? machineSiderCounts[frameNo] : defaultSlots;
       
       // Compute machine-wide counts
       const machineEntries = report.entries.filter(e => e.frameNo === frameNo);
@@ -88,16 +107,8 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             const baseIncentive = calculateIncentive(entry, rules, report.date);
             let incentive = 0;
             if (worker) {
-              if (numSlots === 2) {
-                const s0 = entry.siderIds?.[0] || entry.siderId;
-                const s1 = entry.siderIds?.[1];
-                if (s0 && s1 && s0 !== s1) {
-                  // Sider on 1 side earns 50%
-                  incentive = Math.round(baseIncentive * 0.5);
-                } else {
-                  // Same sider on both sides earns 100% full machine incentive
-                  incentive = baseIncentive;
-                }
+              if (numSlots > 1) {
+                incentive = Math.round(baseIncentive / numSlots);
               } else {
                 incentive = baseIncentive;
               }
@@ -123,6 +134,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
           frameNo,
           slotIdx,
           totalSlots: numSlots,
+          isKttm,
           displayCount,
           shiftsData
         });
@@ -130,7 +142,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     });
 
     return rows;
-  }, [machines, report.entries, workers, rules, machineSiderCounts]);
+  }, [machines, report.entries, workers, rules, machineSiderCounts, isKttmShed]);
 
   // Process data for gaiters rows
   const gaiterRows = useMemo(() => {
@@ -291,8 +303,12 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
   const exportToExcel = () => {
     const dataRows: any[] = [];
     tableRows.forEach(row => {
+      const rfLabel = (!row.isKttm && (row.totalSlots || 0) > 1)
+        ? `${row.frameNo} (${row.slotIdx === 0 ? 'LH' : row.slotIdx === 1 ? 'RH' : `S${row.slotIdx + 1}`})`
+        : row.frameNo;
+
       dataRows.push({
-        'Rf No': row.frameNo,
+        'Rf No': rfLabel,
         'Count': row.displayCount,
         'Shift 1 GPS': row.shiftsData.I.gps > 0 ? Math.round(row.shiftsData.I.gps) : '-',
         'Shift 1 Operator': row.shiftsData.I.name || '-',
@@ -345,12 +361,16 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
 
   const exportToCSV = () => {
     const safeDate = (report.date || 'live').replace(/[/\\?%*:|"<>]/g, '-');
-    let csv = `KTTM SPINNING MILLS - MACHINE WISE DAILY INCENTIVE (${report.date})\n\n`;
+    const shedTitle = (report.shed || shed || 'SPINNING MILLS').toUpperCase();
+    let csv = `${shedTitle} - MACHINE WISE DAILY INCENTIVE (${report.date})\n\n`;
     csv += `Rf No,Count,Shift 1 GPS,Shift 1 Operator,Shift 1 Incentive,Shift 2 GPS,Shift 2 Operator,Shift 2 Incentive,Shift 3 GPS,Shift 3 Operator,Shift 3 Incentive,Total Machine Payout\n`;
 
     tableRows.forEach(row => {
+      const rfLabel = (!row.isKttm && (row.totalSlots || 0) > 1)
+        ? `${row.frameNo} (${row.slotIdx === 0 ? 'LH' : row.slotIdx === 1 ? 'RH' : `S${row.slotIdx + 1}`})`
+        : row.frameNo;
       const tot = row.shiftsData.I.incentive + row.shiftsData.II.incentive + row.shiftsData.III.incentive;
-      csv += `"${row.frameNo}","${row.displayCount}",${row.shiftsData.I.gps > 0 ? Math.round(row.shiftsData.I.gps) : 0},"${row.shiftsData.I.name || ''}",${row.shiftsData.I.incentive},${row.shiftsData.II.gps > 0 ? Math.round(row.shiftsData.II.gps) : 0},"${row.shiftsData.II.name || ''}",${row.shiftsData.II.incentive},${row.shiftsData.III.gps > 0 ? Math.round(row.shiftsData.III.gps) : 0},"${row.shiftsData.III.name || ''}",${row.shiftsData.III.incentive},${tot}\n`;
+      csv += `"${rfLabel}","${row.displayCount}",${row.shiftsData.I.gps > 0 ? Math.round(row.shiftsData.I.gps) : 0},"${row.shiftsData.I.name || ''}",${row.shiftsData.I.incentive},${row.shiftsData.II.gps > 0 ? Math.round(row.shiftsData.II.gps) : 0},"${row.shiftsData.II.name || ''}",${row.shiftsData.II.incentive},${row.shiftsData.III.gps > 0 ? Math.round(row.shiftsData.III.gps) : 0},"${row.shiftsData.III.name || ''}",${row.shiftsData.III.incentive},${tot}\n`;
     });
 
     csv += `TOTAL,,,,${shiftTotals.I},,,${shiftTotals.II},,,${shiftTotals.III},${grandTotal}\n`;
@@ -368,7 +388,9 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full px-2 mx-auto pb-12">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
-        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">KTTM SPINNING MILLS - UNIT 01</h1>
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {(report.shed || shed || 'SPINNING MILLS').toUpperCase()}
+        </h1>
         <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Machine Wise Daily Incentive Statement</h2>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
           <span>Date: <strong>{report.date}</strong></span>
@@ -484,12 +506,15 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                   <td className={cn("border-r-2 border-stone-900 font-black text-stone-900 bg-stone-50/50 uppercase", isTvMode ? "px-3 py-2 text-lg md:text-xl font-black" : "px-2 py-1")}>
                     <div className="flex items-center gap-1">
                       <span>{row.frameNo}</span>
-                      {row.totalSlots > 1 && (
+                      {!row.isKttm && (row.totalSlots || 0) > 1 && (
                         <span className={cn(
                           "text-[9px] px-1 py-0.2 rounded font-black tracking-tight",
-                          row.slotIdx === 0 ? "bg-blue-100 text-blue-800" : "bg-indigo-100 text-indigo-800"
+                          row.slotIdx === 0 ? "bg-blue-100 text-blue-800" :
+                          row.slotIdx === 1 ? "bg-indigo-100 text-indigo-800" :
+                          row.slotIdx === 2 ? "bg-purple-100 text-purple-800" :
+                          "bg-pink-100 text-pink-800"
                         )}>
-                          {row.slotIdx === 0 ? 'LH' : 'RH'}
+                          {row.slotIdx === 0 ? 'LH' : row.slotIdx === 1 ? 'RH' : `S${row.slotIdx + 1}`}
                         </span>
                       )}
                     </div>
