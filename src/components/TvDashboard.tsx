@@ -1747,14 +1747,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                             <div>
                               <div className="flex items-center justify-between border-b-2 border-stone-100 pb-3">
                                 <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="px-2.5 py-0.5 rounded-lg bg-stone-900 text-white font-mono font-black text-xs uppercase tracking-wider">
-                                      {item.shedLabel}
-                                    </span>
-                                    <h4 className="text-2xl md:text-3xl lg:text-4xl font-black text-stone-950 uppercase font-serif tracking-tight">
-                                      {item.displayName}
-                                    </h4>
-                                  </div>
+                                  <h4 className="text-2xl md:text-3xl lg:text-4xl font-black text-stone-900 tracking-tight">
+                                    {item.displayName}
+                                  </h4>
                                   <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                                     <span className="text-sm md:text-base font-black text-stone-950 font-mono tracking-tight">
                                       {rfCount} RF
