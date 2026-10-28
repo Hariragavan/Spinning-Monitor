@@ -1755,9 +1755,19 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                       {item.displayName}
                                     </h4>
                                   </div>
-                                  <span className="text-xs font-bold text-stone-400 uppercase tracking-wider block mt-1">
-                                    {item.badge}
-                                  </span>
+                                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                    <span className="text-sm md:text-base font-black text-stone-950 font-mono tracking-tight">
+                                      {rfCount} RF
+                                    </span>
+                                    <span className="text-stone-300 font-bold">•</span>
+                                    <span className="text-sm md:text-base font-black text-stone-950 font-mono tracking-tight">
+                                      {totalSpindles.toLocaleString('en-IN')} SPD
+                                    </span>
+                                    <span className="text-stone-300 font-bold">•</span>
+                                    <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+                                      {item.badge}
+                                    </span>
+                                  </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   {isSelected && (
@@ -1771,43 +1781,6 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                   )}>
                                     {s.active ? 'ACTIVE' : 'IDLE'}
                                   </span>
-                                </div>
-                              </div>
-
-                              {/* BIG AND DARK RF NO AND SPD NO BADGES (Requested by user) */}
-                              <div className="bg-stone-950 text-white p-4 md:p-5 rounded-2xl border-2 border-stone-800 shadow-xl my-3.5">
-                                <div className="grid grid-cols-2 gap-4 divide-x divide-stone-800">
-                                  {/* RF NO */}
-                                  <div className="flex flex-col justify-center">
-                                    <div className="flex items-center gap-1.5 mb-1.5">
-                                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                                      <span className="text-xs md:text-sm font-black text-stone-300 uppercase tracking-widest leading-none">
-                                        RF NO
-                                      </span>
-                                    </div>
-                                    <div className="flex items-baseline gap-2">
-                                      <span className="text-4xl md:text-5xl lg:text-6xl font-black font-mono text-white tracking-tight leading-none">
-                                        {rfCount}
-                                      </span>
-                                      <span className="text-sm md:text-base font-bold text-stone-400 font-sans">RF</span>
-                                    </div>
-                                  </div>
-
-                                  {/* SPD NO */}
-                                  <div className="flex flex-col justify-center pl-4 md:pl-5">
-                                    <div className="flex items-center gap-1.5 mb-1.5">
-                                      <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
-                                      <span className="text-xs md:text-sm font-black text-stone-300 uppercase tracking-widest leading-none">
-                                        SPD NO
-                                      </span>
-                                    </div>
-                                    <div className="flex items-baseline gap-2">
-                                      <span className="text-3xl md:text-4xl lg:text-5xl font-black font-mono text-emerald-400 tracking-tight leading-none">
-                                        {totalSpindles.toLocaleString('en-IN')}
-                                      </span>
-                                      <span className="text-xs md:text-sm font-bold text-stone-400 font-sans">SPD</span>
-                                    </div>
-                                  </div>
                                 </div>
                               </div>
 
