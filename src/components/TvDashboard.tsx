@@ -852,6 +852,63 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     return { totalActual, totalTarget, overallEff, avg40sGps, leadingShed };
   }, [shedComparison]);
 
+  // Cross-Shed Top Section Metrics: Combined Mill Actual & Target, 3-Sheds Total, KTTM Total, Efficiency & GPS
+  const multiShedMetrics = useMemo(() => {
+    const kttm = shedComparison.find(s => s.shed === 'KTTM') || {
+      shed: 'KTTM' as Shed,
+      target: 0,
+      actual: 0,
+      efficiency: 0,
+      frames: 24,
+      avgGps: 0,
+      avg40sGps: 0,
+      active: false
+    };
+
+    const threeShedsList = shedComparison.filter(s => s.shed !== 'KTTM');
+    const threeShedsActual = threeShedsList.reduce((sum, s) => sum + s.actual, 0);
+    const threeShedsTarget = threeShedsList.reduce((sum, s) => sum + s.target, 0);
+    const threeShedsDiff = threeShedsActual - threeShedsTarget;
+    const threeShedsEff = threeShedsTarget > 0 ? Number(((threeShedsActual / threeShedsTarget) * 100).toFixed(1)) : 0;
+    const threeShedsFrames = threeShedsList.reduce((sum, s) => sum + s.frames, 0);
+
+    const kttmActual = kttm.actual;
+    const kttmTarget = kttm.target;
+    const kttmDiff = kttmActual - kttmTarget;
+    const kttmEff = kttm.efficiency;
+
+    const combinedMillActual = shedAggregate.totalActual || (threeShedsActual + kttmActual);
+    const combinedMillTarget = shedAggregate.totalTarget || (threeShedsTarget + kttmTarget);
+    const combinedMillDiff = combinedMillActual - combinedMillTarget;
+    const overallEff = shedAggregate.overallEff || (combinedMillTarget > 0 ? Number(((combinedMillActual / combinedMillTarget) * 100).toFixed(1)) : 0);
+
+    const activeSheds = shedComparison.filter(s => s.active);
+    const avgGps = activeSheds.length > 0 
+      ? Number((activeSheds.reduce((sum, s) => sum + s.avgGps, 0) / activeSheds.length).toFixed(2))
+      : 0;
+    const avg40sGps = shedAggregate.avg40sGps || (activeSheds.length > 0
+      ? Number((activeSheds.reduce((sum, s) => sum + s.avg40sGps, 0) / activeSheds.length).toFixed(2))
+      : 0);
+
+    return {
+      combinedMillActual,
+      combinedMillTarget,
+      combinedMillDiff,
+      threeShedsActual,
+      threeShedsTarget,
+      threeShedsDiff,
+      threeShedsEff,
+      threeShedsFrames,
+      kttmActual,
+      kttmTarget,
+      kttmDiff,
+      kttmEff,
+      overallEff,
+      avgGps,
+      avg40sGps
+    };
+  }, [shedComparison, shedAggregate]);
+
   // 13. Three-Shift Comparison Calculation (Chapter 12)
   const shiftComparison = useMemo(() => {
     const shiftsConfig: { shift: Shift; title: string; timing: string }[] = [
@@ -1280,6 +1337,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     <ReportView
                       report={safeDailyReport}
                       isTvMode={true}
+                      hideAllShedTable={true}
                       allReports={allReportsPool}
                       currentShed={selectedShed}
                       onSelectShed={onSelectShed}
@@ -1489,77 +1547,212 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                   />
                 );
 
-              case 'sheds':
+              case 'sheds': {
+                const shedOrder: { key: Shed; displayName: string; badge: string }[] = [
+                  { key: 'KTTM', displayName: 'KTTM', badge: 'Automated High-Speed Unit' },
+                  { key: 'Shed 1', displayName: '1st Shed', badge: 'Main Spinning Unit' },
+                  { key: 'Shed 2', displayName: '2nd Shed', badge: 'Ring Frame Unit' },
+                  { key: 'Shed 3', displayName: 'PC Shed (Shed 3)', badge: 'Polyester Cotton Unit' }
+                ];
+
                 return (
-                  <div className="flex flex-col h-full justify-between gap-5 animate-in fade-in duration-300">
-                    {/* Title & Active Date Header */}
-                    <div className="bg-white px-7 py-5 rounded-3xl border border-stone-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
+                  <div className="flex flex-col h-full justify-between gap-4 animate-in fade-in duration-300">
+                    {/* =========================================================================
+                        TOP SECTION: COMBINED MILL ACTUAL & TARGET, THREE SHEDS, KTTM, EFF & GPS
+                        ========================================================================= */}
+                    <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-2xs space-y-4">
+                      {/* Top Bar: Title & Date */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-stone-100">
+                        <div className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
-                          <span className="text-xs font-black text-emerald-700 uppercase tracking-widest">
-                            Live Mill Telemetry
+                          <h3 className="text-xl md:text-2xl font-black uppercase text-stone-900 tracking-tight">
+                            Multi-Shed Production Intelligence
+                          </h3>
+                          <span className="hidden md:inline-block text-xs font-bold text-stone-400 uppercase tracking-widest pl-2 border-l border-stone-200">
+                            Executive Cross-Mill Telemetry
                           </span>
                         </div>
-                        <h3 className="text-2xl md:text-3xl font-black uppercase text-stone-900 tracking-tight">
-                          Multi-Shed Production Intelligence
-                        </h3>
-                        <p className="text-xs font-bold text-stone-500 uppercase tracking-wider mt-0.5">
-                          Cross-shed performance comparison • Shed 1, Shed 2, Shed 3 & KTTM
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <span className="px-4 py-1.5 bg-stone-100 text-stone-900 rounded-xl text-xs font-black border border-stone-200">
+                            Date: {safeDailyReport.date}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="px-5 py-2.5 bg-stone-100 text-stone-900 rounded-2xl text-sm font-black border border-stone-200">
-                          Date: {safeDailyReport.date}
-                        </span>
+
+                      {/* 5-Section Metric Ribbon (Requested by user) */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                        {/* 1. Combined Mill Actual & Target (Target small on right) */}
+                        <div className="bg-emerald-50/60 p-3.5 rounded-2xl border border-emerald-200/80 flex flex-col justify-between">
+                          <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block mb-1">
+                            Combined Mill Actual
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-2xl md:text-3xl font-black font-mono text-emerald-700 tracking-tight">
+                              {multiShedMetrics.combinedMillActual.toLocaleString('en-IN')}
+                              <span className="text-xs font-bold text-stone-400 font-sans ml-1">Kg</span>
+                            </span>
+                            <div className="text-right">
+                              <span className="text-[11px] font-black text-stone-600 block tabular-nums">
+                                Target: {multiShedMetrics.combinedMillTarget.toLocaleString('en-IN')} Kg
+                              </span>
+                              <span className={cn(
+                                "text-[10px] font-black px-1.5 py-0.5 rounded-md inline-block mt-0.5",
+                                multiShedMetrics.combinedMillDiff >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                              )}>
+                                Diff: {multiShedMetrics.combinedMillDiff >= 0 ? '+' : ''}{multiShedMetrics.combinedMillDiff.toLocaleString('en-IN')} Kg
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Three Sheds Total (1st, 2nd, PC) */}
+                        <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/90 flex flex-col justify-between">
+                          <span className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                            Three Sheds Total
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-2xl md:text-3xl font-black font-mono text-stone-900 tracking-tight">
+                              {multiShedMetrics.threeShedsActual.toLocaleString('en-IN')}
+                              <span className="text-xs font-bold text-stone-400 font-sans ml-1">Kg</span>
+                            </span>
+                            <div className="text-right">
+                              <span className="text-[11px] font-black text-stone-500 block tabular-nums">
+                                Target: {multiShedMetrics.threeShedsTarget.toLocaleString('en-IN')} Kg
+                              </span>
+                              <span className={cn(
+                                "text-[10px] font-black px-1.5 py-0.5 rounded-md inline-block mt-0.5",
+                                multiShedMetrics.threeShedsDiff >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                              )}>
+                                Diff: {multiShedMetrics.threeShedsDiff >= 0 ? '+' : ''}{multiShedMetrics.threeShedsDiff.toLocaleString('en-IN')} Kg
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3. KTTM Total */}
+                        <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/90 flex flex-col justify-between">
+                          <span className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                            KTTM Total
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-2xl md:text-3xl font-black font-mono text-stone-900 tracking-tight">
+                              {multiShedMetrics.kttmActual.toLocaleString('en-IN')}
+                              <span className="text-xs font-bold text-stone-400 font-sans ml-1">Kg</span>
+                            </span>
+                            <div className="text-right">
+                              <span className="text-[11px] font-black text-stone-500 block tabular-nums">
+                                Target: {multiShedMetrics.kttmTarget.toLocaleString('en-IN')} Kg
+                              </span>
+                              <span className={cn(
+                                "text-[10px] font-black px-1.5 py-0.5 rounded-md inline-block mt-0.5",
+                                multiShedMetrics.kttmDiff >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                              )}>
+                                Diff: {multiShedMetrics.kttmDiff >= 0 ? '+' : ''}{multiShedMetrics.kttmDiff.toLocaleString('en-IN')} Kg
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 4. Overall Efficiency */}
+                        <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/90 flex flex-col justify-between">
+                          <span className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                            Overall Efficiency
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className={cn(
+                              "text-2xl md:text-3xl font-black font-mono tracking-tight",
+                              multiShedMetrics.overallEff >= 95 ? "text-emerald-700" : "text-amber-700"
+                            )}>
+                              {multiShedMetrics.overallEff}%
+                            </span>
+                            <div className="text-right">
+                              <span className="text-[11px] font-black text-stone-500 block tabular-nums">
+                                Target: 100%
+                              </span>
+                              <span className={cn(
+                                "text-[10px] font-black px-1.5 py-0.5 rounded-md inline-block mt-0.5",
+                                multiShedMetrics.overallEff >= 95 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                              )}>
+                                Var: {Number((multiShedMetrics.overallEff - 100).toFixed(1))}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 5. Average GPS */}
+                        <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/90 flex flex-col justify-between">
+                          <span className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                            Average GPS
+                          </span>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-2xl md:text-3xl font-black font-mono text-sky-700 tracking-tight">
+                              {multiShedMetrics.avgGps}
+                              <span className="text-xs font-bold text-stone-400 font-sans ml-1">GPS</span>
+                            </span>
+                            <div className="text-right">
+                              <span className="text-[11px] font-black text-stone-500 block tabular-nums">
+                                40s Con: {multiShedMetrics.avg40sGps} GPS
+                              </span>
+                              <span className="text-[10px] font-black text-stone-400 block mt-0.5">
+                                Total: {allShedExecutiveData.totalRf} Frames
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Official Executive Spinning Production Report Table (Matches Mill Format) */}
-                    <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-2xs flex flex-col items-center">
-                      <AllShedSpinningReportTable
-                        data={allShedExecutiveData}
-                        isTvMode={true}
-                        selectedShed={selectedShed}
-                        onSelectShed={onSelectShed}
-                      />
-                    </div>
+                    {/* =========================================================================
+                        BOTTOM SECTION: 4 SHED CARDS ON DOWN
+                        ========================================================================= */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 flex-1 min-h-0">
+                      {shedOrder.map(item => {
+                        const s = shedComparison.find(sc => sc.shed === item.key) || {
+                          shed: item.key,
+                          actual: 0,
+                          target: 0,
+                          efficiency: 0,
+                          frames: 0,
+                          avgGps: 0,
+                          avg40sGps: 0,
+                          active: false
+                        };
+                        const isSelected = selectedShed === item.key;
+                        const diffKg = s.actual - s.target;
+                        const stdGps = s.target > 0 && s.actual > 0 ? Number((s.avgGps * (s.target / s.actual)).toFixed(2)) : (s.avgGps || 20.0);
+                        const prod40s = s.avgGps > 0 && s.avg40sGps > 0 ? Math.round(s.actual * (s.avg40sGps / s.avgGps)) : s.actual;
+                        const totalSpindles = s.frames * 1008;
 
-                    {/* 4 Sheds Cards Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 flex-1 min-h-0">
-                      {shedComparison.map((s) => {
-                        const isSelected = selectedShed === s.shed;
                         return (
-                          <div 
-                            key={s.shed} 
-                            onClick={() => onSelectShed(s.shed)}
+                          <div
+                            key={item.key}
+                            onClick={() => onSelectShed(item.key)}
                             className={cn(
-                              "rounded-3xl p-6 border flex flex-col justify-between shadow-2xs transition-all relative overflow-hidden bg-white cursor-pointer hover:border-emerald-300",
-                              isSelected 
-                                ? "border-emerald-500 ring-4 ring-emerald-500/20 shadow-md" 
+                              "rounded-3xl p-5 border flex flex-col justify-between shadow-2xs transition-all relative overflow-hidden bg-white cursor-pointer hover:border-emerald-300 hover:shadow-md",
+                              isSelected
+                                ? "border-emerald-500 ring-4 ring-emerald-500/20 shadow-md"
                                 : "border-stone-200/90"
                             )}
-                            title={`Click to switch to ${s.shed}`}
+                            title={`Click to switch view to ${item.displayName}`}
                           >
-                            {/* Card Header */}
-                            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                            {/* Card Header: Title & Frame count */}
+                            <div className="flex items-center justify-between border-b border-stone-100 pb-2.5">
                               <div>
-                                <h4 className="text-2xl md:text-3xl font-black text-stone-900 uppercase font-serif tracking-tight">
-                                  {s.shed}
+                                <h4 className="text-xl md:text-2xl font-black text-stone-900 uppercase font-serif tracking-tight">
+                                  {item.displayName}
                                 </h4>
-                                <span className="text-xs text-stone-400 font-bold uppercase tracking-wider block">
-                                  {s.frames > 0 ? `${s.frames} Frames Logged` : 'Production Unit'}
-                                  {s.reportDate ? ` • ${s.reportDate}` : ''}
+                                <span className="text-[11px] text-stone-400 font-bold uppercase tracking-wider block mt-0.5">
+                                  {s.frames > 0 ? `${s.frames} RF • ${totalSpindles.toLocaleString('en-IN')} Spd` : item.badge}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 {isSelected && (
-                                  <span className="px-2.5 py-1 rounded-full text-xs font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
                                     Viewing
                                   </span>
                                 )}
                                 <span className={cn(
-                                  "px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider",
+                                  "px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider",
                                   s.active ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-500"
                                 )}>
                                   {s.active ? 'ACTIVE' : 'IDLE'}
@@ -1567,61 +1760,66 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               </div>
                             </div>
 
-                            {/* Main Numbers */}
-                            <div className="my-4 space-y-3.5">
-                              {/* Actual Production (HUGE) */}
-                              <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/80">
-                                <span className="text-xs font-black text-stone-500 uppercase tracking-wider block mb-1">
-                                  Actual Production
-                                </span>
-                                <div className="flex items-baseline gap-2">
-                                  <span className="text-4xl md:text-5xl lg:text-6xl font-black font-mono text-emerald-700 tracking-tight">
+                            {/* Hero Actual Production & Target Diff */}
+                            <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 my-3">
+                              <span className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-0.5">
+                                Actual Production
+                              </span>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <div className="flex items-baseline gap-1.5">
+                                  <span className="text-3xl md:text-4xl font-black font-mono text-emerald-700 tracking-tight">
                                     {s.actual.toLocaleString('en-IN')}
                                   </span>
-                                  <span className="text-lg font-bold text-stone-400 font-sans">Kg</span>
+                                  <span className="text-xs font-bold text-stone-400 font-sans">Kg</span>
                                 </div>
-                              </div>
-
-                              {/* Target Production */}
-                              <div className="bg-stone-50 px-4 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                                <span className="text-stone-500 text-xs md:text-sm font-black uppercase tracking-wider">Target:</span>
-                                <span className="font-mono font-black text-stone-900 text-base md:text-lg">
-                                  {s.target.toLocaleString('en-IN')} Kg
-                                </span>
-                              </div>
-
-                              {/* 40s Converted GPS */}
-                              <div className="bg-stone-50 px-4 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                                <span className="text-stone-500 text-xs md:text-sm font-black uppercase tracking-wider">40s Converted GPS:</span>
-                                <span className="font-mono font-black text-sky-700 text-lg md:text-xl">
-                                  {s.avg40sGps > 0 ? s.avg40sGps : '-'}
-                                </span>
-                              </div>
-
-                              {/* Average GPS */}
-                              <div className="bg-stone-50 px-4 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                                <span className="text-stone-500 text-xs md:text-sm font-black uppercase tracking-wider">Average GPS:</span>
-                                <span className="font-mono font-black text-stone-900 text-lg md:text-xl">
-                                  {s.avgGps > 0 ? s.avgGps : '-'}
-                                </span>
-                              </div>
-
-                              {/* Plant Efficiency */}
-                              <div className="bg-stone-50 px-4 py-3 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                                <span className="text-stone-500 text-xs md:text-sm font-black uppercase tracking-wider">Plant Eff %:</span>
                                 <span className={cn(
-                                  "font-black text-xl md:text-2xl font-mono",
+                                  "text-[10px] font-black px-2 py-0.5 rounded-md tabular-nums",
+                                  diffKg >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                                )}>
+                                  {diffKg >= 0 ? '+' : ''}{diffKg.toLocaleString('en-IN')} Kg
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] font-bold text-stone-500 mt-1.5 pt-1.5 border-t border-stone-200/60">
+                                <span>Target: <strong className="text-stone-800 font-mono">{s.target.toLocaleString('en-IN')} Kg</strong></span>
+                                <span>Var: <strong className={diffKg >= 0 ? "text-emerald-700 font-mono" : "text-rose-700 font-mono"}>
+                                  {s.target > 0 ? `${((diffKg / s.target) * 100).toFixed(1)}%` : '0%'}
+                                </strong></span>
+                              </div>
+                            </div>
+
+                            {/* Detailed Telemetry Data Grid (The Spinning Production Report Table Data) */}
+                            <div className="space-y-1.5 bg-stone-50/70 p-3 rounded-2xl border border-stone-200/70 text-xs font-bold">
+                              <div className="flex items-center justify-between border-b border-stone-200/60 pb-1">
+                                <span className="text-stone-400 uppercase text-[10px] font-black">Standard GPS</span>
+                                <span className="font-mono text-stone-800 font-black">{stdGps}</span>
+                              </div>
+                              <div className="flex items-center justify-between border-b border-stone-200/60 pb-1">
+                                <span className="text-stone-400 uppercase text-[10px] font-black">Actual GPS</span>
+                                <span className="font-mono text-stone-900 font-black">{s.avgGps > 0 ? s.avgGps : '-'}</span>
+                              </div>
+                              <div className="flex items-center justify-between border-b border-stone-200/60 pb-1">
+                                <span className="text-stone-400 uppercase text-[10px] font-black">40s Converted GPS</span>
+                                <span className="font-mono text-sky-700 font-black">{s.avg40sGps > 0 ? s.avg40sGps : '-'}</span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-stone-400 uppercase text-[10px] font-black">40s Converted Output</span>
+                                <span className="font-mono text-stone-800 font-black">{prod40s > 0 ? `${prod40s.toLocaleString('en-IN')} Kg` : '-'}</span>
+                              </div>
+                            </div>
+
+                            {/* Card Footer: Plant Efficiency Progress Bar */}
+                            <div className="mt-3 pt-2.5 border-t border-stone-100">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-black uppercase text-stone-400">Plant Efficiency</span>
+                                <span className={cn(
+                                  "font-black text-base font-mono",
                                   s.efficiency >= 95 ? "text-emerald-700" : s.efficiency > 0 ? "text-amber-700" : "text-stone-400"
                                 )}>
                                   {s.efficiency > 0 ? `${s.efficiency}%` : '-'}
                                 </span>
                               </div>
-                            </div>
-
-                            {/* Efficiency Progress Bar */}
-                            <div className="mt-2">
-                              <div className="w-full bg-stone-100 h-3 rounded-full overflow-hidden border border-stone-200/60">
-                                <div 
+                              <div className="w-full bg-stone-100 h-2 rounded-full overflow-hidden border border-stone-200/60">
+                                <div
                                   className={cn(
                                     "h-full rounded-full transition-all duration-1000",
                                     s.efficiency >= 95 ? "bg-emerald-500" : "bg-amber-500"
@@ -1634,64 +1832,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                         );
                       })}
                     </div>
-
-                    {/* Bottom Combined Mill Status Bar */}
-                    <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex items-center gap-6">
-                        <div>
-                          <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
-                            Combined Mill Actual
-                          </span>
-                          <span className="text-2xl md:text-3xl font-black font-mono text-emerald-700">
-                            {shedAggregate.totalActual.toLocaleString('en-IN')} <span className="text-sm font-bold text-stone-400">Kg</span>
-                          </span>
-                        </div>
-                        <div className="h-8 w-px bg-stone-200" />
-                        <div>
-                          <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
-                            Combined Mill Target
-                          </span>
-                          <span className="text-xl md:text-2xl font-bold font-mono text-stone-800">
-                            {shedAggregate.totalTarget.toLocaleString('en-IN')} <span className="text-sm font-bold text-stone-400">Kg</span>
-                          </span>
-                        </div>
-                        <div className="h-8 w-px bg-stone-200 hidden sm:block" />
-                        <div className="hidden sm:block">
-                          <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
-                            Overall Efficiency
-                          </span>
-                          <span className={cn(
-                            "text-2xl md:text-3xl font-black font-mono",
-                            shedAggregate.overallEff >= 95 ? "text-emerald-700" : "text-amber-700"
-                          )}>
-                            {shedAggregate.overallEff}%
-                          </span>
-                        </div>
-                        <div className="h-8 w-px bg-stone-200 hidden md:block" />
-                        <div className="hidden md:block">
-                          <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
-                            Average 40s GPS
-                          </span>
-                          <span className="text-xl md:text-2xl font-black font-mono text-sky-700">
-                            {shedAggregate.avg40sGps}
-                          </span>
-                        </div>
-                      </div>
-
-                      {shedAggregate.leadingShed && (
-                        <div className="flex items-center gap-2.5 bg-emerald-50 border border-emerald-200 px-4 py-2 rounded-2xl">
-                          <Trophy size={20} className="text-emerald-700 shrink-0" />
-                          <div>
-                            <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">Leading Shed</span>
-                            <span className="text-sm md:text-base font-black text-emerald-950 uppercase">
-                              {shedAggregate.leadingShed.shed} ({shedAggregate.leadingShed.efficiency}%)
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 );
+              }
 
               case 'shift-comparison':
                 return (

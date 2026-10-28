@@ -12,6 +12,7 @@ export interface ReportViewProps {
   onSelectShed?: (shed: any) => void;
   onSelectDate?: (date: string) => void;
   availableDates?: string[];
+  hideAllShedTable?: boolean;
 }
 
 export interface ShedProductionRow {
@@ -338,7 +339,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
   currentShed = 'All',
   onSelectShed,
   onSelectDate,
-  availableDates = []
+  availableDates = [],
+  hideAllShedTable = false
 }) => {
   // Selected shed tab for filtering the detailed machine statement below
   const [activeFilterShed, setActiveFilterShed] = useState<string>(() => {
@@ -686,14 +688,16 @@ export const ReportView: React.FC<ReportViewProps> = ({
       {/* =========================================================================
           SECTION 1: THE ALL-SHEDS SPINNING PRODUCTION REPORT (MATCHES IMAGE)
           ========================================================================= */}
-      <div className="w-full flex flex-col items-center py-2">
-        <AllShedSpinningReportTable
-          data={allShedData}
-          isTvMode={isTvMode}
-          selectedShed={activeFilterShed}
-          onSelectShed={handleShedClick}
-        />
-      </div>
+      {!isTvMode && !hideAllShedTable && (
+        <div className="w-full flex flex-col items-center py-2">
+          <AllShedSpinningReportTable
+            data={allShedData}
+            isTvMode={isTvMode}
+            selectedShed={activeFilterShed}
+            onSelectShed={handleShedClick}
+          />
+        </div>
+      )}
 
       {/* =========================================================================
           SECTION 2: SHED NAVIGATION TABS (QUICK DRILL DOWN)
