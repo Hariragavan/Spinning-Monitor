@@ -48,10 +48,12 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
     const countSet = new Set<string>();
 
     (report.summaries || []).forEach(s => {
-      if (s.count && s.count.trim()) countSet.add(s.count.trim());
+      const c = (s.count || '').trim();
+      if (c && c !== '-' && c !== '0') countSet.add(c);
     });
     (report.entries || []).forEach(e => {
-      if (e.count && e.count.trim()) countSet.add(e.count.trim());
+      const c = (e.count || '').trim();
+      if (c && c !== '-' && c !== '0') countSet.add(c);
     });
 
     const uniqueCounts = Array.from(countSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -69,26 +71,19 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
         .filter(e => (e.productionActual || 0) > 0 || (e.productionTarget || 0) > 0 || (e.gpsActual || 0) > 0 || (e.efficiency || 0) > 0)
         .map(e => e.frameNo);
 
-      let uniqueFrames = Array.from(new Set([...summaryFrames, ...entryFrames])).filter(Boolean);
-      // Fallback: if data is planned without actuals yet, include frames if not purely default dummy 40s
-      if (uniqueFrames.length === 0) {
-        const allAssigned = Array.from(new Set([...summaries.map(s => s.frameNo), ...entries.map(e => e.frameNo)])).filter(Boolean);
-        if (allAssigned.length > 0 && count !== '40s') {
-          uniqueFrames = allAssigned;
-        }
-      }
+      const uniqueFrames = Array.from(new Set([...summaryFrames, ...entryFrames])).filter(Boolean);
 
+      // If no active frames exist for this count on this date, omit it
       if (uniqueFrames.length === 0) return null;
 
       // Std GPS lookup
-      const conversionItem = countConversions.find(c => isCountNameMatching(c.count, count));
       let stdGps = 0;
       if (summaries.length > 0 && summaries[0].stdGps > 0) {
         stdGps = Math.round(summaries[0].stdGps);
       } else if (entries.length > 0 && entries[0].gpsTarget > 0) {
         stdGps = Math.round(entries[0].gpsTarget);
       } else {
-        stdGps = 160;
+        stdGps = 0;
       }
 
       // Actual GPSS (average achieved GPS)
@@ -104,18 +99,24 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
       }
 
       // Multiplication factor for 40s
-      const factor = conversionItem?.multiplicationFactor ?? (entries[0]?.gpsActual && entries[0]?.gps40sCon ? Number((entries[0].gps40sCon / entries[0].gpsActual).toFixed(4)) : 1.0);
+      const conversionItem = countConversions.find(c => isCountNameMatching(c.count, count));
+      const factor = conversionItem?.multiplicationFactor 
+        ?? (entries[0]?.gpsActual && entries[0]?.gps40sCon && entries[0].gpsActual > 0 
+          ? Number((entries[0].gps40sCon / entries[0].gpsActual).toFixed(4)) 
+          : 1.0);
 
       // 40s Converted GPS
       let converted40s = 0;
       const valid40sEntries = entries.filter(e => (e.gps40sCon || 0) > 0);
       if (valid40sEntries.length > 0) {
         converted40s = Math.round(valid40sEntries.reduce((acc, curr) => acc + curr.gps40sCon, 0) / valid40sEntries.length);
-      } else {
+      } else if (actualGpss > 0) {
         converted40s = Math.round(actualGpss * factor);
+      } else {
+        converted40s = 0;
       }
 
-      const variance = actualGpss - stdGps;
+      const variance = (actualGpss > 0 && stdGps > 0) ? (actualGpss - stdGps) : 0;
 
       return {
         count,
@@ -132,20 +133,20 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
     // Total Machines running
     const totalMachinesCount = rows.reduce((acc, curr) => acc + curr.frameCount, 0);
 
-    // Plant Averages
+    // Plant Averages (0 when no data)
     const avgStd = totalMachinesCount > 0 
       ? Math.round(rows.reduce((acc, curr) => acc + curr.stdGps * curr.frameCount, 0) / totalMachinesCount)
-      : 165;
+      : 0;
 
     const avgActual = totalMachinesCount > 0 
       ? Math.round(rows.reduce((acc, curr) => acc + curr.actualGpss * curr.frameCount, 0) / totalMachinesCount)
-      : 138;
+      : 0;
 
     const avg40s = totalMachinesCount > 0 
       ? Math.round(rows.reduce((acc, curr) => acc + curr.converted40s * curr.frameCount, 0) / totalMachinesCount)
-      : 97;
+      : 0;
 
-    const avgVariance = avgActual - avgStd;
+    const avgVariance = (avgActual > 0 && avgStd > 0) ? (avgActual - avgStd) : 0;
 
     // Shift-wise production stats
     const shifts: Record<Shift, { kg: number; gpsSum: number; count: number }> = {
@@ -165,7 +166,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
     });
 
     // Fallback to summaries if entries are empty
-    if (shifts.I.kg === 0 && shifts.II.kg === 0 && (report.summaries || []).length > 0) {
+    if (shifts.I.kg === 0 && shifts.II.kg === 0 && shifts.III.kg === 0 && (report.summaries || []).length > 0) {
       report.summaries.forEach(s => {
         if (s.shiftProductionKg) {
           shifts.I.kg += s.shiftProductionKg.I || 0;
@@ -180,33 +181,34 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
       });
     }
 
-    const totalProdKg = shifts.I.kg + shifts.II.kg + shifts.III.kg || report.totalProductionActual || 5220;
+    const totalProdKg = (shifts.I.kg + shifts.II.kg + shifts.III.kg) || (report.totalProductionActual || 0);
 
     const shiftData = {
       I: {
         kg: Math.round(shifts.I.kg),
-        gps: shifts.I.count > 0 ? Math.round(shifts.I.gpsSum / shifts.I.count) : 134
+        gps: shifts.I.count > 0 ? Math.round(shifts.I.gpsSum / shifts.I.count) : 0
       },
       II: {
         kg: Math.round(shifts.II.kg),
-        gps: shifts.II.count > 0 ? Math.round(shifts.II.gpsSum / shifts.II.count) : 138
+        gps: shifts.II.count > 0 ? Math.round(shifts.II.gpsSum / shifts.II.count) : 0
       },
       III: {
         kg: Math.round(shifts.III.kg),
-        gps: shifts.III.count > 0 ? Math.round(shifts.III.gpsSum / shifts.III.count) : 137
+        gps: shifts.III.count > 0 ? Math.round(shifts.III.gpsSum / shifts.III.count) : 0
       },
       totalKg: Math.round(totalProdKg)
     };
 
     // Plant operations summary metrics
-    const targetProd = report.totalProductionTarget || 6200;
-    const achievement = targetProd > 0 ? Number(((totalProdKg / targetProd) * 100).toFixed(1)) : 83.8;
+    const targetProd = report.totalProductionTarget || 0;
+    const achievement = targetProd > 0 ? Number(((totalProdKg / targetProd) * 100).toFixed(1)) : 0;
     const avgUtilSummaries = (report.summaries || []).filter(s => (s.avgUtil || 0) > 0);
+    const validEntriesWithUtil = (report.entries || []).filter(e => (e.utility || e.efficiency || 0) > 0);
     const plantUtil = avgUtilSummaries.length > 0
       ? Number((avgUtilSummaries.reduce((a, b) => a + b.avgUtil, 0) / avgUtilSummaries.length).toFixed(1))
-      : (report.entries && report.entries.length > 0
-        ? Number((report.entries.reduce((a, b) => a + (b.utility || b.efficiency || 0), 0) / report.entries.length).toFixed(1))
-        : 88.0);
+      : (validEntriesWithUtil.length > 0
+        ? Number((validEntriesWithUtil.reduce((a, b) => a + (b.utility || b.efficiency || 0), 0) / validEntriesWithUtil.length).toFixed(1))
+        : 0);
 
     return {
       countRows: rows,
@@ -225,6 +227,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
 
   // Excel Export
   const exportToExcel = () => {
+    if (countRows.length === 0) return;
     const wb = XLSX.utils.book_new();
     const rows = countRows.map(r => ({
       'Count': r.count,
@@ -286,14 +289,37 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <span className="px-3.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-600 text-xs font-black font-mono tracking-wider shadow-2xs">
+            {/* Direct Date Switcher if available */}
+            {onSelectDate && availableDates && availableDates.length > 0 && !isTvMode && (
+              <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 shadow-2xs">
+                <Calendar size={13} className="text-stone-500 shrink-0" />
+                <select
+                  value={report.date || ''}
+                  onChange={(e) => onSelectDate(e.target.value)}
+                  aria-label="Select Statement Date"
+                  className="bg-transparent text-xs font-black text-stone-800 cursor-pointer focus:outline-none"
+                >
+                  {availableDates.map(d => (
+                    <option key={d} value={d}>Date: {d}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <span className={cn(
+              "px-3.5 py-1.5 rounded-xl border text-xs font-black font-mono tracking-wider shadow-2xs",
+              countRows.length > 0 
+                ? "bg-stone-50 border-stone-200 text-stone-600" 
+                : "bg-stone-100 border-stone-200 text-stone-400"
+            )}>
               {countRows.length} ACTIVE COUNTS · {totalMachines} MACHINES TOTAL
             </span>
 
             {!isTvMode && (
               <button
                 onClick={exportToExcel}
-                className="px-3.5 py-1.5 bg-white hover:bg-stone-50 text-stone-800 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
+                disabled={countRows.length === 0}
+                className="px-3.5 py-1.5 bg-white hover:bg-stone-50 disabled:opacity-50 text-stone-800 border border-stone-200 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 cursor-pointer"
               >
                 <Download size={13} className="text-stone-600" />
                 <span>Export Excel</span>
@@ -318,8 +344,16 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
             <tbody className="divide-y divide-stone-100 text-sm">
               {countRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-stone-400 font-bold italic">
-                    No active running counts found for today's production statement.
+                  <td colSpan={6} className="py-14 text-center">
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                      <Layers className="w-10 h-10 text-stone-300 stroke-[1.5]" />
+                      <p className="text-sm md:text-base font-bold text-stone-500">
+                        No running counts recorded for {report.date || 'this date'}.
+                      </p>
+                      <p className="text-xs text-stone-400 font-mono">
+                        Count telemetry and spindle outputs will appear here when entries exist for this date.
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -342,22 +376,24 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
 
                       {/* Std GPS */}
                       <td className="py-4 md:py-5 px-4 text-center font-mono font-bold text-stone-700 text-base md:text-lg">
-                        {row.stdGps}
+                        {row.stdGps > 0 ? row.stdGps : '-'}
                       </td>
 
-                      {/* Actual GPSS in Amber */}
+                      {/* Actual GPSS */}
                       <td className="py-4 md:py-5 px-4 text-center font-mono font-black text-amber-500 text-lg md:text-xl">
-                        {row.actualGpss}
+                        {row.actualGpss > 0 ? row.actualGpss : '-'}
                       </td>
 
                       {/* 40s Converted with Factor */}
                       <td className="py-4 md:py-5 px-6 text-center">
                         <div className="font-mono font-black text-stone-900 text-lg md:text-xl leading-none">
-                          {row.converted40s}
+                          {row.converted40s > 0 ? row.converted40s : '-'}
                         </div>
-                        <div className="font-mono font-bold text-[11px] text-emerald-600 mt-1">
-                          ×{row.factor.toFixed(4)}
-                        </div>
+                        {row.factor > 0 && row.actualGpss > 0 && (
+                          <div className="font-mono font-bold text-[11px] text-emerald-600 mt-1">
+                            ×{row.factor.toFixed(4)}
+                          </div>
+                        )}
                       </td>
 
                       {/* Variance Badge */}
@@ -378,34 +414,38 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 })
               )}
 
-              {/* TOTAL / PLANT AVERAGE ROW */}
-              <tr className="bg-stone-900 text-white font-mono border-t-2 border-stone-800">
-                <td className="py-4 md:py-5 px-6 font-black tracking-tight text-sm md:text-base uppercase">
-                  TOTAL / PLANT AVERAGE
-                </td>
-                <td className="py-4 md:py-5 px-4 text-center font-black text-sm md:text-base text-stone-300">
-                  {totalMachines} Frames
-                </td>
-                <td className="py-4 md:py-5 px-4 text-center font-black text-sm md:text-base text-stone-300">
-                  {overallStats.avgStd}
-                </td>
-                <td className="py-4 md:py-5 px-4 text-center font-black text-lg md:text-xl text-amber-400">
-                  {overallStats.avgActual}
-                </td>
-                <td className="py-4 md:py-5 px-6 text-center font-black text-lg md:text-xl text-emerald-400">
-                  {overallStats.avg40s}
-                </td>
-                <td className="py-4 md:py-5 px-6 text-center">
-                  <span className={cn(
-                    "inline-block font-mono font-black px-3 py-1 rounded-xl text-xs md:text-sm border",
-                    overallStats.avgVariance < 0 
-                      ? "bg-rose-950/70 text-rose-300 border-rose-700/60" 
-                      : "bg-emerald-950/70 text-emerald-300 border-emerald-700/60"
-                  )}>
-                    {overallStats.avgVariance > 0 ? `+${overallStats.avgVariance}` : overallStats.avgVariance}
-                  </span>
-                </td>
-              </tr>
+              {/* TOTAL / PLANT AVERAGE ROW (Only rendered if count rows exist) */}
+              {countRows.length > 0 && (
+                <tr className="bg-stone-900 text-white font-mono border-t-2 border-stone-800">
+                  <td className="py-4 md:py-5 px-6 font-black tracking-tight text-sm md:text-base uppercase">
+                    TOTAL / PLANT AVERAGE
+                  </td>
+                  <td className="py-4 md:py-5 px-4 text-center font-black text-sm md:text-base text-stone-300">
+                    {totalMachines} Frames
+                  </td>
+                  <td className="py-4 md:py-5 px-4 text-center font-black text-sm md:text-base text-stone-300">
+                    {overallStats.avgStd > 0 ? overallStats.avgStd : '-'}
+                  </td>
+                  <td className="py-4 md:py-5 px-4 text-center font-black text-lg md:text-xl text-amber-400">
+                    {overallStats.avgActual > 0 ? overallStats.avgActual : '-'}
+                  </td>
+                  <td className="py-4 md:py-5 px-6 text-center font-black text-lg md:text-xl text-emerald-400">
+                    {overallStats.avg40s > 0 ? overallStats.avg40s : '-'}
+                  </td>
+                  <td className="py-4 md:py-5 px-6 text-center">
+                    <span className={cn(
+                      "inline-block font-mono font-black px-3 py-1 rounded-xl text-xs md:text-sm border",
+                      overallStats.avgVariance < 0 
+                        ? "bg-rose-950/70 text-rose-300 border-rose-700/60" 
+                        : overallStats.avgVariance > 0
+                        ? "bg-emerald-950/70 text-emerald-300 border-emerald-700/60"
+                        : "bg-stone-800 text-stone-400 border-stone-700"
+                    )}>
+                      {overallStats.avgVariance > 0 ? `+${overallStats.avgVariance}` : overallStats.avgVariance}
+                    </span>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -434,7 +474,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 {shiftStats.I.kg.toLocaleString()} <span className="text-xs font-bold text-stone-400">KG</span>
               </span>
               <span className="text-xs font-black text-emerald-600 font-mono mt-1 block">
-                {shiftStats.I.gps} GPS
+                {shiftStats.I.gps > 0 ? `${shiftStats.I.gps} GPS` : '- GPS'}
               </span>
             </div>
 
@@ -447,7 +487,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 {shiftStats.II.kg.toLocaleString()} <span className="text-xs font-bold text-stone-400">KG</span>
               </span>
               <span className="text-xs font-black text-emerald-600 font-mono mt-1 block">
-                {shiftStats.II.gps} GPS
+                {shiftStats.II.gps > 0 ? `${shiftStats.II.gps} GPS` : '- GPS'}
               </span>
             </div>
 
@@ -460,7 +500,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 {shiftStats.III.kg.toLocaleString()} <span className="text-xs font-bold text-stone-400">KG</span>
               </span>
               <span className="text-xs font-black text-emerald-600 font-mono mt-1 block">
-                {shiftStats.III.gps} GPS
+                {shiftStats.III.gps > 0 ? `${shiftStats.III.gps} GPS` : '- GPS'}
               </span>
             </div>
           </div>
@@ -483,9 +523,17 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 text-[10px] font-black tracking-widest uppercase">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>LIVE</span>
+            <div className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black tracking-widest uppercase border",
+              shiftStats.totalKg > 0 
+                ? "bg-emerald-950/80 border-emerald-500/30 text-emerald-400" 
+                : "bg-stone-800 border-stone-700 text-stone-400"
+            )}>
+              <span className={cn(
+                "w-2 h-2 rounded-full",
+                shiftStats.totalKg > 0 ? "bg-emerald-400 animate-pulse" : "bg-stone-500"
+              )}></span>
+              <span>{shiftStats.totalKg > 0 ? 'LIVE' : 'NO DATA'}</span>
             </div>
           </div>
 
@@ -496,7 +544,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 ACHIEVEMENT %
               </span>
               <span className="text-2xl md:text-3xl lg:text-4xl font-black text-amber-400 font-mono tracking-tight block">
-                {overallStats.achievement}%
+                {overallStats.achievement > 0 ? `${overallStats.achievement}%` : '0%'}
               </span>
             </div>
 
@@ -506,7 +554,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 PLANT GPSS
               </span>
               <span className="text-2xl md:text-3xl lg:text-4xl font-black text-white font-mono tracking-tight block">
-                {overallStats.avgActual}
+                {overallStats.avgActual > 0 ? overallStats.avgActual : '-'}
               </span>
             </div>
 
@@ -516,7 +564,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 PLANT UTILIZATION %
               </span>
               <span className="text-2xl md:text-3xl lg:text-4xl font-black text-emerald-400 font-mono tracking-tight block">
-                {overallStats.plantUtil}%
+                {overallStats.plantUtil > 0 ? `${overallStats.plantUtil}%` : '0%'}
               </span>
             </div>
           </div>

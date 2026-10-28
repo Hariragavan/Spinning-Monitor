@@ -32,6 +32,7 @@ import { MasterDataTable } from '@/components/MasterDataTable';
 import { TvDashboard, TV_MAIN_PAGES } from '@/components/TvDashboard';
 import { CountSummary } from '@/components/CountSummary';
 import { CountWiseFrames } from '@/components/CountWiseFrames';
+import { MonthlyCountGpss } from '@/components/MonthlyCountGpss';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
@@ -58,6 +59,10 @@ const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
   { count: '042/1-CH-NY', multiplicationFactor: 0.7235, description: '42/1 Comb Hosiery NY', shed: 'Shed 1' },
   { count: '038/1-CH-NY', multiplicationFactor: 0.6641, description: '38/1 Comb Hosiery NY', shed: 'Shed 1' },
   { count: '034/1-PH-PC', multiplicationFactor: 0.54, description: 'Auto-imported count (034/1-PH-PC)', shed: 'Shed 1' },
+  { count: '44/1-PH-PC', multiplicationFactor: 0.88, description: '44/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
+  { count: '024/1-PH-PC', multiplicationFactor: 0.45, description: '24/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
+  { count: '40/1-CH-PC', multiplicationFactor: 0.803, description: '40/1 Comb Hosiery PC Yarn', shed: 'Shed 1' },
+  { count: '45/1-PW-PC', multiplicationFactor: 0.90, description: '45/1 Poly Warp PC Yarn', shed: 'Shed 1' },
   
   // Shed 2 Counts
   { count: '32/1-CH-CY', multiplicationFactor: 0.7155, description: '32/1 Comb Hosiery Compact Weft', shed: 'Shed 2' },
@@ -408,6 +413,7 @@ export default function Home() {
       'monthly-report': true
     },
     tvPageIntervals: {
+      'monthly-count-gpss': 20,
       'dashboard': 15,
       'count-summary': 20,
       'count-frames': 20,
@@ -1819,6 +1825,26 @@ export default function Home() {
             isSupervisorMode={isSupervisorMode}
           />
         );
+
+      case 'monthly-count-gpss': {
+        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
+        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
+        return (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
+            <MonthlyCountGpss
+              history={reportHistory}
+              selectedMonth={tvActiveMonth}
+              selectedYear={tvActiveYear}
+              onMonthChange={setSelectedMonth}
+              onYearChange={setSelectedYear}
+              selectedShed={selectedShed}
+              countConversions={countConversions}
+              onNavigateToMatrix={() => setActiveTab('running-count-incentives')}
+              isTvMode={isTvMode}
+            />
+          </motion.div>
+        );
+      }
 
       case 'month-view': {
         const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;

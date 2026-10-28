@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Users, Coins, Trophy,
   Gauge, Monitor, BarChart3, Calendar, Database, Grid3X3, Wrench, UserCheck,
-  FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity
+  FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity,
+  FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -32,9 +33,9 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Daily Operations',
     items: [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { id: 'count-summary', label: 'Count Summary', icon: Layers },
       { id: 'all-data', label: 'All Data Master Table', icon: Table },
       { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
+      { id: 'count-summary', label: 'Count Summary', icon: Layers },
       { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
       { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
       { id: 'daily-incentive-machine', label: 'Daily Incentive (Machine)', icon: Grid3X3 },
@@ -43,6 +44,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Monthly Analytics',
     items: [
+      { id: 'monthly-count-gpss', label: 'Monthly Count GPSS', icon: FileSpreadsheet },
       { id: 'month-view', label: 'Monthly Incentive Grid', icon: Calendar },
       { id: 'month-abstract', label: 'Monthly Abstract', icon: BarChart3 },
       { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },

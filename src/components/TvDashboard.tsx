@@ -7,13 +7,14 @@ import {
   X, Activity, Trophy, BarChart3, Table, TrendingUp, Grid3X3, 
   Calendar, Clock, Check, Users, Gauge, Layers, Star, Zap,
   Award, ArrowUpRight, Sparkles, Medal, UserCheck, Coins, FileText, Target,
-  Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown, Scan
+  Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown, Scan,
+  FileSpreadsheet
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed } from '../types';
 import { cn, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
 import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
 
-// Import the 17 core application components
+// Import the core application components
 import { KPIStats } from './KPIStats';
 import { PerformanceChart } from './PerformanceChart';
 import { ReportView, AllShedSpinningReportTable, computeAllShedReport } from './ReportView';
@@ -34,6 +35,7 @@ import { EmOutliersCompare } from './EmOutliersCompare';
 import { FitterMonthlyPerformance } from './FitterMonthlyPerformance';
 import { CountSummary } from './CountSummary';
 import { CountWiseFrames } from './CountWiseFrames';
+import { MonthlyCountGpss } from './MonthlyCountGpss';
 
 export interface TvSubPageDef {
   id: string; // matches component routing key
@@ -52,11 +54,27 @@ export interface TvMainPageDef {
   subPages: TvSubPageDef[];
 }
 
-// Definition of the 14 Main Pages and their Sub-Pages
+// Definition of the 15 Main Pages and their Sub-Pages
 export const TV_MAIN_PAGES: TvMainPageDef[] = [
   {
-    id: 'main-dashboard',
+    id: 'main-monthly-count-gpss',
     chapterNumber: 1,
+    title: 'Monthly Count GPSS Matrix',
+    subtitle: 'Month-to-date running count GPSS achievement & daily timeline',
+    icon: FileSpreadsheet,
+    subPages: [
+      {
+        id: 'monthly-count-gpss',
+        title: 'Running Count GPSS Month Matrix',
+        shortTitle: 'Count GPSS Matrix',
+        defaultSeconds: 20,
+        description: 'Plant running yarn counts, 15-day daily GPSS history & latest active achievement'
+      }
+    ]
+  },
+  {
+    id: 'main-dashboard',
+    chapterNumber: 2,
     title: 'Live Plant Operations',
     subtitle: 'Real-time production, active efficiency & frame speed',
     icon: Gauge,
@@ -72,7 +90,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-count-summary',
-    chapterNumber: 2,
+    chapterNumber: 3,
     title: 'Running Count GPSS Summary',
     subtitle: 'Plant running yarn counts, standard vs actual GPSS & 40s converted output',
     icon: Layers,
@@ -88,7 +106,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-count-frames',
-    chapterNumber: 3,
+    chapterNumber: 4,
     title: 'Count-Wise Frame Telemetry & Crew Roster',
     subtitle: 'Live machine telemetry, standard vs actual GPS, efficiency & assigned operators grouped by count',
     icon: Activity,
@@ -104,7 +122,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-statement',
-    chapterNumber: 4,
+    chapterNumber: 5,
     title: 'Daily Production Statement',
     subtitle: 'Technical shift statement across all registered ring frames',
     icon: FileText,
@@ -120,7 +138,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-incentives',
-    chapterNumber: 5,
+    chapterNumber: 6,
     title: 'Daily Incentive Intelligence',
     subtitle: 'Operator performance rewards and frame distribution',
     icon: Coins,
@@ -143,7 +161,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-counts',
-    chapterNumber: 6,
+    chapterNumber: 7,
     title: 'Running Count GPS Rules',
     subtitle: 'Standard GPS target matrix & count incentive tiers',
     icon: Layers,
@@ -159,7 +177,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-monthly-payroll',
-    chapterNumber: 7,
+    chapterNumber: 8,
     title: 'Monthly Sider Payroll & Grid',
     subtitle: 'Month-to-date calendar tracking & payroll abstract',
     icon: Calendar,
@@ -182,7 +200,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-sider-performance',
-    chapterNumber: 8,
+    chapterNumber: 9,
     title: 'Sider Monthly Performance',
     subtitle: 'Individual worker trends, duty history & GPS curves',
     icon: TrendingUp,
@@ -198,7 +216,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-em-quality',
-    chapterNumber: 9,
+    chapterNumber: 10,
     title: 'End-Break Quality (EM) & Outliers',
     subtitle: 'Spindle breakages per minute, frame outliers & top operators',
     icon: AlertTriangle,
@@ -228,7 +246,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-ai-coner',
-    chapterNumber: 10,
+    chapterNumber: 11,
     title: 'AI Linkconer Automation',
     subtitle: 'Winding & package automation unit telemetry',
     icon: Zap,
@@ -258,7 +276,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-champions',
-    chapterNumber: 11,
+    chapterNumber: 12,
     title: 'Mill Champions & Shift Awards',
     subtitle: 'Plant leaderboards, winning shift of the day & monthly stars',
     icon: Trophy,
@@ -281,7 +299,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-maintenance',
-    chapterNumber: 12,
+    chapterNumber: 13,
     title: 'Mechanical Maintenance Team',
     subtitle: 'Fitter staff duty allocation and maintenance monitoring',
     icon: Wrench,
@@ -297,7 +315,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-multi-shed',
-    chapterNumber: 13,
+    chapterNumber: 14,
     title: 'Multi-Shed Comparison',
     subtitle: 'Cross-shed performance comparison, production totals & 40s GPS',
     icon: Grid3X3,
@@ -313,7 +331,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-shift-comparison',
-    chapterNumber: 14,
+    chapterNumber: 15,
     title: 'Three-Shift Production & Efficiency Comparison',
     subtitle: 'Shift I, Shift II & Shift III comparative telemetry, GPS & output breakdown',
     icon: Clock,
@@ -1277,6 +1295,22 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
               {(() => {
                 const subId = currentSub?.id?.startsWith('count-frames') ? 'count-frames' : (currentSub?.id || 'dashboard');
                 switch (subId) {
+              case 'monthly-count-gpss':
+                return (
+                  <div className="w-full max-w-full">
+                    <MonthlyCountGpss
+                      history={allShedsHistory && allShedsHistory.length > 0 ? allShedsHistory : history}
+                      selectedMonth={propMonth || (settings.tvMonth && settings.tvMonth > 0 ? settings.tvMonth : 10)}
+                      selectedYear={propYear || (settings.tvYear && settings.tvYear > 0 ? settings.tvYear : 2026)}
+                      onMonthChange={() => {}}
+                      onYearChange={() => {}}
+                      selectedShed={selectedShed}
+                      countConversions={countConversions}
+                      isTvMode={true}
+                    />
+                  </div>
+                );
+
               case 'dashboard':
                 return (
                   <div className="space-y-5">
