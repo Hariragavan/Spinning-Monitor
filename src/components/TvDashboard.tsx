@@ -57,24 +57,8 @@ export interface TvMainPageDef {
 // Definition of the 15 Main Pages and their Sub-Pages
 export const TV_MAIN_PAGES: TvMainPageDef[] = [
   {
-    id: 'main-monthly-count-gpss',
-    chapterNumber: 1,
-    title: 'Monthly Count GPSS Matrix',
-    subtitle: 'Month-to-date running count GPSS achievement & daily timeline',
-    icon: FileSpreadsheet,
-    subPages: [
-      {
-        id: 'monthly-count-gpss',
-        title: 'Running Count GPSS Month Matrix',
-        shortTitle: 'Count GPSS Matrix',
-        defaultSeconds: 20,
-        description: 'Plant running yarn counts, 15-day daily GPSS history & latest active achievement'
-      }
-    ]
-  },
-  {
     id: 'main-dashboard',
-    chapterNumber: 2,
+    chapterNumber: 1,
     title: 'Live Plant Operations',
     subtitle: 'Real-time production, active efficiency & frame speed',
     icon: Gauge,
@@ -90,7 +74,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-count-summary',
-    chapterNumber: 3,
+    chapterNumber: 2,
     title: 'Running Count GPSS Summary',
     subtitle: 'Plant running yarn counts, standard vs actual GPSS & 40s converted output',
     icon: Layers,
@@ -106,7 +90,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-count-frames',
-    chapterNumber: 4,
+    chapterNumber: 3,
     title: 'Count-Wise Frame Telemetry & Crew Roster',
     subtitle: 'Live machine telemetry, standard vs actual GPS, efficiency & assigned operators grouped by count',
     icon: Activity,
@@ -122,7 +106,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   },
   {
     id: 'main-statement',
-    chapterNumber: 5,
+    chapterNumber: 4,
     title: 'Daily Production Statement',
     subtitle: 'Technical shift statement across all registered ring frames',
     icon: FileText,
@@ -137,10 +121,10 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
     ]
   },
   {
-    id: 'main-incentives',
-    chapterNumber: 6,
-    title: 'Daily Incentive Intelligence',
-    subtitle: 'Operator performance rewards and frame distribution',
+    id: 'main-daily-incentive',
+    chapterNumber: 5,
+    title: 'Worker Daily Incentive',
+    subtitle: 'Operator performance rewards and shift duties',
     icon: Coins,
     subPages: [
       {
@@ -149,7 +133,16 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
         shortTitle: 'Worker Breakdown',
         defaultSeconds: 15,
         description: 'Individual sider earnings, GPS vs threshold, shift duties & gaiter pay'
-      },
+      }
+    ]
+  },
+  {
+    id: 'main-daily-incentive-machine',
+    chapterNumber: 6,
+    title: 'Machine Frame Incentive',
+    subtitle: 'Machine frame payouts, sider allocations & frame incentive sums',
+    icon: Grid3X3,
+    subPages: [
       {
         id: 'daily-incentive-machine',
         title: 'Machine-Wise Frame Incentive Summary',
@@ -179,9 +172,16 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
     id: 'main-monthly-payroll',
     chapterNumber: 8,
     title: 'Monthly Sider Payroll & Grid',
-    subtitle: 'Month-to-date calendar tracking & payroll abstract',
+    subtitle: 'Month-to-date count GPSS achievement, calendar tracking & payroll abstract',
     icon: Calendar,
     subPages: [
+      {
+        id: 'monthly-count-gpss',
+        title: 'Running Count GPSS Month Matrix',
+        shortTitle: 'Count GPSS Matrix',
+        defaultSeconds: 20,
+        description: 'Plant running yarn counts, 15-day daily GPSS history & latest active achievement'
+      },
       {
         id: 'month-view',
         title: 'Monthly Sider Incentive Calendar Grid',
