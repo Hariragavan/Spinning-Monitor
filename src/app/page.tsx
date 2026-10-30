@@ -324,26 +324,57 @@ export default function Home() {
 
 
   const activeDailyReport = useMemo(() => {
+    let rep: DailyReport;
     // 1. If dailyReport belongs to selected shed, use it
     if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed) {
-      return dailyReport;
+      rep = dailyReport;
+    } else {
+      // 2. Check if a report for dailyReport.date exists in selected shed
+      const targetDate = dailyReport?.date || getYesterdayUniversalDate();
+      const sameDateMatch = currentShedHistory.find(r => r.date === targetDate);
+      if (sameDateMatch) {
+        rep = sameDateMatch;
+      } else {
+        // 3. If target date is yesterday, check if current shed history has a report for yesterday
+        const yesterdayStr = getYesterdayUniversalDate();
+        const yesterdayMatch = targetDate === yesterdayStr ? currentShedHistory.find(r => r.date === yesterdayStr) : undefined;
+        if (yesterdayMatch) {
+          rep = yesterdayMatch;
+        } else {
+          // 4. Fresh report for selected shed and targetDate
+          rep = createDefaultReportForShed(selectedShed, targetDate);
+        }
+      }
     }
 
-    // 2. Check if a report for dailyReport.date exists in selected shed
-    const targetDate = dailyReport?.date || getYesterdayUniversalDate();
-    const sameDateMatch = currentShedHistory.find(r => r.date === targetDate);
-    if (sameDateMatch) return sameDateMatch;
-
-    // 3. If target date is yesterday, check if current shed history has a report for yesterday
-    const yesterdayStr = getYesterdayUniversalDate();
-    if (targetDate === yesterdayStr) {
-      const yesterdayMatch = currentShedHistory.find(r => r.date === yesterdayStr);
-      if (yesterdayMatch) return yesterdayMatch;
+    // Ensure all entries strictly compute 40s converted GPS with the latest count conversions:
+    // formula: 40s gps = actual gps * 40s convertion multiplication
+    if (rep && rep.entries && rep.entries.length > 0) {
+      let needsUpdate = false;
+      const fixedEntries = rep.entries.map(e => {
+        const factor = countConversions.find(c => 
+          isCountNameMatching(c.count, e.count || '') && 
+          (!c.shed || c.shed === 'All Sheds' || c.shed === selectedShed)
+        )?.multiplicationFactor ?? 1.0;
+        const actGps = e.gpsActual || 0;
+        const calc40s = Number((actGps * factor).toFixed(2));
+        if (e.gps40sCon !== calc40s) {
+          needsUpdate = true;
+          return {
+            ...e,
+            gps40sCon: calc40s,
+            production40s: (e.productionActual || 0) > 0 ? Math.round(e.productionActual * factor) : 0
+          };
+        }
+        return e;
+      });
+      if (needsUpdate) {
+        return { ...rep, entries: fixedEntries };
+      }
     }
 
-    // 4. Fresh report for selected shed and targetDate
-    return createDefaultReportForShed(selectedShed, targetDate);
-  }, [dailyReport, selectedShed, currentShedHistory]);
+    return rep;
+  }, [dailyReport, selectedShed, currentShedHistory, countConversions]);
 
   const availableReportDates = useMemo(() => {
     const dateSet = new Set<string>();
@@ -1317,7 +1348,7 @@ export default function Home() {
           changed = true;
           return {
             ...e,
-            gps40sCon: (e.gpsActual || 0) > 0 ? Math.round(e.gpsActual * factor) : 0,
+            gps40sCon: (e.gpsActual || 0) > 0 ? Number(((e.gpsActual || 0) * factor).toFixed(2)) : 0,
             production40s: (e.productionActual || 0) > 0 ? Math.round(e.productionActual * factor) : 0
           };
         }

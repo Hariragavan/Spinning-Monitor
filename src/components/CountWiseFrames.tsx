@@ -505,10 +505,8 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
       {/* ========================================================================= */}
       <div className={cn(
         "grid gap-4 md:gap-5 transition-all duration-300",
-        activeGroup.frames.length === 1 && countGroups.length > 1
-          ? "grid-cols-1 lg:grid-cols-2"
-          : activeGroup.frames.length === 1
-          ? "grid-cols-1 max-w-2xl mx-auto"
+        activeGroup.frames.length === 1
+          ? "grid-cols-1 max-w-2xl mx-auto w-full"
           : activeGroup.frames.length === 2
           ? "grid-cols-1 md:grid-cols-2"
           : activeGroup.frames.length <= 4
@@ -659,90 +657,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
           );
         })}
 
-        {/* If 1 frame in this count and multiple counts exist, render Running Counts Comparison on right (Matches Image 2) */}
-        {activeGroup.frames.length === 1 && countGroups.length > 1 && (
-          <div className="bg-white rounded-2xl border border-stone-200/90 shadow-2xs p-5 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-3 mb-4 border-b border-stone-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200">
-                    <TrendingUp size={16} />
-                  </div>
-                  <div>
-                    <h4 className="text-sm md:text-base font-black text-stone-900 uppercase tracking-tight">
-                      {report.shed || 'Mill'} Running Counts Comparison
-                    </h4>
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider block">
-                      {countGroups.length} Active Counts Telemetry Overview
-                    </span>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  {countGroups.length} Counts Active
-                </span>
-              </div>
 
-              {/* List of Counts */}
-              <div className="space-y-3">
-                {countGroups.map((cg, cIdx) => {
-                  const isCurrent = cIdx === safeIndex;
-                  const ratio = cg.avgStdGps > 0 ? Math.min(100, Math.round((cg.avgActualGps / cg.avgStdGps) * 100)) : 0;
-                  return (
-                    <div
-                      key={cg.name}
-                      onClick={() => handleSelectCountIndex(cIdx)}
-                      className={cn(
-                        "p-3.5 rounded-xl border transition-all cursor-pointer",
-                        isCurrent
-                          ? "bg-emerald-50/60 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs"
-                          : "bg-stone-50/70 hover:bg-stone-100/80 border-stone-200/80"
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase",
-                            isCurrent ? "bg-emerald-600 text-white" : "bg-stone-200 text-stone-700"
-                          )}>
-                            PART {cIdx + 1}
-                          </span>
-                          <span className="font-mono font-black text-xs md:text-sm text-stone-900">
-                            {cg.name}
-                          </span>
-                          <span className="text-[10px] text-stone-500 font-mono">
-                            ({cg.frames.length} RF: {cg.frames.map(f => f.frameNo).join(', ')})
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <span className="font-mono font-black text-xs md:text-sm text-emerald-700">
-                            {cg.avgActualGps.toFixed(1)} GPS
-                          </span>
-                          <span className="text-stone-300 mx-1.5">•</span>
-                          <span className="font-mono font-bold text-xs text-stone-700">
-                            {Math.round(cg.totalProdKg).toLocaleString()} KG
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="w-full h-2 bg-stone-200/70 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                          style={{ width: `${ratio}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500 font-bold mt-4">
-              <span>Click any part to jump directly</span>
-              <span className="text-emerald-700 font-mono font-black">Auto-cycling active</span>
-            </div>
-          </div>
-        )}
       </div>
       {/* ========================================================================= */}
       {/* 3. BOTTOM COUNT NAVIGATION BAR ("in down show the no of counts to select") */}

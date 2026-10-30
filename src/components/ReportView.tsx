@@ -40,7 +40,7 @@ export const SHED_CONFIGS: { shedKey: Shed; displayName: string; shortName: stri
   { shedKey: 'KTTM', displayName: 'KTTM', shortName: 'KTTM' },
   { shedKey: 'Shed 1', displayName: '1st Shed', shortName: '1st Shed' },
   { shedKey: 'Shed 2', displayName: '2nd Shed', shortName: '2nd Shed' },
-  { shedKey: 'Shed 3', displayName: 'PC Shed', shortName: 'PC Shed' },
+  { shedKey: 'Shed 3', displayName: '3rd Shed', shortName: '3rd Shed' },
 ];
 
 /**

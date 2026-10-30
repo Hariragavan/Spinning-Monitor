@@ -69,18 +69,40 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Sync builderShed when shed tab changes
+  // Distinct counts from Count Master belonging strictly to the selected shed
+  const availableShedConversions = React.useMemo(() => {
+    if (selectedShedTab === 'All Sheds') {
+      return countConversions;
+    }
+    return countConversions.filter(c => !c.shed || c.shed === 'All Sheds' || c.shed === selectedShedTab);
+  }, [countConversions, selectedShedTab]);
+
+  const availableCountNames = React.useMemo(() => {
+    const seen = new Set<string>();
+    const list: { count: string; shed: string; factor: number }[] = [];
+    availableShedConversions.forEach(c => {
+      const trimmed = (c.count || '').trim();
+      if (trimmed && !seen.has(trimmed.toLowerCase())) {
+        seen.add(trimmed.toLowerCase());
+        list.push({ count: trimmed, shed: c.shed || selectedShedTab, factor: c.multiplicationFactor });
+      }
+    });
+    return list;
+  }, [availableShedConversions, selectedShedTab]);
+
+  // Sync builderShed and selectedCount when shed tab or available counts change
   useEffect(() => {
     if (selectedShedTab !== 'All Sheds') {
       setBuilderShed(selectedShedTab);
       setNewCountShed(selectedShedTab);
-      // Switch selectedCount to one available in this shed if current count doesn't exist here
-      const shedRules = rules.filter(r => (r.shed || 'Shed 1') === selectedShedTab);
-      if (shedRules.length > 0 && !shedRules.some(r => r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim())) {
-        setSelectedCount(shedRules[0].count);
+    }
+    if (availableCountNames.length > 0) {
+      const exists = availableCountNames.some(c => c.count.toLowerCase().trim() === selectedCount.toLowerCase().trim());
+      if (!exists) {
+        setSelectedCount(availableCountNames[0].count);
       }
     }
-  }, [selectedShedTab, rules]);
+  }, [selectedShedTab, availableCountNames, selectedCount]);
 
   // Helper to get formatted condition text
   const getSlotConditionText = (payout: IncentivePayout, idx: number, allPayouts: IncentivePayout[]): string => {
@@ -329,12 +351,30 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   };
 
-  // Filter rules strictly by selected shed tab
-  const filteredRules = rules.filter(r => {
-    if (selectedShedTab === 'All Sheds') return true;
-    const s = r.shed || 'Shed 1';
-    return s === selectedShedTab;
-  });
+  // Filter rules strictly by selected shed tab, showing only counts from that shed's Count Master
+  const filteredRules = React.useMemo(() => {
+    return availableCountNames.map(cItem => {
+      const match = rules.find(r => 
+        r.count.toLowerCase().trim() === cItem.count.toLowerCase() &&
+        (selectedShedTab === 'All Sheds' || (r.shed || 'Shed 1') === selectedShedTab || r.shed === 'All Sheds')
+      );
+      if (match) return match;
+      // Default starter rule for counts in Count Master without a custom incentive rule yet
+      return {
+        count: cItem.count,
+        shed: selectedShedTab === 'All Sheds' ? cItem.shed : selectedShedTab,
+        department: 'Sider',
+        payouts: [
+          { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
+          { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for GPS 135 to 140', ruleText: 'Rs 90 for GPS 135 to 140' },
+          { gpsThreshold: 130, amount: 80, fromGps: 130, toGps: 135, conditionText: 'for 130 to 135', ruleText: 'Rs 80 for 130 to 135' },
+          { gpsThreshold: 125, amount: 70, fromGps: 125, toGps: 130, conditionText: 'for 125 to 130', ruleText: 'Rs 70 for 125 to 130' },
+          { gpsThreshold: 120, amount: 60, fromGps: 120, toGps: 125, conditionText: 'for 120 to 125', ruleText: 'Rs 60 for 120 to 125' },
+          { gpsThreshold: 115, amount: 50, fromGps: 115, toGps: 120, conditionText: 'for 115 to 120', ruleText: 'Rs 50 for 115 to 120' }
+        ]
+      } as IncentiveRule;
+    });
+  }, [availableCountNames, rules, selectedShedTab]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -471,19 +511,15 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
             </div>
 
             <select
-              value={`${selectedCount}__${builderShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1')}`}
+              value={selectedCount}
               onChange={(e) => {
-                const parts = e.target.value.split('__');
-                const cnt = parts[0];
-                const sh = parts[1];
-                setSelectedCount(cnt);
-                if (sh) setBuilderShed(sh);
+                setSelectedCount(e.target.value);
               }}
               className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
             >
-              {filteredRules.map(r => (
-                <option key={`${r.count}-${r.shed || 'Shed 1'}`} value={`${r.count}__${r.shed || 'Shed 1'}`}>
-                  {r.count} {r.shed && r.shed !== 'All Sheds' ? `(${r.shed})` : ''}
+              {availableCountNames.map(c => (
+                <option key={c.count} value={c.count}>
+                  {c.count} {c.shed && c.shed !== 'All Sheds' ? `(${c.shed})` : ''}
                 </option>
               ))}
             </select>

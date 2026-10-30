@@ -11,7 +11,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed } from '../types';
-import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate } from '../lib/utils';
+import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate, isCountNameMatching } from '../lib/utils';
 import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
 
 // Import the core application components
@@ -92,14 +92,14 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
   {
     id: 'main-count-frames',
     chapterNumber: 3,
-    title: 'Count-Wise Frame Telemetry & Crew Roster',
+    title: 'Ring Frame Wise GPSS',
     subtitle: 'Live machine telemetry, standard vs actual GPS, efficiency & assigned operators grouped by count',
     icon: Activity,
     subPages: [
       {
         id: 'count-frames',
-        title: 'Count-Wise Ring Frame Telemetry & Crew Roster',
-        shortTitle: 'Count Frames',
+        title: 'Ring Frame Wise GPSS',
+        shortTitle: 'RF Wise GPSS',
         defaultSeconds: 20,
         description: 'Count-wise sub-pages with individual machine cards, GPS telemetry, target ratios and assigned siders/gaiters'
       }
@@ -831,16 +831,58 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       const aProd = reportForShed.totalProductionActual || sList.reduce((a, b) => a + (b.actualProd || 0), 0) || entries.reduce((a, b) => a + (b.productionActual || 0), 0);
       const eff = tProd > 0 ? (aProd / tProd) * 100 : (aProd > 0 ? 100 : 0);
       
-      let gps = sList.length > 0 ? sList.reduce((a, b) => a + (b.avgGps || 0), 0) / sList.length : 0;
-      if (gps === 0 && entries.length > 0) {
-        const validGps = entries.filter(e => (e.gpsActual || 0) > 0);
-        if (validGps.length > 0) gps = validGps.reduce((a, b) => a + (b.gpsActual || 0), 0) / validGps.length;
+      let gps = 0;
+      let gps40s = 0;
+
+      if (sList.length > 0) {
+        let totalGps = 0;
+        let total40sGps = 0;
+        sList.forEach(s => {
+          const actGps = s.avgGps || 0;
+          const factor = countConversions.find(c => 
+            isCountNameMatching(c.count, s.count || '') && 
+            (!c.shed || c.shed === 'All Sheds' || c.shed === shedName)
+          )?.multiplicationFactor ?? 1.0;
+          totalGps += actGps;
+          total40sGps += (actGps * factor);
+        });
+        gps = sList.length > 0 ? totalGps / sList.length : 0;
+        gps40s = sList.length > 0 ? total40sGps / sList.length : 0;
+      } else if (entries.length > 0) {
+        const frameMap = new Map<string, { count: string; gpsSum: number; countEntries: number }>();
+        entries.forEach(e => {
+          const fn = e.frameNo || 'unknown';
+          const existing = frameMap.get(fn) || { count: e.count || '', gpsSum: 0, countEntries: 0 };
+          if (e.gpsActual && e.gpsActual > 0) {
+            existing.gpsSum += e.gpsActual;
+            existing.countEntries += 1;
+          }
+          if (e.count && !existing.count) existing.count = e.count;
+          frameMap.set(fn, existing);
+        });
+
+        if (frameMap.size > 0) {
+          let totalGps = 0;
+          let total40sGps = 0;
+          let validFrames = 0;
+          frameMap.forEach((val) => {
+            if (val.countEntries > 0) {
+              const machineGps = val.gpsSum / val.countEntries;
+              const factor = countConversions.find(c => 
+                isCountNameMatching(c.count, val.count) && 
+                (!c.shed || c.shed === 'All Sheds' || c.shed === shedName)
+              )?.multiplicationFactor ?? 1.0;
+              totalGps += machineGps;
+              total40sGps += (machineGps * factor);
+              validFrames++;
+            }
+          });
+          if (validFrames > 0) {
+            gps = totalGps / validFrames;
+            gps40s = total40sGps / validFrames;
+          }
+        }
       }
-      
-      const valid40s = entries.filter(e => (e.gps40sCon || 0) > 0);
-      const gps40s = valid40s.length > 0 
-        ? valid40s.reduce((a, b) => a + (b.gps40sCon || 0), 0) / valid40s.length 
-        : (gps > 0 ? gps : 0);
 
       const frameCount = sList.length > 0 ? sList.length : (new Set(entries.map(e => e.frameNo))).size;
 
@@ -856,7 +898,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         reportDate: reportForShed.date || targetDate
       };
     });
-  }, [allShedsHistory, history, safeDailyReport]);
+  }, [allShedsHistory, history, safeDailyReport, countConversions]);
 
   const shedAggregate = useMemo(() => {
     const totalActual = shedComparison.reduce((a, b) => a + b.actual, 0);
@@ -1197,7 +1239,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         <div className="flex items-center gap-2 sm:gap-3 px-2 truncate min-w-0">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 shadow-2xs shrink-0">
             <span className="text-xs md:text-sm font-black uppercase tracking-widest text-emerald-700">
-              PAGE {currentMain.chapterNumber} OF {availableMainPages.length}
+              PAGE {mainIndex + 1} OF {availableMainPages.length}
             </span>
           </div>
 
@@ -1627,7 +1669,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 const shedOrder: { key: Shed; displayName: string; badge: string; shedLabel: string }[] = [
                   { key: 'Shed 1', displayName: '1st Shed', badge: 'Ring Frame Unit 1', shedLabel: 'SHED 1' },
                   { key: 'Shed 2', displayName: '2nd Shed', badge: 'Ring Frame Unit 2', shedLabel: 'SHED 2' },
-                  { key: 'Shed 3', displayName: '3rd Shed (PC)', badge: 'Polyester Cotton Unit', shedLabel: 'SHED 3' },
+                  { key: 'Shed 3', displayName: '3rd Shed', badge: 'Ring Frame Unit 3', shedLabel: 'SHED 3' },
                   { key: 'KTTM', displayName: 'KTTM Shed', badge: 'Automated High-Speed Unit', shedLabel: 'KTTM' }
                 ];
 
@@ -1840,19 +1882,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                     </span>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  {isSelected && (
-                                    <span className="px-2.5 py-1 rounded-full text-xs font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                      Viewing
-                                    </span>
-                                  )}
-                                  <span className={cn(
-                                    "px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-xs",
-                                    s.active ? "bg-emerald-600 text-white" : "bg-stone-200 text-stone-600"
-                                  )}>
-                                    {s.active ? 'ACTIVE' : 'IDLE'}
-                                  </span>
-                                </div>
+
                               </div>
 
                               {/* Hero Actual Production & Target Diff (BIG NUMBERS FOR TV) */}
