@@ -3,17 +3,21 @@ import { DailyReport, Sider, IncentiveRule, CountConversion, SystemSettings, Mac
 export const apiClient = {
   async fetchInitialData(shed?: string) {
     const shedQuery = shed ? `?shed=${encodeURIComponent(shed)}` : '';
+    const ts = Date.now();
+    const addTs = (url: string) => `${url}${url.includes('?') ? '&' : '?'}_t=${ts}`;
+    const fetchOptions: RequestInit = { cache: 'no-store' };
+
     const [reportRes, historyRes, workersRes, machinesRes, rulesRes, countsRes, settingsRes, emRes, frozenRes, usersRes] = await Promise.all([
-      fetch(`/api/reports${shedQuery}`).then(r => r.json()).catch(() => ({ data: null })),
-      fetch(`/api/reports/history${shedQuery}`).then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/workers').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/machines').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/rules').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/counts').then(r => r.json()).catch(() => ({ data: [] })),
-      fetch('/api/settings').then(r => r.json()).catch(() => ({ data: null })),
-      fetch('/api/machine-em').then(r => r.json()).catch(() => ({ data: {} })),
-      fetch('/api/frozen-months').then(r => r.json()).catch(() => ({ data: {} })),
-      fetch('/api/users').then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(addTs(`/api/reports${shedQuery}`), fetchOptions).then(r => r.json()).catch(() => ({ data: null })),
+      fetch(addTs(`/api/reports/history${shedQuery}`), fetchOptions).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(addTs('/api/workers'), fetchOptions).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(addTs('/api/machines'), fetchOptions).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(addTs('/api/rules'), fetchOptions).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(addTs('/api/counts'), fetchOptions).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(addTs('/api/settings'), fetchOptions).then(r => r.json()).catch(() => ({ data: null })),
+      fetch(addTs('/api/machine-em'), fetchOptions).then(r => r.json()).catch(() => ({ data: {} })),
+      fetch(addTs('/api/frozen-months'), fetchOptions).then(r => r.json()).catch(() => ({ data: {} })),
+      fetch(addTs('/api/users'), fetchOptions).then(r => r.json()).catch(() => ({ data: [] })),
     ]);
 
     return {

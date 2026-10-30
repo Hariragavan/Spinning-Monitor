@@ -478,23 +478,40 @@ export default function Home() {
   const [isUploadingSettingsStatement, setIsUploadingSettingsStatement] = useState<boolean>(false);
   const settingsStatementInputRef = useRef<HTMLInputElement>(null);
 
-  // Load Initial Data from Database
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const data = await apiClient.fetchInitialData();
-        const loadedHistory = data.history && data.history.length > 0 ? data.history : [];
-        const loadedWorkers = data.workers && data.workers.length > 0 ? data.workers : [];
-        const loadedMachineEm = data.machineEm || {};
+  // Auto-refresh states & reference pointers
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date>(new Date());
+  const [refreshToast, setRefreshToast] = useState<string | null>(null);
 
-        setWorkers(loadedWorkers);
-        setMachineEm(loadedMachineEm);
-        setReportHistory(loadedHistory);
+  const dailyReportRef = useRef(dailyReport);
+  dailyReportRef.current = dailyReport;
+  const selectedShedRef = useRef(selectedShed);
+  selectedShedRef.current = selectedShed;
+  const lastRefreshTimeRef = useRef(Date.now());
 
-        const yesterdayStr = getYesterdayUniversalDate();
+  // Master refresh function: Refetches all data across devices from the server database
+  const refreshAllData = useCallback(async (options: { isInitial?: boolean; silent?: boolean } = {}) => {
+    try {
+      if (!options.silent) {
+        setIsRefreshing(true);
+      }
+      const data = await apiClient.fetchInitialData();
+      const loadedHistory = data.history && data.history.length > 0 ? data.history : [];
+      const loadedWorkers = data.workers && data.workers.length > 0 ? data.workers : [];
+      const loadedMachineEm = data.machineEm || {};
+
+      setWorkers(loadedWorkers);
+      setMachineEm(loadedMachineEm);
+      setReportHistory(loadedHistory);
+
+      const yesterdayStr = getYesterdayUniversalDate();
+      const currentSelectedDate = dailyReportRef.current?.date || yesterdayStr;
+      const currentShed = selectedShedRef.current || 'Shed 1';
+
+      if (options.isInitial) {
         let initialReport: DailyReport | null = null;
         if (loadedHistory && loadedHistory.length > 0) {
-          initialReport = loadedHistory.find(r => r.date === yesterdayStr && (r.shed || 'Shed 1') === 'Shed 1')
+          initialReport = loadedHistory.find(r => r.date === yesterdayStr && (r.shed || 'Shed 1') === currentShed)
             || loadedHistory.find(r => r.date === yesterdayStr)
             || null;
         }
@@ -502,56 +519,125 @@ export default function Home() {
           initialReport = data.dailyReport;
         }
         if (initialReport) {
-          setDailyReport(ensureSixMachines(initialReport));
+          setDailyReport(ensureSixMachines(initialReport, currentShed));
         } else {
-          setDailyReport(createDefaultReportForShed('Shed 1', yesterdayStr));
+          setDailyReport(createDefaultReportForShed(currentShed, yesterdayStr));
         }
-        if (data.machines && data.machines.length > 0) {
-          setMachines(data.machines);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('spinning_machines', JSON.stringify(data.machines));
-          }
+      } else {
+        // Background refresh: preserve user's current selected date and shed
+        let updatedReport: DailyReport | null = null;
+        if (loadedHistory && loadedHistory.length > 0) {
+          updatedReport = loadedHistory.find(r => r.date === currentSelectedDate && (r.shed || 'Shed 1') === currentShed)
+            || loadedHistory.find(r => r.date === currentSelectedDate)
+            || null;
         }
-        if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
-        if (data.counts && data.counts.length > 0) setCountConversions(data.counts);
-        
-        let localSiderCounts: Record<string, number> = {};
-        if (typeof window !== 'undefined') {
-          try {
-            const localSaved = localStorage.getItem('spinning_settings');
-            if (localSaved) {
-              const parsed = JSON.parse(localSaved);
-              if (parsed.machineSiderCounts) localSiderCounts = parsed.machineSiderCounts;
-            }
-          } catch (e) {}
+        if (!updatedReport && data.dailyReport && data.dailyReport.date === currentSelectedDate) {
+          updatedReport = data.dailyReport;
         }
-
-        if (data.settings) {
-          setSettings(prev => ({ 
-            ...prev, 
-            ...data.settings,
-            machineSiderCounts: (data.settings.machineSiderCounts && Object.keys(data.settings.machineSiderCounts).length > 0)
-              ? data.settings.machineSiderCounts
-              : (Object.keys(localSiderCounts).length > 0 ? localSiderCounts : (data.settings.machineSiderCounts || {})),
-            gaiterCounts: {
-              I: data.settings.gaiterCounts?.I ?? 1,
-              II: data.settings.gaiterCounts?.II ?? 1,
-              III: 1
-            }
-          }));
-        } else if (Object.keys(localSiderCounts).length > 0) {
-          setSettings(prev => ({ ...prev, machineSiderCounts: localSiderCounts }));
+        if (updatedReport) {
+          setDailyReport(ensureSixMachines(updatedReport, currentShed));
         }
-        if (data.frozenMonths) setFrozenMonths(data.frozenMonths);
-        setIsSystemReady(true);
-      } catch (err: any) {
-        console.error('Failed to load initial data from Database:', err);
-        setLastError(err?.message || 'Database connection error');
-        setIsSystemReady(true);
       }
+
+      if (data.machines && data.machines.length > 0) {
+        setMachines(data.machines);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('spinning_machines', JSON.stringify(data.machines));
+        }
+      }
+      if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
+      if (data.counts && data.counts.length > 0) setCountConversions(data.counts);
+
+      let localSiderCounts: Record<string, number> = {};
+      if (typeof window !== 'undefined') {
+        try {
+          const localSaved = localStorage.getItem('spinning_settings');
+          if (localSaved) {
+            const parsed = JSON.parse(localSaved);
+            if (parsed.machineSiderCounts) localSiderCounts = parsed.machineSiderCounts;
+          }
+        } catch (e) {}
+      }
+
+      if (data.settings) {
+        setSettings(prev => ({ 
+          ...prev, 
+          ...data.settings,
+          machineSiderCounts: (data.settings.machineSiderCounts && Object.keys(data.settings.machineSiderCounts).length > 0)
+            ? data.settings.machineSiderCounts
+            : (Object.keys(localSiderCounts).length > 0 ? localSiderCounts : (data.settings.machineSiderCounts || {})),
+          gaiterCounts: {
+            I: data.settings.gaiterCounts?.I ?? 1,
+            II: data.settings.gaiterCounts?.II ?? 1,
+            III: 1
+          }
+        }));
+      } else if (Object.keys(localSiderCounts).length > 0) {
+        setSettings(prev => ({ ...prev, machineSiderCounts: localSiderCounts }));
+      }
+      if (data.frozenMonths) setFrozenMonths(data.frozenMonths);
+      setIsSystemReady(true);
+
+      const now = new Date();
+      setLastRefreshedAt(now);
+      lastRefreshTimeRef.current = now.getTime();
+
+      if (!options.silent) {
+        setRefreshToast('All data refreshed successfully');
+        setTimeout(() => setRefreshToast(null), 2500);
+      }
+    } catch (err: any) {
+      console.error('Failed to load/refresh data from Database:', err);
+      setLastError(err?.message || 'Database connection error');
+      setIsSystemReady(true);
+    } finally {
+      setIsRefreshing(false);
     }
-    loadData();
   }, []);
+
+  // 5-Minute Auto-Refresh Timer for all data across devices
+  useEffect(() => {
+    // 1. Initial Load
+    refreshAllData({ isInitial: true });
+
+    // 2. 5-Minute Periodic Auto-Refresh (300,000 ms)
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const intervalTimer = setInterval(() => {
+      refreshAllData({ silent: true });
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    // 3. Fast-refresh on window focus / tab visibility change:
+    // If someone uploaded on another device and returns to this window, refresh automatically!
+    const handleFocusOrVisible = () => {
+      const now = Date.now();
+      if (now - lastRefreshTimeRef.current > 20000) {
+        refreshAllData({ silent: true });
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisible);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleFocusOrVisible();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 4. Cross-tab instant synchronization via storage event
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'spinning_data_updated') {
+        refreshAllData({ silent: true });
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(intervalTimer);
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [refreshAllData]);
 
   // URL Parameter Routing
   useEffect(() => {
@@ -1345,6 +1431,12 @@ export default function Home() {
     if (conversionsModified) {
       setCountConversions(updatedConversions);
       await apiClient.saveCountConversions(updatedConversions);
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('spinning_data_updated', Date.now().toString());
+      } catch {}
     }
   };
 
@@ -3313,6 +3405,8 @@ export default function Home() {
           frozenMonths={frozenMonths}
           selectedMonth={selectedMonth}
           selectedYear={selectedYear}
+          onRefresh={() => refreshAllData()}
+          isRefreshing={isRefreshing}
           onExit={() => {
             setIsTvMode(false);
             setTvStarted(false);
@@ -3440,6 +3534,21 @@ export default function Home() {
                   )}
                 </div>
 
+                {/* Auto Refresh 5m Button */}
+                <button
+                  type="button"
+                  onClick={() => refreshAllData()}
+                  disabled={isRefreshing}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl font-black uppercase tracking-wider text-[10px] transition-all border border-stone-200 cursor-pointer shadow-2xs"
+                  title="Auto-refreshes every 5 minutes. Click to refresh latest data immediately"
+                >
+                  <RefreshCw size={12} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
+                  <span className="hidden sm:inline">Refresh</span>
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 text-[9px] font-mono font-black">
+                    5m
+                  </span>
+                </button>
+
                 <div className="h-4 w-px bg-stone-200 mx-0.5 hidden sm:block" />
 
                 <button
@@ -3486,6 +3595,21 @@ export default function Home() {
               </div>
             </header>
           )}
+
+          {/* Refresh Toast Notification */}
+          <AnimatePresence>
+            {refreshToast && (
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="fixed top-16 right-6 z-50 bg-stone-900 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg flex items-center gap-2 border border-stone-700"
+              >
+                <RefreshCw size={12} className="text-emerald-400 animate-spin" />
+                <span>{refreshToast}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <main className="flex-1 overflow-y-auto">
             <div className="w-full max-w-full p-2.5 md:p-3.5 lg:p-4.5 h-full relative">
