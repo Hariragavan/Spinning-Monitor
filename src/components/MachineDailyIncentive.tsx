@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../types';
 import { Coins, Printer, Calendar, ArrowRight, Zap, Target, Award, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateIncentive, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
 import * as XLSX from 'xlsx';
 
 interface MachineDailyIncentiveProps {
@@ -103,15 +103,9 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
             const worker = workerId ? workers.find(w => w.id === workerId) : null;
             
-            // Calculate base incentive for the entry
-            const baseIncentive = calculateIncentive(entry, rules, report.date);
             let incentive = 0;
             if (worker) {
-              if (numSlots > 1) {
-                incentive = Math.round(baseIncentive / numSlots);
-              } else {
-                incentive = baseIncentive;
-              }
+              incentive = calculateSiderSlotIncentive(entry, slotIdx, report, rules, workers);
             }
 
             shiftsData[shift] = {

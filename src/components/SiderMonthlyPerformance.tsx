@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry, MachineEmData } from '../types';
-import { calculateIncentive, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
 import { Calendar, User, Search, Printer, Coins, Tv, Monitor, ChevronRight, Activity, Award, Download, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -129,7 +129,16 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
           const hasTNoMatch = !hasTNoConflict && entry.siderId && entry.siderId === targetWorker.tNo;
 
           if (hasDirectId || hasNameMatch || hasTNoMatch) {
-            const incentive = calculateIncentive(entry, rules, report.date);
+            const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+            let incentive = 0;
+            for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+              const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+              if (!wId) continue;
+              const wObj = resolveWorker(wId, entry.siderName, workers);
+              if (wObj.id === targetWorker.id || wObj.tNo === targetWorker.tNo || (wObj.name && wObj.name.toLowerCase() === targetWorker.name.toLowerCase())) {
+                incentive += calculateSiderSlotIncentive(entry, sIdx, report, rules, workers);
+              }
+            }
             const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
             let emValue = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
             if (emValue === undefined) {

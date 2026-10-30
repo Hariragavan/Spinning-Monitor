@@ -462,14 +462,29 @@ export function findDuplicatesInReport(report: DailyReport, workers: Sider[]): D
   const duplicates: DuplicateAllocation[] = [];
   allocationsMap.forEach((allotments, workerId) => {
     if (allotments.length > 1) {
-      const worker = resolveWorker(workerId, undefined, workers);
-      duplicates.push({
-        date: report.date,
-        workerId,
-        workerName: worker.name,
-        tNo: worker.tNo,
-        allotments
-      });
+      // An operator can be allocated to up to 2 machines (both sides or single side) in the SAME shift
+      const shifts = new Set(allotments.map(a => a.shift));
+      const roles = new Set(allotments.map(a => a.role));
+      const operatorFrames = new Set(
+        allotments.filter(a => a.role === 'OPERATOR').map(a => a.detail)
+      );
+
+      const isValidDoubleAllocation = 
+        shifts.size === 1 && 
+        roles.size === 1 && 
+        roles.has('OPERATOR') && 
+        operatorFrames.size <= 2;
+
+      if (!isValidDoubleAllocation) {
+        const worker = resolveWorker(workerId, undefined, workers);
+        duplicates.push({
+          date: report.date,
+          workerId,
+          workerName: worker.name,
+          tNo: worker.tNo,
+          allotments
+        });
+      }
     }
   });
 
@@ -560,4 +575,105 @@ export function generateUUID(): string {
   });
 }
 
+/**
+ * Calculates the exact sider/operator incentive for a specific machine entry and slot,
+ * strictly honoring the mill allocation rules:
+ * - 1 machine (2 sides or 1 side): NO INCENTIVE (0%)
+ * - Both sides of 1 machine + 1 side of an additional machine: 25% incentive on the additional machine
+ * - Both sides of 2 machines: 50% incentive total (25% on each machine)
+ */
+export function calculateSiderSlotIncentive(
+  entry: ProductionEntry,
+  slotIdx: number,
+  report: DailyReport,
+  rules: IncentiveRule[],
+  workers: Sider[]
+): number {
+  if (!entry || !report || !report.entries) return 0;
 
+  const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
+  if (!workerId) return 0;
+
+  const worker = resolveWorker(workerId, entry.siderName, workers);
+  const targetId = (worker.tNo || worker.id || workerId).trim().toUpperCase();
+  if (!targetId || targetId === 'UNASSIGNED' || targetId === '-' || targetId === '--') return 0;
+
+  const targetShift = entry.shift;
+
+  // Find all machine allocations for this worker in this shift
+  const workerMachines: {
+    frameNo: string;
+    entry: ProductionEntry;
+    sides: number;
+    match0: boolean;
+    match1: boolean;
+  }[] = [];
+
+  report.entries.forEach(e => {
+    if (e.shift !== targetShift) return;
+    const id0 = (e.siderIds?.[0] || e.siderId || '').trim().toUpperCase();
+    const id1 = (e.siderIds?.[1] || '').trim().toUpperCase();
+
+    const match0 = Boolean(
+      id0 && (
+        id0 === targetId ||
+        (worker.id && id0 === worker.id.toUpperCase()) ||
+        (worker.tNo && id0 === worker.tNo.toUpperCase()) ||
+        (worker.name && e.siderName && e.siderName.toLowerCase().trim() === worker.name.toLowerCase().trim())
+      )
+    );
+    const match1 = Boolean(
+      id1 && (
+        id1 === targetId ||
+        (worker.id && id1 === worker.id.toUpperCase()) ||
+        (worker.tNo && id1 === worker.tNo.toUpperCase())
+      )
+    );
+
+    if (match0 || match1) {
+      workerMachines.push({
+        frameNo: e.frameNo,
+        entry: e,
+        sides: (match0 && match1) ? 2 : 1,
+        match0,
+        match1
+      });
+    }
+  });
+
+  const totalSides = workerMachines.reduce((sum, m) => sum + m.sides, 0);
+  const distinctMachineCount = workerMachines.length;
+
+  // Rule 1: One machine (whether 1 or 2 sides) -> NO INCENTIVE (0%)
+  // Also if totalSides <= 2 -> NO INCENTIVE (0%)
+  if (distinctMachineCount <= 1 || totalSides <= 2) {
+    return 0;
+  }
+
+  // Base slab incentive for the current entry from Incentive Master rules
+  const baseIncentive = calculateIncentive(entry, rules, report.date);
+  if (baseIncentive <= 0) return 0;
+
+  // Rule 2: Both sides for 2 machines -> 50% incentive total (25% on each machine)
+  if (distinctMachineCount >= 2 && totalSides >= 4) {
+    const currentMachineAlloc = workerMachines.find(m => m.frameNo === entry.frameNo);
+    if (currentMachineAlloc && currentMachineAlloc.sides === 2) {
+      // When a worker covers both sides of this machine, each slot gets 12.5% (total 25% for the machine)
+      return Math.round((baseIncentive * 0.25) / 2);
+    }
+    return Math.round(baseIncentive * 0.25);
+  }
+
+  // Rule 3: Worked both sides for 1 machine, and 1 side on additional machine (totalSides === 3) -> 25% incentive
+  if (distinctMachineCount === 2 && totalSides === 3) {
+    const additionalMachine = workerMachines.find(m => m.sides === 1);
+    if (additionalMachine && entry.frameNo === additionalMachine.frameNo) {
+      // The additional machine side earns 25% incentive!
+      return Math.round(baseIncentive * 0.25);
+    }
+    // The primary machine (with 2 sides) has 0 incentive
+    return 0;
+  }
+
+  return 0;
+}

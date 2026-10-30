@@ -1876,10 +1876,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                     <span className="text-sm md:text-base font-black text-stone-950 font-mono tracking-tight">
                                       {totalSpindles.toLocaleString('en-IN')} SPD
                                     </span>
-                                    <span className="text-stone-300 font-bold">•</span>
-                                    <span className="text-xs font-black text-black uppercase tracking-wider">
-                                      {item.badge}
-                                    </span>
+
                                   </div>
                                 </div>
 

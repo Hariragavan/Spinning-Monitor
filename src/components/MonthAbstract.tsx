@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift, FrozenMonthRecord } from '../types';
-import { cn, calculateIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
 import { Printer, TrendingUp, Sparkles, ChevronRight, Download, Lock, Unlock } from 'lucide-react';
 import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -107,27 +107,21 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
 
       // Calculate machine siders
       report.entries.forEach(entry => {
-        const assignedIds = new Set<string>();
-        if (entry.siderId) assignedIds.add(entry.siderId);
-        if (entry.siderIds) {
-          entry.siderIds.forEach(id => {
-            if (id) assignedIds.add(id);
-          });
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+          const id = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+          if (!id) continue;
+          const amount = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers);
+          const worker = resolveWorker(id, entry.siderName, workers);
+          const tNo = worker.tNo || worker.id;
+          if (!tNo) continue;
+
+          const existing = dailyIncentives.get(tNo) || { worker, amount: 0, gps: 0, entryCount: 0 };
+          existing.amount += amount;
+          existing.gps += entry.gpsActual;
+          existing.entryCount += 1;
+          dailyIncentives.set(tNo, existing);
         }
-
-        const amount = calculateIncentive(entry, rules, report.date);
-        
-        assignedIds.forEach(id => {
-           const worker = resolveWorker(id, entry.siderName, workers);
-           const tNo = worker.tNo || worker.id;
-           if (!tNo) return;
-
-           const existing = dailyIncentives.get(tNo) || { worker, amount: 0, gps: 0, entryCount: 0 };
-           existing.amount += amount;
-           existing.gps += entry.gpsActual;
-           existing.entryCount += 1;
-           dailyIncentives.set(tNo, existing);
-        });
       });
 
       // Calculate gaiters

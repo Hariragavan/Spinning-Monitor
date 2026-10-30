@@ -36,7 +36,7 @@ import { MonthlyCountGpss } from '@/components/MonthlyCountGpss';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching } from '@/lib/utils';
@@ -890,15 +890,14 @@ export default function Home() {
 
     if (report.entries && Array.isArray(report.entries)) {
       report.entries.forEach(entry => {
-        const payout = calculateIncentive(entry, incentiveRules, report.date);
-        if (payout <= 0) return;
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+          const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+          if (!wId) continue;
+          const payout = calculateSiderSlotIncentive(entry, sIdx, report, incentiveRules, workers);
+          if (payout <= 0) continue;
 
-        const assignedIds = new Set<string>();
-        if (entry.siderId) assignedIds.add(entry.siderId);
-        if (entry.siderIds) entry.siderIds.forEach(id => { if (id) assignedIds.add(id); });
-
-        assignedIds.forEach(id => {
-          const workerObj = resolveWorker(id, entry.siderName, workers);
+          const workerObj = resolveWorker(wId, entry.siderName, workers);
           const key = workerObj.tNo || workerObj.id;
           if (!workerIncentives[key]) {
             workerIncentives[key] = { name: workerObj.name, tNo: workerObj.tNo, amount: 0, roles: [] };
@@ -907,7 +906,7 @@ export default function Home() {
           if (!workerIncentives[key].roles.includes('Operator')) {
             workerIncentives[key].roles.push('Operator');
           }
-        });
+        }
       });
     }
 
@@ -954,20 +953,27 @@ export default function Home() {
     return encodeURIComponent(text);
   };
 
-  // Assignments Handlers
+  // Assignments Handlers: supports same operator for both sides of same machine AND up to 2 machines in the same shift
   const assignWorkerToMachine = (entryIndex: number, siderId: string, slotIndex: number = 0) => {
     if (siderId) {
       let conflictMsg: string | null = null;
       const worker = workers.find(w => w.id === siderId);
       const name = worker ? worker.name : siderId;
+      const targetEntry = dailyReport.entries[entryIndex];
+      const targetShift = targetEntry?.shift || 'I';
+      const targetFrame = targetEntry?.frameNo || '';
 
+      // 1. Cross-shift check: worker can only work in one shift per day
       dailyReport.entries.forEach((entry, idx) => {
-        if (idx === entryIndex) return;
-        if (entry.siderId === siderId || (entry.siderIds && entry.siderIds.includes(siderId))) {
-          conflictMsg = `${name} is already assigned to Machine ${entry.frameNo} in Shift ${entry.shift} today.`;
+        if (entry.shift !== targetShift) {
+          const isAssigned = entry.siderId === siderId || (entry.siderIds && entry.siderIds.includes(siderId));
+          if (isAssigned) {
+            conflictMsg = `${name} is already assigned to Machine ${entry.frameNo} in Shift ${entry.shift}. A worker can only work in one shift per day.`;
+          }
         }
       });
 
+      // 2. Cross-role checks: Gaiter or AI Linkconer
       if (dailyReport.gaiters) {
         (['I', 'II', 'III'] as Shift[]).forEach(shift => {
           const gaiterIds = dailyReport.gaiters?.[shift] || [];
@@ -986,8 +992,25 @@ export default function Home() {
         });
       }
 
+      // 3. Machine allocation limit in the same shift: up to 2 distinct machines (both sides or single side)
+      if (!conflictMsg) {
+        const assignedMachinesInShift = new Set<string>();
+        dailyReport.entries.forEach((entry, idx) => {
+          if (entry.shift === targetShift && idx !== entryIndex) {
+            const hasWorker = entry.siderId === siderId || (entry.siderIds && entry.siderIds.includes(siderId));
+            if (hasWorker) {
+              assignedMachinesInShift.add(entry.frameNo);
+            }
+          }
+        });
+
+        if (!assignedMachinesInShift.has(targetFrame) && assignedMachinesInShift.size >= 2) {
+          conflictMsg = `${name} is already allocated to 2 machines (${Array.from(assignedMachinesInShift).join(', ')}) in Shift ${targetShift}. An operator can be allocated to at most 2 machines.`;
+        }
+      }
+
       if (conflictMsg) {
-        alert(`Duplicate Allocation Blocked:\n\n${conflictMsg}\n\nA worker can only be allotted once per day and cannot work in another shift/machine.`);
+        alert(`Allocation Blocked:\n\n${conflictMsg}`);
         return;
       }
     }
