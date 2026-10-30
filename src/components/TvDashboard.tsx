@@ -1228,25 +1228,21 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
         {/* Right: Auto Align Button, Quick Refresh Button, Countdown Timer, Clock */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Quick Refresh Button (Auto 5m) */}
+          {/* Quick Refresh Button (Symbol Only) */}
           {onRefresh && (
             <button
               type="button"
               onClick={onRefresh}
               disabled={isRefreshing}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs border",
+                "p-2 rounded-xl transition-all cursor-pointer shadow-2xs border flex items-center justify-center",
                 isRefreshing
                   ? "bg-emerald-50 text-emerald-800 border-emerald-300"
                   : "bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200"
               )}
               title="Auto-refreshes every 5 min. Click to refresh latest data immediately"
             >
-              <RefreshCw size={13} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
-              <span className="hidden sm:inline">Refresh</span>
-              <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 text-[9px] font-mono font-black">
-                5m
-              </span>
+              <RefreshCw size={15} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
             </button>
           )}
 

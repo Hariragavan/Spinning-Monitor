@@ -3534,19 +3534,15 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Auto Refresh 5m Button */}
+                {/* Auto Refresh Button (Symbol Only) */}
                 <button
                   type="button"
                   onClick={() => refreshAllData()}
                   disabled={isRefreshing}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl font-black uppercase tracking-wider text-[10px] transition-all border border-stone-200 cursor-pointer shadow-2xs"
+                  className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl transition-all border border-stone-200 cursor-pointer shadow-2xs flex items-center justify-center"
                   title="Auto-refreshes every 5 minutes. Click to refresh latest data immediately"
                 >
-                  <RefreshCw size={12} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
-                  <span className="hidden sm:inline">Refresh</span>
-                  <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 text-[9px] font-mono font-black">
-                    5m
-                  </span>
+                  <RefreshCw size={15} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
                 </button>
 
                 <div className="h-4 w-px bg-stone-200 mx-0.5 hidden sm:block" />
