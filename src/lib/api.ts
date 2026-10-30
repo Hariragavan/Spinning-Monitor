@@ -218,6 +218,15 @@ export const apiClient = {
     return res.ok;
   },
 
+  async saveCountConversions(counts: CountConversion[], shed?: string): Promise<boolean> {
+    const res = await fetch('/api/counts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'batch', counts, shed })
+    });
+    return res.ok;
+  },
+
   async deleteCountConversion(count: string, shed?: string): Promise<boolean> {
     const query = shed && shed !== 'All' && shed !== 'All Sheds'
       ? `?count=${encodeURIComponent(count)}&shed=${encodeURIComponent(shed)}`

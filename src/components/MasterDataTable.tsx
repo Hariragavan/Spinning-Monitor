@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../types';
+import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift, CountConversion } from '../types';
 import {
   Table, Search, Download, Filter, Calendar, Activity,
   Coins, ArrowUpDown, ChevronDown, CheckCircle, AlertTriangle,
   Layers, Users, Gauge, FileText, Check, Sparkles, Printer, FileSpreadsheet
 } from 'lucide-react';
-import { cn, calculateIncentive, resolveWorker } from '../lib/utils';
+import { cn, calculateIncentive, resolveWorker, isCountNameMatching } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
 
@@ -13,6 +13,7 @@ interface MasterDataTableProps {
   report: DailyReport;
   workers: Sider[];
   rules: IncentiveRule[];
+  countConversions?: CountConversion[];
   isTvMode?: boolean;
   onSelectDate?: (date: string) => void;
   availableDates?: string[];
@@ -24,6 +25,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
   report,
   workers,
   rules,
+  countConversions = [],
   isTvMode = false,
   onSelectDate,
   availableDates = []
@@ -67,7 +69,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
       let sumGps = 0;
       let sumEff = 0;
       let shiftCount = 0;
-      let countName = summary?.count || (frameEntries[0]?.count || '40s');
+      let countName = summary?.count || (frameEntries[0]?.count || '-');
       let stdGps = summary?.stdGps || (frameEntries[0]?.gpsTarget || 0);
 
       (['I', 'II', 'III'] as Shift[]).forEach(shift => {
@@ -198,7 +200,9 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
       if (!item.frames.includes(e.frameNo)) item.frames.push(e.frameNo);
       item.actualSum += e.productionActual || 0;
       item.gpsSum += e.gpsActual || 0;
-      item.gps40sSum += e.gps40sCon || 0;
+      const factor = countConversions.find(c => isCountNameMatching(c.count, key))?.multiplicationFactor ?? 1.0;
+      const calcGps40s = (e.gps40sCon && e.gps40sCon > 0) ? e.gps40sCon : ((e.gpsActual || 0) > 0 ? Math.round(e.gpsActual * factor) : 0);
+      item.gps40sSum += calcGps40s;
       item.entryCount++;
     });
 
@@ -211,7 +215,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
       totalProduction: Math.round(item.actualSum),
       sharePercent: overallTotals.actual > 0 ? ((item.actualSum / overallTotals.actual) * 100).toFixed(1) : '0'
     }));
-  }, [report, overallTotals]);
+  }, [report, overallTotals, countConversions]);
 
   // Worker allocation & incentive summary
   const workerAllocationData = useMemo(() => {
@@ -793,7 +797,11 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
                       {Math.round(entry.gpsActual || 0)}
                     </td>
                     <td className="py-2.5 px-2 text-center font-mono tabular-nums font-bold text-stone-600">
-                      {Math.round(entry.gps40sCon || 0)}
+                      {(() => {
+                        const factor = countConversions.find(c => isCountNameMatching(c.count, entry.count))?.multiplicationFactor ?? 1.0;
+                        const val = (entry.gps40sCon && entry.gps40sCon > 0) ? entry.gps40sCon : ((entry.gpsActual || 0) > 0 ? Math.round(entry.gpsActual * factor) : 0);
+                        return val > 0 ? val : '-';
+                      })()}
                     </td>
                     <td className="py-2.5 px-2 text-center font-bold">
                       <span className={cn(

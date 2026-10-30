@@ -11,7 +11,7 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed } from '../types';
-import { cn, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate } from '../lib/utils';
 import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
 
 // Import the core application components
@@ -36,6 +36,7 @@ import { FitterMonthlyPerformance } from './FitterMonthlyPerformance';
 import { CountSummary } from './CountSummary';
 import { CountWiseFrames } from './CountWiseFrames';
 import { MonthlyCountGpss } from './MonthlyCountGpss';
+import { CalendarDatePicker } from './CalendarPickers';
 
 export interface TvSubPageDef {
   id: string; // matches component routing key
@@ -408,21 +409,17 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     if (!stage || !content) return;
 
     // Available viewport space inside stage (with safety buffer)
-    const availWidth = stage.clientWidth - 24;
-    const availHeight = stage.clientHeight - 24;
-
-    // True unscaled height & width
+    const availHeight = stage.clientHeight - 16;
+    const rect = content.getBoundingClientRect();
     const curScale = alignScale > 0 ? alignScale : 1;
-    const unscaledH = curScale < 1 ? content.scrollHeight / curScale : content.scrollHeight;
-    const unscaledW = curScale < 1 ? content.scrollWidth / curScale : content.scrollWidth;
+    const unscaledH = curScale < 1 ? rect.height / curScale : rect.height;
 
-    if (availHeight > 50 && unscaledH > 50 && availWidth > 50 && unscaledW > 50) {
-      const scaleH = availHeight / unscaledH;
-      const scaleW = availWidth / unscaledW;
-      const fitScale = Math.min(scaleH, scaleW);
+    if (availHeight > 50 && unscaledH > 50) {
+      const fitScale = availHeight / unscaledH;
 
       if (fitScale < 0.98) {
-        const boundedScale = Math.max(0.60, Math.min(1, Number(fitScale.toFixed(2))));
+        // Floor at 0.72 so text and numbers remain big and clear on TV displays
+        const boundedScale = Math.max(0.72, Math.min(1.0, Number(fitScale.toFixed(2))));
         setAlignScale(boundedScale);
       } else {
         setAlignScale(1);
@@ -471,7 +468,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
   // Safety Fallback: Use dailyReport, ensure 6 machines so frames are always populated cleanly
   const safeDailyReport = useMemo(() => {
-    const report = dailyReport || createDefaultReportForShed(selectedShed, getTodayUniversalDate());
+    const report = dailyReport || createDefaultReportForShed(selectedShed, getYesterdayUniversalDate());
     return ensureSixMachines(report, selectedShed);
   }, [dailyReport, selectedShed]);
 
@@ -560,15 +557,15 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const safeSubIndex = Math.min(subIndex, Math.max(0, currentMain.subPages.length - 1));
   const currentSub = currentMain.subPages[safeSubIndex] || currentMain.subPages[0];
 
-  // 5. Calculate Duration for Current Sub-Page
+  // 5. Calculate Duration for Current Sub-Page (Every count page / subpage runs for strictly the selected duration)
   const currentSubDuration = useMemo(() => {
     if (!currentSub) return 15;
     const configuredSecs = settings.tvPageIntervals?.[currentSub.id]
       ?? (currentSub.id.startsWith('count-frames') ? settings.tvPageIntervals?.['count-frames'] : undefined)
       ?? settings.tvSlideIntervals?.[currentSub.id];
     const baseSecs = configuredSecs !== undefined ? configuredSecs : currentSub.defaultSeconds;
-    return Math.max(5, baseSecs) * Math.max(1, subPagesCount);
-  }, [currentSub, settings.tvPageIntervals, settings.tvSlideIntervals, subPagesCount]);
+    return Math.max(3, baseSecs);
+  }, [currentSub, settings.tvPageIntervals, settings.tvSlideIntervals]);
 
   const [timeRemaining, setTimeRemaining] = useState(currentSubDuration);
 
@@ -1164,24 +1161,45 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
             )}
           </div>
 
-          {/* Static Report Date Indicator */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 text-sm font-black uppercase tracking-wider shadow-2xs">
-            <Calendar size={15} className="text-emerald-600" />
-            <span>{safeDailyReport.date}</span>
+          {/* Interactive Date Picker with Left & Right Arrows on Left Side */}
+          <div className="hidden sm:flex items-center gap-1 bg-white p-0.5 rounded-xl border border-stone-200 shadow-2xs">
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => onSelectDate && onSelectDate(shiftUniversalDate(safeDailyReport.date, -1))}
+                className="p-1 rounded-lg hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer"
+                title="Previous day"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectDate && onSelectDate(shiftUniversalDate(safeDailyReport.date, 1))}
+                className="p-1 rounded-lg hover:bg-stone-100 text-stone-600 transition-colors cursor-pointer"
+                title="Next day"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+            <CalendarDatePicker
+              value={safeDailyReport.date}
+              onChange={(newDate) => onSelectDate && onSelectDate(newDate)}
+              className="shrink-0 text-xs font-black"
+            />
           </div>
         </div>
 
-        {/* Center: PAGE Number (Without page name next to it) */}
-        <div className="flex items-center gap-3 px-3 truncate min-w-0">
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 shadow-2xs">
+        {/* Center: PAGE Number and Subpage Number Pills (show only numbers: "PAGE 1 OF 10  1  2") */}
+        <div className="flex items-center gap-2 sm:gap-3 px-2 truncate min-w-0">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 shadow-2xs shrink-0">
             <span className="text-xs md:text-sm font-black uppercase tracking-widest text-emerald-700">
               PAGE {currentMain.chapterNumber} OF {availableMainPages.length}
             </span>
           </div>
 
-          {/* Sub-page stepper pills if Chapter has multiple subpages */}
+          {/* Sub-page stepper pills if Chapter has multiple subpages: show clean number pills */}
           {currentMain.subPages.length > 1 && (
-            <div className="hidden md:flex items-center gap-1.5 ml-1">
+            <div className="flex items-center gap-1.5 ml-1">
               {currentMain.subPages.map((sp, idx) => (
                 <button
                   key={sp.id}
@@ -1190,15 +1208,14 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     setSubPagesCount(1);
                   }}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+                    "w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center justify-center font-mono border shadow-2xs",
                     idx === safeSubIndex
-                      ? "bg-emerald-600 text-white shadow-2xs"
-                      : "bg-stone-100 text-stone-600 hover:text-stone-900"
+                      ? "bg-emerald-600 text-white border-emerald-700 scale-105"
+                      : "bg-white text-black hover:bg-stone-100 border-stone-300 font-black"
                   )}
                   title={sp.title}
                 >
-                  <span className={cn("w-1.5 h-1.5 rounded-full", idx === safeSubIndex ? "bg-white" : "bg-stone-400")} />
-                  <span>Part {idx + 1}{sp.shortTitle && sp.shortTitle !== `Part ${idx + 1}` ? `: ${sp.shortTitle}` : ''}</span>
+                  {idx + 1}
                 </button>
               ))}
             </div>
@@ -1277,11 +1294,14 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
         <div 
           ref={contentWrapperRef}
-          className="w-full p-3 md:p-5 lg:p-6 transition-all duration-300 ease-out origin-top"
+          className="w-full px-2 sm:px-3 md:px-4 py-1.5 transition-all duration-300 ease-out origin-top"
           style={isAutoAlign && alignScale < 1 ? {
             zoom: alignScale,
+            width: `${Math.round(100 / alignScale)}%`,
             transformOrigin: 'top center'
-          } : undefined}
+          } : {
+            width: '100%'
+          }}
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -1641,7 +1661,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
                         {/* 2. Three Sheds Total (1st, 2nd, PC) */}
                         <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/90 flex flex-col justify-between shadow-2xs">
-                          <span className="text-[11px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                          <span className="text-[11px] font-black text-black uppercase tracking-wider block mb-1">
                             Three Sheds Total
                           </span>
                           <div className="flex items-baseline justify-between gap-2">
@@ -1650,7 +1670,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               <span className="text-sm font-bold text-stone-400 font-sans ml-1">Kg</span>
                             </span>
                             <div className="text-right">
-                              <span className="text-xs font-black text-stone-500 block tabular-nums">
+                              <span className="text-xs font-black text-black block tabular-nums">
                                 Target: {multiShedMetrics.threeShedsTarget.toLocaleString('en-IN')} Kg
                               </span>
                               <span className={cn(
@@ -1665,7 +1685,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
                         {/* 3. KTTM Total */}
                         <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/90 flex flex-col justify-between shadow-2xs">
-                          <span className="text-[11px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                          <span className="text-[11px] font-black text-black uppercase tracking-wider block mb-1">
                             KTTM Total
                           </span>
                           <div className="flex items-baseline justify-between gap-2">
@@ -1674,7 +1694,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               <span className="text-sm font-bold text-stone-400 font-sans ml-1">Kg</span>
                             </span>
                             <div className="text-right">
-                              <span className="text-xs font-black text-stone-500 block tabular-nums">
+                              <span className="text-xs font-black text-black block tabular-nums">
                                 Target: {multiShedMetrics.kttmTarget.toLocaleString('en-IN')} Kg
                               </span>
                               <span className={cn(
@@ -1689,7 +1709,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
                         {/* 4. Overall Efficiency */}
                         <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/90 flex flex-col justify-between shadow-2xs">
-                          <span className="text-[11px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                          <span className="text-[11px] font-black text-black uppercase tracking-wider block mb-1">
                             Overall Efficiency
                           </span>
                           <div className="flex items-baseline justify-between gap-2">
@@ -1700,7 +1720,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               {multiShedMetrics.overallEff}%
                             </span>
                             <div className="text-right">
-                              <span className="text-xs font-black text-stone-500 block tabular-nums">
+                              <span className="text-xs font-black text-black block tabular-nums">
                                 Target: 100%
                               </span>
                               <span className={cn(
@@ -1715,7 +1735,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
                         {/* 5. Average GPS */}
                         <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/90 flex flex-col justify-between shadow-2xs">
-                          <span className="text-[11px] font-black text-stone-500 uppercase tracking-wider block mb-1">
+                          <span className="text-[11px] font-black text-black uppercase tracking-wider block mb-1">
                             Average GPS
                           </span>
                           <div className="flex items-baseline justify-between gap-2">
@@ -1724,7 +1744,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               <span className="text-sm font-bold text-stone-400 font-sans ml-1">GPS</span>
                             </span>
                             <div className="text-right">
-                              <span className="text-xs font-black text-stone-500 block tabular-nums">
+                              <span className="text-xs font-black text-black block tabular-nums">
                                 40s Con: {multiShedMetrics.avg40sGps} GPS
                               </span>
                               <span className="text-[11px] font-black text-stone-400 block mt-0.5">
@@ -1793,7 +1813,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                       {totalSpindles.toLocaleString('en-IN')} SPD
                                     </span>
                                     <span className="text-stone-300 font-bold">•</span>
-                                    <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">
+                                    <span className="text-xs font-black text-black uppercase tracking-wider">
                                       {item.badge}
                                     </span>
                                   </div>
@@ -1816,7 +1836,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               {/* Hero Actual Production & Target Diff (BIG NUMBERS FOR TV) */}
                               <div className="bg-stone-50 p-4 md:p-5 rounded-2xl border border-stone-200/90 my-3">
                                 <div className="flex items-center justify-between mb-1.5">
-                                  <span className="text-xs md:text-sm font-black text-stone-500 uppercase tracking-wider block">
+                                  <span className="text-xs md:text-sm font-black text-black uppercase tracking-wider block">
                                     Actual Production
                                   </span>
                                   <span className={cn(
@@ -1830,7 +1850,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                   <span className="text-5xl md:text-6xl lg:text-7xl font-black font-mono text-emerald-700 tracking-tight leading-none">
                                     {s.actual.toLocaleString('en-IN')}
                                   </span>
-                                  <span className="text-xl md:text-2xl font-bold text-stone-400 font-sans">Kg</span>
+                                  <span className="text-xl md:text-2xl font-black text-stone-800 font-sans">Kg</span>
                                 </div>
                                 <div className="flex items-center justify-between text-xs md:text-sm font-bold text-stone-600 mt-3 pt-2.5 border-t border-stone-200/80">
                                   <span>Target: <strong className="text-stone-900 font-mono font-black text-sm md:text-base">{s.target.toLocaleString('en-IN')} Kg</strong></span>
@@ -1843,19 +1863,19 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               {/* Detailed Telemetry Data Grid (The Spinning Production Report Table Data) */}
                               <div className="space-y-2.5 bg-stone-50/90 p-4 rounded-2xl border border-stone-200/80 text-xs md:text-sm font-bold my-3">
                                 <div className="flex items-center justify-between border-b border-stone-200/80 pb-2">
-                                  <span className="text-stone-500 uppercase text-xs md:text-sm font-black tracking-wider">Standard GPS</span>
+                                  <span className="text-black uppercase text-xs md:text-sm font-black tracking-wider">Standard GPS</span>
                                   <span className="font-mono text-stone-900 font-black text-base md:text-lg lg:text-xl">{stdGps}</span>
                                 </div>
                                 <div className="flex items-center justify-between border-b border-stone-200/80 pb-2">
-                                  <span className="text-stone-500 uppercase text-xs md:text-sm font-black tracking-wider">Actual GPS</span>
+                                  <span className="text-black uppercase text-xs md:text-sm font-black tracking-wider">Actual GPS</span>
                                   <span className="font-mono text-stone-950 font-black text-base md:text-lg lg:text-xl">{s.avgGps > 0 ? s.avgGps : '-'}</span>
                                 </div>
                                 <div className="flex items-center justify-between border-b border-stone-200/80 pb-2">
-                                  <span className="text-stone-500 uppercase text-xs md:text-sm font-black tracking-wider">40s Converted GPS</span>
+                                  <span className="text-black uppercase text-xs md:text-sm font-black tracking-wider">40s Converted GPS</span>
                                   <span className="font-mono text-sky-700 font-black text-base md:text-lg lg:text-xl">{s.avg40sGps > 0 ? s.avg40sGps : '-'}</span>
                                 </div>
                                 <div className="flex items-center justify-between">
-                                  <span className="text-stone-500 uppercase text-xs md:text-sm font-black tracking-wider">40s Converted Output</span>
+                                  <span className="text-black uppercase text-xs md:text-sm font-black tracking-wider">40s Converted Output</span>
                                   <span className="font-mono text-stone-900 font-black text-base md:text-lg lg:text-xl">{prod40s > 0 ? `${prod40s.toLocaleString('en-IN')} Kg` : '-'}</span>
                                 </div>
                               </div>
@@ -1864,7 +1884,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                             {/* Card Footer: Plant Efficiency Progress Bar */}
                             <div className="mt-3.5 pt-3 border-t-2 border-stone-100">
                               <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs md:text-sm font-black uppercase text-stone-500 tracking-wider">Plant Efficiency</span>
+                                <span className="text-xs md:text-sm font-black uppercase text-black tracking-wider">Plant Efficiency</span>
                                 <span className={cn(
                                   "font-black text-3xl md:text-4xl lg:text-5xl font-mono",
                                   s.efficiency >= 95 ? "text-emerald-700" : s.efficiency > 0 ? "text-amber-700" : "text-stone-400"
@@ -1973,7 +1993,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-xs text-stone-400 font-bold uppercase tracking-wider block mt-0.5">
+                                  <span className="text-xs text-black font-bold uppercase tracking-wider block mt-0.5">
                                     {s.timing} • {s.framesCount > 0 ? `${s.framesCount} Frames Logged` : 'No frames'}
                                   </span>
                                 </div>
@@ -2000,10 +2020,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                 {/* Actual Production (HUGE) */}
                                 <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200/80">
                                   <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs font-black text-stone-500 uppercase tracking-wider">
+                                    <span className="text-xs font-black text-black uppercase tracking-wider">
                                       Actual Production
                                     </span>
-                                    <span className="text-xs font-bold text-stone-400 font-mono">
+                                    <span className="text-xs font-black text-black font-mono">
                                       Target: {s.targetKg.toLocaleString('en-IN')} Kg
                                     </span>
                                   </div>
@@ -2019,7 +2039,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                                 <div className="grid grid-cols-2 gap-2.5">
                                   {/* Shift Efficiency */}
                                   <div className="bg-stone-50 px-3.5 py-2.5 rounded-2xl border border-stone-200/80">
-                                    <span className="text-[10px] md:text-xs text-stone-500 font-black uppercase tracking-wider block">
+                                    <span className="text-[10px] md:text-xs text-black font-black uppercase tracking-wider block">
                                       Efficiency
                                     </span>
                                     <span className={cn(
@@ -2080,7 +2100,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                             <div className="pt-3 border-t border-stone-100 space-y-2 mt-auto">
                               {/* Top Sider of Shift */}
                               <div className="flex items-center justify-between text-xs bg-stone-50 px-3 py-2 rounded-xl border border-stone-200/60">
-                                <span className="font-bold text-stone-500 uppercase tracking-wider">Top Sider:</span>
+                                <span className="font-black text-black uppercase tracking-wider">Top Sider:</span>
                                 {s.topSider ? (
                                   <span className="font-black text-stone-900 truncate max-w-[160px]">
                                     {s.topSider.name} <span className="text-emerald-700 font-mono">({s.topSider.actualKg} Kg)</span>
@@ -2093,13 +2113,13 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                               {/* Gaiters & Fitters */}
                               <div className="flex items-center justify-between text-[11px] text-stone-600 px-1">
                                 <div>
-                                  <span className="font-bold text-stone-400 uppercase tracking-wider">Gaiter: </span>
+                                  <span className="font-black text-black uppercase tracking-wider">Gaiter: </span>
                                   <span className="font-semibold text-stone-800">
                                     {s.gaiters.length > 0 ? s.gaiters.join(', ') : 'None'}
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="font-bold text-stone-400 uppercase tracking-wider">Fitter: </span>
+                                  <span className="font-black text-black uppercase tracking-wider">Fitter: </span>
                                   <span className="font-semibold text-stone-800">
                                     {s.fitters.length > 0 ? s.fitters.join(', ') : 'None'}
                                   </span>
@@ -2116,7 +2136,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-6">
                           <div>
-                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                            <span className="text-[10px] md:text-xs font-black uppercase text-black tracking-wider block">
                               Day Total Production
                             </span>
                             <span className="text-2xl md:text-3xl font-black font-mono text-emerald-700">
@@ -2125,7 +2145,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           </div>
                           <div className="h-8 w-px bg-stone-200" />
                           <div>
-                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                            <span className="text-[10px] md:text-xs font-black uppercase text-black tracking-wider block">
                               Day Target
                             </span>
                             <span className="text-xl md:text-2xl font-bold font-mono text-stone-800">
@@ -2134,7 +2154,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           </div>
                           <div className="h-8 w-px bg-stone-200 hidden sm:block" />
                           <div className="hidden sm:block">
-                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                            <span className="text-[10px] md:text-xs font-black uppercase text-black tracking-wider block">
                               Day Efficiency
                             </span>
                             <span className={cn(
@@ -2146,7 +2166,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                           </div>
                           <div className="h-8 w-px bg-stone-200 hidden md:block" />
                           <div className="hidden md:block">
-                            <span className="text-[10px] md:text-xs font-black uppercase text-stone-400 tracking-wider block">
+                            <span className="text-[10px] md:text-xs font-black uppercase text-black tracking-wider block">
                               Day 40s GPS
                             </span>
                             <span className="text-xl md:text-2xl font-black font-mono text-sky-700">

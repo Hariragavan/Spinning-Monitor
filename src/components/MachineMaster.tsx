@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  RotateCcw, Plus, Edit2, Trash2, Save, Check, AlertCircle 
+  RotateCcw, Plus, Edit2, Trash2, Save, Check, AlertCircle,
+  Layers, Activity
 } from 'lucide-react';
-import { MachineMasterItem, Sider, CountConversion, Shed } from '../types';
-import { cn } from '../lib/utils';
+import { MachineMasterItem, Sider, CountConversion, Shed, DailyReport } from '../types';
+import { cn, getYesterdayUniversalDate } from '../lib/utils';
 
 export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
   'Shed 1': [],
@@ -31,6 +34,11 @@ interface MachineMasterProps {
   workers?: Sider[];
   countConversions?: CountConversion[];
   currentShed?: Shed | string;
+  report?: DailyReport;
+  allReports?: DailyReport[];
+  selectedDate?: string;
+  onSelectDate?: (date: string) => void;
+  availableDates?: string[];
 }
 
 export const MachineMaster: React.FC<MachineMasterProps> = ({
@@ -40,9 +48,14 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   onResetStandardMachines,
   workers = [],
   countConversions = [],
-  currentShed = 'Shed 1'
+  currentShed = 'Shed 1',
+  report,
+  allReports = [],
+  selectedDate
 }) => {
   const [selectedShedTab, setSelectedShedTab] = useState<string>(currentShed || 'All Sheds');
+  const activeDate = selectedDate || report?.date || getYesterdayUniversalDate();
+  const [viewMode, setViewMode] = useState<'date' | 'all'>('date');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<{
     rfNo: string;
@@ -63,6 +76,58 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       setSelectedShedTab(currentShed);
     }
   }, [currentShed]);
+
+  // Find machine telemetry and running counts detected on activeDate
+  const { dateMachineMap, activeDateHasData } = useMemo(() => {
+    const map = new Map<string, { count: string; actualGps: number; stdGps: number; prodKg: number; shed: string; rfNo: string }>();
+    const pool: DailyReport[] = [];
+    if (report && report.date === activeDate) pool.push(report);
+    (allReports || []).forEach(r => {
+      if (r.date === activeDate && !pool.some(p => p.shed === r.shed && p.date === r.date)) {
+        pool.push(r);
+      }
+    });
+
+    const relevant = pool.filter(r => selectedShedTab === 'All Sheds' || (r.shed || 'Shed 1') === selectedShedTab);
+    let foundData = false;
+
+    relevant.forEach(rep => {
+      const repShed = rep.shed || 'Shed 1';
+      (rep.entries || []).forEach(e => {
+        const rf = (e.frameNo || '').trim().toUpperCase();
+        if (!rf) return;
+        foundData = true;
+        const key = `${rf}__${repShed.toLowerCase()}`;
+        const existing = map.get(key);
+        map.set(key, {
+          rfNo: e.frameNo || rf,
+          count: (e.count || '').trim() || existing?.count || '',
+          actualGps: e.gpsActual || existing?.actualGps || 0,
+          stdGps: e.gpsTarget || existing?.stdGps || 0,
+          prodKg: (existing?.prodKg || 0) + (e.productionActual || 0),
+          shed: repShed
+        });
+      });
+
+      (rep.summaries || []).forEach(s => {
+        const rf = (s.frameNo || '').trim().toUpperCase();
+        if (!rf) return;
+        foundData = true;
+        const key = `${rf}__${repShed.toLowerCase()}`;
+        const existing = map.get(key);
+        map.set(key, {
+          rfNo: s.frameNo || rf,
+          count: (s.count || '').trim() || existing?.count || '',
+          actualGps: s.avgGps || existing?.actualGps || 0,
+          stdGps: s.stdGps || existing?.stdGps || 0,
+          prodKg: s.actualProd || existing?.prodKg || 0,
+          shed: repShed
+        });
+      });
+    });
+
+    return { dateMachineMap: map, activeDateHasData: foundData };
+  }, [allReports, report, activeDate, selectedShedTab]);
 
   // Get available counts specifically for the chosen shed (no dummy names)
   const getAvailableCountsForShed = (targetShed: string): string[] => {
@@ -96,21 +161,56 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     ...(formData.count ? [formData.count] : [])
   ].filter(Boolean)));
 
-  // Filter machines based on selected shed tab
-  const filteredMachines = machines.filter(m => {
-    if (selectedShedTab === 'All Sheds') return true;
-    return (m.shed || 'Shed 1') === selectedShedTab;
-  });
+  // Master registered machines filtered by shed
+  const masterMachines = useMemo(() => {
+    return machines.filter(m => {
+      if (selectedShedTab === 'All Sheds') return true;
+      return (m.shed || 'Shed 1') === selectedShedTab;
+    });
+  }, [machines, selectedShedTab]);
+
+  // Date-specific machines: If no data on date, returns empty!
+  const dateMachines = useMemo(() => {
+    if (!activeDateHasData) return [];
+
+    const items: MachineMasterItem[] = [];
+    dateMachineMap.forEach((data, key) => {
+      const [rfUpper, shedLower] = key.split('__');
+      const existingRegistered = machines.find(m => 
+        m.rfNo.trim().toUpperCase() === rfUpper && (m.shed || 'Shed 1').toLowerCase() === shedLower
+      );
+
+      items.push({
+        id: existingRegistered?.id || `m-${rfUpper.toLowerCase()}-${(data.shed || 'shed-1').toLowerCase().replace(/\s+/g, '-')}`,
+        rfNo: data.rfNo || rfUpper,
+        description: existingRegistered?.description || `RING FRAME ${data.rfNo || rfUpper} (${data.shed})`,
+        shed: data.shed,
+        count: data.count || existingRegistered?.count || '40s',
+        actualGps: data.actualGps,
+        stdGps: data.stdGps,
+        productionKg: data.prodKg,
+        assignedSider: existingRegistered?.assignedSider || '-',
+        assignedGaiter: existingRegistered?.assignedGaiter || '-'
+      });
+    });
+
+    return items.sort((a, b) => a.rfNo.localeCompare(b.rfNo, undefined, { numeric: true }));
+  }, [activeDateHasData, dateMachineMap, machines]);
+
+  // Effective list shown in table based on viewMode
+  const displayMachines = viewMode === 'date' ? dateMachines : masterMachines;
 
   const handleStartEdit = (machine: MachineMasterItem) => {
     setEditingId(machine.id);
     const mShed = machine.shed || currentShed || 'Shed 1';
     const shedCounts = getAvailableCountsForShed(mShed);
+    const key = `${machine.rfNo.trim().toUpperCase()}__${mShed.toLowerCase()}`;
+    const dateData = dateMachineMap.get(key);
     setFormData({
       rfNo: machine.rfNo,
       description: machine.description || '',
       shed: mShed,
-      count: machine.count || shedCounts[0] || '40s'
+      count: dateData?.count || machine.count || shedCounts[0] || '40s'
     });
     setError(null);
   };
@@ -140,7 +240,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
     // Check duplicate RF No across same or other sheds
     const duplicate = machines.find(m => m.id !== editingId && m.rfNo.toUpperCase() === cleanRfNo);
-    if (duplicate) {
+    if (duplicate && duplicate.id !== editingId) {
       setError(`Machine "${cleanRfNo}" already exists in ${duplicate.shed || 'registry'}. Each machine must be unique.`);
       return;
     }
@@ -161,9 +261,11 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
     onSaveMachine(item);
     handleCancelEdit();
-  };  return (
+  };
+
+  return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* HEADER SECTION */}
+      {/* HEADER SECTION (Without Date Picker) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
         <div>
           <h1 className="text-2xl font-black text-stone-900 uppercase tracking-tight">
@@ -174,7 +276,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {/* SHED TABS */}
           <div className="inline-flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
             {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => (
@@ -184,7 +286,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                 onClick={() => setSelectedShedTab(s)}
                 className={cn(
                   "px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer",
-                  selectedShedTab === s ? "bg-white text-emerald-800 shadow-xs" : "text-stone-500 hover:text-stone-800"
+                  selectedShedTab === s ? "bg-white text-emerald-800 shadow-xs font-black" : "text-stone-500 hover:text-stone-800"
                 )}
               >
                 {s}
@@ -206,7 +308,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       {/* TWO COLUMN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* LEFT COLUMN: MACHINE ADD/EDIT FORM */}
-        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
+        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs sticky top-28">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-sm font-black text-emerald-700 uppercase tracking-wider flex items-center gap-2">
               {editingId ? (
@@ -225,7 +327,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               <button
                 type="button"
                 onClick={handleCancelEdit}
-                className="text-xs font-bold text-stone-400 hover:text-stone-600 cursor-pointer"
+                className="text-xs font-bold text-stone-500 hover:text-stone-800 cursor-pointer"
               >
                 Cancel
               </button>
@@ -233,20 +335,20 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-bold flex items-center gap-2">
-              <AlertCircle size={15} />
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl flex items-center gap-2">
+              <AlertCircle size={15} className="shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* SHED / UNIT SELECTOR */}
+            {/* SHED */}
             <div>
               <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                SHED / UNIT *
+                ASSIGN SHED *
               </label>
               <select
-                value={formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1')}
+                value={formData.shed}
                 onChange={(e) => {
                   const newShed = e.target.value;
                   const newShedCounts = getAvailableCountsForShed(newShed);
@@ -256,7 +358,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                     count: newShedCounts.includes(prev.count) ? prev.count : (newShedCounts[0] || '40s')
                   }));
                 }}
-                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer"
+                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
               >
                 {['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(sh => (
                   <option key={sh} value={sh}>{sh}</option>
@@ -320,7 +422,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               <div className="space-y-1">
                 <p className="font-bold text-emerald-950">Automated Production Statement Telemetry</p>
                 <p className="text-[11px] text-emerald-800 leading-relaxed font-medium">
-                  Actual GPS, Target GPS, and Production (kg) are automatically ingested from your uploaded Excel production statements for each machine across all sheds (Shed 1, Shed 2, Shed 3, and KTTM).
+                  Actual GPS, Target GPS, and Production (kg) are automatically ingested from your uploaded Excel production statements for each machine across all sheds.
                 </p>
               </div>
             </div>
@@ -340,87 +442,143 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
         {/* RIGHT COLUMN: ACTIVE RING FRAME MACHINES LIST */}
         <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
-          <div className="flex items-center justify-between pb-4 border-b border-stone-100 mb-3">
-            <h2 className="text-xs font-black uppercase tracking-wider text-stone-800">
-              ACTIVE RING FRAME (RF) MACHINES {selectedShedTab !== 'All Sheds' ? `— ${selectedShedTab}` : ''}
-            </h2>
-            <span className="text-xs font-black text-stone-500 font-mono">
-              {filteredMachines.length} TOTAL
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-stone-100 mb-3 gap-2">
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-wider text-stone-800">
+                MACHINES {viewMode === 'date' ? `(${activeDate})` : '(ALL REGISTERED)'} {selectedShedTab !== 'All Sheds' ? `— ${selectedShedTab}` : ''}
+              </h2>
+              <p className="text-[11px] text-stone-500 font-medium mt-0.5">
+                {viewMode === 'date'
+                  ? `Showing detected machines on ${activeDate}. Empty if no statement uploaded.`
+                  : `Showing all master registered machines across ${selectedShedTab}.`}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* View Toggle */}
+              <div className="inline-flex items-center bg-stone-200/80 p-0.5 rounded-lg border border-stone-300">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('date')}
+                  className={cn(
+                    "px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all cursor-pointer",
+                    viewMode === 'date' ? "bg-white text-stone-900 shadow-2xs" : "text-stone-600 hover:text-stone-900"
+                  )}
+                >
+                  On Date ({dateMachines.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('all')}
+                  className={cn(
+                    "px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md transition-all cursor-pointer",
+                    viewMode === 'all' ? "bg-white text-stone-900 shadow-2xs" : "text-stone-600 hover:text-stone-900"
+                  )}
+                >
+                  All Master ({masterMachines.length})
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="divide-y divide-stone-100">
-            {filteredMachines.map((m, idx) => (
-              <div 
-                key={m.id || m.rfNo}
-                className={cn(
-                  "py-3.5 flex items-center justify-between gap-3 transition-colors rounded-xl px-2 -mx-2 hover:bg-stone-50/70",
-                  editingId === m.id && "bg-emerald-50/50 border border-emerald-200"
-                )}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xs font-mono font-bold text-stone-400 w-5 shrink-0 text-right">
-                    {idx + 1}.
-                  </span>
-                  
-                  {/* GREEN PILL BADGE */}
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black font-mono shrink-0">
-                    {m.rfNo}
-                  </span>
+            {displayMachines.length === 0 ? (
+              <div className="py-16 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-stone-100 border border-stone-200 text-stone-400 flex items-center justify-center mx-auto mb-3">
+                  <Layers size={22} className="text-stone-400" />
+                </div>
+                <p className="text-xs font-black uppercase tracking-wider text-stone-500">
+                  {viewMode === 'date' 
+                    ? `No machine data for ${activeDate} ${selectedShedTab !== 'All Sheds' ? `(${selectedShedTab})` : ''}`
+                    : `No registered machines for ${selectedShedTab}`}
+                </p>
+                <p className="text-[11px] text-stone-400 mt-1">
+                  {viewMode === 'date'
+                    ? `Upload a production statement for ${activeDate} to view active machines.`
+                    : `Click "Reset ${selectedShedTab} Machines" above or add a machine on the left.`}
+                </p>
+              </div>
+            ) : (
+              displayMachines.map((m, idx) => {
+                const mShed = m.shed || 'Shed 1';
+                const key = `${m.rfNo.trim().toUpperCase()}__${mShed.toLowerCase()}`;
+                const dateData = dateMachineMap.get(key);
+                const runningCount = dateData?.count || m.count;
 
-                  {/* SHED BADGE */}
-                  <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold shrink-0">
-                    {m.shed || 'Shed 1'}
-                  </span>
-
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-black text-stone-900 tracking-tight">
-                        RF No: {m.rfNo}
+                return (
+                  <div 
+                    key={m.id || m.rfNo}
+                    className={cn(
+                      "py-3.5 flex items-center justify-between gap-3 transition-colors rounded-xl px-2 -mx-2 hover:bg-stone-50/70",
+                      editingId === m.id && "bg-emerald-50/50 border border-emerald-200"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-xs font-mono font-bold text-stone-400 w-5 shrink-0 text-right">
+                        {idx + 1}.
                       </span>
+                      
+                      {/* GREEN PILL BADGE */}
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black font-mono shrink-0">
+                        {m.rfNo}
+                      </span>
+
+                      {/* SHED BADGE */}
+                      <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold shrink-0">
+                        {m.shed || 'Shed 1'}
+                      </span>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black text-stone-900 tracking-tight">
+                            RF No: {m.rfNo}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-stone-500 font-medium truncate mt-0.5 flex flex-wrap items-center gap-2">
+                          <span>Running Count:</span>
+                          <span className="font-bold text-emerald-800 bg-emerald-50/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                            {runningCount}
+                          </span>
+                          {dateData && (
+                            <span className="text-[10px] font-mono font-bold text-stone-400">
+                              (GPS: {dateData.actualGps} | {dateData.prodKg} kg)
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-stone-500 font-medium truncate mt-0.5">
-                      {m.description || `RING FRAME ${m.rfNo}`} · Running Count: <span className="font-bold text-emerald-700">{m.count}</span>
-                    </p>
+
+                    {/* ROW ACTION BUTTONS */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(m)}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 rounded-lg transition-colors cursor-pointer"
+                        title="Edit Machine"
+                      >
+                        <Edit2 size={13} />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Delete machine ${m.rfNo}?`)) {
+                            onDeleteMachine(m.id);
+                          }
+                        }}
+                        className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Delete Machine"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
-                </div>
-
-                {/* ROW ACTION BUTTONS */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleStartEdit(m)}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 rounded-lg transition-colors cursor-pointer"
-                    title="Edit Machine"
-                  >
-                    <Edit2 size={13} />
-                    <span>Edit</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(`Delete machine ${m.rfNo}?`)) {
-                        onDeleteMachine(m.id);
-                      }
-                    }}
-                    className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                    title="Delete Machine"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {filteredMachines.length === 0 && (
-              <div className="py-12 text-center text-stone-400 font-bold text-xs uppercase tracking-wider">
-                No active machines found for {selectedShedTab}. Click &quot;Reset {selectedShedTab} Machines&quot; above to load presets.
-              </div>
+                );
+              })
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -40,6 +40,37 @@ export function parseUniversalDateParts(dateStr: string): { day: number; month: 
   return null;
 }
 
+export function getYesterdayUniversalDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+export function shiftUniversalDate(dateStr: string, deltaDays: number): string {
+  if (!dateStr) return getYesterdayUniversalDate();
+  const parts = parseUniversalDateParts(dateStr);
+  const d = parts ? new Date(parts.year, parts.month - 1, parts.day) : new Date();
+  d.setDate(d.getDate() + deltaDays);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+export function normalizeCountName(c: string): string {
+  return (c || '').trim().toLowerCase().replace(/[-/\s_]/g, '');
+}
+
+export function isCountNameMatching(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const na = normalizeCountName(a);
+  const nb = normalizeCountName(b);
+  return na === nb || na.includes(nb) || nb.includes(na);
+}
+
 export function parseUniversalDate(dateStr: string): Date {
   const parts = parseUniversalDateParts(dateStr);
   if (parts) {

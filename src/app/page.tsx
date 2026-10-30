@@ -38,7 +38,8 @@ import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettin
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
 import { cn, mergeDuplicateWorkers, calculateIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
-import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, parseExcelReport } from '@/lib/parser';
+import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
+import { isCountNameMatching } from '@/lib/utils';
 import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
 
@@ -48,7 +49,7 @@ import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Coins, Trophy, BarChart3,
   Monitor, Zap, Star, AlertTriangle, X, CloudUpload, Loader2, Grid3X3,
   FileText, Check, MessageSquare, Play, Wrench, RotateCcw, History, Menu,
-  ArrowLeft, Table, Search, ChevronDown, ChevronUp
+  ArrowLeft, Table, Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
@@ -329,15 +330,15 @@ export default function Home() {
     }
 
     // 2. Check if a report for dailyReport.date exists in selected shed
-    const targetDate = dailyReport?.date || getTodayUniversalDate();
+    const targetDate = dailyReport?.date || getYesterdayUniversalDate();
     const sameDateMatch = currentShedHistory.find(r => r.date === targetDate);
     if (sameDateMatch) return sameDateMatch;
 
-    // 3. If target date is today, check if current shed history has a report for today
-    const todayStr = getTodayUniversalDate();
-    if (targetDate === todayStr) {
-      const todayMatch = currentShedHistory.find(r => r.date === todayStr);
-      if (todayMatch) return todayMatch;
+    // 3. If target date is yesterday, check if current shed history has a report for yesterday
+    const yesterdayStr = getYesterdayUniversalDate();
+    if (targetDate === yesterdayStr) {
+      const yesterdayMatch = currentShedHistory.find(r => r.date === yesterdayStr);
+      if (yesterdayMatch) return yesterdayMatch;
     }
 
     // 4. Fresh report for selected shed and targetDate
@@ -350,6 +351,7 @@ export default function Home() {
     currentShedHistory.forEach(r => {
       if (r.date) dateSet.add(r.date);
     });
+    dateSet.add(getYesterdayUniversalDate());
     dateSet.add(getTodayUniversalDate());
 
     return Array.from(dateSet).filter(Boolean).sort((a, b) => {
@@ -489,7 +491,21 @@ export default function Home() {
         setMachineEm(loadedMachineEm);
         setReportHistory(loadedHistory);
 
-        if (data.dailyReport) setDailyReport(ensureSixMachines(data.dailyReport));
+        const yesterdayStr = getYesterdayUniversalDate();
+        let initialReport: DailyReport | null = null;
+        if (loadedHistory && loadedHistory.length > 0) {
+          initialReport = loadedHistory.find(r => r.date === yesterdayStr && (r.shed || 'Shed 1') === 'Shed 1')
+            || loadedHistory.find(r => r.date === yesterdayStr)
+            || null;
+        }
+        if (!initialReport && data.dailyReport && data.dailyReport.date === yesterdayStr) {
+          initialReport = data.dailyReport;
+        }
+        if (initialReport) {
+          setDailyReport(ensureSixMachines(initialReport));
+        } else {
+          setDailyReport(createDefaultReportForShed('Shed 1', yesterdayStr));
+        }
         if (data.machines && data.machines.length > 0) {
           setMachines(data.machines);
           if (typeof window !== 'undefined') {
@@ -1205,6 +1221,131 @@ export default function Home() {
       return [...filtered, cleanConv];
     });
     await apiClient.saveCountConversion(cleanConv);
+
+    // Live 40s recalculation across dailyReport and reportHistory
+    const factor = cleanConv.multiplicationFactor;
+    const recalcReport = (r: DailyReport): DailyReport => {
+      let changed = false;
+      const newEntries = (r.entries || []).map(e => {
+        if (e.count && isCountNameMatching(e.count, cleanCount)) {
+          changed = true;
+          return {
+            ...e,
+            gps40sCon: (e.gpsActual || 0) > 0 ? Math.round(e.gpsActual * factor) : 0,
+            production40s: (e.productionActual || 0) > 0 ? Math.round(e.productionActual * factor) : 0
+          };
+        }
+        return e;
+      });
+      return changed ? { ...r, entries: newEntries } : r;
+    };
+
+    setDailyReport(prev => recalcReport(prev));
+    setReportHistory(prev => prev.map(recalcReport));
+  };
+
+  const syncMastersFromReports = async (reportOrReports: DailyReport | DailyReport[]) => {
+    const reportList = Array.isArray(reportOrReports) ? reportOrReports : [reportOrReports];
+    if (reportList.length === 0) return;
+
+    let updatedMachines = [...machines];
+    let machinesModified = false;
+    let updatedConversions = [...countConversions];
+    let conversionsModified = false;
+
+    for (const rep of reportList) {
+      const shed = rep.shed || selectedShed || 'Shed 1';
+      const machineMap = new Map<string, { rfNo: string; count: string; actualGps: number; stdGps: number; prodKg: number }>();
+
+      (rep.entries || []).forEach(e => {
+        const rf = (e.frameNo || '').trim();
+        if (!rf) return;
+        const cnt = (e.count || '').trim();
+        const existing = machineMap.get(rf.toUpperCase());
+        machineMap.set(rf.toUpperCase(), {
+          rfNo: rf,
+          count: cnt || existing?.count || '',
+          actualGps: e.gpsActual || existing?.actualGps || 0,
+          stdGps: e.gpsTarget || existing?.stdGps || 0,
+          prodKg: (existing?.prodKg || 0) + (e.productionActual || 0)
+        });
+      });
+
+      (rep.summaries || []).forEach(s => {
+        const rf = (s.frameNo || '').trim();
+        if (!rf) return;
+        const cnt = (s.count || '').trim();
+        const existing = machineMap.get(rf.toUpperCase());
+        machineMap.set(rf.toUpperCase(), {
+          rfNo: rf,
+          count: cnt || existing?.count || '',
+          actualGps: s.avgGps || existing?.actualGps || 0,
+          stdGps: s.stdGps || existing?.stdGps || 0,
+          prodKg: s.actualProd || existing?.prodKg || 0
+        });
+      });
+
+      machineMap.forEach((data, rfUpper) => {
+        const idx = updatedMachines.findIndex(m => 
+          m.rfNo.trim().toUpperCase() === rfUpper && (m.shed || 'Shed 1') === shed
+        );
+        if (idx >= 0) {
+          if (data.count && updatedMachines[idx].count !== data.count) {
+            updatedMachines[idx] = {
+              ...updatedMachines[idx],
+              count: data.count,
+              actualGps: data.actualGps || updatedMachines[idx].actualGps,
+              stdGps: data.stdGps || updatedMachines[idx].stdGps,
+              productionKg: data.prodKg || updatedMachines[idx].productionKg
+            };
+            machinesModified = true;
+          }
+        } else {
+          updatedMachines.push({
+            id: `m-${rfUpper.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${shed.toLowerCase().replace(/\s+/g, '-')}`,
+            rfNo: data.rfNo,
+            description: `RING FRAME ${data.rfNo} - ${shed.toUpperCase()}`,
+            shed,
+            count: data.count || '40s',
+            actualGps: data.actualGps,
+            stdGps: data.stdGps,
+            productionKg: data.prodKg
+          });
+          machinesModified = true;
+        }
+
+        if (data.count) {
+          const cleanCount = data.count.trim();
+          const exists = updatedConversions.some(c => 
+            c.count.trim().toLowerCase() === cleanCount.toLowerCase() &&
+            ((c.shed || 'Shed 1') === shed || (c.shed || '') === 'All Sheds')
+          );
+          if (!exists) {
+            const factor = cleanCount.toLowerCase().includes('40') ? 1.0 : 1.0;
+            updatedConversions.push({
+              count: cleanCount,
+              multiplicationFactor: factor,
+              description: `Auto-imported count (${cleanCount})`,
+              shed
+            });
+            conversionsModified = true;
+          }
+        }
+      });
+    }
+
+    if (machinesModified) {
+      setMachines(updatedMachines);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('spinning_machines', JSON.stringify(updatedMachines));
+      }
+      await apiClient.saveMachines(updatedMachines);
+    }
+
+    if (conversionsModified) {
+      setCountConversions(updatedConversions);
+      await apiClient.saveCountConversions(updatedConversions);
+    }
   };
 
   const deleteCountConversion = async (count: string, shed?: string) => {
@@ -1515,12 +1656,14 @@ export default function Home() {
         for (const r of reportData) {
           await apiClient.saveDailyReport(r);
         }
+        await syncMastersFromReports(reportData);
         const refreshed = await apiClient.fetchInitialData();
         if (refreshed.history) setReportHistory(refreshed.history);
         if (refreshed.dailyReport) setDailyReport(refreshed.dailyReport);
         alert(`Successfully imported production statement with ${reportData.length} records! Today's machines and running counts are now shown below for side allocation.`);
       } else {
         await apiClient.saveDailyReport(reportData);
+        await syncMastersFromReports(reportData);
         setDailyReport(reportData);
         setReportHistory(prev => [
           ...prev.filter(r => !(r.date === reportData.date && (r.shed || 'Shed 1') === (reportData.shed || selectedShed))),
@@ -1745,6 +1888,7 @@ export default function Home() {
               report={activeDailyReport}
               workers={currentShedWorkers}
               rules={incentiveRules}
+              countConversions={countConversions}
               isTvMode={isTvMode}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
@@ -2107,6 +2251,11 @@ export default function Home() {
               onSave={saveCountConversion}
               onDelete={deleteCountConversion}
               currentShed={selectedShed}
+              report={activeDailyReport}
+              allReports={reportHistory}
+              selectedDate={activeDailyReport.date}
+              onSelectDate={handleTopDateChange}
+              availableDates={availableReportDates}
             />
           </div>
         );
@@ -2152,6 +2301,11 @@ export default function Home() {
               onResetStandardMachines={resetStandardMachines}
               workers={workers}
               countConversions={countConversions}
+              report={activeDailyReport}
+              allReports={reportHistory}
+              selectedDate={activeDailyReport.date}
+              onSelectDate={handleTopDateChange}
+              availableDates={availableReportDates}
             />
           </div>
         );
@@ -2177,6 +2331,7 @@ export default function Home() {
                   setMachineEm(mergedEm);
                   await apiClient.saveMachineEm(mergedEm);
                 }
+                await syncMastersFromReports(reportOrReports);
                 const refreshed = await apiClient.fetchInitialData();
                 if (refreshed.history) setReportHistory(refreshed.history);
                 if (refreshed.dailyReport) setDailyReport(refreshed.dailyReport);
@@ -2190,6 +2345,7 @@ export default function Home() {
                   setMachineEm(mergedEm);
                   await apiClient.saveMachineEm(mergedEm);
                 }
+                await syncMastersFromReports(reportOrReports);
                 setDailyReport(reportOrReports);
                 setReportHistory(prev => [
                   ...prev.filter(r => !(r.date === reportOrReports.date && (r.shed || 'Shed 1') === (reportOrReports.shed || selectedShed))),
@@ -3246,19 +3402,38 @@ export default function Home() {
 
               {/* Right Section: Interactive Date Picker, Available Dates Dropdown, TV mode */}
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {/* Date Selection: Calendar Date Picker */}
+                {/* Date Selection: Left & Right navigation arrows together before date selection */}
                 <div className="flex items-center gap-1.5 bg-stone-100/90 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs">
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleTopDateChange(shiftUniversalDate(activeDailyReport.date, -1))}
+                      className="p-1 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                      title="Previous day"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleTopDateChange(shiftUniversalDate(activeDailyReport.date, 1))}
+                      className="p-1 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                      title="Next day"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
                   <CalendarDatePicker
                     value={activeDailyReport.date}
                     onChange={(newDate) => handleTopDateChange(newDate)}
                     className="shrink-0"
                   />
-                  {activeDailyReport.date !== getTodayUniversalDate() && (
+                  {activeDailyReport.date !== getYesterdayUniversalDate() && (
                     <button
                       type="button"
-                      onClick={() => handleTopDateChange(getTodayUniversalDate())}
+                      onClick={() => handleTopDateChange(getYesterdayUniversalDate())}
                       className="px-2 py-1 text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-2xs cursor-pointer hidden sm:inline-flex"
-                      title="Jump to Today's Date"
+                      title="Jump to Yesterday's Date"
                     >
                       Today
                     </button>

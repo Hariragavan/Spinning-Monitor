@@ -106,16 +106,8 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
           : 1.0);
 
       // 40s Converted GPS
-      let converted40s = 0;
-      const valid40sEntries = entries.filter(e => (e.gps40sCon || 0) > 0);
-      if (valid40sEntries.length > 0) {
-        converted40s = Math.round(valid40sEntries.reduce((acc, curr) => acc + curr.gps40sCon, 0) / valid40sEntries.length);
-      } else if (actualGpss > 0) {
-        converted40s = Math.round(actualGpss * factor);
-      } else {
-        converted40s = 0;
-      }
-
+      // 40s Converted GPS: Formula is Actual GPS * Multiplication Factor
+      const converted40s = (actualGpss > 0 && factor > 0) ? Math.round(actualGpss * factor) : 0;
       const variance = (actualGpss > 0 && stdGps > 0) ? (actualGpss - stdGps) : 0;
 
       return {
@@ -255,7 +247,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
   return (
     <div className={cn(
       "w-full transition-all duration-300 font-sans",
-      isTvMode ? "p-3 md:p-5 max-w-[1720px] mx-auto space-y-5" : "p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto"
+      isTvMode ? "px-2 py-2.5 w-full max-w-none space-y-3.5" : "p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto"
     )}>
       {/* 1. TOP HEADER & SUMMARY CARD */}
       <div className="bg-white rounded-3xl border border-stone-200 shadow-2xs overflow-hidden">
@@ -273,7 +265,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
                 <span>RUNNING COUNT GPSS SUMMARY</span>
               </h2>
               <div className="flex items-center gap-2.5 mt-0.5">
-                <span className="text-xs font-bold text-stone-400 font-mono uppercase tracking-wider">
+                <span className="text-xs font-black text-black font-mono uppercase tracking-wider">
                   DATE: {report.date || 'TODAY'}
                 </span>
                 {report.shed && (
@@ -332,7 +324,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-stone-200 bg-stone-50/60 text-stone-400 font-black text-[11px] uppercase tracking-wider">
+              <tr className="border-b border-stone-200 bg-stone-50/60 text-black font-black text-[11px] uppercase tracking-wider">
                 <th className="py-3.5 px-6 font-mono">COUNT</th>
                 <th className="py-3.5 px-4 text-center font-mono">FRAMES</th>
                 <th className="py-3.5 px-4 text-center font-mono">STD GPS</th>
@@ -467,7 +459,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
           <div className="grid grid-cols-3 gap-3 md:gap-4">
             {/* Shift I */}
             <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 text-center flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-black block mb-1">
                 SHIFT I
               </span>
               <span className="text-xl md:text-2xl lg:text-3xl font-black text-stone-900 font-mono tracking-tight block">
@@ -480,7 +472,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
 
             {/* Shift II */}
             <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 text-center flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-black block mb-1">
                 SHIFT II
               </span>
               <span className="text-xl md:text-2xl lg:text-3xl font-black text-stone-900 font-mono tracking-tight block">
@@ -493,7 +485,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
 
             {/* Shift III */}
             <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 text-center flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400 block mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-black block mb-1">
                 SHIFT III
               </span>
               <span className="text-xl md:text-2xl lg:text-3xl font-black text-stone-900 font-mono tracking-tight block">
@@ -540,7 +532,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
           <div className="grid grid-cols-3 gap-3 md:gap-4">
             {/* Achievement % */}
             <div className="bg-stone-950/60 rounded-2xl p-4 border border-stone-800 text-center flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">
                 ACHIEVEMENT %
               </span>
               <span className="text-2xl md:text-3xl lg:text-4xl font-black text-amber-400 font-mono tracking-tight block">
@@ -550,7 +542,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
 
             {/* Plant GPSS */}
             <div className="bg-stone-950/60 rounded-2xl p-4 border border-stone-800 text-center flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">
                 PLANT GPSS
               </span>
               <span className="text-2xl md:text-3xl lg:text-4xl font-black text-white font-mono tracking-tight block">
@@ -560,7 +552,7 @@ export const CountSummary: React.FC<CountSummaryProps> = ({
 
             {/* Plant Utilization % */}
             <div className="bg-stone-950/60 rounded-2xl p-4 border border-stone-800 text-center flex flex-col justify-center">
-              <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">
                 PLANT UTILIZATION %
               </span>
               <span className="text-2xl md:text-3xl lg:text-4xl font-black text-emerald-400 font-mono tracking-tight block">

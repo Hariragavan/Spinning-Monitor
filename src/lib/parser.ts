@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion, MachineEmData, Shed } from '../types';
-import { parseUniversalDate } from './utils';
+import { parseUniversalDate, getYesterdayUniversalDate, shiftUniversalDate } from './utils';
+export { getYesterdayUniversalDate, shiftUniversalDate };
 
 export const normalizeDateValue = (val: any): string => {
   if (val === undefined || val === null) return '';
@@ -234,7 +235,7 @@ export const getTodayUniversalDate = (): string => {
   return `${day}/${month}/${year}`;
 };
 
-export const createDefaultReportForShed = (shed: string = 'Shed 1', date: string = getTodayUniversalDate()): DailyReport => {
+export const createDefaultReportForShed = (shed: string = 'Shed 1', date: string = getYesterdayUniversalDate()): DailyReport => {
   return {
     date,
     shed,
@@ -249,7 +250,7 @@ export const createDefaultReportForShed = (shed: string = 'Shed 1', date: string
   };
 };
 
-export const mockData: DailyReport = createDefaultReportForShed('Shed 1', getTodayUniversalDate());
+export const mockData: DailyReport = createDefaultReportForShed('Shed 1', getYesterdayUniversalDate());
 
 export const parseWorkerMaster = async (file: File): Promise<Sider[]> => {
   return new Promise((resolve, reject) => {

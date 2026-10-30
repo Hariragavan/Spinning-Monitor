@@ -415,158 +415,88 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
 
   return (
     <div className={cn(
-      "w-full transition-all duration-300 font-sans space-y-4 md:space-y-5",
-      isTvMode ? "p-3 md:p-5 max-w-[1720px] mx-auto" : "p-4 md:p-6 lg:p-8 max-w-7xl mx-auto"
+      "w-full transition-all duration-300 font-sans",
+      isTvMode ? "p-2 sm:p-2.5 w-full max-w-none space-y-2.5" : "p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-4 md:space-y-5"
     )}>
       {/* ========================================================================= */}
-      {/* 1. TOP HEADER & TELEMETRY SUMMARY DUAL-CARD (WHITE & GREY THEME)          */}
+      {/* 1. TOP HEADER - RING FRAME WISE GPSS (COMPACT & ATTACHED TO TOP)          */}
       {/* ========================================================================= */}
-      <div className="bg-white rounded-3xl border border-stone-200 shadow-2xs p-4 md:p-5 lg:p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-stone-100">
+      <div className={cn(
+        "bg-white rounded-2xl border border-stone-200 shadow-2xs",
+        isTvMode ? "p-2.5 sm:p-3" : "p-3.5 sm:p-4"
+      )}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
           {/* Left Title & Status */}
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 md:w-12 md:h-12 rounded-2xl bg-blue-500/10 border border-blue-300 text-blue-700 flex items-center justify-center shrink-0 shadow-2xs">
-              <Activity size={24} className="text-blue-600" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-blue-500/10 border border-blue-300 text-blue-700 flex items-center justify-center shrink-0 shadow-2xs">
+              <Activity size={22} className="text-blue-600" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-black uppercase font-mono tracking-wider">
+                <span className="px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-950 text-[10px] font-black uppercase font-mono tracking-wider">
                   PART {safeIndex + 1} OF {countGroups.length}
                 </span>
                 <span className="text-stone-300 text-xs">•</span>
-                <span className="text-[11px] font-bold text-stone-400 font-mono uppercase tracking-wider">
+                <span className="text-[11px] font-black text-black font-mono uppercase tracking-wider">
                   DATE: {report.date || 'TODAY'}
                 </span>
                 {report.shed && (
                   <>
                     <span className="text-stone-300 text-xs">•</span>
-                    <span className="text-[11px] font-black text-stone-600 uppercase">
-                      {report.shed} LIVE TELEMETRY
+                    <span className="text-[11px] font-black text-black uppercase">
+                      {report.shed}
                     </span>
                   </>
                 )}
               </div>
-              <h2 className="text-lg md:text-xl lg:text-2xl font-black text-stone-900 tracking-tight uppercase mt-1">
-                Spinning Ring Frame Telemetry & Crew Roster
+              <h2 className="text-base sm:text-lg md:text-xl font-black text-black tracking-tight uppercase leading-tight mt-0.5">
+                RING FRAME WISE GPSS
               </h2>
             </div>
           </div>
 
-          {/* Right: Active Count Header Card & Dials */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Active Count Banner Card */}
-            <div className="bg-stone-50 border border-stone-200 rounded-2xl px-4 py-2 flex items-center gap-3 shadow-2xs">
-              <div>
-                <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                  ACTIVE RUNNING COUNT ({activeGroup.frames.length} {activeGroup.frames.length === 1 ? 'FRAME' : 'FRAMES'})
-                </span>
-                <span className="text-lg md:text-xl font-black text-stone-900 font-mono tracking-tight block">
-                  {activeGroup.name}
-                </span>
-              </div>
-              <div className="pl-3 border-l border-stone-200 text-right">
-                <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
-                  40S CONV
-                </span>
-                <span className="text-xs font-black text-emerald-700 font-mono block">
-                  ×{activeGroup.factor.toFixed(4)}
-                </span>
-              </div>
+          {/* Right: Running Count X No of Machines, ACT GPS, 40s GPS, UTIL */}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            {/* 1. RUNNING COUNT × NO OF MACHINES */}
+            <div className="bg-stone-50 border-2 border-stone-300 rounded-xl px-3 py-1.5 shadow-2xs">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black block leading-none">
+                RUNNING COUNT
+              </span>
+              <span className="text-xs sm:text-sm md:text-base font-black text-black font-mono tracking-tight block mt-0.5">
+                {activeGroup.name} × {activeGroup.frames.length} {activeGroup.frames.length === 1 ? 'MC' : 'MCS'}
+              </span>
             </div>
 
-            {/* Dials / Quick Metrics */}
-            <div className="flex items-center gap-2">
-              {/* Achievement Dial */}
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-3 py-2 text-center min-w-[90px]">
-                <div className="text-base md:text-lg font-black text-emerald-800 font-mono leading-none">
-                  {activeGroup.gpsAchievement}%
-                </div>
-                <div className="text-[9px] font-black uppercase tracking-wider text-emerald-700 mt-1 leading-tight">
-                  GPS ACH ({Math.round(activeGroup.avgActualGps)}/{Math.round(activeGroup.avgStdGps)})
-                </div>
-              </div>
+            {/* 2. ACT GPS */}
+            <div className="bg-amber-50/90 border-2 border-amber-300 rounded-xl px-3 py-1.5 text-center min-w-[76px] shadow-2xs">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black block leading-none">
+                ACT GPS
+              </span>
+              <span className="text-sm sm:text-base font-black text-amber-950 font-mono tracking-tight block mt-0.5">
+                {activeGroup.avgActualGps.toFixed(1)}
+              </span>
+            </div>
 
-              {/* Efficiency */}
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl px-3 py-2 text-center min-w-[85px]">
-                <div className="text-base md:text-lg font-black text-blue-800 font-mono leading-none">
-                  {activeGroup.avgEfficiency.toFixed(1)}%
-                </div>
-                <div className="text-[9px] font-black uppercase tracking-wider text-blue-700 mt-1 leading-tight">
-                  COUNT UTIL
-                </div>
-              </div>
+            {/* 3. 40s GPS */}
+            <div className="bg-blue-50/90 border-2 border-blue-300 rounded-xl px-3 py-1.5 text-center min-w-[76px] shadow-2xs">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black block leading-none">
+                40s GPS
+              </span>
+              <span className="text-sm sm:text-base font-black text-blue-950 font-mono tracking-tight block mt-0.5">
+                {activeGroup.avg40sGps.toFixed(1)}
+              </span>
+            </div>
 
-              {/* 40s Converted Output */}
-              <div className="bg-indigo-50 border border-indigo-200 rounded-2xl px-3 py-2 text-center min-w-[95px]">
-                <div className="text-base md:text-lg font-black text-indigo-900 font-mono leading-none">
-                  {activeGroup.avg40sGps.toFixed(1)} <span className="text-[10px] font-bold text-indigo-700">40s</span>
-                </div>
-                <div className="text-[9px] font-black uppercase tracking-wider text-indigo-700 mt-1 leading-tight">
-                  {Math.round(activeGroup.totalProdKg).toLocaleString()} KG TOTAL
-                </div>
-              </div>
+            {/* 4. UTIL */}
+            <div className="bg-emerald-50/90 border-2 border-emerald-300 rounded-xl px-3 py-1.5 text-center min-w-[76px] shadow-2xs">
+              <span className="text-[9px] font-black uppercase tracking-wider text-black block leading-none">
+                UTIL
+              </span>
+              <span className="text-sm sm:text-base font-black text-emerald-950 font-mono tracking-tight block mt-0.5">
+                {activeGroup.avgEfficiency.toFixed(1)}%
+              </span>
             </div>
           </div>
-        </div>
-
-        {/* Count Navigation Tabs / Pills */}
-        <div className="pt-3.5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] font-black uppercase tracking-wider text-stone-400 mr-1 flex items-center gap-1">
-              <Layers size={13} />
-              <span>RUNNING COUNTS:</span>
-            </span>
-            {countGroups.map((group, idx) => {
-              const isSelected = idx === safeIndex;
-              return (
-                <button
-                  key={group.name}
-                  onClick={() => handleSelectCountIndex(idx)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer font-mono flex items-center gap-1.5 shadow-2xs",
-                    isSelected
-                      ? "bg-emerald-600 text-white shadow-emerald-600/20 scale-[1.02]"
-                      : "bg-stone-100 hover:bg-stone-200/80 text-stone-700 border border-stone-200/60"
-                  )}
-                >
-                  <span className={cn(
-                    "px-1.5 py-0.2 rounded text-[10px] font-bold",
-                    isSelected ? "bg-white/20 text-white" : "bg-stone-200 text-stone-600"
-                  )}>
-                    PART {idx + 1}
-                  </span>
-                  <span>{group.name}</span>
-                  <span className="text-[10px] opacity-80">({group.frames.length} RF)</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Pause / Play Controls in TV Mode */}
-          {isTvMode && countGroups.length > 1 && (
-            <div className="flex items-center gap-1 text-[11px] text-stone-500 font-bold">
-              <button
-                onClick={() => setIsAutoCyclingPaused(!isAutoCyclingPaused)}
-                className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center gap-1 transition-all cursor-pointer"
-                title={isAutoCyclingPaused ? 'Resume auto rotation' : 'Pause auto rotation'}
-              >
-                {isAutoCyclingPaused ? <Play size={11} className="text-emerald-600" /> : <Pause size={11} />}
-                <span>{isAutoCyclingPaused ? 'Paused' : 'Auto Cycle'}</span>
-              </button>
-              <button
-                onClick={() => handleSelectCountIndex((safeIndex - 1 + countGroups.length) % countGroups.length)}
-                className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-700 transition-all cursor-pointer"
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <button
-                onClick={() => handleSelectCountIndex((safeIndex + 1) % countGroups.length)}
-                className="w-6 h-6 rounded-lg bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-700 transition-all cursor-pointer"
-              >
-                <ChevronRight size={13} />
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
@@ -611,7 +541,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                           <span>RUNNING</span>
                         </span>
                       </div>
-                      <span className="text-[10px] font-mono font-bold text-stone-500 block mt-0.5">
+                      <span className="text-[10px] font-mono font-black text-stone-900 block mt-0.5">
                         {frame.count} · ×{activeGroup.factor.toFixed(4)}
                       </span>
                     </div>
@@ -633,43 +563,43 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                 <div className="grid grid-cols-4 gap-2 text-center py-2.5 px-2 bg-white rounded-xl border border-stone-200 shadow-2xs mb-3">
                   {/* STD GPS */}
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black block">
                       STD GPS
                     </span>
-                    <span className="text-sm md:text-base font-black text-stone-700 font-mono block mt-0.5">
+                    <span className="text-sm md:text-base font-black text-black font-mono block mt-0.5">
                       {frame.stdGps.toFixed(1)}
                     </span>
                   </div>
 
                   {/* ACTUAL GPS */}
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black block">
                       ACTUAL GPS
                     </span>
-                    <span className="text-sm md:text-base font-black text-amber-600 font-mono block mt-0.5">
+                    <span className="text-sm md:text-base font-black text-amber-950 font-mono block mt-0.5">
                       {frame.actualGps.toFixed(1)}
                     </span>
                   </div>
 
                   {/* 40S GPS */}
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black block">
                       40S GPS
                     </span>
-                    <span className="text-sm md:text-base font-black text-blue-600 font-mono block mt-0.5">
+                    <span className="text-sm md:text-base font-black text-blue-950 font-mono block mt-0.5">
                       {frame.gps40sCon.toFixed(1)}
                     </span>
                   </div>
 
                   {/* PROD / EFF */}
                   <div>
-                    <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 block">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-black block">
                       PROD / EFF
                     </span>
-                    <span className="text-xs md:text-sm font-black text-stone-900 font-mono block mt-0.5 truncate">
+                    <span className="text-xs md:text-sm font-black text-black font-mono block mt-0.5 truncate">
                       {Math.round(frame.productionKg)} KG
                     </span>
-                    <span className="text-[9px] font-bold text-emerald-600 block leading-tight">
+                    <span className="text-[9px] font-black text-emerald-800 block leading-tight">
                       {frame.efficiency.toFixed(1)}%
                     </span>
                   </div>
@@ -677,7 +607,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
 
                 {/* Target Ratio Progress Bar */}
                 <div className="mb-4">
-                  <div className="flex items-center justify-between text-[10px] font-bold text-stone-500 mb-1">
+                  <div className="flex items-center justify-between text-[10px] font-black text-black mb-1">
                     <span>GPS Target Ratio</span>
                     <span className="font-mono font-black">{frame.targetRatio}%</span>
                   </div>
@@ -701,10 +631,10 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                     S
                   </span>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[9px] font-black uppercase text-stone-400 block tracking-wider leading-none">
+                    <span className="text-[9px] font-black uppercase text-black block tracking-wider leading-none">
                       ASSIGNED SIDER (LH / RH)
                     </span>
-                    <span className="text-xs font-bold text-stone-800 truncate block mt-0.5">
+                    <span className="text-xs font-black text-black truncate block mt-0.5">
                       {frame.siderNames}
                     </span>
                   </div>
@@ -716,10 +646,10 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                     G
                   </span>
                   <div className="min-w-0 flex-1">
-                    <span className="text-[9px] font-black uppercase text-amber-700 block tracking-wider leading-none">
+                    <span className="text-[9px] font-black uppercase text-amber-950 block tracking-wider leading-none">
                       ASSIGNED GAITER
                     </span>
-                    <span className="text-xs font-bold text-stone-800 truncate block mt-0.5">
+                    <span className="text-xs font-black text-black truncate block mt-0.5">
                       {frame.gaiterName}
                     </span>
                   </div>
@@ -811,6 +741,73 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
               <span>Click any part to jump directly</span>
               <span className="text-emerald-700 font-mono font-black">Auto-cycling active</span>
             </div>
+          </div>
+        )}
+      </div>
+      {/* ========================================================================= */}
+      {/* 3. BOTTOM COUNT NAVIGATION BAR ("in down show the no of counts to select") */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-black uppercase tracking-wider text-black mr-1 flex items-center gap-1">
+            <Layers size={14} className="text-emerald-700" />
+            <span>RUNNING COUNTS:</span>
+          </span>
+          {countGroups.map((group, idx) => {
+            const isSelected = idx === safeIndex;
+            return (
+              <button
+                key={group.name}
+                type="button"
+                onClick={() => handleSelectCountIndex(idx)}
+                className={cn(
+                  "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer font-mono flex items-center gap-1.5 border shadow-2xs",
+                  isSelected
+                    ? "bg-emerald-700 text-white border-emerald-800 shadow-emerald-700/20 scale-[1.02]"
+                    : "bg-stone-50 hover:bg-stone-100 text-black border-stone-300"
+                )}
+              >
+                <span className={cn(
+                  "px-1.5 py-0.2 rounded text-[10px] font-mono font-black",
+                  isSelected ? "bg-white/25 text-white" : "bg-stone-200 text-black"
+                )}>
+                  {idx + 1}
+                </span>
+                <span>{group.name}</span>
+                <span className="text-[10px] opacity-90">({group.frames.length} {group.frames.length === 1 ? 'MC' : 'MCS'})</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Controls in TV Mode (Pause/Play, Next, Prev) */}
+        {isTvMode && countGroups.length > 1 && (
+          <div className="flex items-center gap-1.5 text-xs text-black font-black">
+            <button
+              type="button"
+              onClick={() => setIsAutoCyclingPaused(!isAutoCyclingPaused)}
+              className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-black flex items-center gap-1.5 transition-all cursor-pointer border border-stone-300"
+              title={isAutoCyclingPaused ? 'Resume auto rotation' : 'Pause auto rotation'}
+            >
+              {isAutoCyclingPaused ? <Play size={12} className="text-emerald-700" /> : <Pause size={12} />}
+              <span>{isAutoCyclingPaused ? 'Paused' : 'Auto Cycle'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectCountIndex((safeIndex - 1 + countGroups.length) % countGroups.length)}
+              className="w-7 h-7 rounded-xl bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-black transition-all cursor-pointer border border-stone-300"
+              title="Previous count"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectCountIndex((safeIndex + 1) % countGroups.length)}
+              className="w-7 h-7 rounded-xl bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-black transition-all cursor-pointer border border-stone-300"
+              title="Next count"
+            >
+              <ChevronRight size={14} />
+            </button>
           </div>
         )}
       </div>

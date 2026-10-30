@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { DailyReport, CountConversion, Shed } from '../types';
 import { cn, parseUniversalDateParts } from '../lib/utils';
 import { 
@@ -120,58 +120,71 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
     return map;
   }, [monthReports]);
 
-  // Latest day with actual data in this month
-  const latestUpdatedDay = useMemo(() => {
-    let maxDay = 0;
-    reportsByDay.forEach((reports, day) => {
-      const hasData = reports.some(r => 
+  // Helper to determine if a specific day has any actual GPSS or production data
+  const dayHasData = useCallback((day: number): boolean => {
+    // 1. Check reports for this day
+    const reports = reportsByDay.get(day);
+    if (reports && reports.length > 0) {
+      const hasProdOrGps = reports.some(r => 
         (r.totalProductionActual || 0) > 0 ||
         (r.summaries || []).some(s => (s.actualProd || 0) > 0 || (s.avgGps || 0) > 0) ||
         (r.entries || []).some(e => (e.productionActual || 0) > 0 || (e.gpsActual || 0) > 0)
       );
-      if (hasData && day > maxDay) {
-        maxDay = day;
-      }
-    });
-
-    // If viewing Oct 2026, default to 16 as shown in the reference image
-    if (maxDay === 0 && selectedMonth === 10 && selectedYear === 2026) {
-      return 16;
+      if (hasProdOrGps) return true;
     }
-    return maxDay > 0 ? maxDay : 16;
-  }, [reportsByDay, selectedMonth, selectedYear]);
 
-  // Determine which day numbers (1..totalDaysInMonth) to display based on range mode
+    // 2. Check cell manual overrides
+    const hasOverride = Object.keys(cellOverrides).some(k => k.endsWith(`__${day}`) && cellOverrides[k] !== undefined);
+    if (hasOverride) return true;
+
+    // 3. Check October 2026 baseline reference data
+    if (selectedMonth === 10 && selectedYear === 2026) {
+      const hasBaseline = Object.values(OCT_2026_IMAGE_DATA).some(dayMap => dayMap[day] !== undefined);
+      if (hasBaseline) return true;
+    }
+
+    return false;
+  }, [reportsByDay, cellOverrides, selectedMonth, selectedYear]);
+
+  // Latest day with actual data in this month
+  const latestUpdatedDay = useMemo(() => {
+    for (let d = totalDaysInMonth; d >= 1; d--) {
+      if (dayHasData(d)) {
+        return d;
+      }
+    }
+    return 0;
+  }, [totalDaysInMonth, dayHasData]);
+
+  // Determine which day numbers (1..totalDaysInMonth) to display based on range mode & TV mode
   const displayedDays = useMemo(() => {
+    // 1. TV Dashboard Mode: strictly max 15 days with ONLY data dates in the table
+    if (isTvMode) {
+      const allDataDays = Array.from({ length: totalDaysInMonth }, (_, i) => i + 1).filter(d => dayHasData(d));
+      return allDataDays.slice(-15);
+    }
+
+    // 2. Full Month All Days: show ALL dates (1..totalDaysInMonth) including dates with no data
     if (dateRangeMode === 'all') {
       return Array.from({ length: totalDaysInMonth }, (_, i) => i + 1);
     }
+
+    // 3. First 15 Days (1 – 15): ONLY show dates that have data; if no data, don't show
     if (dateRangeMode === 'first-15') {
       const end = Math.min(15, totalDaysInMonth);
-      return Array.from({ length: end }, (_, i) => i + 1);
-    }
-    if (dateRangeMode === 'second-15') {
-      const start = 16;
-      const count = Math.max(0, totalDaysInMonth - 15);
-      return Array.from({ length: count }, (_, i) => start + i);
+      return Array.from({ length: end }, (_, i) => i + 1).filter(d => dayHasData(d));
     }
 
-    // Default 'upto-latest': Up to Updated Date (Max 15 Days)
-    // If latestUpdatedDay is 16, shows 2..16 (15 days ending at 16)
-    const endDay = Math.min(totalDaysInMonth, Math.max(1, latestUpdatedDay));
-    const startDay = Math.max(1, endDay - 14);
-    const days: number[] = [];
-    for (let d = startDay; d <= endDay; d++) {
-      days.push(d);
+    // 4. Second 15 Days (16 – End): ONLY show dates that have data; if no data, don't show
+    if (dateRangeMode === 'second-15') {
+      const count = Math.max(0, totalDaysInMonth - 15);
+      return Array.from({ length: count }, (_, i) => 16 + i).filter(d => dayHasData(d));
     }
-    while (days.length < 15 && days[0] > 1) {
-      days.unshift(days[0] - 1);
-    }
-    while (days.length < 15 && days[days.length - 1] < totalDaysInMonth) {
-      days.push(days[days.length - 1] + 1);
-    }
-    return days;
-  }, [dateRangeMode, totalDaysInMonth, latestUpdatedDay]);
+
+    // 5. Default 'upto-latest' (Max 15 Days): ONLY show dates that have data, up to latest 15 data dates
+    const allDataDays = Array.from({ length: totalDaysInMonth }, (_, i) => i + 1).filter(d => dayHasData(d));
+    return allDataDays.slice(-15);
+  }, [isTvMode, dateRangeMode, totalDaysInMonth, dayHasData]);
 
   // Format date string for day d (DD/MM/YYYY)
   const formatDayDate = (d: number) => {
@@ -337,13 +350,13 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
   return (
     <div className={cn(
       "w-full transition-all duration-300 font-sans space-y-3.5",
-      isTvMode ? "p-1 md:p-3 max-w-[1780px] mx-auto" : "p-3 md:p-6 lg:p-7 max-w-7xl mx-auto"
+      isTvMode ? "px-2 py-2 w-full max-w-none space-y-2.5" : "p-3 md:p-6 lg:p-7 max-w-7xl mx-auto"
     )}>
       {/* 1. TOP CONTROLS & UTILITY TOOLBAR (Exact layout as uploaded image, hidden on TV mode) */}
       {!isTvMode && (
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
           <p className="text-stone-500 font-normal text-[11px] md:text-xs tracking-tight">
-            Automatically shows dates up to the latest updated date (max 15 days onscreen, after 15 days shows the last 15 days). Click any cell to edit GPSS.
+            Shows active dates with data (max 15 days). Empty dates without data are hidden in 15-day views. Click any cell to edit GPSS.
           </p>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0 no-print">
@@ -355,10 +368,10 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
                 className="appearance-none bg-white hover:bg-stone-50 border border-stone-200 text-stone-800 font-semibold text-xs rounded-xl px-3.5 py-1.5 pr-7 shadow-2xs cursor-pointer focus:outline-none transition-all"
                 title="Select date columns window"
               >
-                <option value="upto-latest">Date Columns: Up to Updated Date (Max 15 Days)</option>
-                <option value="first-15">Date Columns: First 15 Days (1 – 15)</option>
-                <option value="second-15">Date Columns: Second 15 Days (16 – End)</option>
-                <option value="all">Date Columns: Full Month All Days</option>
+                <option value="upto-latest">Date Columns: Max 15 Days (Data Dates Only)</option>
+                <option value="first-15">Date Columns: First 15 Days (1 – 15, Data Dates Only)</option>
+                <option value="second-15">Date Columns: Second 15 Days (16 – End, Data Dates Only)</option>
+                <option value="all">Date Columns: Full Month All Days (Show All Dates)</option>
               </select>
               <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-stone-500">
                 <svg className="fill-current h-3 w-3" viewBox="0 0 20 20">
@@ -500,7 +513,12 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
                 </th>
 
                 {/* Date Columns */}
-                {displayedDays.map(d => {
+                {displayedDays.length === 0 ? (
+                  <th className="py-2.5 px-4 font-bold text-stone-500 text-xs text-center bg-[#f2f4f6]">
+                    Status
+                  </th>
+                ) : (
+                  displayedDays.map(d => {
                   const dateStr = formatDayDate(d);
                   const isLatest = d === latestUpdatedDay;
 
@@ -517,12 +535,20 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
                       {dateStr}
                     </th>
                   );
-                })}
+                }))}
               </tr>
             </thead>
 
             <tbody className="divide-y divide-stone-200/90 text-xs md:text-sm">
-              {countList.map(count => {
+              {displayedDays.length === 0 ? (
+                <tr>
+                  <td colSpan={2} className="py-12 text-center text-stone-500 font-bold bg-white">
+                    <p className="text-sm font-black text-stone-700 uppercase tracking-wider">No Production Data Found</p>
+                    <p className="text-xs text-stone-400 mt-1">There is no count GPSS data logged for {monthShortName} {selectedYear}.</p>
+                  </td>
+                </tr>
+              ) : (
+                countList.map(count => {
                 return (
                   <tr key={count} className="hover:bg-stone-50/50 transition-colors">
                     {/* Left Column: Count Name */}
@@ -585,7 +611,7 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
                     })}
                   </tr>
                 );
-              })}
+              }))}
             </tbody>
           </table>
         </div>
