@@ -2091,6 +2091,7 @@ export default function Home() {
             }}
             onSelectDate={handleTopDateChange}
             onChangeReportDate={changeReportDate}
+            shed={selectedShed}
           />
         );
 

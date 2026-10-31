@@ -13,9 +13,10 @@ interface DailyIncentiveProps {
   onSelectDate: (date: string) => void;
   isTvMode?: boolean;
   onChangeReportDate?: (oldDate: string, newDate: string) => void;
+  shed?: string;
 }
 
-export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers, rules, onUpdateEntry, onSelectDate, isTvMode = false, onChangeReportDate }) => {
+export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers, rules, onUpdateEntry, onSelectDate, isTvMode = false, onChangeReportDate, shed }) => {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editData, setEditData] = useState<Partial<ProductionEntry>>({});
   const [isAddingMode, setIsAddingMode] = useState(false);
@@ -163,14 +164,9 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
   }, [report, workers, rules]);
 
   const incentiveData = useMemo(() => {
-    const normalize = (c: string) => c.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-
     const flatResults: any[] = [];
 
     report.entries.forEach((entry, entryIdx) => {
-      // Calculate total incentive for this entry first
-      const baseIncentive = calculateIncentive(entry, rules, report.date);
-
       // Determine which workers are assigned
       const assignedIds = new Set<string>();
       if (entry.siderId) assignedIds.add(entry.siderId);
@@ -187,28 +183,33 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
           ...entry,
           entryIndex: entryIdx,
           worker: null,
-          incentive: baseIncentive
+          incentive: 0
         });
       } else {
-        const s0 = entry.siderIds?.[0] || entry.siderId;
-        const s1 = entry.siderIds?.[1];
-        const isSplitSides = !!(s0 && s1 && s0 !== s1);
-        const siderPayout = isSplitSides ? Math.round(baseIncentive * 0.5) : baseIncentive;
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        const workerPayoutMap = new Map<string, number>();
+        for (let sIdx = 0; sIdx < numSlots; sIdx++) {
+          const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+          if (!wId) continue;
+          const payout = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, shed);
+          workerPayoutMap.set(wId, (workerPayoutMap.get(wId) || 0) + payout);
+        }
 
         activeIds.forEach(id => {
           const worker = workers.find(w => w.id === id || w.tNo === id || w.name === id);
+          const payout = workerPayoutMap.get(id) || 0;
           flatResults.push({
             ...entry,
             entryIndex: entryIdx,
             worker,
-            incentive: siderPayout
+            incentive: payout
           });
         });
       }
     });
 
     return flatResults;
-  }, [report, workers, rules]);
+  }, [report, workers, rules, shed]);
 
   const totalIncentive = useMemo(() => {
     const workerDailyPayouts = new Map<string, number>();
