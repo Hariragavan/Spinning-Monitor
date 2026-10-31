@@ -51,7 +51,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
         </h3>
         <div className={cn("w-full relative min-w-0 flex-1", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
           {hasDimensions ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height={isTvMode ? 450 : 300} minWidth={0} minHeight={0} debounce={50}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis dataKey="name" stroke="#78716c" fontSize={isTvMode ? 16 : 10} fontWeight={isTvMode ? 800 : 600} tickLine={false} axisLine={false} dy={10} />
@@ -78,7 +78,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
         </h3>
         <div className={cn("w-full relative min-w-0 flex-1", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
           {hasDimensions ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <ResponsiveContainer width="100%" height={isTvMode ? 450 : 300} minWidth={0} minHeight={0} debounce={50}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis dataKey="name" stroke="#78716c" fontSize={isTvMode ? 16 : 10} fontWeight={isTvMode ? 800 : 600} tickLine={false} axisLine={false} dy={10} />

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../types';
 import { Coins, Printer, Calendar, ArrowRight, Zap, Target, Award, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
 import * as XLSX from 'xlsx';
 
 interface MachineDailyIncentiveProps {
@@ -101,7 +101,17 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
           const entry = report.entries.find(e => e.frameNo === frameNo && e.shift === shift);
           if (entry) {
             const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
-            const worker = workerId ? workers.find(w => w.id === workerId) : null;
+            const cleanId = String(workerId || '').trim();
+            const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+            const isUnassigned = !cleanId || invalidMarkers.includes(cleanId.toUpperCase());
+
+            let worker: any = null;
+            if (!isUnassigned) {
+              const res = resolveWorker(cleanId, entry.siderName, workers);
+              if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
+                worker = res;
+              }
+            }
             
             // Calculate dynamic GPS incentive for the entry based on Incentive Master and workload rules
             let incentive = 0;
@@ -112,7 +122,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             shiftsData[shift] = {
               gps: entry.gpsActual,
               name: worker ? worker.name : '',
-              incentive,
+              incentive: worker ? incentive : 0,
               assigned: !!worker
             };
           } else {

@@ -2078,7 +2078,7 @@ export default function Home() {
         return (
           <DailyIncentive
             report={activeDailyReport}
-            workers={currentShedWorkers}
+            workers={workers}
             rules={incentiveRules}
             isTvMode={isTvMode}
             onUpdateEntry={(entry) => {
@@ -2099,7 +2099,7 @@ export default function Home() {
         return (
           <MachineDailyIncentive
             report={activeDailyReport}
-            workers={currentShedWorkers}
+            workers={workers}
             rules={incentiveRules}
             isTvMode={isTvMode}
             onSelectDate={handleTopDateChange}

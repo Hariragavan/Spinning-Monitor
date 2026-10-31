@@ -1474,6 +1474,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     isTvMode={true}
                     onSelectDate={onSelectDate}
                     onUpdateEntry={() => {}}
+                    shed={selectedShed}
                   />
                 );
 

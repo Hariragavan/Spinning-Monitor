@@ -599,9 +599,18 @@ export function calculateSiderSlotIncentive(
   const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
   if (!workerId) return 0;
 
+  const cleanWorkerId = String(workerId).trim();
+  const upperWorkerId = cleanWorkerId.toUpperCase();
+  const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+  if (!cleanWorkerId || invalidMarkers.includes(upperWorkerId)) {
+    return 0;
+  }
+
   const worker = resolveWorker(workerId, entry.siderName, workers);
   const targetId = (worker.tNo || worker.id || workerId).trim().toUpperCase();
-  if (!targetId || targetId === 'UNASSIGNED' || targetId === '-' || targetId === '--') return 0;
+  if (!targetId || invalidMarkers.includes(targetId)) {
+    return 0;
+  }
 
   const effectiveShed = entry.shed || report.shed || shed || '';
   const shedLower = effectiveShed.toLowerCase();
@@ -613,6 +622,7 @@ export function calculateSiderSlotIncentive(
 
   // RULE EXEMPTION: "this rule is for the 1,2,3 sheds, no rule for kttm"
   if (isKttm) {
+    if (!worker || (!worker.id && !worker.tNo && !worker.name)) return 0;
     const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
     if (numSlots > 1) {
       return Math.round(baseIncentive / numSlots);
@@ -635,8 +645,14 @@ export function calculateSiderSlotIncentive(
 
   report.entries.forEach(e => {
     if (e.shift !== targetShift) return;
-    const id0 = (e.siderIds?.[0] || e.siderId || '').trim().toUpperCase();
-    const id1 = (e.siderIds?.[1] || '').trim().toUpperCase();
+    const raw0 = (e.siderIds?.[0] || e.siderId || '').trim();
+    const raw1 = (e.siderIds?.[1] || '').trim();
+
+    const is0Invalid = !raw0 || invalidMarkers.includes(raw0.toUpperCase());
+    const is1Invalid = !raw1 || invalidMarkers.includes(raw1.toUpperCase());
+
+    const id0 = is0Invalid ? '' : raw0.toUpperCase();
+    const id1 = is1Invalid ? '' : raw1.toUpperCase();
 
     const match0 = Boolean(
       id0 && (

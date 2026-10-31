@@ -165,20 +165,29 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
 
   const incentiveData = useMemo(() => {
     const flatResults: any[] = [];
+    const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
 
     report.entries.forEach((entry, entryIdx) => {
-      // Determine which workers are assigned
+      // Determine which workers are legitimately assigned
       const assignedIds = new Set<string>();
-      if (entry.siderId) assignedIds.add(entry.siderId);
+
+      const checkAndAdd = (id?: string) => {
+        if (!id) return;
+        const clean = String(id).trim();
+        if (clean && !invalidMarkers.includes(clean.toUpperCase())) {
+          assignedIds.add(clean);
+        }
+      };
+
+      checkAndAdd(entry.siderId);
       if (entry.siderIds) {
-        entry.siderIds.forEach(id => {
-          if (id) assignedIds.add(id);
-        });
+        entry.siderIds.forEach(id => checkAndAdd(id));
       }
 
       const activeIds = Array.from(assignedIds);
       
       if (activeIds.length === 0) {
+        // Machine has NO worker assigned: incentive MUST be strictly 0, worker is null
         flatResults.push({
           ...entry,
           entryIndex: entryIdx,
@@ -196,7 +205,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
         }
 
         activeIds.forEach(id => {
-          const worker = workers.find(w => w.id === id || w.tNo === id || w.name === id);
+          const worker = resolveWorker(id, entry.siderName, workers);
           const payout = workerPayoutMap.get(id) || 0;
           flatResults.push({
             ...entry,
@@ -214,18 +223,26 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
   const totalIncentive = useMemo(() => {
     const workerDailyPayouts = new Map<string, number>();
 
-    // Sider operator entries
+    // Sider operator entries (strictly for assigned workers)
     incentiveData.forEach(item => {
-      const key = item.worker?.tNo || item.worker?.id || item.siderId || 'UNASSIGNED';
-      if (key === 'UNASSIGNED') return;
-      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + item.incentive);
+      if (!item.worker) return;
+      const key = item.worker.tNo || item.worker.id || item.worker.name;
+      if (!key || key === 'UNASSIGNED') return;
+      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + (item.incentive || 0));
     });
 
     // Sider gaiter entries
     gaiterData.forEach(item => {
       const key = item.tNo || item.id || 'UNASSIGNED';
       if (key === 'UNASSIGNED') return;
-      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + item.incentive);
+      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + (item.incentive || 0));
+    });
+
+    // AI Linkconer entries
+    aiConeData.forEach(item => {
+      const key = item.tNo || item.id || 'UNASSIGNED';
+      if (key === 'UNASSIGNED') return;
+      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + (item.incentive || 0));
     });
 
     // Sum up capped worker payouts (capped at 120 each)
@@ -234,13 +251,8 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
       companyTotal += Math.min(120, amount);
     });
 
-    // Also add unassigned machine incentives (if any)
-    const unassignedOperatorsTotal = incentiveData
-      .filter(item => !item.worker)
-      .reduce((acc, curr) => acc + curr.incentive, 0);
-
-    return companyTotal + unassignedOperatorsTotal;
-  }, [incentiveData, gaiterData]);
+    return companyTotal;
+  }, [incentiveData, gaiterData, aiConeData]);
 
   const startEdit = (idx: number, entry: ProductionEntry) => {
     setEditingIdx(idx);
@@ -275,13 +287,13 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
   const exportToExcel = () => {
     const rows: any[] = incentiveData.map((d, i) => ({
       'S.No': i + 1,
-      'T.No': d.worker?.tNo || d.siderId || '—',
-      'Operator Name': d.worker?.name || d.siderName || 'UNASSIGNED',
+      'T.No': d.worker?.tNo || (d.siderId && d.siderId !== 'UNASSIGNED' ? d.siderId : '—'),
+      'Operator Name': d.worker?.name && d.worker.name !== 'UNASSIGNED' ? d.worker.name : (d.siderName || 'UNASSIGNED'),
       'Machine': d.frameNo,
       'Shift': d.shift,
       'Count': d.count,
       'GPSS': d.gpsActual,
-      'Incentive (INR)': d.incentive
+      'Incentive (INR)': d.worker ? d.incentive : 0
     }));
 
     gaiterData.forEach((g, i) => {
@@ -331,7 +343,10 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
     csv += `S.No,T.No,Operator Name,Machine,Shift,Count,GPSS,Incentive (INR)\n`;
     
     incentiveData.forEach((d, i) => {
-      csv += `${i + 1},"${d.worker?.tNo || d.siderId || ''}","${d.worker?.name || d.siderName || 'UNASSIGNED'}","${d.frameNo}","${d.shift}","${d.count}",${d.gpsActual},${d.incentive}\n`;
+      const tNo = d.worker?.tNo || (d.siderId && d.siderId !== 'UNASSIGNED' ? d.siderId : '—');
+      const name = d.worker?.name && d.worker.name !== 'UNASSIGNED' ? d.worker.name : (d.siderName || 'UNASSIGNED');
+      const inc = d.worker ? d.incentive : 0;
+      csv += `${i + 1},"${tNo}","${name}","${d.frameNo}","${d.shift}","${d.count}",${d.gpsActual},${inc}\n`;
     });
 
     gaiterData.forEach((g, i) => {
@@ -564,7 +579,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                             value={editData.siderId || ''}
                             onChange={e => setEditData({...editData, siderId: e.target.value})}
                            />
-                        ) : (data.worker?.tNo || data.siderId)}
+                        ) : (data.worker?.tNo || (data.siderId && data.siderId !== 'UNASSIGNED' ? data.siderId : '—'))}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-xl font-black" : "px-3 py-1.5")}>
                         {editingIdx === idx ? (
@@ -573,7 +588,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                             value={editData.siderName || ''}
                             onChange={e => setEditData({...editData, siderName: e.target.value})}
                            />
-                        ) : (data.worker?.name || data.siderName)}
+                        ) : (data.worker?.name && data.worker.name !== 'UNASSIGNED' ? data.worker.name : (data.siderName || <span className="text-stone-400 font-normal italic">UNASSIGNED</span>))}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-stone-900 font-bold text-center whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-lg font-black" : "px-3 py-1.5")}>
                         {data.frameNo}
@@ -602,7 +617,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                             value={editData.incentiveAmount || 0}
                             onChange={e => setEditData({...editData, incentiveAmount: Number(e.target.value)})}
                            />
-                        ) : (data.incentive > 0 ? `₹${data.incentive.toLocaleString()}` : (
+                        ) : (data.worker && data.incentive > 0 ? `₹${data.incentive.toLocaleString()}` : (
                            <span className="text-stone-300 font-medium italic">0</span>
                         ))}
                       </td>
