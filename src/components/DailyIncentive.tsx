@@ -183,7 +183,6 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
       const activeIds = Array.from(assignedIds);
       
       if (activeIds.length === 0) {
-        // Fallback for unassigned machines in the list
         flatResults.push({
           ...entry,
           entryIndex: entryIdx,
@@ -191,21 +190,20 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
           incentive: baseIncentive
         });
       } else {
-        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
-        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
-          const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
-          if (!wId) continue;
-          const worker = resolveWorker(wId, entry.siderName, workers);
-          const siderPayout = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers);
+        const s0 = entry.siderIds?.[0] || entry.siderId;
+        const s1 = entry.siderIds?.[1];
+        const isSplitSides = !!(s0 && s1 && s0 !== s1);
+        const siderPayout = isSplitSides ? Math.round(baseIncentive * 0.5) : baseIncentive;
 
+        activeIds.forEach(id => {
+          const worker = workers.find(w => w.id === id || w.tNo === id || w.name === id);
           flatResults.push({
             ...entry,
             entryIndex: entryIdx,
-            slotIdx: sIdx,
             worker,
             incentive: siderPayout
           });
-        }
+        });
       }
     });
 

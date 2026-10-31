@@ -103,9 +103,13 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
             const worker = workerId ? workers.find(w => w.id === workerId) : null;
             
+            // Calculate dynamic GPS incentive for the entry based on Incentive Master
+            const baseIncentive = calculateIncentive(entry, rules, report.date);
             let incentive = 0;
-            if (worker) {
-              incentive = calculateSiderSlotIncentive(entry, slotIdx, report, rules, workers);
+            if (numSlots > 1) {
+              incentive = Math.round(baseIncentive / numSlots);
+            } else {
+              incentive = baseIncentive;
             }
 
             shiftsData[shift] = {

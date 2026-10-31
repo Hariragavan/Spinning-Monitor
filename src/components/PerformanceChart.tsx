@@ -9,28 +9,34 @@ interface PerformanceChartProps {
 }
 
 export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTvMode = false }) => {
-  const [ready, setReady] = React.useState(false);
+  const [hasDimensions, setHasDimensions] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    let frameId: number;
-    let attempts = 0;
-    const checkDimensions = () => {
-      attempts++;
-      if (containerRef.current && containerRef.current.clientWidth > 0 && containerRef.current.clientHeight > 0) {
-        setReady(true);
-      } else if (attempts < 20) {
-        frameId = requestAnimationFrame(checkDimensions);
-      } else {
-        // Fallback after frame attempts
-        setReady(true);
+    if (!containerRef.current) return;
+    const element = containerRef.current;
+
+    const checkSize = () => {
+      if (element.clientWidth > 50 && element.clientHeight > 50) {
+        setHasDimensions(true);
       }
     };
-    frameId = requestAnimationFrame(checkDimensions);
-    return () => cancelAnimationFrame(frameId);
+
+    checkSize();
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {
+          setHasDimensions(true);
+        }
+      }
+    });
+
+    resizeObserver.observe(element);
+    return () => resizeObserver.disconnect();
   }, []);
 
-  const chartData = report.summaries.map(s => ({
+  const chartData = (report.summaries || []).map(s => ({
     name: s.frameNo,
     Target: s.targetProd,
     Actual: s.actualProd,
@@ -38,14 +44,14 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
   }));
 
   return (
-    <div ref={containerRef} className={cn("grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12", isTvMode && "gap-6 mb-6")}>
-      <div className={cn("bg-white rounded-3xl border border-stone-200 shadow-sm transition-all hover:shadow-md", isTvMode ? "p-8 md:p-10" : "p-8")}>
+    <div ref={containerRef} className={cn("grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12 min-w-0 min-h-[300px]", isTvMode && "gap-6 mb-6 min-h-[450px]")}>
+      <div className={cn("bg-white rounded-3xl border border-stone-200 shadow-sm transition-all hover:shadow-md min-w-0 flex flex-col", isTvMode ? "p-8 md:p-10" : "p-8")}>
         <h3 className={cn("font-black text-stone-900 uppercase tracking-tight mb-6", isTvMode ? "text-2xl md:text-3xl" : "text-sm")}>
           Production Analysis (Actual vs Target)
         </h3>
-        <div className={cn("w-full relative min-w-0", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
-          {ready ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+        <div className={cn("w-full relative min-w-0 flex-1", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
+          {hasDimensions ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis dataKey="name" stroke="#78716c" fontSize={isTvMode ? 16 : 10} fontWeight={isTvMode ? 800 : 600} tickLine={false} axisLine={false} dy={10} />
@@ -66,13 +72,13 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
         </div>
       </div>
 
-      <div className={cn("bg-white rounded-3xl border border-stone-200 shadow-sm transition-all hover:shadow-md", isTvMode ? "p-8 md:p-10" : "p-8")}>
+      <div className={cn("bg-white rounded-3xl border border-stone-200 shadow-sm transition-all hover:shadow-md min-w-0 flex flex-col", isTvMode ? "p-8 md:p-10" : "p-8")}>
         <h3 className={cn("font-black text-stone-900 uppercase tracking-tight mb-6", isTvMode ? "text-2xl md:text-3xl" : "text-sm")}>
           Efficiency Trends (%)
         </h3>
-        <div className={cn("w-full relative min-w-0", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
-          {ready ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={100} minHeight={100}>
+        <div className={cn("w-full relative min-w-0 flex-1", isTvMode ? "h-[450px] lg:h-[500px]" : "h-[300px]")}>
+          {hasDimensions ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis dataKey="name" stroke="#78716c" fontSize={isTvMode ? 16 : 10} fontWeight={isTvMode ? 800 : 600} tickLine={false} axisLine={false} dy={10} />

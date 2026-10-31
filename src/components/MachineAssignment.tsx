@@ -214,7 +214,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const staffedS3Count = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 3 && entry.siderIds?.[2]).length;
   const s4NeededCount = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 4).length;
   const staffedS4Count = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 4 && entry.siderIds?.[3]).length;
-  const staffedGaiterCount = filteredEntriesWithIndex.filter(({ entry }) => entry.gaiterId || gaiters[entry.shift]?.[0]).length;
+  const staffedGaiterCount = filteredEntriesWithIndex.filter(({ entry }) => Boolean(entry.gaiterId)).length;
 
   const currentReport = {
     date: selectedDate,
@@ -686,7 +686,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   const rhWorkerId = entry.siderIds?.[1] || '';
                   const s3WorkerId = entry.siderIds?.[2] || '';
                   const s4WorkerId = entry.siderIds?.[3] || '';
-                  const machineGaiterId = entry.gaiterId || (gaiters[entry.shift]?.[0] || '');
+                  const machineGaiterId = entry.gaiterId || '';
 
                   const activeAssignedSlots = [
                     lhWorkerId,

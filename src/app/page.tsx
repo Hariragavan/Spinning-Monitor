@@ -953,18 +953,50 @@ export default function Home() {
     return encodeURIComponent(text);
   };
 
+  // Helper to update activeDailyReport whether it is dailyReport or in reportHistory
+  const updateActiveReport = (updater: (prev: DailyReport) => DailyReport) => {
+    const currentActive = activeDailyReport;
+    if (!currentActive) return;
+
+    const updated = updater(currentActive);
+    const updatedShed = updated.shed || selectedShed || 'Shed 1';
+    const updatedDate = updated.date;
+
+    // 1. If dailyReport matches date & shed, update dailyReport state
+    const dailyShed = dailyReport.shed || 'Shed 1';
+    if (dailyReport.date === updatedDate && dailyShed === updatedShed) {
+      setDailyReport(updated);
+    }
+
+    // 2. Always update or add into reportHistory for this date & shed
+    setReportHistory(prev => {
+      const idx = prev.findIndex(r => r.date === updatedDate && (r.shed || 'Shed 1') === updatedShed);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = updated;
+        return next;
+      }
+      return [...prev, updated];
+    });
+
+    // 3. Persist to MongoDB
+    apiClient.saveDailyReport(updated).catch(err => {
+      console.error('Failed to save updated report:', err);
+    });
+  };
+
   // Assignments Handlers: supports same operator for both sides of same machine AND up to 2 machines in the same shift
   const assignWorkerToMachine = (entryIndex: number, siderId: string, slotIndex: number = 0) => {
     if (siderId) {
       let conflictMsg: string | null = null;
       const worker = workers.find(w => w.id === siderId);
       const name = worker ? worker.name : siderId;
-      const targetEntry = dailyReport.entries[entryIndex];
+      const targetEntry = activeDailyReport.entries[entryIndex];
       const targetShift = targetEntry?.shift || 'I';
       const targetFrame = targetEntry?.frameNo || '';
 
       // 1. Cross-shift check: worker can only work in one shift per day
-      dailyReport.entries.forEach((entry, idx) => {
+      activeDailyReport.entries.forEach((entry, idx) => {
         if (entry.shift !== targetShift) {
           const isAssigned = entry.siderId === siderId || (entry.siderIds && entry.siderIds.includes(siderId));
           if (isAssigned) {
@@ -974,18 +1006,18 @@ export default function Home() {
       });
 
       // 2. Cross-role checks: Gaiter or AI Linkconer
-      if (dailyReport.gaiters) {
+      if (activeDailyReport.gaiters) {
         (['I', 'II', 'III'] as Shift[]).forEach(shift => {
-          const gaiterIds = dailyReport.gaiters?.[shift] || [];
+          const gaiterIds = activeDailyReport.gaiters?.[shift] || [];
           if (gaiterIds.includes(siderId)) {
             conflictMsg = `${name} is already assigned as a Gaiter in Shift ${shift} today.`;
           }
         });
       }
 
-      if (dailyReport.aiCones) {
+      if (activeDailyReport.aiCones) {
         (['I', 'II', 'III'] as Shift[]).forEach(shift => {
-          const aiConeIds = dailyReport.aiCones?.[shift] || [];
+          const aiConeIds = activeDailyReport.aiCones?.[shift] || [];
           if (aiConeIds.includes(siderId)) {
             conflictMsg = `${name} is already assigned as an AI Linkconer in Shift ${shift} today.`;
           }
@@ -995,7 +1027,7 @@ export default function Home() {
       // 3. Machine allocation limit in the same shift: up to 2 distinct machines (both sides or single side)
       if (!conflictMsg) {
         const assignedMachinesInShift = new Set<string>();
-        dailyReport.entries.forEach((entry, idx) => {
+        activeDailyReport.entries.forEach((entry, idx) => {
           if (entry.shift === targetShift && idx !== entryIndex) {
             const hasWorker = entry.siderId === siderId || (entry.siderIds && entry.siderIds.includes(siderId));
             if (hasWorker) {
@@ -1015,7 +1047,7 @@ export default function Home() {
       }
     }
 
-    setDailyReport(prev => {
+    updateActiveReport(prev => {
       const newEntries = [...prev.entries];
       const worker = workers.find(w => w.id === siderId);
       const entry = { ...newEntries[entryIndex] };
@@ -1030,9 +1062,7 @@ export default function Home() {
 
       entry.siderIds = siderIds.map(id => id || '');
       newEntries[entryIndex] = entry;
-      const updated = { ...prev, entries: newEntries, timestamp: Date.now() };
-      apiClient.saveDailyReport(updated).catch(() => {});
-      return updated;
+      return { ...prev, entries: newEntries, timestamp: Date.now() };
     });
   };
 
@@ -1046,12 +1076,12 @@ export default function Home() {
 
       (['I', 'II', 'III'] as Shift[]).forEach(s => {
         if (s === shift) return;
-        if ((dailyReport.gaiters?.[s] || []).includes(siderId)) {
+        if ((activeDailyReport.gaiters?.[s] || []).includes(siderId)) {
           conflictMsg = `${name} is already assigned as a Gaiter in Shift ${s} today.`;
         }
       });
 
-      dailyReport.entries.forEach(entry => {
+      activeDailyReport.entries.forEach(entry => {
         if (entry.siderId === siderId || (entry.siderIds && entry.siderIds.includes(siderId))) {
           conflictMsg = `${name} is already assigned to Machine ${entry.frameNo} in Shift ${entry.shift} today.`;
         }
@@ -1063,48 +1093,36 @@ export default function Home() {
       return;
     }
 
-    setDailyReport(prev => {
-      const updated = {
-        ...prev,
-        gaiters: {
-          ...(prev.gaiters || { I: [], II: [], III: [] }),
-          [shift]: gaiterIds.map(id => id || '')
-        } as Record<Shift, string[]>,
-        timestamp: Date.now()
-      };
-      apiClient.saveDailyReport(updated).catch(() => {});
-      return updated;
-    });
+    updateActiveReport(prev => ({
+      ...prev,
+      gaiters: {
+        ...(prev.gaiters || { I: [], II: [], III: [] }),
+        [shift]: gaiterIds.map(id => id || '')
+      } as Record<Shift, string[]>,
+      timestamp: Date.now()
+    }));
   };
 
   const assignAiCone = (shift: Shift, aiConeIds: string[]) => {
-    setDailyReport(prev => {
-      const updated = {
-        ...prev,
-        aiCones: {
-          ...(prev.aiCones || { I: [], II: [], III: [] }),
-          [shift]: aiConeIds.map(id => id || '')
-        } as Record<Shift, string[]>,
-        timestamp: Date.now()
-      };
-      apiClient.saveDailyReport(updated).catch(() => {});
-      return updated;
-    });
+    updateActiveReport(prev => ({
+      ...prev,
+      aiCones: {
+        ...(prev.aiCones || { I: [], II: [], III: [] }),
+        [shift]: aiConeIds.map(id => id || '')
+      } as Record<Shift, string[]>,
+      timestamp: Date.now()
+    }));
   };
 
   const assignFitter = (shift: Shift, fitterIds: string[]) => {
-    setDailyReport(prev => {
-      const updated = {
-        ...prev,
-        fitters: {
-          ...(prev.fitters || { I: [], II: [], III: [] }),
-          [shift]: fitterIds.map(id => id || '')
-        } as Record<Shift, string[]>,
-        timestamp: Date.now()
-      };
-      apiClient.saveDailyReport(updated).catch(() => {});
-      return updated;
-    });
+    updateActiveReport(prev => ({
+      ...prev,
+      fitters: {
+        ...(prev.fitters || { I: [], II: [], III: [] }),
+        [shift]: fitterIds.map(id => id || '')
+      } as Record<Shift, string[]>,
+      timestamp: Date.now()
+    }));
   };
 
   const assignMachineGaiter = (entryIndex: number | number[], gaiterId: string) => {
@@ -1115,9 +1133,9 @@ export default function Home() {
       let conflictMsg: string | null = null;
       const worker = workers.find(w => w.id === gaiterId);
       const name = worker ? worker.name : gaiterId;
-      const targetShift = dailyReport.entries[indices[0]]?.shift;
+      const targetShift = activeDailyReport.entries[indices[0]]?.shift;
 
-      dailyReport.entries.forEach((entry, idx) => {
+      activeDailyReport.entries.forEach((entry, idx) => {
         if (indices.includes(idx)) return;
         if (entry.siderId === gaiterId || (entry.siderIds && entry.siderIds.includes(gaiterId))) {
           conflictMsg = `${name} is already assigned as a Sider on Machine ${entry.frameNo} in Shift ${entry.shift} today.`;
@@ -1127,9 +1145,9 @@ export default function Home() {
         }
       });
 
-      if (dailyReport.aiCones) {
+      if (activeDailyReport.aiCones) {
         (['I', 'II', 'III'] as Shift[]).forEach(shift => {
-          const aiConeIds = dailyReport.aiCones?.[shift] || [];
+          const aiConeIds = activeDailyReport.aiCones?.[shift] || [];
           if (aiConeIds.includes(gaiterId)) {
             conflictMsg = `${name} is already assigned as an AI Linkconer in Shift ${shift} today.`;
           }
@@ -1142,7 +1160,7 @@ export default function Home() {
       }
     }
 
-    setDailyReport(prev => {
+    updateActiveReport(prev => {
       const newEntries = [...prev.entries];
       const worker = workers.find(w => w.id === gaiterId);
       const targetShift = newEntries[indices[0]]?.shift || 'I';
@@ -1164,28 +1182,27 @@ export default function Home() {
           .map(e => e.gaiterId as string)
       ));
 
-      const updated = {
+      return {
         ...prev,
         entries: newEntries,
         gaiters: {
           ...(prev.gaiters || { I: [], II: [], III: [] }),
-          [targetShift]: shiftGaiters.length > 0 ? shiftGaiters : (gaiterId ? [gaiterId] : [])
+          [targetShift]: shiftGaiters
         } as Record<Shift, string[]>,
         timestamp: Date.now()
       };
-      apiClient.saveDailyReport(updated).catch(() => {});
-      return updated;
     });
   };
 
   const copyAllocationsFromReport = (sourceDate: string, targetShift?: Shift | 'ALL') => {
-    const sourceReport = reportHistory.find(r => r.date === sourceDate);
+    const sourceReport = reportHistory.find(r => r.date === sourceDate && (r.shed || 'Shed 1') === (selectedShed || 'Shed 1')) ||
+      reportHistory.find(r => r.date === sourceDate);
     if (!sourceReport) {
       alert(`Source report for date ${sourceDate} not found.`);
       return;
     }
 
-    setDailyReport(prev => {
+    updateActiveReport(prev => {
       const newEntries = prev.entries.map(targetEntry => {
         if (targetShift && targetShift !== 'ALL' && targetEntry.shift !== targetShift) return targetEntry;
         const sourceEntry = sourceReport.entries.find(e => e.frameNo === targetEntry.frameNo && e.shift === targetEntry.shift);
@@ -1202,7 +1219,7 @@ export default function Home() {
         return targetEntry;
       });
 
-      const updated = {
+      return {
         ...prev,
         entries: newEntries,
         gaiters: sourceReport.gaiters ? { ...sourceReport.gaiters } : prev.gaiters,
@@ -1210,8 +1227,6 @@ export default function Home() {
         fitters: sourceReport.fitters ? { ...sourceReport.fitters } : prev.fitters,
         timestamp: Date.now()
       };
-      apiClient.saveDailyReport(updated).catch(() => {});
-      return updated;
     });
   };
 

@@ -97,9 +97,12 @@ export async function DELETE(req: Request) {
     }
 
     const cleanCount = count.trim();
-    const filter: any = { count: cleanCount };
+    const escapedCount = cleanCount.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const countRegex = new RegExp(`^${escapedCount}$`, 'i');
+
+    const filter: any = { count: countRegex };
     if (shed && shed !== 'All' && shed !== 'All Sheds') {
-      filter.shed = shed;
+      filter.$or = [{ shed }, { shed: 'All Sheds' }];
     }
 
     await db.collection('incentiverules').deleteMany(filter);
@@ -109,4 +112,3 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to delete rule' }, { status: 500 });
   }
 }
-

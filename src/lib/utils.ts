@@ -117,7 +117,7 @@ export function getActiveRule(
   let matchingRules = candidateRules.filter(r => {
     const deptMatch = (r.department || 'Sider') === (department || 'Sider');
     if (!deptMatch) return false;
-    return normalize(r.count) === targetCountNorm;
+    return isCountNameMatching(r.count, count) || normalize(r.count) === targetCountNorm;
   });
 
   // If no exact match, try fuzzy matching
@@ -173,18 +173,20 @@ export function getActiveRule(
 }
 
 export function calculateIncentive(entry: ProductionEntry, rules: IncentiveRule[], reportDate?: string, shed?: string): number {
+  const effectiveShed = entry.shed || shed;
+  const rule = getActiveRule(entry.count, 'Sider', rules, reportDate, effectiveShed);
+  if (rule && rule.payouts && rule.payouts.length > 0) {
+    const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
+    const bestPayout = sortedPayouts.find((p) => entry.gpsActual >= p.gpsThreshold);
+    if (bestPayout) return bestPayout.amount;
+    return 0;
+  }
+
   if (entry.incentiveAmount !== undefined && entry.incentiveAmount !== null && entry.incentiveAmount > 0) {
     return entry.incentiveAmount;
   }
 
-  const effectiveShed = entry.shed || shed;
-  const rule = getActiveRule(entry.count, 'Sider', rules, reportDate, effectiveShed);
-  if (!rule) return 0;
-
-  const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
-  const bestPayout = sortedPayouts.find((p) => entry.gpsActual >= p.gpsThreshold);
-  
-  return bestPayout ? bestPayout.amount : 0;
+  return 0;
 }
 
 export function resolveWorker(id: string, name: string | undefined, workers: Sider[]): Sider {

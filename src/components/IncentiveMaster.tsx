@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { IncentiveRule, IncentivePayout, CountConversion, FrozenMonthRecord } from '../types';
 import { cn } from '../lib/utils';
+import { apiClient } from '../lib/api';
 
 interface BuilderSlotItem {
   id: string;
@@ -247,11 +248,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       shed: targetShed
     };
 
-    // Filter out existing rule for THIS count in THIS shed only
+    // Filter out existing rule for THIS count in THIS shed OR All Sheds to prevent duplicate rules
     const updatedRules = [
       ...rules.filter(r => !(
         r.count.toLowerCase().trim() === cleanCount.toLowerCase() && 
-        (r.shed || 'Shed 1') === targetShed &&
+        ((r.shed || 'Shed 1') === targetShed || r.shed === 'All Sheds' || targetShed === 'All Sheds') &&
         (r.department || 'Sider') === 'Sider'
       )),
       cleanRule
@@ -308,16 +309,17 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   };
 
   // Delete an entire count rule for a shed
-  const handleDeleteRule = (ruleCount: string, ruleShed?: string) => {
+  const handleDeleteRule = async (ruleCount: string, ruleShed?: string) => {
     const targetShed = ruleShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
     if (confirm(`Delete incentive rule for count "${ruleCount}" in ${targetShed}?`)) {
       const remaining = rules.filter(r => !(
         r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && 
-        (r.shed || 'Shed 1') === targetShed
+        ((r.shed || 'Shed 1') === targetShed || r.shed === 'All Sheds')
       ));
       onUpdate(remaining);
+      await apiClient.deleteRule(ruleCount, targetShed);
       if (selectedCount === ruleCount) {
-        const next = remaining.find(r => (r.shed || 'Shed 1') === targetShed) || remaining[0];
+        const next = remaining.find(r => (r.shed || 'Shed 1') === targetShed) || remaining[0] || availableCountNames[0];
         if (next) {
           setSelectedCount(next.count);
           setBuilderShed(next.shed || 'Shed 1');
@@ -351,30 +353,19 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   };
 
-  // Filter rules strictly by selected shed tab, showing only counts from that shed's Count Master
+  // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
   const filteredRules = React.useMemo(() => {
-    return availableCountNames.map(cItem => {
-      const match = rules.find(r => 
-        r.count.toLowerCase().trim() === cItem.count.toLowerCase() &&
-        (selectedShedTab === 'All Sheds' || (r.shed || 'Shed 1') === selectedShedTab || r.shed === 'All Sheds')
-      );
-      if (match) return match;
-      // Default starter rule for counts in Count Master without a custom incentive rule yet
-      return {
-        count: cItem.count,
-        shed: selectedShedTab === 'All Sheds' ? cItem.shed : selectedShedTab,
-        department: 'Sider',
-        payouts: [
-          { gpsThreshold: 140, amount: 100, fromGps: 140, toGps: 140, conditionText: 'for GPSS 140', ruleText: 'Rs 100 for GPSS 140' },
-          { gpsThreshold: 135, amount: 90, fromGps: 135, toGps: 140, conditionText: 'for GPS 135 to 140', ruleText: 'Rs 90 for GPS 135 to 140' },
-          { gpsThreshold: 130, amount: 80, fromGps: 130, toGps: 135, conditionText: 'for 130 to 135', ruleText: 'Rs 80 for 130 to 135' },
-          { gpsThreshold: 125, amount: 70, fromGps: 125, toGps: 130, conditionText: 'for 125 to 130', ruleText: 'Rs 70 for 125 to 130' },
-          { gpsThreshold: 120, amount: 60, fromGps: 120, toGps: 125, conditionText: 'for 120 to 125', ruleText: 'Rs 60 for 120 to 125' },
-          { gpsThreshold: 115, amount: 50, fromGps: 115, toGps: 120, conditionText: 'for 115 to 120', ruleText: 'Rs 50 for 115 to 120' }
-        ]
-      } as IncentiveRule;
+    return rules.filter(r => {
+      if (!r || !r.count) return false;
+      const cleanR = r.count.toLowerCase().trim();
+      // Must be a count in Count Master for this shed
+      const countMatch = availableCountNames.some(c => c.count.toLowerCase().trim() === cleanR);
+      if (!countMatch) return false;
+      if (selectedShedTab === 'All Sheds') return true;
+      const s = r.shed || 'Shed 1';
+      return s === selectedShedTab || s === 'All Sheds';
     });
-  }, [availableCountNames, rules, selectedShedTab]);
+  }, [rules, availableCountNames, selectedShedTab]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
