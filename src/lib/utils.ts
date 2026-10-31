@@ -361,6 +361,14 @@ export interface DuplicateAllocation {
 
 export function findDuplicatesInReport(report: DailyReport, workers: Sider[]): DuplicateAllocation[] {
   if (!report) return [];
+
+  // RULE EXEMPTION: "this rule is for the 1,2,3 sheds, no rule for kttm"
+  const shedLower = (report.shed || '').toLowerCase();
+  const isKttm = shedLower.includes('kttm');
+  if (isKttm) {
+    return [];
+  }
+
   const allocationsMap = new Map<string, AllotmentDetail[]>();
 
   // 1. Operators assigned to machines
@@ -464,20 +472,37 @@ export function findDuplicatesInReport(report: DailyReport, workers: Sider[]): D
   const duplicates: DuplicateAllocation[] = [];
   allocationsMap.forEach((allotments, workerId) => {
     if (allotments.length > 1) {
-      // An operator can be allocated to up to 2 machines (both sides or single side) in the SAME shift
-      const shifts = new Set(allotments.map(a => a.shift));
       const roles = new Set(allotments.map(a => a.role));
-      const operatorFrames = new Set(
-        allotments.filter(a => a.role === 'OPERATOR').map(a => a.detail)
-      );
 
-      const isValidDoubleAllocation = 
-        shifts.size === 1 && 
-        roles.size === 1 && 
-        roles.has('OPERATOR') && 
-        operatorFrames.size <= 2;
+      // Pure support roles (Gaiter or AI Linkconer) supporting shifts are not ringframe double-allocation conflicts
+      if (roles.size === 1 && (roles.has('GAITER') || roles.has('AI LINKCONER'))) {
+        return;
+      }
 
-      if (!isValidDoubleAllocation) {
+      // Check for actual conflicts honoring the incentive allocation rules:
+      // 1. Cross-role clash in the same shift (e.g. assigned as OPERATOR and GAITER at the same time)
+      // 2. Machine allocation limit in any single shift:
+      //    Incentive rule allows up to 2 machines (both sides or single side) in a shift.
+      //    Assigning more than 2 machines in the same shift is an invalid allocation.
+      const shifts: Shift[] = ['I', 'II', 'III'];
+      let hasConflict = false;
+
+      shifts.forEach(shift => {
+        const shiftAllots = allotments.filter(a => a.shift === shift);
+        const shiftRoles = new Set(shiftAllots.map(a => a.role));
+        if (shiftRoles.size > 1) {
+          hasConflict = true;
+        }
+
+        const shiftFrames = new Set(
+          shiftAllots.filter(a => a.role === 'OPERATOR').map(a => a.detail)
+        );
+        if (shiftFrames.size > 2) {
+          hasConflict = true;
+        }
+      });
+
+      if (hasConflict) {
         const worker = resolveWorker(workerId, undefined, workers);
         duplicates.push({
           date: report.date,
