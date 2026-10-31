@@ -53,15 +53,18 @@ export async function POST(req: Request) {
     const seen = new Set<string>();
     const normalizedRules: IncentiveRule[] = [];
 
-    for (const r of rawRules) {
+    // Iterate backwards so the newest updated rule for a count in a shed overrides older ones
+    for (let i = rawRules.length - 1; i >= 0; i--) {
+      const r = rawRules[i];
       if (!r || !r.count) continue;
       const cleanCount = r.count.trim();
       const shed = r.shed || 'Shed 1';
       const dept = r.department || 'Sider';
-      const key = `${cleanCount.toLowerCase()}__${dept.toLowerCase()}__${shed.toLowerCase()}`;
+      const normCount = cleanCount.toLowerCase().replace(/[-/\s_]/g, '');
+      const key = `${normCount}__${dept.toLowerCase()}__${shed.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
-        normalizedRules.push({
+        normalizedRules.unshift({
           ...r,
           count: cleanCount,
           shed,

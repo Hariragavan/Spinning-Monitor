@@ -142,33 +142,24 @@ export function getActiveRule(
 
   if (matchingRules.length === 0) return null;
 
-  // Choose the rule based on reportDate
-  if (reportDate) {
-    const targetTime = parseDDMMYYYY(reportDate).getTime();
-    const eligibleRules = matchingRules.filter(r => {
-      if (!r.effectiveDate) return true; // rules without effective date apply as fallback/oldest
-      const ruleTime = parseDDMMYYYY(r.effectiveDate).getTime();
-      return ruleTime <= targetTime;
-    });
-
-    if (eligibleRules.length > 0) {
-      eligibleRules.sort((a, b) => {
-        if (!a.effectiveDate && !b.effectiveDate) return 0;
-        if (!a.effectiveDate) return 1;
-        if (!b.effectiveDate) return -1;
-        return parseDDMMYYYY(b.effectiveDate).getTime() - parseDDMMYYYY(a.effectiveDate).getTime();
-      });
-      return eligibleRules[0];
-    }
-  }
-
-  // If no reportDate, sort by effectiveDate descending to find the newest config
+  // Return the active rule!
+  // When an incentive rule is updated for a count in a shed, it applies dynamically across ALL data.
+  // Priority:
+  // 1. Exact shed match over 'All Sheds'
+  // 2. Freshly edited rules (without effectiveDate) or newest effectiveDate
   const sorted = [...matchingRules].sort((a, b) => {
-    if (!a.effectiveDate && !b.effectiveDate) return 0;
-    if (!a.effectiveDate) return 1;
-    if (!b.effectiveDate) return -1;
-    return parseDDMMYYYY(b.effectiveDate).getTime() - parseDDMMYYYY(a.effectiveDate).getTime();
+    if (shed && a.shed === shed && b.shed !== shed) return -1;
+    if (shed && b.shed === shed && a.shed !== shed) return 1;
+
+    if (!a.effectiveDate && b.effectiveDate) return -1;
+    if (a.effectiveDate && !b.effectiveDate) return 1;
+
+    if (a.effectiveDate && b.effectiveDate) {
+      return parseDDMMYYYY(b.effectiveDate).getTime() - parseDDMMYYYY(a.effectiveDate).getTime();
+    }
+    return 0;
   });
+
   return sorted[0] || null;
 }
 
@@ -645,14 +636,14 @@ export function calculateSiderSlotIncentive(
   const baseIncentive = calculateIncentive(entry, rules, report.date, effectiveShed);
   if (baseIncentive <= 0) return 0;
 
+  // Standard slot share for this entry
+  const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+  const slotShare = numSlots > 1 ? Math.round(baseIncentive / numSlots) : baseIncentive;
+
   // RULE EXEMPTION: "this rule is for the 1,2,3 sheds, no rule for kttm"
   if (isKttm) {
     if (!worker || (!worker.id && !worker.tNo && !worker.name)) return 0;
-    const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
-    if (numSlots > 1) {
-      return Math.round(baseIncentive / numSlots);
-    }
-    return baseIncentive;
+    return slotShare;
   }
 
   // FOR SHED 1, 2, 3:
@@ -708,41 +699,40 @@ export function calculateSiderSlotIncentive(
     }
   });
 
-  const totalSides = workerMachines.reduce((sum, m) => sum + m.sides, 0);
   const distinctMachineCount = workerMachines.length;
 
-  // Rule 1: "one operator works for both side of one machine no incentive"
-  // (also if totalSides <= 2, i.e. 1 side or 2 sides -> NO INCENTIVE)
-  if (distinctMachineCount <= 1 || totalSides <= 2) {
-    return 0;
+  // Case 1: Individual operator working on 1 machine (individual incentive works like before and properly!)
+  if (distinctMachineCount <= 1) {
+    return slotShare;
   }
 
-  // Rule 2: "if worked additional machine left or right side give 25% of incentive"
-  // (Worker works both sides on one machine, and 1 side on an additional machine: totalSides === 3)
-  if (distinctMachineCount === 2 && totalSides === 3) {
-    const additionalMachine = workerMachines.find(m => m.sides === 1);
-    // Only the additional machine side earns the 25% incentive!
-    if (additionalMachine && entry.frameNo === additionalMachine.frameNo) {
-      return Math.round(baseIncentive * 0.25);
-    }
-    // The base machine (which had 2 sides) has NO incentive (0%)
-    return 0;
+  // Case 2: Multi-machine allocation across 2 or more frames in this shift
+  // Determine primary machine: machine with 2 sides allocated to worker; if tie, higher base incentive / lower frame number
+  workerMachines.sort((a, b) => {
+    if (b.sides !== a.sides) return b.sides - a.sides;
+    if (b.baseIncentive !== a.baseIncentive) return b.baseIncentive - a.baseIncentive;
+    return a.frameNo.localeCompare(b.frameNo, undefined, { numeric: true });
+  });
+
+  const primaryMachine = workerMachines[0];
+  const isPrimary = entry.frameNo === primaryMachine.frameNo;
+
+  if (isPrimary) {
+    // Primary machine earns its normal full slot share
+    return slotShare;
   }
 
-  // Rule 3: "if worked both machine both sides give then 50% incentive"
-  // (Worker works both sides of 2 machines: totalSides >= 4)
-  if (distinctMachineCount >= 2 && totalSides >= 4) {
-    // Sort by baseIncentive descending so the worker receives the optimal 50% bonus on the earning machine
-    const sortedByIncentive = [...workerMachines].sort((a, b) => b.baseIncentive - a.baseIncentive);
-    const earningMachine = sortedByIncentive[0];
+  // Additional machine:
+  // "if worked additional machine left or right side give 25% of incentive"
+  // "if working both side for two machines give 50% incentive" (25% on LH + 25% on RH)
+  const currentMachine = workerMachines.find(m => m.frameNo === entry.frameNo);
+  const machineSides = currentMachine ? currentMachine.sides : 1;
 
-    if (entry.frameNo === earningMachine.frameNo) {
-      // The additional machine gives 50% total: 25% on LH (slot 0) and 25% on RH (slot 1)
-      return Math.round(baseIncentive * 0.25);
-    }
-    // The base machine gives NO incentive (0%)
-    return 0;
+  if (machineSides === 1) {
+    // Worked 1 additional side: 25% incentive
+    return Math.round(baseIncentive * 0.25);
+  } else {
+    // Worked both sides on additional machine: 50% total (25% per side)
+    return Math.round(baseIncentive * 0.25);
   }
-
-  return 0;
-}
+}

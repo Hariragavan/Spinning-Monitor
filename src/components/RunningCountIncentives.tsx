@@ -2,7 +2,7 @@ import React from 'react';
 import { IncentiveRule, DailyReport } from '../types';
 import { Coins, HelpCircle, FileText, Printer, CheckCircle, Info, ChevronDown, Download, FileSpreadsheet } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn } from '../lib/utils';
+import { cn, normalizeCountName } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
 
@@ -107,7 +107,21 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
       isActive: true
     }));
 
-    return [...matched, ...placeholders];
+    // Deduplicate by count name and shed so old and new count incentives never duplicate
+    const seen = new Set<string>();
+    const dedupMatched: typeof matched = [];
+    // Process from end so latest/newest rule is preferred
+    for (let i = matched.length - 1; i >= 0; i--) {
+      const r = matched[i];
+      const norm = normalizeCountName(r.count);
+      const key = `${norm}__${r.shed || ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        dedupMatched.unshift(r);
+      }
+    }
+
+    return [...dedupMatched, ...placeholders];
   }, [rules, activeCountsOnMachines, showOnlyActive]);
 
   const sortedStandardRules = [...standardRules].sort((a, b) => getNumericValue(a.count) - getNumericValue(b.count));

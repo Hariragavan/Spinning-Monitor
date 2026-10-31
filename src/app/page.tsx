@@ -36,7 +36,7 @@ import { MonthlyCountGpss } from '@/components/MonthlyCountGpss';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching } from '@/lib/utils';
@@ -1524,16 +1524,17 @@ export default function Home() {
     const fallbackShed = selectedShed || 'Shed 1';
     const seen = new Set<string>();
     const normalized: IncentiveRule[] = [];
-    for (const r of newRules) {
+    for (let i = newRules.length - 1; i >= 0; i--) {
+      const r = newRules[i];
       if (!r || !r.count) continue;
       const cleanCount = r.count.trim();
       const s = r.shed || fallbackShed;
       const d = r.department || 'Sider';
-      const key = `${cleanCount.toLowerCase()}__${d.toLowerCase()}__${s.toLowerCase()}`;
+      const normCount = normalizeCountName(cleanCount);
+      const key = `${normCount}__${d.toLowerCase()}__${s.toLowerCase()}`;
       if (!seen.has(key)) {
-
         seen.add(key);
-        normalized.push({
+        normalized.unshift({
           ...r,
           count: cleanCount,
           shed: s,

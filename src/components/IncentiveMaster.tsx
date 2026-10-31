@@ -5,7 +5,7 @@ import {
   ShieldAlert, Coins
 } from 'lucide-react';
 import { IncentiveRule, IncentivePayout, CountConversion, FrozenMonthRecord } from '../types';
-import { cn } from '../lib/utils';
+import { cn, isCountNameMatching, normalizeCountName } from '../lib/utils';
 import { apiClient } from '../lib/api';
 
 interface BuilderSlotItem {
@@ -251,7 +251,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     // Filter out existing rule for THIS count in THIS shed OR All Sheds to prevent duplicate rules
     const updatedRules = [
       ...rules.filter(r => !(
-        r.count.toLowerCase().trim() === cleanCount.toLowerCase() && 
+        (isCountNameMatching(r.count, cleanCount) || r.count.toLowerCase().trim() === cleanCount.toLowerCase()) && 
         ((r.shed || 'Shed 1') === targetShed || r.shed === 'All Sheds' || targetShed === 'All Sheds') &&
         (r.department || 'Sider') === 'Sider'
       )),
@@ -313,7 +313,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     const targetShed = ruleShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
     if (confirm(`Delete incentive rule for count "${ruleCount}" in ${targetShed}?`)) {
       const remaining = rules.filter(r => !(
-        r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && 
+        (isCountNameMatching(r.count, ruleCount) || r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim()) && 
         ((r.shed || 'Shed 1') === targetShed || r.shed === 'All Sheds')
       ));
       onUpdate(remaining);
@@ -357,10 +357,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   const filteredRules = React.useMemo(() => {
     return rules.filter(r => {
       if (!r || !r.count) return false;
-      const cleanR = r.count.toLowerCase().trim();
-      // Must be a count in Count Master for this shed
-      const countMatch = availableCountNames.some(c => c.count.toLowerCase().trim() === cleanR);
-      if (!countMatch) return false;
+      // Must be a count in Count Master for this shed if counts are configured
+      if (availableCountNames.length > 0) {
+        const countMatch = availableCountNames.some(c => isCountNameMatching(c.count, r.count));
+        if (!countMatch) return false;
+      }
       if (selectedShedTab === 'All Sheds') return true;
       const s = r.shed || 'Shed 1';
       return s === selectedShedTab || s === 'All Sheds';
