@@ -269,15 +269,15 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
     ]
   },
 
-  // Universal Gaiter Rule
+  // Universal AI Linkconer Rule
   {
-    count: 'All',
-    department: 'Gaiter',
+    count: 'AI LINKCONER',
+    department: 'AI Linkconer',
     shed: 'All Sheds',
     payouts: [
-      { gpsThreshold: 340, amount: 90, fromGps: 340, toGps: 340, conditionText: 'for GPSS 340', ruleText: 'Rs 90 for GPSS 340' },
-      { gpsThreshold: 320, amount: 70, fromGps: 320, toGps: 340, conditionText: 'for 320 to 340', ruleText: 'Rs 70 for 320 to 340' },
-      { gpsThreshold: 300, amount: 50, fromGps: 300, toGps: 320, conditionText: 'for 300 to 320', ruleText: 'Rs 50 for 300 to 320' }
+      { gpsThreshold: 100, amount: 100, fromGps: 100, toGps: 100, conditionText: 'for GPSS 100', ruleText: 'Rs 100 for GPSS 100' },
+      { gpsThreshold: 90, amount: 90, fromGps: 90, toGps: 100, conditionText: 'for 90 to 100', ruleText: 'Rs 90 for 90 to 100' },
+      { gpsThreshold: 80, amount: 80, fromGps: 80, toGps: 90, conditionText: 'for 80 to 90', ruleText: 'Rs 80 for 80 to 90' }
     ]
   }
 ];

@@ -47,8 +47,9 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   // Active selected count for the Builder
   const [selectedCount, setSelectedCount] = useState<string>(() => {
     if (rules.length > 0) {
-      const found = rules.find(r => r.count.includes('030') || r.count.includes('30'));
-      return found ? found.count : rules[0].count;
+      const validRules = rules.filter(r => r.count && !['all', 'ai linkconer', 'gaiter', 'fitter'].includes(r.count.toLowerCase().trim()));
+      const found = validRules.find(r => r.count.includes('030') || r.count.includes('30'));
+      return found ? found.count : (validRules[0]?.count || '030/1-PH-PC');
     }
     return '030/1-PH-PC';
   });
@@ -172,17 +173,8 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       }
     });
 
-    // 2. Also append universal support roles (Gaiter, AI Linkconer, Fitter)
-    const supportRoles = rules.filter(r => {
-      if (!r || !r.count) return false;
-      const dept = r.department || 'Sider';
-      if (dept === 'Sider') return false;
-      if (targetShed === 'All Sheds') return true;
-      const s = r.shed || 'All Sheds';
-      return s === targetShed || s === 'All Sheds';
-    });
-
-    return [...list, ...supportRoles];
+    // Strictly return only count cards belonging to this shed (NO support roles named "All")
+    return list;
   }, [availableCountNames, rules, selectedShedTab]);
 
   // Sync builderShed and selectedCount when shed tab or available counts change
@@ -596,7 +588,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
               }}
               className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
             >
-              {availableCountNames.length === 0 || !availableCountNames.some(c => c.count.toLowerCase() === selectedCount.toLowerCase()) ? (
+              {availableCountNames.length === 0 || (!availableCountNames.some(c => c.count.toLowerCase() === selectedCount.toLowerCase()) && !['all', 'ai linkconer', 'gaiter', 'fitter'].includes(selectedCount.toLowerCase().trim())) ? (
                 <option value={selectedCount}>{selectedCount}</option>
               ) : null}
               {availableCountNames.map(c => (

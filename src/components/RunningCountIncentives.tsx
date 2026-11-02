@@ -69,7 +69,13 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
 
   // Filter standard (non-AI Linkconer) rules based on active running counts in this shed
   const standardRules = React.useMemo(() => {
-    const allStd = shedRules.filter(r => r.department !== 'AI Linkconer');
+    const allStd = shedRules.filter(r => {
+      const lower = (r.count || '').toLowerCase().trim();
+      const dept = (r.department || 'Sider').toLowerCase().trim();
+      if (['all', 'ai linkconer', 'gaiter', 'fitter'].includes(lower)) return false;
+      if (dept !== 'sider') return false;
+      return true;
+    });
     const activeList = activeCountsOnMachines ? Array.from(activeCountsOnMachines) : [];
     
     // Find active counts that are standard (do not contain 'ai' or 'cone')
@@ -409,7 +415,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
               </thead>
               <tbody>
                 {sortedAiRules.map((rule, idx) => {
-                  const displayCount = rule.count || 'AI LINKCONER';
+                  const displayCount = (rule.count && rule.count.toLowerCase() !== 'all') ? rule.count : 'AI LINKCONER';
                   return (
                     <tr key={`ai-rule-${rule.count || 'ai'}-${idx}`} className="border-b last:border-b-0 border-purple-950/80 h-12 hover:bg-purple-50/20 transition-colors">
                       {/* Count Name Column */}
