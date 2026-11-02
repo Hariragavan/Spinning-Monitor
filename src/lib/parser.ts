@@ -151,13 +151,15 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
   const summaries = [...report.summaries];
 
   machines.forEach(frameNo => {
+    const fallbackCount = entries.find(e => e.frameNo === frameNo && e.count && !['40s', 'all'].includes(e.count.toLowerCase()))?.count || 
+                          summaries.find(s => s.frameNo === frameNo && s.count && !['40s', 'all'].includes(s.count.toLowerCase()))?.count || '';
     shifts.forEach(shift => {
       const exists = entries.some(e => e.frameNo === frameNo && e.shift === shift);
       if (!exists) {
         entries.push({
           shift,
           frameNo,
-          count: '40s',
+          count: fallbackCount,
           productionTarget: 0,
           productionActual: 0,
           gpsTarget: 0,
@@ -182,7 +184,7 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
     if (!summaryExists) {
       summaries.push({
         frameNo,
-        count: '40s',
+        count: fallbackCount,
         stdGps: 0,
         targetProd: 0,
         actualProd: 0,

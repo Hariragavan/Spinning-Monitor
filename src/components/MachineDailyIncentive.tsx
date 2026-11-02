@@ -86,7 +86,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
       // Compute machine-wide counts
       const machineEntries = report.entries.filter(e => e.frameNo === frameNo);
       const uniqueCounts = Array.from(new Set(machineEntries.map(e => e.count).filter(Boolean)));
-      const displayCount = uniqueCounts.join(', ') || '40s';
+      const displayCount = uniqueCounts.join(', ') || '-';
 
       for (let slotIdx = 0; slotIdx < numSlots; slotIdx++) {
         const shiftsData = {} as Record<Shift, {

@@ -7,8 +7,8 @@ import { getTodayUniversalDate, createDefaultReportForShed } from '@/lib/parser'
 const SHED_REAL_COUNTS: Record<string, string[]> = {
   'Shed 1': ['030/1-PH-PC', '040/1-PH-PC', '34/1-PH-PV', '042/1-CH-NY', '038/1-CH-NY', '034/1-PH-PC'],
   'Shed 2': ['32/1-CH-CY', '34/1CHY-OCY', '30/1CH', '20/1-CW-WVG'],
-  'Shed 3': ['26/1-CHY', '40s'],
-  'KTTM': ['60s CW', '40s'],
+  'Shed 3': ['26/1-CHY', '40s Micro Weft', '50s Compact', '60s Super Combed'],
+  'KTTM': ['60s CW', '40s KTTM', '80s Compact', '100s Dobby'],
 };
 
 // Universal CORS & Public Cache Headers for Unrestricted Access

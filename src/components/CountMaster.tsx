@@ -4,9 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { CountConversion, DailyReport, Shed } from '../types';
 import { 
   Hash, Plus, Trash2, Save, Info, Calculator, Edit2, Check, ArrowRight,
-  Layers, Activity
+  Layers, Activity, ChevronLeft, ChevronRight, Calendar
 } from 'lucide-react';
-import { cn, getYesterdayUniversalDate, isCountNameMatching } from '../lib/utils';
+import { cn, getYesterdayUniversalDate, isCountNameMatching, parseUniversalDateParts, shiftUniversalDate } from '../lib/utils';
 
 interface CountMasterProps {
   conversions: CountConversion[];
@@ -28,6 +28,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
   report,
   allReports = [],
   selectedDate,
+  onSelectDate,
 }) => {
   // Active Shed Tab Filter
   const [selectedShedTab, setSelectedShedTab] = useState<string>(() => {
@@ -89,7 +90,9 @@ export const CountMaster: React.FC<CountMasterProps> = ({
       if (!c || !c.count) return;
       const s = c.shed || 'Shed 1';
       if (selectedShedTab !== 'All Sheds' && s !== selectedShedTab) return;
-      const key = `${c.count.trim().toLowerCase()}__${s.toLowerCase()}`;
+      const lowerCount = c.count.trim().toLowerCase();
+      if (['all', '40s'].includes(lowerCount)) return;
+      const key = `${lowerCount}__${s.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
         list.push(c);
@@ -127,7 +130,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
       // From entries
       (rep.entries || []).forEach(e => {
         const c = (e.count || '').trim();
-        if (!c || c === '-' || c === '0') return;
+        if (!c || c === '-' || c === '0' || ['all', '40s'].includes(c.toLowerCase())) return;
         foundData = true;
         const key = `${c.toLowerCase()}__${repShed.toLowerCase()}`;
         if (!countMap.has(key)) {
@@ -199,6 +202,28 @@ export const CountMaster: React.FC<CountMasterProps> = ({
 
     return { dateRunningCounts: list, dateHasData: true };
   }, [allReports, report, activeDate, selectedShedTab, conversions]);
+
+    // Auto-register any count running "on date" into All Master if not already present
+  useEffect(() => {
+    if (dateRunningCounts.length > 0) {
+      dateRunningCounts.forEach(item => {
+        const clean = (item.count || '').trim();
+        if (!clean || ['all', '40s', 'ai linkconer', 'gaiter', 'fitter'].includes(clean.toLowerCase())) return;
+        const exists = conversions.some(c => 
+          c.count.trim().toLowerCase() === clean.toLowerCase() &&
+          ((c.shed || 'Shed 1') === item.shed || c.shed === 'All Sheds')
+        );
+        if (!exists) {
+          onSave({
+            count: clean,
+            multiplicationFactor: item.factor || 1.0,
+            description: item.description || `Registered from ${activeDate}`,
+            shed: item.shed
+          });
+        }
+      });
+    }
+  }, [dateRunningCounts, conversions, onSave, activeDate]);
 
   const handleSaveForm = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -358,7 +383,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="e.g. 40s, 040/1-PH-PC, 030/1-PH-PC"
+                placeholder="e.g. 040/1-PH-PC, 030/1-PH-PC, 40s Micro Weft"
                 value={newCount}
                 onChange={(e) => setNewCount(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all font-mono"
@@ -494,7 +519,45 @@ export const CountMaster: React.FC<CountMasterProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {/* Date Switcher for On Date */}
+              {viewMode === 'date' && (
+                <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-xl border border-stone-200 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => onSelectDate && onSelectDate(shiftUniversalDate(activeDate, -1))}
+                    className="p-1 text-stone-500 hover:text-stone-900 rounded hover:bg-stone-100 transition-colors cursor-pointer"
+                    title="Previous Date"
+                  >
+                    <ChevronLeft size={13} />
+                  </button>
+                  <input
+                    type="date"
+                    value={(() => {
+                      const parts = parseUniversalDateParts(activeDate);
+                      return parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : '';
+                    })()}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val) {
+                        const [y, m, d] = val.split('-');
+                        const newDate = `${parseInt(d)}/${parseInt(m)}/${y}`;
+                        onSelectDate && onSelectDate(newDate);
+                      }
+                    }}
+                    className="text-xs font-mono font-black text-stone-800 bg-transparent outline-none cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onSelectDate && onSelectDate(shiftUniversalDate(activeDate, 1))}
+                    className="p-1 text-stone-500 hover:text-stone-900 rounded hover:bg-stone-100 transition-colors cursor-pointer"
+                    title="Next Date"
+                  >
+                    <ChevronRight size={13} />
+                  </button>
+                </div>
+              )}
+
               {/* Toggle View Mode between Date Counts & All Registered */}
               <div className="inline-flex items-center bg-stone-200/80 p-0.5 rounded-lg border border-stone-300">
                 <button

@@ -22,8 +22,8 @@ export const STANDARD_12_MACHINES = ALL_STANDARD_MACHINES;
 export const SHED_REAL_COUNTS: Record<string, string[]> = {
   'Shed 1': ['030/1-PH-PC', '040/1-PH-PC', '34/1-PH-PV', '042/1-CH-NY', '038/1-CH-NY', '034/1-PH-PC'],
   'Shed 2': ['32/1-CH-CY', '34/1CHY-OCY', '30/1CH', '20/1-CW-WVG'],
-  'Shed 3': ['26/1-CHY', '40s'],
-  'KTTM': ['60s CW', '40s'],
+  'Shed 3': ['26/1-CHY', '40s Micro Weft', '50s Compact', '60s Super Combed'],
+  'KTTM': ['60s CW', '40s KTTM', '80s Compact', '100s Dobby'],
 };
 
 interface MachineMasterProps {
@@ -144,7 +144,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       .map(m => m.count.trim());
 
     // Real standard counts for this specific shed
-    const defaults = SHED_REAL_COUNTS[s] || ['40s'];
+    const defaults = SHED_REAL_COUNTS[s] || ['030/1-PH-PC'];
 
     const combined = Array.from(new Set([
       ...defaults,
@@ -185,7 +185,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
         rfNo: data.rfNo || rfUpper,
         description: existingRegistered?.description || `RING FRAME ${data.rfNo || rfUpper} (${data.shed})`,
         shed: data.shed,
-        count: data.count || existingRegistered?.count || '40s',
+        count: data.count || existingRegistered?.count || '030/1-PH-PC',
         actualGps: data.actualGps,
         stdGps: data.stdGps,
         productionKg: data.prodKg,
@@ -210,7 +210,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       rfNo: machine.rfNo,
       description: machine.description || '',
       shed: mShed,
-      count: dateData?.count || machine.count || shedCounts[0] || '40s'
+      count: dateData?.count || machine.count || shedCounts[0] || shedCounts[0] || '030/1-PH-PC'
     });
     setError(null);
   };
@@ -223,7 +223,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       rfNo: '',
       description: '',
       shed: activeShed,
-      count: shedCounts[0] || '40s'
+      count: shedCounts[0] || shedCounts[0] || '030/1-PH-PC'
     });
     setError(null);
   };
@@ -355,7 +355,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                   setFormData(prev => ({
                     ...prev,
                     shed: newShed,
-                    count: newShedCounts.includes(prev.count) ? prev.count : (newShedCounts[0] || '40s')
+                    count: newShedCounts.includes(prev.count) ? prev.count : (newShedCounts[0] || '030/1-PH-PC')
                   }));
                 }}
                 className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"

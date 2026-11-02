@@ -27,7 +27,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
     incentiveAmount: 0,
     siderName: '',
     siderId: '',
-    count: '40s'
+    count: ''
   });
 
   // Convert date to YYYY-MM-DD for <input type="date">
@@ -297,7 +297,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
       incentiveAmount: 0,
       siderName: '',
       siderId: '',
-      count: '40s'
+      count: ''
     });
   };
 

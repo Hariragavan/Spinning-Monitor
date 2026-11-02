@@ -91,7 +91,16 @@ export function isCountNameMatching(a: string, b: string): boolean {
   if (!a || !b) return false;
   const na = normalizeCountName(a);
   const nb = normalizeCountName(b);
-  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+  if (na === nb) return true;
+
+  // Exact match or specialized yarn variant check
+  if ((na.includes('micro') && !nb.includes('micro')) || (!na.includes('micro') && nb.includes('micro'))) return false;
+  if ((na.includes('kttm') && !nb.includes('kttm')) || (!na.includes('kttm') && nb.includes('kttm'))) return false;
+  if ((na.includes('phpc') && !nb.includes('phpc')) || (!na.includes('phpc') && nb.includes('phpc'))) return false;
+  if ((na.includes('phpv') && !nb.includes('phpv')) || (!na.includes('phpv') && nb.includes('phpv'))) return false;
+  if ((na.includes('chny') && !nb.includes('chny')) || (!na.includes('chny') && nb.includes('chny'))) return false;
+
+  if (na.includes(nb) || nb.includes(na)) return true;
 
   const numA = extractCountNumber(a);
   const numB = extractCountNumber(b);

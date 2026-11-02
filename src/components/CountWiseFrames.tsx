@@ -246,7 +246,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
       ])).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
       // Fallback if data is planned without actual logs yet: include frames if count is not default 40s dummy
-      if (allFrameNos.length === 0 && countName !== '40s') {
+      if (allFrameNos.length === 0 && countName !== '') {
         allFrameNos = Array.from(new Set([
           ...summaryFrames.map(s => s.frameNo),
           ...entryFrames.map(e => e.frameNo)

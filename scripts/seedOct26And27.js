@@ -91,8 +91,7 @@ async function seedData() {
       { count: '50s Compact', multiplicationFactor: 1.150, description: '50s Combed Compact Yarn', shed: 'Shed 3', stdGps: 325, blend: '100% Extra Long Staple', tpi: 32.0 },
       { count: '60s Super Combed', multiplicationFactor: 1.320, description: '60s Super Combed Warp', shed: 'Shed 3', stdGps: 310, blend: '100% Giza Cotton', tpi: 34.0 },
       { count: '40s Micro Weft', multiplicationFactor: 1.000, description: '40s Micro Weft Yarn', shed: 'Shed 3', stdGps: 340, blend: '100% Combed Cotton', tpi: 29.5 },
-      { count: '40s', multiplicationFactor: 1.000, description: 'Default 40s Standard Count', shed: 'All Sheds', stdGps: 340, blend: '100% Cotton Standard', tpi: 29.5 },
-
+      
       // KTTM Counts
       { count: '60s CW', multiplicationFactor: 1.300, description: '60s Combed Weft KTTM', shed: 'KTTM', stdGps: 310, blend: '100% Supima Cotton', tpi: 33.5 },
       { count: '40s KTTM', multiplicationFactor: 1.000, description: '40s KTTM High Speed Standard', shed: 'KTTM', stdGps: 345, blend: '100% Combed Cotton', tpi: 29.5 },
@@ -217,7 +216,7 @@ async function seedData() {
       { id: 'm-SP047', rfNo: 'SP047', frameNo: 'SP047', shed: 'Shed 3', unit: 'Unit 3 - Shed 3', count: '60s Super Combed', defaultCount: '60s Super Combed', stdGps: 310, targetProductionKg: 1350, spindles: 1200, status: 'ACTIVE', maintenanceStatus: 'GOOD', createdAt: new Date() },
       { id: 'm-SP048', rfNo: 'SP048', frameNo: 'SP048', shed: 'Shed 3', unit: 'Unit 3 - Shed 3', count: '40s Micro Weft', defaultCount: '40s Micro Weft', stdGps: 340, targetProductionKg: 1510, spindles: 1200, status: 'ACTIVE', maintenanceStatus: 'GOOD', createdAt: new Date() },
       { id: 'm-SP049', rfNo: 'SP049', frameNo: 'SP049', shed: 'Shed 3', unit: 'Unit 3 - Shed 3', count: '40s Micro Weft', defaultCount: '40s Micro Weft', stdGps: 340, targetProductionKg: 1510, spindles: 1200, status: 'ACTIVE', maintenanceStatus: 'GOOD', createdAt: new Date() },
-      { id: 'm-SP050', rfNo: 'SP050', frameNo: 'SP050', shed: 'Shed 3', unit: 'Unit 3 - Shed 3', count: '40s', defaultCount: '40s', stdGps: 340, targetProductionKg: 1500, spindles: 1200, status: 'ACTIVE', maintenanceStatus: 'EXCELLENT', createdAt: new Date() },
+      { id: 'm-SP050', rfNo: 'SP050', frameNo: 'SP050', shed: 'Shed 3', unit: 'Unit 3 - Shed 3', count: '40s Micro Weft', defaultCount: '40s Micro Weft', stdGps: 340, targetProductionKg: 1500, spindles: 1200, status: 'ACTIVE', maintenanceStatus: 'EXCELLENT', createdAt: new Date() },
 
       // KTTM: K01 - K10 (with 4 different counts)
       { id: 'm-K01', rfNo: 'K01', frameNo: 'K01', shed: 'KTTM', unit: 'KTTM RXI 240', count: '60s CW', defaultCount: '60s CW', stdGps: 310, targetProductionKg: 1360, spindles: 1200, status: 'ACTIVE', maintenanceStatus: 'EXCELLENT', createdAt: new Date() },

@@ -47,7 +47,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   // Active selected count for the Builder
   const [selectedCount, setSelectedCount] = useState<string>(() => {
     if (rules.length > 0) {
-      const validRules = rules.filter(r => r.count && !['all', 'ai linkconer', 'gaiter', 'fitter'].includes(r.count.toLowerCase().trim()));
+      const validRules = rules.filter(r => r.count && !['all', '40s', 'ai linkconer', 'gaiter', 'fitter'].includes(r.count.toLowerCase().trim()));
       const found = validRules.find(r => r.count.includes('030') || r.count.includes('30'));
       return found ? found.count : (validRules[0]?.count || '030/1-PH-PC');
     }
@@ -71,7 +71,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Distinct counts belonging strictly to the selected shed from Count Master and rules
+  // Distinct counts belonging strictly to the selected shed from Count Master (All Master)
   const availableCountNames = React.useMemo(() => {
     const list: { count: string; shed: string; factor: number }[] = [];
     const seen = new Set<string>();
@@ -80,41 +80,26 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       const trimmed = (rawCount || '').trim();
       if (!trimmed) return;
       const lower = trimmed.toLowerCase();
-      // Exclude non-count support roles
-      if (['all', 'ai linkconer', 'gaiter', 'fitter'].includes(lower)) return;
+      // Strictly exclude non-count roles and deleted '40s'
+      if (['all', '40s', 'ai linkconer', 'gaiter', 'fitter'].includes(lower)) return;
       if (!seen.has(lower)) {
         seen.add(lower);
         list.push({ count: trimmed, shed: s, factor });
       }
     };
 
-    // 1. First add counts registered in Count Master (countConversions)
+    // Strictly add registered counts from All Count Master (countConversions)
     countConversions.forEach(c => {
       if (!c.count) return;
       if (selectedShedTab === 'All Sheds') {
         addCount(c.count, c.shed || 'Shed 1', c.multiplicationFactor);
       } else if (c.shed === selectedShedTab) {
         addCount(c.count, c.shed, c.multiplicationFactor);
-      } else if (c.shed === 'All Sheds') {
-        // Only include All Sheds count if this shed actually spins it (Shed 1, 3, KTTM, but NOT Shed 2)
-        if (selectedShedTab !== 'Shed 2') {
-          addCount(c.count, selectedShedTab, c.multiplicationFactor);
-        }
-      }
-    });
-
-    // 2. Also include any custom count defined in rules for this shed
-    rules.forEach(r => {
-      if (!r || !r.count) return;
-      if (r.department && r.department !== 'Sider') return;
-      const s = r.shed || 'Shed 1';
-      if (selectedShedTab === 'All Sheds' || s === selectedShedTab) {
-        addCount(r.count, s);
       }
     });
 
     return list;
-  }, [countConversions, rules, selectedShedTab]);
+  }, [countConversions, selectedShedTab]);
 
 // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
   // Generate rule cards: Every registered count from Count Master for this shed MUST have an incentive rule card displayed
@@ -307,7 +292,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   };
 
   // Save slots from builder strictly for builderShed
-  const handleSaveBuilder = () => {
+  const handleSaveBuilder = async () => {
     if (!selectedCount) return;
 
     const payouts: IncentivePayout[] = builderSlots.map((s, idx) => {

@@ -17,8 +17,17 @@ const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
   { count: '30/1CH', multiplicationFactor: 0.6495, description: '30/1 Comb Hosiery', shed: 'Shed 2' },
   { count: '20/1-CW-WVG', multiplicationFactor: 0.3536, description: '20/1 Carded Weft Weaving', shed: 'Shed 2' },
   
-  // Universal / All Sheds
-  { count: '40s', multiplicationFactor: 1.0, description: 'Default 40s Standard Count', shed: 'All Sheds' }
+  // Shed 3 Counts
+  { count: '26/1-CHY', multiplicationFactor: 0.585, description: '26/1 Comb Hosiery Yarn', shed: 'Shed 3' },
+  { count: '40s Micro Weft', multiplicationFactor: 1.0, description: '40s Micro Weft Yarn', shed: 'Shed 3' },
+  { count: '50s Compact', multiplicationFactor: 1.35, description: '50s Compact Yarn', shed: 'Shed 3' },
+  { count: '60s Super Combed', multiplicationFactor: 1.837, description: '60s Super Combed Yarn', shed: 'Shed 3' },
+
+  // KTTM Counts
+  { count: '60s CW', multiplicationFactor: 1.837, description: '60s Combed Warp', shed: 'KTTM' },
+  { count: '40s KTTM', multiplicationFactor: 1.0, description: '40s KTTM High Speed Standard', shed: 'KTTM' },
+  { count: '80s Compact', multiplicationFactor: 2.45, description: '80s Compact Yarn', shed: 'KTTM' },
+  { count: '100s Dobby', multiplicationFactor: 3.10, description: '100s Dobby Yarn', shed: 'KTTM' }
 ];
 
 export async function GET(req: Request) {

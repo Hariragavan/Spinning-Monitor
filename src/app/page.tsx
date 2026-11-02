@@ -53,17 +53,13 @@ import {
 } from 'lucide-react';
 
 const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
-  // Shed 1 Counts (Matching Mill Standards & User Screenshot)
+  // Shed 1 Counts (Matching Mill Standards & Count Master)
   { count: '030/1-PH-PC', multiplicationFactor: 0.539, description: '30/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
   { count: '040/1-PH-PC', multiplicationFactor: 0.803, description: '40/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
   { count: '34/1-PH-PV', multiplicationFactor: 0.54, description: '34/1 Poly Viscose Yarn', shed: 'Shed 1' },
   { count: '042/1-CH-NY', multiplicationFactor: 0.7235, description: '42/1 Comb Hosiery NY', shed: 'Shed 1' },
   { count: '038/1-CH-NY', multiplicationFactor: 0.6641, description: '38/1 Comb Hosiery NY', shed: 'Shed 1' },
-  { count: '034/1-PH-PC', multiplicationFactor: 0.54, description: 'Auto-imported count (034/1-PH-PC)', shed: 'Shed 1' },
-  { count: '44/1-PH-PC', multiplicationFactor: 0.88, description: '44/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
-  { count: '024/1-PH-PC', multiplicationFactor: 0.45, description: '24/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
-  { count: '40/1-CH-PC', multiplicationFactor: 0.803, description: '40/1 Comb Hosiery PC Yarn', shed: 'Shed 1' },
-  { count: '45/1-PW-PC', multiplicationFactor: 0.90, description: '45/1 Poly Warp PC Yarn', shed: 'Shed 1' },
+  { count: '034/1-PH-PC', multiplicationFactor: 0.54, description: '34/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
   
   // Shed 2 Counts
   { count: '32/1-CH-CY', multiplicationFactor: 0.7155, description: '32/1 Comb Hosiery Compact Weft', shed: 'Shed 2' },
@@ -73,14 +69,15 @@ const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
   
   // Shed 3 Counts
   { count: '26/1-CHY', multiplicationFactor: 0.585, description: '26/1 Comb Hosiery Yarn', shed: 'Shed 3' },
-  { count: '40s', multiplicationFactor: 1.0, description: '40s Standard Count', shed: 'Shed 3' },
+  { count: '40s Micro Weft', multiplicationFactor: 1.0, description: '40s Micro Weft Yarn', shed: 'Shed 3' },
+  { count: '50s Compact', multiplicationFactor: 1.35, description: '50s Compact Yarn', shed: 'Shed 3' },
+  { count: '60s Super Combed', multiplicationFactor: 1.837, description: '60s Super Combed Yarn', shed: 'Shed 3' },
 
   // KTTM Counts
   { count: '60s CW', multiplicationFactor: 1.837, description: '60s Combed Warp', shed: 'KTTM' },
-  { count: '40s', multiplicationFactor: 1.0, description: 'Default 40s Standard Count', shed: 'KTTM' },
-
-  // Universal / All Sheds
-  { count: '40s', multiplicationFactor: 1.0, description: 'Default 40s Standard Count', shed: 'All Sheds' }
+  { count: '40s KTTM', multiplicationFactor: 1.0, description: '40s KTTM High Speed Standard', shed: 'KTTM' },
+  { count: '80s Compact', multiplicationFactor: 2.45, description: '80s Compact Yarn', shed: 'KTTM' },
+  { count: '100s Dobby', multiplicationFactor: 3.10, description: '100s Dobby Yarn', shed: 'KTTM' }
 ];
 
 const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
@@ -237,7 +234,7 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
     ]
   },
   {
-    count: '40s',
+    count: '40s Micro Weft',
     department: 'Sider',
     shed: 'Shed 3',
     payouts: [
@@ -260,7 +257,7 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
     ]
   },
   {
-    count: '40s',
+    count: '40s KTTM',
     department: 'Sider',
     shed: 'KTTM',
     payouts: [
@@ -577,7 +574,10 @@ export default function Home() {
         }
       }
       if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
-      if (data.counts && data.counts.length > 0) setCountConversions(data.counts);
+      if (data.counts && data.counts.length > 0) {
+        const cleanCounts = data.counts.filter(c => c.count && !['all', '40s'].includes(c.count.toLowerCase().trim()));
+        setCountConversions(cleanCounts);
+      }
 
       let localSiderCounts: Record<string, number> = {};
       if (typeof window !== 'undefined') {
@@ -828,7 +828,7 @@ export default function Home() {
       sortedFrames.forEach(frame => {
         const m = machineData[frame];
         const eff = m.count > 0 ? (m.sumEff / m.count).toFixed(1) : '0';
-        const countsStr = m.counts.join(', ') || '40s';
+        const countsStr = m.counts.join(', ') || '';
         text += `• *${frame}* (${countsStr}): *${Math.round(m.actual).toLocaleString('en-IN')}* / ${Math.round(m.target).toLocaleString('en-IN')} Kg | *${eff}%* Eff\n`;
       });
     }
@@ -1460,7 +1460,7 @@ export default function Home() {
             rfNo: data.rfNo,
             description: `RING FRAME ${data.rfNo} - ${shed.toUpperCase()}`,
             shed,
-            count: data.count || '40s',
+            count: data.count || '',
             actualGps: data.actualGps,
             stdGps: data.stdGps,
             productionKg: data.prodKg
