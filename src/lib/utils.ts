@@ -64,11 +64,41 @@ export function normalizeCountName(c: string): string {
   return (c || '').trim().toLowerCase().replace(/[-/\s_]/g, '');
 }
 
+export function extractCountNumber(c: string): number | null {
+  if (!c || typeof c !== 'string') return null;
+  // Match digits followed by '/' (e.g. 040/1 or 40/1)
+  const slashMatch = c.match(/0*(\d{2,3})\s*\//);
+  if (slashMatch) {
+    const num = parseInt(slashMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  // Match digits followed by 's' (e.g. 40s, 60s, 30S)
+  const sMatch = c.match(/0*(\d{2,3})\s*s\b/i);
+  if (sMatch) {
+    const num = parseInt(sMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  // Match 2 or 3 digits
+  const generalMatch = c.match(/\b0*(\d{2,3})\b/) || c.match(/0*(\d{2,3})/);
+  if (generalMatch) {
+    const num = parseInt(generalMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+  return null;
+}
+
 export function isCountNameMatching(a: string, b: string): boolean {
   if (!a || !b) return false;
   const na = normalizeCountName(a);
   const nb = normalizeCountName(b);
-  return na === nb || na.includes(nb) || nb.includes(na);
+  if (na === nb || na.includes(nb) || nb.includes(na)) return true;
+
+  const numA = extractCountNumber(a);
+  const numB = extractCountNumber(b);
+  if (numA !== null && numB !== null && numA === numB) {
+    return true;
+  }
+  return false;
 }
 
 export function parseUniversalDate(dateStr: string): Date {
@@ -120,9 +150,30 @@ export function getActiveRule(
     return isCountNameMatching(r.count, count) || normalize(r.count) === targetCountNorm;
   });
 
-  // If no exact match, try fuzzy matching
+  // If no match in candidateRules (e.g. if candidateRules was restricted to shed but had no match), try all rules!
+  if (matchingRules.length === 0 && candidateRules !== rules) {
+    matchingRules = rules.filter(r => {
+      const deptMatch = (r.department || 'Sider') === (department || 'Sider');
+      if (!deptMatch) return false;
+      return isCountNameMatching(r.count, count) || normalize(r.count) === targetCountNorm;
+    });
+  }
+
+  // If still no exact or string-contained match, match by yarn count number
   if (matchingRules.length === 0) {
-    const sortedRules = [...candidateRules].sort((a, b) => b.count.length - a.count.length);
+    const targetNum = extractCountNumber(count);
+    if (targetNum !== null) {
+      matchingRules = rules.filter(r => {
+        const deptMatch = (r.department || 'Sider') === (department || 'Sider');
+        if (!deptMatch) return false;
+        return extractCountNumber(r.count) === targetNum;
+      });
+    }
+  }
+
+  // If still no match, try fuzzy matching
+  if (matchingRules.length === 0) {
+    const sortedRules = [...rules].sort((a, b) => b.count.length - a.count.length);
     matchingRules = sortedRules.filter(r => {
       const deptMatch = (r.department || 'Sider') === (department || 'Sider');
       if (!deptMatch) return false;
@@ -155,7 +206,7 @@ export function getActiveRule(
     if (a.effectiveDate && !b.effectiveDate) return 1;
 
     if (a.effectiveDate && b.effectiveDate) {
-      return parseDDMMYYYY(b.effectiveDate).getTime() - parseDDMMYYYY(a.effectiveDate).getTime();
+      return parseUniversalDate(b.effectiveDate).getTime() - parseUniversalDate(a.effectiveDate).getTime();
     }
     return 0;
   });
@@ -612,18 +663,20 @@ export function calculateSiderSlotIncentive(
 ): number {
   if (!entry || !report || !report.entries) return 0;
 
-  const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
-  if (!workerId) return 0;
+  const rawSlotWorker = (entry.siderIds && entry.siderIds.length > slotIdx) 
+    ? (entry.siderIds[slotIdx] || '') 
+    : (slotIdx === 0 ? (entry.siderId || '') : '');
+  if (!rawSlotWorker) return 0;
 
-  const cleanWorkerId = String(workerId).trim();
+  const cleanWorkerId = String(rawSlotWorker).trim();
   const upperWorkerId = cleanWorkerId.toUpperCase();
   const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
   if (!cleanWorkerId || invalidMarkers.includes(upperWorkerId)) {
     return 0;
   }
 
-  const worker = resolveWorker(workerId, entry.siderName, workers);
-  const targetId = (worker.tNo || worker.id || workerId).trim().toUpperCase();
+  const worker = resolveWorker(rawSlotWorker, entry.siderName, workers);
+  const targetId = (worker.tNo || worker.id || cleanWorkerId).trim().toUpperCase();
   if (!targetId || invalidMarkers.includes(targetId)) {
     return 0;
   }
@@ -661,30 +714,26 @@ export function calculateSiderSlotIncentive(
 
   report.entries.forEach(e => {
     if (e.shift !== targetShift) return;
-    const raw0 = (e.siderIds?.[0] || e.siderId || '').trim();
-    const raw1 = (e.siderIds?.[1] || '').trim();
+    const raw0 = (e.siderIds && e.siderIds.length > 0 ? (e.siderIds[0] || '') : (e.siderId || '')).trim();
+    const raw1 = (e.siderIds && e.siderIds.length > 1 ? (e.siderIds[1] || '') : '').trim();
 
     const is0Invalid = !raw0 || invalidMarkers.includes(raw0.toUpperCase());
     const is1Invalid = !raw1 || invalidMarkers.includes(raw1.toUpperCase());
 
-    const id0 = is0Invalid ? '' : raw0.toUpperCase();
-    const id1 = is1Invalid ? '' : raw1.toUpperCase();
+    const w0 = is0Invalid ? null : resolveWorker(raw0, e.siderName, workers);
+    const w1 = is1Invalid ? null : resolveWorker(raw1, undefined, workers);
 
-    const match0 = Boolean(
-      id0 && (
-        id0 === targetId ||
-        (worker.id && id0 === worker.id.toUpperCase()) ||
-        (worker.tNo && id0 === worker.tNo.toUpperCase()) ||
-        (worker.name && e.siderName && e.siderName.toLowerCase().trim() === worker.name.toLowerCase().trim())
-      )
-    );
-    const match1 = Boolean(
-      id1 && (
-        id1 === targetId ||
-        (worker.id && id1 === worker.id.toUpperCase()) ||
-        (worker.tNo && id1 === worker.tNo.toUpperCase())
-      )
-    );
+    const match0 = Boolean(w0 && (
+      (w0.id && worker.id && w0.id.toUpperCase() === worker.id.toUpperCase()) ||
+      (w0.tNo && worker.tNo && w0.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
+      (w0.name && worker.name && w0.name.toLowerCase().trim() === worker.name.toLowerCase().trim())
+    ));
+
+    const match1 = Boolean(w1 && (
+      (w1.id && worker.id && w1.id.toUpperCase() === worker.id.toUpperCase()) ||
+      (w1.tNo && worker.tNo && w1.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
+      (w1.name && worker.name && w1.name.toLowerCase().trim() === worker.name.toLowerCase().trim())
+    ));
 
     if (match0 || match1) {
       const eBase = calculateIncentive(e, rules, report.date, e.shed || report.shed || effectiveShed);

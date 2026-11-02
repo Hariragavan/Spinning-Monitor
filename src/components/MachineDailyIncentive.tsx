@@ -147,7 +147,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     });
 
     return rows;
-  }, [machines, report.entries, workers, rules, machineSiderCounts, isKttmShed]);
+  }, [machines, report.entries, workers, rules, machineSiderCounts, isKttmShed, shed]);
 
   // Process data for gaiters rows
   const gaiterRows = useMemo(() => {

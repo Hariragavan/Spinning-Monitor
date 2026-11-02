@@ -962,11 +962,8 @@ export default function Home() {
     const updatedShed = updated.shed || selectedShed || 'Shed 1';
     const updatedDate = updated.date;
 
-    // 1. If dailyReport matches date & shed, update dailyReport state
-    const dailyShed = dailyReport.shed || 'Shed 1';
-    if (dailyReport.date === updatedDate && dailyShed === updatedShed) {
-      setDailyReport(updated);
-    }
+    // 1. Keep dailyReport state in sync immediately
+    setDailyReport(updated);
 
     // 2. Always update or add into reportHistory for this date & shed
     setReportHistory(prev => {
@@ -1058,6 +1055,8 @@ export default function Home() {
       if (slotIndex === 0) {
         entry.siderId = siderId || '';
         entry.siderName = worker ? worker.name : '';
+      } else if (!entry.siderName && worker) {
+        entry.siderName = worker.name;
       }
 
       entry.siderIds = siderIds.map(id => id || '');
@@ -2083,11 +2082,9 @@ export default function Home() {
             rules={incentiveRules}
             isTvMode={isTvMode}
             onUpdateEntry={(entry) => {
-              setDailyReport(prev => {
+              updateActiveReport(prev => {
                 const newEntries = prev.entries.map(e => e.frameNo === entry.frameNo && e.shift === entry.shift ? { ...e, ...entry, shed: selectedShed } : e);
-                const updated = { ...prev, shed: selectedShed, entries: newEntries, timestamp: Date.now() };
-                apiClient.saveDailyReport(updated).catch(() => {});
-                return updated;
+                return { ...prev, shed: selectedShed, entries: newEntries, timestamp: Date.now() };
               });
             }}
             onSelectDate={handleTopDateChange}

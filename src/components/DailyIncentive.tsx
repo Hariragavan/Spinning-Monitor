@@ -168,26 +168,34 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
     const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
 
     report.entries.forEach((entry, entryIdx) => {
-      // Determine which workers are legitimately assigned
-      const assignedIds = new Set<string>();
+      const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
 
-      const checkAndAdd = (id?: string) => {
-        if (!id) return;
-        const clean = String(id).trim();
+      // Collect legitimately assigned workers for this machine
+      const assignedWorkerIds: string[] = [];
+      const hasSiderIds = entry.siderIds && entry.siderIds.some(id => id && !invalidMarkers.includes(String(id).trim().toUpperCase()));
+
+      if (hasSiderIds) {
+        entry.siderIds!.forEach(rawId => {
+          const clean = String(rawId || '').trim();
+          if (clean && !invalidMarkers.includes(clean.toUpperCase())) {
+            const resolved = resolveWorker(clean, undefined, workers);
+            const key = resolved.id || clean;
+            if (!assignedWorkerIds.includes(key)) {
+              assignedWorkerIds.push(key);
+            }
+          }
+        });
+      } else if (entry.siderId) {
+        const clean = String(entry.siderId).trim();
         if (clean && !invalidMarkers.includes(clean.toUpperCase())) {
-          assignedIds.add(clean);
+          const resolved = resolveWorker(clean, entry.siderName, workers);
+          const key = resolved.id || clean;
+          assignedWorkerIds.push(key);
         }
-      };
-
-      checkAndAdd(entry.siderId);
-      if (entry.siderIds) {
-        entry.siderIds.forEach(id => checkAndAdd(id));
       }
 
-      const activeIds = Array.from(assignedIds);
-      
-      if (activeIds.length === 0) {
-        // Machine has NO worker assigned: incentive MUST be strictly 0, worker is null
+      if (assignedWorkerIds.length === 0) {
+        // Machine has NO worker assigned: incentive is 0, worker is null
         flatResults.push({
           ...entry,
           entryIndex: entryIdx,
@@ -195,21 +203,30 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
           incentive: 0
         });
       } else {
-        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        // Compute payout for each slot using canonical worker key
         const workerPayoutMap = new Map<string, number>();
         for (let sIdx = 0; sIdx < numSlots; sIdx++) {
-          const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
-          if (!wId) continue;
+          const rawId = (entry.siderIds && entry.siderIds.length > sIdx) 
+            ? entry.siderIds[sIdx] 
+            : (sIdx === 0 ? entry.siderId : '');
+          if (!rawId) continue;
+          const clean = String(rawId).trim();
+          if (!clean || invalidMarkers.includes(clean.toUpperCase())) continue;
+
+          const resolved = resolveWorker(clean, entry.siderName, workers);
+          const key = resolved.id || clean;
           const payout = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, shed);
-          workerPayoutMap.set(wId, (workerPayoutMap.get(wId) || 0) + payout);
+          workerPayoutMap.set(key, (workerPayoutMap.get(key) || 0) + payout);
         }
 
-        activeIds.forEach(id => {
-          const worker = resolveWorker(id, entry.siderName, workers);
-          const payout = workerPayoutMap.get(id) || 0;
+        assignedWorkerIds.forEach(key => {
+          const worker = resolveWorker(key, entry.siderName, workers);
+          const payout = workerPayoutMap.get(key) || 0;
           flatResults.push({
             ...entry,
             entryIndex: entryIdx,
+            siderId: worker.tNo || worker.id || key,
+            siderName: worker.name,
             worker,
             incentive: payout
           });
