@@ -748,40 +748,44 @@ export function calculateSiderSlotIncentive(
     }
   });
 
-  const distinctMachineCount = workerMachines.length;
+  const totalSides = workerMachines.reduce((sum, m) => sum + m.sides, 0);
 
-  // Case 1: Individual operator working on 1 machine (individual incentive works like before and properly!)
-  if (distinctMachineCount <= 1) {
-    return slotShare;
+  // Rule 1: "if operator works for 2 sides no incentive"
+  // (also if 1 side: no incentive)
+  if (totalSides <= 2) {
+    return 0;
   }
 
-  // Case 2: Multi-machine allocation across 2 or more frames in this shift
-  // Determine primary machine: machine with 2 sides allocated to worker; if tie, higher base incentive / lower frame number
-  workerMachines.sort((a, b) => {
-    if (b.sides !== a.sides) return b.sides - a.sides;
-    if (b.baseIncentive !== a.baseIncentive) return b.baseIncentive - a.baseIncentive;
-    return a.frameNo.localeCompare(b.frameNo, undefined, { numeric: true });
-  });
-
-  const primaryMachine = workerMachines[0];
-  const isPrimary = entry.frameNo === primaryMachine.frameNo;
-
-  if (isPrimary) {
-    // Primary machine earns its normal full slot share
-    return slotShare;
+  // Rule 2: "if operator works for 2 sides and adition one side give then 25% incentive"
+  // (Worker works both sides of 1 machine and 1 additional side: totalSides === 3)
+  if (totalSides === 3) {
+    const additionalMachine = workerMachines.find(m => m.sides === 1);
+    if (additionalMachine && entry.frameNo === additionalMachine.frameNo) {
+      // The additional 1 side earns 25% incentive
+      return Math.round(baseIncentive * 0.25);
+    }
+    // The base 2 sides machine has NO incentive (0%)
+    return 0;
   }
 
-  // Additional machine:
-  // "if worked additional machine left or right side give 25% of incentive"
-  // "if working both side for two machines give 50% incentive" (25% on LH + 25% on RH)
-  const currentMachine = workerMachines.find(m => m.frameNo === entry.frameNo);
-  const machineSides = currentMachine ? currentMachine.sides : 1;
+  // Rule 3: "if they work 4 sides give them 50%"
+  // (Worker works both sides of 2 machines: totalSides >= 4)
+  if (totalSides >= 4) {
+    // Determine which machine is the earning (additional) machine:
+    // Prefer higher base incentive; if tie, higher frame number (the second machine)
+    const sorted = [...workerMachines].sort((a, b) => {
+      if (b.baseIncentive !== a.baseIncentive) return b.baseIncentive - a.baseIncentive;
+      return b.frameNo.localeCompare(a.frameNo, undefined, { numeric: true });
+    });
+    const earningMachine = sorted[0];
 
-  if (machineSides === 1) {
-    // Worked 1 additional side: 25% incentive
-    return Math.round(baseIncentive * 0.25);
-  } else {
-    // Worked both sides on additional machine: 50% total (25% per side)
-    return Math.round(baseIncentive * 0.25);
+    if (entry.frameNo === earningMachine.frameNo) {
+      // The additional machine receives 50% total: 25% on LH (slot 0) and 25% on RH (slot 1)
+      return Math.round(baseIncentive * 0.25);
+    }
+    // The base machine receives NO incentive (0%)
+    return 0;
   }
+
+  return 0;
 }
