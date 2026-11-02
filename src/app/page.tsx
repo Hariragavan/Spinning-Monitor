@@ -39,7 +39,7 @@ import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
 import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
-import { isCountNameMatching } from '@/lib/utils';
+import { isCountNameMatching, extractCountNumber } from '@/lib/utils';
 import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
 
@@ -1529,8 +1529,9 @@ export default function Home() {
       const cleanCount = r.count.trim();
       const s = r.shed || fallbackShed;
       const d = r.department || 'Sider';
-      const normCount = normalizeCountName(cleanCount);
-      const key = `${normCount}__${d.toLowerCase()}__${s.toLowerCase()}`;
+      const num = extractCountNumber(cleanCount);
+      const countKey = (d === 'Sider' && num !== null) ? `count_${num}` : normalizeCountName(cleanCount);
+      const key = `${countKey}__${d.toLowerCase()}__${s.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
         normalized.unshift({

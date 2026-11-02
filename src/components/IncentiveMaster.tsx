@@ -70,10 +70,10 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Distinct counts belonging strictly to the selected shed (from Count Master countConversions and Incentive Rules)
+  // Distinct counts belonging strictly to the selected shed from Count Master and rules
   const availableCountNames = React.useMemo(() => {
-    const seen = new Set<string>();
     const list: { count: string; shed: string; factor: number }[] = [];
+    const seen = new Set<string>();
 
     const addCount = (rawCount: string, s: string, factor: number = 1.0) => {
       const trimmed = (rawCount || '').trim();
@@ -87,33 +87,103 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       }
     };
 
-    if (selectedShedTab === 'All Sheds') {
-      countConversions.forEach(c => {
+    // 1. First add counts registered in Count Master (countConversions)
+    countConversions.forEach(c => {
+      if (!c.count) return;
+      if (selectedShedTab === 'All Sheds') {
         addCount(c.count, c.shed || 'Shed 1', c.multiplicationFactor);
-      });
-      rules.forEach(r => {
-        if (!r.department || r.department === 'Sider') {
-          addCount(r.count, r.shed || 'Shed 1');
+      } else if (c.shed === selectedShedTab) {
+        addCount(c.count, c.shed, c.multiplicationFactor);
+      } else if (c.shed === 'All Sheds') {
+        // Only include All Sheds count if this shed actually spins it (Shed 1, 3, KTTM, but NOT Shed 2)
+        if (selectedShedTab !== 'Shed 2') {
+          addCount(c.count, selectedShedTab, c.multiplicationFactor);
         }
-      });
-    } else {
-      // Strictly counts belonging to the selected shed
-      countConversions.forEach(c => {
-        if (c.shed === selectedShedTab) {
-          addCount(c.count, c.shed, c.multiplicationFactor);
-        }
-      });
-      rules.forEach(r => {
-        if ((r.shed || 'Shed 1') === selectedShedTab) {
-          if (!r.department || r.department === 'Sider') {
-            addCount(r.count, r.shed || selectedShedTab);
-          }
-        }
-      });
-    }
+      }
+    });
+
+    // 2. Also include any custom count defined in rules for this shed
+    rules.forEach(r => {
+      if (!r || !r.count) return;
+      if (r.department && r.department !== 'Sider') return;
+      const s = r.shed || 'Shed 1';
+      if (selectedShedTab === 'All Sheds' || s === selectedShedTab) {
+        addCount(r.count, s);
+      }
+    });
 
     return list;
   }, [countConversions, rules, selectedShedTab]);
+
+// Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
+  // Generate rule cards: Every registered count from Count Master for this shed MUST have an incentive rule card displayed
+  const filteredRules = React.useMemo(() => {
+    const list: IncentiveRule[] = [];
+    const seen = new Set<string>();
+    const targetShed = selectedShedTab;
+
+    // 1. For every count available for this shed from Count Master / rules:
+    availableCountNames.forEach(c => {
+      const trimmed = c.count.trim();
+      const lower = trimmed.toLowerCase();
+      if (seen.has(lower)) return;
+      seen.add(lower);
+
+      // Find best matching rule from existing rules
+      const exactRule = rules.find(r =>
+        (!r.department || r.department === 'Sider') &&
+        r.count.toLowerCase().trim() === lower &&
+        ((r.shed || 'Shed 1') === c.shed || (targetShed !== 'All Sheds' && (r.shed || 'Shed 1') === targetShed))
+      );
+
+      const matchingRule = exactRule || rules.find(r =>
+        (!r.department || r.department === 'Sider') &&
+        isCountNameMatching(r.count, trimmed) &&
+        ((r.shed || 'Shed 1') === c.shed || (targetShed !== 'All Sheds' && (r.shed || 'Shed 1') === targetShed))
+      ) || rules.find(r =>
+        (!r.department || r.department === 'Sider') &&
+        (r.count.toLowerCase().trim() === lower || isCountNameMatching(r.count, trimmed)) &&
+        r.shed === 'All Sheds'
+      );
+
+      if (matchingRule && matchingRule.payouts && matchingRule.payouts.length > 0) {
+        list.push({
+          ...matchingRule,
+          count: trimmed,
+          shed: c.shed || (targetShed !== 'All Sheds' ? targetShed : 'Shed 1'),
+          department: 'Sider'
+        });
+      } else {
+        // Fallback standard starter 6 slots for this registered count
+        const starterPayouts: IncentivePayout[] = [
+          { gpsThreshold: 160, amount: 100, fromGps: 160, toGps: 160, conditionText: 'for GPSS 160', ruleText: 'Rs 100 for GPSS 160' },
+          { gpsThreshold: 155, amount: 90, fromGps: 155, toGps: 160, conditionText: 'for GPS 155 to 160', ruleText: 'Rs 90 for GPS 155 to 160' },
+          { gpsThreshold: 150, amount: 80, fromGps: 150, toGps: 155, conditionText: 'for 150 to 155', ruleText: 'Rs 80 for 150 to 155' },
+          { gpsThreshold: 145, amount: 70, fromGps: 145, toGps: 150, conditionText: 'for 145 to 150', ruleText: 'Rs 70 for 145 to 150' },
+          { gpsThreshold: 140, amount: 60, fromGps: 140, toGps: 145, conditionText: 'for 140 to 145', ruleText: 'Rs 60 for 140 to 145' },
+          { gpsThreshold: 135, amount: 50, fromGps: 135, toGps: 140, conditionText: 'for 135 to 140', ruleText: 'Rs 50 for 135 to 140' }
+        ];
+        list.push({
+          count: trimmed,
+          shed: c.shed || (targetShed !== 'All Sheds' ? targetShed : 'Shed 1'),
+          department: 'Sider',
+          payouts: starterPayouts
+        });
+      }
+    });
+
+    // 2. Also append universal support roles (Gaiter, AI Linkconer, Fitter)
+    const supportRoles = rules.filter(r => {
+      if (!r || !r.count) return false;
+      const dept = r.department || 'Sider';
+      if (dept === 'Sider') return false;
+      if (targetShed === 'All Sheds') return true;
+      const s = r.shed || 'All Sheds';
+      return s === targetShed || s === 'All Sheds';
+    });
+
+    return [...list, ...supportRoles];
+  }, [availableCountNames, rules, selectedShedTab]);
 
   // Sync builderShed and selectedCount when shed tab or available counts change
   useEffect(() => {
@@ -196,7 +266,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
         { id: 's6', amount: 50, fromGps: 180, toGps: '185' },
       ]);
     }
-  }, [selectedCount, builderShed, selectedShedTab, rules]);
+  }, [selectedCount, builderShed, selectedShedTab, rules, filteredRules]);
 
   // Handle slot modifications in builder
   const handleUpdateSlotAmount = (index: number, val: number | string) => {
@@ -383,15 +453,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   };
 
-  // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
-  const filteredRules = React.useMemo(() => {
-    return rules.filter(r => {
-      if (!r || !r.count) return false;
-      if (selectedShedTab === 'All Sheds') return true;
-      const s = r.shed || 'Shed 1';
-      return s === selectedShedTab || (s === 'All Sheds' && r.department !== 'Sider');
-    });
-  }, [rules, selectedShedTab]);
+  
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

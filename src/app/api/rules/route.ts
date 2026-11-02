@@ -64,8 +64,9 @@ export async function POST(req: Request) {
       const key = `${normCount}__${dept.toLowerCase()}__${shed.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
+        const { _id, ...cleanObj } = r as any;
         normalizedRules.unshift({
-          ...r,
+          ...cleanObj,
           count: cleanCount,
           shed,
           department: dept
@@ -75,11 +76,11 @@ export async function POST(req: Request) {
 
     await db.collection('incentiverules').deleteMany({});
     if (normalizedRules.length > 0) {
-      await db.collection('incentiverules').insertMany(normalizedRules);
+      await db.collection('incentiverules').insertMany(normalizedRules.map(x => ({ ...x })));
     }
     await db.collection('incentive_rules').deleteMany({});
     if (normalizedRules.length > 0) {
-      await db.collection('incentive_rules').insertMany(normalizedRules);
+      await db.collection('incentive_rules').insertMany(normalizedRules.map(x => ({ ...x })));
     }
 
     return NextResponse.json({ success: true, count: normalizedRules.length });

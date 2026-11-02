@@ -134,7 +134,7 @@ export function getActiveRule(
   // Filter rules by shed if specified: prioritize exact shed, fallback to All Sheds
   let candidateRules = rules;
   if (shed && shed !== 'All Sheds') {
-    const shedSpecific = rules.filter(r => r.shed === shed);
+    const shedSpecific = rules.filter(r => (r.shed || 'Shed 1') === shed);
     if (shedSpecific.length > 0) {
       const hasMatch = shedSpecific.some(r => isCountNameMatching(r.count, count));
       if (hasMatch) {
@@ -199,8 +199,14 @@ export function getActiveRule(
   // 1. Exact shed match over 'All Sheds'
   // 2. Freshly edited rules (without effectiveDate) or newest effectiveDate
   const sorted = [...matchingRules].sort((a, b) => {
-    if (shed && a.shed === shed && b.shed !== shed) return -1;
-    if (shed && b.shed === shed && a.shed !== shed) return 1;
+    if (shed && (a.shed || 'Shed 1') === shed && (b.shed || 'Shed 1') !== shed) return -1;
+    if (shed && (b.shed || 'Shed 1') === shed && (a.shed || 'Shed 1') !== shed) return 1;
+
+    // Prefer exact count name match over alias match
+    const aExact = normalize(a.count) === targetCountNorm;
+    const bExact = normalize(b.count) === targetCountNorm;
+    if (aExact && !bExact) return -1;
+    if (!aExact && bExact) return 1;
 
     if (!a.effectiveDate && b.effectiveDate) return -1;
     if (a.effectiveDate && !b.effectiveDate) return 1;
