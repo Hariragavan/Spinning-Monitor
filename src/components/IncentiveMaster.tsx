@@ -494,11 +494,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
 
           {/* Quick Select Pills */}
           <div className="flex flex-wrap items-center gap-2">
-            {filteredRules.filter(r => !r.department || r.department === 'Sider').map((rule) => {
+            {filteredRules.filter(r => !r.department || r.department === 'Sider').map((rule, idx) => {
               const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() && (rule.shed || 'All Sheds') === builderShed;
               return (
                 <button
-                  key={`${rule.count}-${rule.shed || 'All'}`}
+                  key={`pill-${rule.department || 'Sider'}-${rule.count}-${rule.shed || 'All'}-${idx}`}
                   type="button"
                   onClick={() => {
                     setSelectedCount(rule.count);
@@ -600,7 +600,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                 <option value={selectedCount}>{selectedCount}</option>
               ) : null}
               {availableCountNames.map(c => (
-                <option key={`${c.count}-${c.shed}`} value={c.count}>
+                <option key={`opt-${c.count}-${c.shed}`} value={c.count}>
                   {c.count} {c.shed && c.shed !== 'All Sheds' ? `(${c.shed})` : ''}
                 </option>
               ))}
@@ -625,7 +625,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
                 : `Rs ${slot.amount} for GPS ${slot.fromGps} to ${slot.toGps}`;
 
               return (
-                <div key={slot.id || idx} className="pt-2 pb-2">
+                <div key={`builder-slot-${slot.id || idx}-${idx}`} className="pt-2 pb-2">
                   <div className="grid grid-cols-12 gap-2 items-center">
                     {/* SLOT BADGE */}
                     <div className="col-span-2">
@@ -783,13 +783,13 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
               <p className="text-xs text-stone-400 mt-1">Select a different shed tab above or use the Builder on the left to configure rules for {selectedShedTab}.</p>
             </div>
           ) : (
-            filteredRules.map((rule) => {
+            filteredRules.map((rule, idx) => {
               const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() && (rule.shed || 'All Sheds') === builderShed;
               const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
 
               return (
                 <div
-                  key={`${rule.count}-${rule.shed || 'All'}`}
+                  key={`card-${rule.department || 'Sider'}-${rule.count}-${rule.shed || 'All'}-${idx}`}
 
                 className={cn(
                   "bg-white rounded-2xl p-5 shadow-2xs transition-all",

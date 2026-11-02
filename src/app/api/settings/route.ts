@@ -48,14 +48,15 @@ export async function POST(req: Request) {
     const db = await getDb();
     const body = await req.json();
     const settings = body.settings || body;
+    const { _id, ...cleanSettings } = settings;
 
     await db.collection('settings').updateOne(
       { _id: 'system_settings' as any },
-      { $set: settings },
+      { $set: cleanSettings },
       { upsert: true }
     );
 
-    return NextResponse.json({ success: true, data: settings });
+    return NextResponse.json({ success: true, data: cleanSettings });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to save settings' }, { status: 500 });
   }

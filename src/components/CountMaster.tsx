@@ -81,12 +81,22 @@ export const CountMaster: React.FC<CountMasterProps> = ({
     setRowFactors(prev => ({ ...map, ...prev }));
   }, [conversions]);
 
-  // Filter all master conversions strictly by selected shed tab
-  const filteredConversions = conversions.filter(c => {
-    if (selectedShedTab === 'All Sheds') return true;
-    const s = c.shed || 'Shed 1';
-    return s === selectedShedTab;
-  });
+  // Filter all master conversions strictly by selected shed tab and deduplicate
+  const filteredConversions = useMemo(() => {
+    const seen = new Set<string>();
+    const list: CountConversion[] = [];
+    conversions.forEach(c => {
+      if (!c || !c.count) return;
+      const s = c.shed || 'Shed 1';
+      if (selectedShedTab !== 'All Sheds' && s !== selectedShedTab) return;
+      const key = `${c.count.trim().toLowerCase()}__${s.toLowerCase()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push(c);
+      }
+    });
+    return list;
+  }, [conversions, selectedShedTab]);
 
   // Detect running counts for activeDate and selectedShedTab
   const { dateRunningCounts, dateHasData } = useMemo(() => {
@@ -550,7 +560,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
                       const live40sGps = item.avgGps > 0 ? Math.round(item.avgGps * factorNum) : 0;
 
                       return (
-                        <tr key={rowKey} className="hover:bg-stone-50/50 transition-colors">
+                        <tr key={`date-${rowKey}`} className="hover:bg-stone-50/50 transition-colors">
                           {/* COUNT NAME */}
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
@@ -682,7 +692,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
                       const isApplied = appliedRowKey === rowKey;
 
                       return (
-                        <tr key={rowKey} className="hover:bg-stone-50/50 transition-colors group">
+                        <tr key={`master-${rowKey}`} className="hover:bg-stone-50/50 transition-colors group">
                           {/* COUNT NAME */}
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-2">
