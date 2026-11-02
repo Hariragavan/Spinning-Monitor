@@ -2351,6 +2351,7 @@ export default function Home() {
             report={activeDailyReport}
             history={currentShedHistory}
             onSelectDate={handleTopDateChange}
+            currentShed={selectedShed}
           />
         );
 

@@ -70,26 +70,50 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Distinct counts from Count Master belonging strictly to the selected shed
-  const availableShedConversions = React.useMemo(() => {
-    if (selectedShedTab === 'All Sheds') {
-      return countConversions;
-    }
-    return countConversions.filter(c => !c.shed || c.shed === 'All Sheds' || c.shed === selectedShedTab);
-  }, [countConversions, selectedShedTab]);
-
+  // Distinct counts belonging strictly to the selected shed (from Count Master countConversions and Incentive Rules)
   const availableCountNames = React.useMemo(() => {
     const seen = new Set<string>();
     const list: { count: string; shed: string; factor: number }[] = [];
-    availableShedConversions.forEach(c => {
-      const trimmed = (c.count || '').trim();
-      if (trimmed && !seen.has(trimmed.toLowerCase())) {
-        seen.add(trimmed.toLowerCase());
-        list.push({ count: trimmed, shed: c.shed || selectedShedTab, factor: c.multiplicationFactor });
+
+    const addCount = (rawCount: string, s: string, factor: number = 1.0) => {
+      const trimmed = (rawCount || '').trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      // Exclude non-count support roles
+      if (['all', 'ai linkconer', 'gaiter', 'fitter'].includes(lower)) return;
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        list.push({ count: trimmed, shed: s, factor });
       }
-    });
+    };
+
+    if (selectedShedTab === 'All Sheds') {
+      countConversions.forEach(c => {
+        addCount(c.count, c.shed || 'Shed 1', c.multiplicationFactor);
+      });
+      rules.forEach(r => {
+        if (!r.department || r.department === 'Sider') {
+          addCount(r.count, r.shed || 'Shed 1');
+        }
+      });
+    } else {
+      // Strictly counts belonging to the selected shed
+      countConversions.forEach(c => {
+        if (c.shed === selectedShedTab) {
+          addCount(c.count, c.shed, c.multiplicationFactor);
+        }
+      });
+      rules.forEach(r => {
+        if ((r.shed || 'Shed 1') === selectedShedTab) {
+          if (!r.department || r.department === 'Sider') {
+            addCount(r.count, r.shed || selectedShedTab);
+          }
+        }
+      });
+    }
+
     return list;
-  }, [availableShedConversions, selectedShedTab]);
+  }, [countConversions, rules, selectedShedTab]);
 
   // Sync builderShed and selectedCount when shed tab or available counts change
   useEffect(() => {
@@ -131,7 +155,13 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() &&
       (r.shed || 'Shed 1') === effectiveShed
     ) || rules.find(r => 
+      isCountNameMatching(r.count, selectedCount) &&
+      (r.shed || 'Shed 1') === effectiveShed
+    ) || rules.find(r => 
       r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() &&
+      r.shed === 'All Sheds'
+    ) || rules.find(r => 
+      isCountNameMatching(r.count, selectedCount) &&
       r.shed === 'All Sheds'
     );
 
@@ -357,16 +387,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   const filteredRules = React.useMemo(() => {
     return rules.filter(r => {
       if (!r || !r.count) return false;
-      // Must be a count in Count Master for this shed if counts are configured
-      if (availableCountNames.length > 0) {
-        const countMatch = availableCountNames.some(c => isCountNameMatching(c.count, r.count));
-        if (!countMatch) return false;
-      }
       if (selectedShedTab === 'All Sheds') return true;
       const s = r.shed || 'Shed 1';
-      return s === selectedShedTab || s === 'All Sheds';
+      return s === selectedShedTab || (s === 'All Sheds' && r.department !== 'Sider');
     });
-  }, [rules, availableCountNames, selectedShedTab]);
+  }, [rules, selectedShedTab]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -407,7 +432,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
 
           {/* Quick Select Pills */}
           <div className="flex flex-wrap items-center gap-2">
-            {filteredRules.map((rule) => {
+            {filteredRules.filter(r => !r.department || r.department === 'Sider').map((rule) => {
               const isSelected = rule.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() && (rule.shed || 'All Sheds') === builderShed;
               return (
                 <button
@@ -509,8 +534,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
               }}
               className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none transition-all cursor-pointer font-mono"
             >
+              {availableCountNames.length === 0 || !availableCountNames.some(c => c.count.toLowerCase() === selectedCount.toLowerCase()) ? (
+                <option value={selectedCount}>{selectedCount}</option>
+              ) : null}
               {availableCountNames.map(c => (
-                <option key={c.count} value={c.count}>
+                <option key={`${c.count}-${c.shed}`} value={c.count}>
                   {c.count} {c.shed && c.shed !== 'All Sheds' ? `(${c.shed})` : ''}
                 </option>
               ))}

@@ -2,7 +2,7 @@ import React from 'react';
 import { IncentiveRule, DailyReport } from '../types';
 import { Coins, HelpCircle, FileText, Printer, CheckCircle, Info, ChevronDown, Download, FileSpreadsheet } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn, normalizeCountName } from '../lib/utils';
+import { cn, normalizeCountName, isCountNameMatching } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
 
@@ -12,26 +12,18 @@ interface RunningCountIncentivesProps {
   report?: DailyReport;
   history?: DailyReport[];
   onSelectDate?: (date: string) => void;
+  currentShed?: string;
 }
-
-// Robust helper to compare count names
-const isCountMatching = (ruleCount: string, activeCount: string) => {
-  const rc = ruleCount.trim().toLowerCase();
-  const ac = activeCount.trim().toLowerCase();
-  if (rc === ac) return true;
-  // Normalized match (ignoring dashes, slashes, underscores, and spaces)
-  const normRc = rc.replace(/[-/\s_]/g, '');
-  const normAc = ac.replace(/[-/\s_]/g, '');
-  return normRc === normAc || rc.includes(ac) || ac.includes(rc);
-};
 
 export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({ 
   rules, 
   isTvMode = false, 
   report,
   history = [],
-  onSelectDate
+  onSelectDate,
+  currentShed
 }) => {
+  const activeShed = currentShed || report?.shed || 'Shed 1';
   const [showOnlyActive, setShowOnlyActive] = React.useState(true);
 
   // Helper to get first numeric value from count string for sorting
@@ -67,9 +59,17 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     return counts;
   }, [report]);
 
-  // Filter standard (non-AI Linkconer) rules based on active running counts
+  // Filter rules strictly belonging to the active shed (or universal support rules)
+  const shedRules = React.useMemo(() => {
+    return rules.filter(r => {
+      const s = r.shed || 'Shed 1';
+      return s === activeShed || s === 'All Sheds';
+    });
+  }, [rules, activeShed]);
+
+  // Filter standard (non-AI Linkconer) rules based on active running counts in this shed
   const standardRules = React.useMemo(() => {
-    const allStd = rules.filter(r => r.department !== 'AI Linkconer');
+    const allStd = shedRules.filter(r => r.department !== 'AI Linkconer');
     const activeList = activeCountsOnMachines ? Array.from(activeCountsOnMachines) : [];
     
     // Find active counts that are standard (do not contain 'ai' or 'cone')
@@ -79,23 +79,23 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     });
 
     if (!showOnlyActive) {
-      // Return all standard rules, marked as active if running
+      // Return all standard rules for this shed, marked as active if running
       return allStd.map(rule => ({
         ...rule,
-        isActive: activeStdCounts.some(ac => isCountMatching(rule.count, ac)),
+        isActive: activeStdCounts.some(ac => isCountNameMatching(rule.count, ac)),
         isPlaceholder: false
       }));
     }
 
     // Otherwise, filter to only active standard counts
-    // 1. Matched standard rules
+    // 1. Matched standard rules for this shed
     const matched = allStd.filter(rule => 
-      activeStdCounts.some(ac => isCountMatching(rule.count, ac))
+      activeStdCounts.some(ac => isCountNameMatching(rule.count, ac))
     ).map(rule => ({ ...rule, isActive: true, isPlaceholder: false }));
 
-    // 2. Unmatched active standard counts (virtual placeholders)
+    // 2. Unmatched active standard counts (virtual placeholders for this shed)
     const missing = activeStdCounts.filter(ac => 
-      !allStd.some(rule => isCountMatching(rule.count, ac))
+      !allStd.some(rule => isCountNameMatching(rule.count, ac))
     );
 
     const placeholders = missing.map(ac => ({
@@ -104,7 +104,8 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
       department: 'Sider',
       payouts: [],
       isPlaceholder: true,
-      isActive: true
+      isActive: true,
+      shed: activeShed
     }));
 
     // Deduplicate by count name and shed so old and new count incentives never duplicate
@@ -114,7 +115,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     for (let i = matched.length - 1; i >= 0; i--) {
       const r = matched[i];
       const norm = normalizeCountName(r.count);
-      const key = `${norm}__${r.shed || ''}`;
+      const key = `${norm}__${r.shed || activeShed}`;
       if (!seen.has(key)) {
         seen.add(key);
         dedupMatched.unshift(r);
@@ -122,7 +123,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     }
 
     return [...dedupMatched, ...placeholders];
-  }, [rules, activeCountsOnMachines, showOnlyActive]);
+  }, [shedRules, activeCountsOnMachines, showOnlyActive, activeShed]);
 
   const sortedStandardRules = [...standardRules].sort((a, b) => getNumericValue(a.count) - getNumericValue(b.count));
 
@@ -138,9 +139,9 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
   // AI Linkconer always uses the same rules statically (no count filtering)
   const sortedAiRules = React.useMemo(() => {
     return rules
-      .filter(r => r.department === 'AI Linkconer')
+      .filter(r => r.department === 'AI Linkconer' && ((r.shed || 'All Sheds') === activeShed || r.shed === 'All Sheds'))
       .sort((a, b) => getNumericValue(a.count) - getNumericValue(b.count));
-  }, [rules]);
+  }, [rules, activeShed]);
 
   // Define AI Linkconer columns dynamically from active AI rules
   const aiLinkconerPayoutColumns = React.useMemo(() => {
@@ -199,10 +200,10 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
           <div className="text-left">
             <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-2xl border border-emerald-100 mb-4">
               <Coins size={18} />
-              <span className="text-xs font-black uppercase tracking-widest">Digital Display Table</span>
+              <span className="text-xs font-black uppercase tracking-widest">{activeShed} · Digital Display Table</span>
             </div>
             <h2 className="text-4xl font-black text-stone-900 tracking-tight uppercase leading-none">
-              Incentive Amount Based in GPS
+              Incentive Amount Based in GPS ({activeShed})
             </h2>
             <p className="text-[11px] font-bold text-stone-400 uppercase tracking-widest mt-3">
               Quick reference matrix showing GPS targets to achieve standard incentive slots
