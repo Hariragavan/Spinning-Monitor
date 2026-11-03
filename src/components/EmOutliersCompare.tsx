@@ -117,6 +117,14 @@ export const EmOutliersCompare: React.FC<EmOutliersCompareProps> = ({
         }
 
         assignedIds.forEach(idVal => {
+          const cleanId = String(idVal || '').trim().toUpperCase();
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === cleanId)) ||
+            (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
+            (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) return;
+
           const worker = resolveWorker(idVal, entry.siderName, workers);
           const tNo = worker.tNo || worker.id;
           if (!tNo) return;

@@ -1,9 +1,35 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { IncentiveRule, ProductionEntry, Sider, DailyReport, Shift } from "../types";
+import { IncentiveRule, ProductionEntry, Sider, DailyReport, Shift, Shed } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+export function normalizeShed(val: any, defaultShed: Shed = 'Shed 1'): Shed {
+  if (!val) return defaultShed;
+  const str = String(val).toLowerCase().trim();
+  const cleaned = str.replace(/[\s\-_]/g, '');
+  if (cleaned.includes('kttm')) return 'KTTM';
+  if (cleaned.includes('shed3') || cleaned.includes('shed03') || cleaned.includes('unit3') || cleaned.includes('shediii') || str === '3' || str.endsWith('3')) return 'Shed 3';
+  if (cleaned.includes('shed2') || cleaned.includes('shed02') || cleaned.includes('unit2') || cleaned.includes('shedii') || str === '2' || str.endsWith('2')) return 'Shed 2';
+  if (cleaned.includes('shed1') || cleaned.includes('shed01') || cleaned.includes('unit1') || cleaned.includes('shedi') || str === '1' || str.endsWith('1')) return 'Shed 1';
+  return defaultShed;
+}
+
+export function isSameShed(shedA?: string | null, shedB?: string | null): boolean {
+  if (!shedA || !shedB) return false;
+  return normalizeShed(shedA) === normalizeShed(shedB);
+}
+
+export function isWorkerInList(idOrName: string, workers: Sider[]): boolean {
+  if (!idOrName) return false;
+  const clean = String(idOrName).trim().toLowerCase();
+  return workers.some(w => 
+    (w.id && w.id.trim().toLowerCase() === clean) ||
+    (w.tNo && w.tNo.trim().toLowerCase() === clean) ||
+    (w.name && w.name.trim().toLowerCase() === clean)
+  );
 }
 
 export function parseUniversalDateParts(dateStr: string): { day: number; month: number; year: number } | null {
@@ -140,16 +166,13 @@ export function getActiveRule(
   const targetCountNorm = normalize(count || "");
   if (!targetCountNorm) return null;
 
-  // Filter rules by shed if specified: prioritize exact shed, fallback to All Sheds
+  // Filter rules strictly by shed if specified: prioritize exact shed, fallback to All Sheds only
   let candidateRules = rules;
-  if (shed && shed !== 'All Sheds') {
-    const shedSpecific = rules.filter(r => (r.shed || 'Shed 1') === shed);
-    if (shedSpecific.length > 0) {
-      const hasMatch = shedSpecific.some(r => isCountNameMatching(r.count, count));
-      if (hasMatch) {
-        candidateRules = shedSpecific;
-      }
-    }
+  if (shed) {
+    const activeNorm = normalizeShed(shed);
+    candidateRules = rules.filter(r => 
+      normalizeShed(r.shed) === activeNorm || r.shed === 'All Sheds'
+    );
   }
 
   // Find all candidate rules matching count and department
@@ -159,20 +182,11 @@ export function getActiveRule(
     return isCountNameMatching(r.count, count) || normalize(r.count) === targetCountNorm;
   });
 
-  // If no match in candidateRules (e.g. if candidateRules was restricted to shed but had no match), try all rules!
-  if (matchingRules.length === 0 && candidateRules !== rules) {
-    matchingRules = rules.filter(r => {
-      const deptMatch = (r.department || 'Sider') === (department || 'Sider');
-      if (!deptMatch) return false;
-      return isCountNameMatching(r.count, count) || normalize(r.count) === targetCountNorm;
-    });
-  }
-
-  // If still no exact or string-contained match, match by yarn count number
+  // If still no exact or string-contained match, match by yarn count number within candidate rules
   if (matchingRules.length === 0) {
     const targetNum = extractCountNumber(count);
     if (targetNum !== null) {
-      matchingRules = rules.filter(r => {
+      matchingRules = candidateRules.filter(r => {
         const deptMatch = (r.department || 'Sider') === (department || 'Sider');
         if (!deptMatch) return false;
         return extractCountNumber(r.count) === targetNum;
@@ -180,9 +194,9 @@ export function getActiveRule(
     }
   }
 
-  // If still no match, try fuzzy matching
+  // If still no match, try fuzzy matching within candidate rules
   if (matchingRules.length === 0) {
-    const sortedRules = [...rules].sort((a, b) => b.count.length - a.count.length);
+    const sortedRules = [...candidateRules].sort((a, b) => b.count.length - a.count.length);
     matchingRules = sortedRules.filter(r => {
       const deptMatch = (r.department || 'Sider') === (department || 'Sider');
       if (!deptMatch) return false;
@@ -208,8 +222,8 @@ export function getActiveRule(
   // 1. Exact shed match over 'All Sheds'
   // 2. Freshly edited rules (without effectiveDate) or newest effectiveDate
   const sorted = [...matchingRules].sort((a, b) => {
-    if (shed && (a.shed || 'Shed 1') === shed && (b.shed || 'Shed 1') !== shed) return -1;
-    if (shed && (b.shed || 'Shed 1') === shed && (a.shed || 'Shed 1') !== shed) return 1;
+    if (shed && normalizeShed(a.shed) === normalizeShed(shed) && normalizeShed(b.shed) !== normalizeShed(shed)) return -1;
+    if (shed && normalizeShed(b.shed) === normalizeShed(shed) && normalizeShed(a.shed) !== normalizeShed(shed)) return 1;
 
     // Prefer exact count name match over alias match
     const aExact = normalize(a.count) === targetCountNorm;
@@ -760,6 +774,7 @@ export function calculateSiderSlotIncentive(
 
   report.entries.forEach(e => {
     if (e.shift !== targetShift) return;
+    if (effectiveShed && e.shed && normalizeShed(e.shed) !== normalizeShed(effectiveShed)) return;
     const eRaw0 = (e.siderIds && e.siderIds.length > 0 ? (e.siderIds[0] || '') : (e.siderId || '')).trim();
     const eRaw1 = (e.siderIds && e.siderIds.length > 1 ? (e.siderIds[1] || '') : '').trim();
 
@@ -803,4 +818,4 @@ export function calculateSiderSlotIncentive(
     return Math.round(baseIncentive / 2);
   }
   return Math.round(baseIncentive * 0.5);
-}
+}

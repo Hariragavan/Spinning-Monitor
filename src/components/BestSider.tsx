@@ -84,6 +84,13 @@ export const BestSider: React.FC<BestSiderProps> = ({
           const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
           if (invalidMarkers.includes(cleanId)) continue;
 
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === cleanId)) ||
+            (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
+            (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) continue;
+
           const worker = resolveWorker(rawId, entry.siderName, workers);
           const tNo = worker.tNo || worker.id;
           if (!tNo) continue;

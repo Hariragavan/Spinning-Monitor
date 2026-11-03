@@ -6,7 +6,7 @@ import {
   Hash, Plus, Trash2, Save, Info, Calculator, Edit2, Check, ArrowRight,
   Layers, Activity, ChevronLeft, ChevronRight, Calendar
 } from 'lucide-react';
-import { cn, getYesterdayUniversalDate, isCountNameMatching, parseUniversalDateParts, shiftUniversalDate } from '../lib/utils';
+import { cn, getYesterdayUniversalDate, isCountNameMatching, parseUniversalDateParts, shiftUniversalDate, normalizeShed } from '../lib/utils';
 
 interface CountMasterProps {
   conversions: CountConversion[];
@@ -89,7 +89,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
     conversions.forEach(c => {
       if (!c || !c.count) return;
       const s = c.shed || 'Shed 1';
-      if (selectedShedTab !== 'All Sheds' && s !== selectedShedTab) return;
+      if (selectedShedTab !== 'All Sheds' && normalizeShed(s) !== normalizeShed(selectedShedTab)) return;
       const lowerCount = c.count.trim().toLowerCase();
       if (['all', '40s'].includes(lowerCount)) return;
       const key = `${lowerCount}__${s.toLowerCase()}`;

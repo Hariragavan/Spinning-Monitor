@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../types';
 import { Coins, Printer, Calendar, ArrowRight, Zap, Target, Award, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts, normalizeShed } from '../lib/utils';
 import * as XLSX from 'xlsx';
 
 interface MachineDailyIncentiveProps {
@@ -54,16 +54,29 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     onSelectDate(formattedDate);
   };
 
-  // Get active unique frame numbers
+  // Get active unique frame numbers strictly for the current shed
   const machines = useMemo(() => {
-    const unique = Array.from(new Set(report.entries.map(e => e.frameNo))).filter(Boolean).sort();
+    const activeNorm = normalizeShed(shed || report.shed);
+    const shedEntries = (report.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm);
+    const unique = Array.from(new Set(shedEntries.map(e => e.frameNo))).filter(Boolean).sort();
     return unique;
-  }, [report.entries]);
+  }, [report.entries, shed, report.shed]);
 
   // Process data for the machine-wise rows
   const tableRows = useMemo(() => {
     const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
     const shiftsList: Shift[] = ['I', 'II', 'III'];
+
+    const checkWorkerInCurrentShed = (w: Sider | null, rawId: string): boolean => {
+      if (!w) return false;
+      if (workers.length === 0) return true;
+      const cleanRaw = rawId.trim().toUpperCase();
+      return workers.some(item => 
+        (item.id && (item.id.toUpperCase() === cleanRaw || item.id === w.id)) ||
+        (item.tNo && (item.tNo.toUpperCase() === cleanRaw || item.tNo === w.tNo)) ||
+        (item.name && item.name.trim().toLowerCase() === w.name.trim().toLowerCase())
+      );
+    };
 
     const rows: {
       frameNo: string;
@@ -154,7 +167,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             let workerName = '';
             if (hasAssigned) {
               const res = resolveWorker(raw0 || raw1, entry.siderName, workers);
-              if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
+              if (res.name && !invalidMarkers.includes(res.name.toUpperCase()) && checkWorkerInCurrentShed(res, raw0 || raw1)) {
                 workerName = res.name;
               }
             }
@@ -208,7 +221,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             let worker: any = null;
             if (!isUnassigned) {
               const res = resolveWorker(cleanId, entry.siderName, workers);
-              if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
+              if (res.name && !invalidMarkers.includes(res.name.toUpperCase()) && checkWorkerInCurrentShed(res, cleanId)) {
                 worker = res;
               }
             }
@@ -265,7 +278,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               let worker: any = null;
               if (!isUnassigned) {
                 const res = resolveWorker(cleanId, entry.siderName, workers);
-                if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
+                if (res.name && !invalidMarkers.includes(res.name.toUpperCase()) && checkWorkerInCurrentShed(res, cleanId)) {
                   worker = res;
                 }
               }

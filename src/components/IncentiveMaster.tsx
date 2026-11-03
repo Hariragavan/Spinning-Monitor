@@ -5,7 +5,7 @@ import {
   ShieldAlert, Coins
 } from 'lucide-react';
 import { IncentiveRule, IncentivePayout, CountConversion, FrozenMonthRecord } from '../types';
-import { cn, isCountNameMatching, normalizeCountName } from '../lib/utils';
+import { cn, isCountNameMatching, normalizeCountName, normalizeShed } from '../lib/utils';
 import { apiClient } from '../lib/api';
 
 interface BuilderSlotItem {
@@ -93,7 +93,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       if (!c.count) return;
       if (selectedShedTab === 'All Sheds') {
         addCount(c.count, c.shed || 'Shed 1', c.multiplicationFactor);
-      } else if (c.shed === selectedShedTab) {
+      } else if (c.shed === selectedShedTab || normalizeShed(c.shed) === normalizeShed(selectedShedTab)) {
         addCount(c.count, c.shed, c.multiplicationFactor);
       }
     });
@@ -119,13 +119,13 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       const exactRule = rules.find(r =>
         (!r.department || r.department === 'Sider') &&
         r.count.toLowerCase().trim() === lower &&
-        ((r.shed || 'Shed 1') === c.shed || (targetShed !== 'All Sheds' && (r.shed || 'Shed 1') === targetShed))
+        (normalizeShed(r.shed) === normalizeShed(c.shed) || (targetShed !== 'All Sheds' && normalizeShed(r.shed) === normalizeShed(targetShed)))
       );
 
       const matchingRule = exactRule || rules.find(r =>
         (!r.department || r.department === 'Sider') &&
         isCountNameMatching(r.count, trimmed) &&
-        ((r.shed || 'Shed 1') === c.shed || (targetShed !== 'All Sheds' && (r.shed || 'Shed 1') === targetShed))
+        (normalizeShed(r.shed) === normalizeShed(c.shed) || (targetShed !== 'All Sheds' && normalizeShed(r.shed) === normalizeShed(targetShed)))
       ) || rules.find(r =>
         (!r.department || r.department === 'Sider') &&
         (r.count.toLowerCase().trim() === lower || isCountNameMatching(r.count, trimmed)) &&

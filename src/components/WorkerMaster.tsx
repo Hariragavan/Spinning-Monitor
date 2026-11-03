@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Sider } from '../types';
-import { cn, compressImage } from '../lib/utils';
+import { cn, compressImage, normalizeShed } from '../lib/utils';
 
 interface WorkerMasterProps {
   workers: Sider[];
@@ -162,7 +162,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   // Workers scoped to currently selected Shed Tab
   const workersInShedScope = useMemo(() => {
     if (selectedShedTab === 'All Sheds') return workers;
-    return workers.filter(w => (w.shed || 'Shed 1') === selectedShedTab);
+    return workers.filter(w => normalizeShed(w.shed) === normalizeShed(selectedShedTab));
   }, [workers, selectedShedTab]);
 
   // Department counts scoped to active shed tab

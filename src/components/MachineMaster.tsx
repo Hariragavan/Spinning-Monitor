@@ -6,7 +6,7 @@ import {
   Layers, Activity
 } from 'lucide-react';
 import { MachineMasterItem, Sider, CountConversion, Shed, DailyReport } from '../types';
-import { cn, getYesterdayUniversalDate } from '../lib/utils';
+import { cn, getYesterdayUniversalDate, normalizeShed } from '../lib/utils';
 
 export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
   'Shed 1': [],
@@ -165,7 +165,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   const masterMachines = useMemo(() => {
     return machines.filter(m => {
       if (selectedShedTab === 'All Sheds') return true;
-      return (m.shed || 'Shed 1') === selectedShedTab;
+      return normalizeShed(m.shed) === normalizeShed(selectedShedTab);
     });
   }, [machines, selectedShedTab]);
 

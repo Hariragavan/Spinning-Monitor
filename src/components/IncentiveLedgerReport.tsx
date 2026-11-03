@@ -578,6 +578,13 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
           if (invalidMarkers.includes(cleanId)) continue;
 
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === cleanId)) ||
+            (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
+            (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) continue;
+
           const workerObj = resolveWorker(wId, entry.siderName, workers);
           const key = workerObj.tNo || workerObj.id;
           if (!key) continue;
@@ -606,6 +613,14 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
         const payout = getGaiterIncentive(report, shift, rules, workers);
 
         shiftGaiters.forEach(gid => {
+          const cleanGid = String(gid || '').trim().toUpperCase();
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === cleanGid)) ||
+            (w.tNo && (w.tNo.toUpperCase() === cleanGid)) ||
+            (w.name && w.name.trim().toLowerCase() === gid.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) return;
+
           const workerObj = resolveWorker(gid, undefined, workers);
           const key = workerObj.tNo || workerObj.id;
 

@@ -143,12 +143,18 @@ export const getShedMachines = (shed?: string): string[] => {
 
 export const ensureSixMachines = (report: DailyReport, targetShed?: string): DailyReport => {
   const shed = targetShed || report.shed || 'Shed 1';
-  const existingFrames = Array.from(new Set(report.entries.map(e => e.frameNo))).filter(Boolean);
+  const normShed = normalizeShedName(shed) || 'Shed 1';
+
+  // Filter entries and summaries strictly to target shed
+  const filteredEntries = (report.entries || []).filter(e => !e.shed || normalizeShedName(e.shed) === normShed);
+  const filteredSummaries = (report.summaries || []).filter(s => !s.shed || normalizeShedName(s.shed) === normShed);
+
+  const existingFrames = Array.from(new Set(filteredEntries.map(e => e.frameNo))).filter(Boolean);
   const machines = existingFrames;
 
   const shifts: Shift[] = ['I', 'II', 'III'];
-  const entries = [...report.entries];
-  const summaries = [...report.summaries];
+  const entries = [...filteredEntries];
+  const summaries = [...filteredSummaries];
 
   machines.forEach(frameNo => {
     const fallbackCount = entries.find(e => e.frameNo === frameNo && e.count && !['40s', 'all'].includes(e.count.toLowerCase()))?.count || 

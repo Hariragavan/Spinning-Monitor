@@ -111,6 +111,14 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
         for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
           const id = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
           if (!id) continue;
+          const cleanId = String(id).trim().toUpperCase();
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === cleanId)) ||
+            (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
+            (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) continue;
+
           const amount = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers);
           const worker = resolveWorker(id, entry.siderName, workers);
           const tNo = worker.tNo || worker.id;
@@ -135,6 +143,14 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
         const minGpsEntry = shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]);
 
         shiftGaiterIds.forEach(gid => {
+          const cleanGid = String(gid || '').trim().toUpperCase();
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === cleanGid)) ||
+            (w.tNo && (w.tNo.toUpperCase() === cleanGid)) ||
+            (w.name && w.name.trim().toLowerCase() === gid.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) return;
+
           const worker = resolveWorker(gid, undefined, workers);
           const tNo = worker.tNo || worker.id;
           if (!tNo) return;

@@ -157,6 +157,13 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
         if (assignedIds.size === 0) return;
         
         assignedIds.forEach(idVal => {
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === idVal.toUpperCase())) ||
+            (w.tNo && (w.tNo.toUpperCase() === idVal.toUpperCase())) ||
+            (w.name && e.siderName && w.name.trim().toLowerCase() === e.siderName.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) return;
+
           const worker = resolveWorker(idVal, e.siderName, workers);
           const key = worker.id;
           if (!key) return;
@@ -205,6 +212,13 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
           const gaiterIds = report.gaiters?.[shift] || [];
           gaiterIds.forEach(gidVal => {
             if (!gidVal) return;
+            const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+              (w.id && (w.id.toUpperCase() === gidVal.toUpperCase())) ||
+              (w.tNo && (w.tNo.toUpperCase() === gidVal.toUpperCase())) ||
+              (w.name && w.name.trim().toLowerCase() === gidVal.trim().toLowerCase())
+            );
+            if (!isBelongingToCurrentShed) return;
+
             const worker = resolveWorker(gidVal, undefined, workers);
             const key = worker.id;
             if (!key) return;

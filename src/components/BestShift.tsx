@@ -77,6 +77,14 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
       }
 
       assignedIds.forEach(id => {
+        const cleanId = String(id || '').trim().toUpperCase();
+        const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+          (w.id && (w.id.toUpperCase() === cleanId)) ||
+          (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
+          (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
+        );
+        if (!isBelongingToCurrentShed) return;
+
         const resolved = resolveWorker(id, entry.siderName, workers);
         const resolvedKey = resolved.id;
         if (!siderMap.has(resolvedKey)) {

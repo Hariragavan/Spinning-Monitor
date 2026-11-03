@@ -36,7 +36,7 @@ import { MonthlyCountGpss } from '@/components/MonthlyCountGpss';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, isSameShed } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching, extractCountNumber } from '@/lib/utils';
@@ -307,22 +307,49 @@ export default function Home() {
   const [selectedShed, setSelectedShed] = useState<Shed>('Shed 1');
 
   const currentShedHistory = useMemo(() => {
-    return reportHistory.filter(r => (r.shed || 'Shed 1') === selectedShed);
+    const activeNorm = normalizeShed(selectedShed);
+    return reportHistory
+      .filter(r => normalizeShed(r.shed) === activeNorm)
+      .map(r => ({
+        ...r,
+        shed: selectedShed,
+        entries: (r.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm)
+      }));
   }, [reportHistory, selectedShed]);
 
   const currentShedWorkers = useMemo(() => {
-    return workers.filter(w => !w.shed || w.shed === selectedShed);
+    const activeNorm = normalizeShed(selectedShed);
+    return workers.filter(w => normalizeShed(w.shed) === activeNorm);
   }, [workers, selectedShed]);
 
   const currentShedMachines = useMemo(() => {
-    return machines.filter(m => !m.shed || m.shed === selectedShed);
+    const activeNorm = normalizeShed(selectedShed);
+    return machines.filter(m => normalizeShed(m.shed) === activeNorm);
   }, [machines, selectedShed]);
 
+  const currentShedCountConversions = useMemo(() => {
+    const activeNorm = normalizeShed(selectedShed);
+    return countConversions.filter(c => {
+      if (!c || !c.count) return false;
+      if (c.shed === 'All Sheds') return true;
+      return normalizeShed(c.shed) === activeNorm;
+    });
+  }, [countConversions, selectedShed]);
+
+  const currentShedRules = useMemo(() => {
+    const activeNorm = normalizeShed(selectedShed);
+    return incentiveRules.filter(r => {
+      if (!r || !r.count) return false;
+      if (r.shed === 'All Sheds') return true;
+      return normalizeShed(r.shed) === activeNorm;
+    });
+  }, [incentiveRules, selectedShed]);
 
   const activeDailyReport = useMemo(() => {
+    const activeNorm = normalizeShed(selectedShed);
     let rep: DailyReport;
     // 1. If dailyReport belongs to selected shed, use it
-    if (dailyReport && (dailyReport.shed || 'Shed 1') === selectedShed) {
+    if (dailyReport && normalizeShed(dailyReport.shed) === activeNorm) {
       rep = dailyReport;
     } else {
       // 2. Check if a report for dailyReport.date exists in selected shed
@@ -331,26 +358,26 @@ export default function Home() {
       if (sameDateMatch) {
         rep = sameDateMatch;
       } else {
-        // 3. If target date is yesterday, check if current shed history has a report for yesterday
-        const yesterdayStr = getYesterdayUniversalDate();
-        const yesterdayMatch = targetDate === yesterdayStr ? currentShedHistory.find(r => r.date === yesterdayStr) : undefined;
-        if (yesterdayMatch) {
-          rep = yesterdayMatch;
-        } else {
-          // 4. Fresh report for selected shed and targetDate
-          rep = createDefaultReportForShed(selectedShed, targetDate);
-        }
+        // 3. Fresh report for selected shed and targetDate - NEVER fall back to another shed
+        rep = createDefaultReportForShed(selectedShed, targetDate);
       }
     }
 
-    // Ensure all entries strictly compute 40s converted GPS with the latest count conversions:
-    // formula: 40s gps = actual gps * 40s convertion multiplication
-    if (rep && rep.entries && rep.entries.length > 0) {
+    // Strictly enforce shed and filter out foreign shed entries
+    const cleanEntries = (rep.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm);
+    rep = {
+      ...rep,
+      shed: selectedShed,
+      entries: cleanEntries
+    };
+
+    // Ensure all entries strictly compute 40s converted GPS with the shed's count conversions:
+    // formula: 40s gps = actual gps * 40s conversion multiplication
+    if (rep.entries.length > 0) {
       let needsUpdate = false;
       const fixedEntries = rep.entries.map(e => {
-        const factor = countConversions.find(c => 
-          isCountNameMatching(c.count, e.count || '') && 
-          (!c.shed || c.shed === 'All Sheds' || c.shed === selectedShed)
+        const factor = currentShedCountConversions.find(c => 
+          isCountNameMatching(c.count, e.count || '')
         )?.multiplicationFactor ?? 1.0;
         const actGps = e.gpsActual || 0;
         const calc40s = Number((actGps * factor).toFixed(2));
@@ -358,6 +385,7 @@ export default function Home() {
           needsUpdate = true;
           return {
             ...e,
+            shed: selectedShed,
             gps40sCon: calc40s,
             production40s: (e.productionActual || 0) > 0 ? Math.round(e.productionActual * factor) : 0
           };
@@ -370,7 +398,7 @@ export default function Home() {
     }
 
     return rep;
-  }, [dailyReport, selectedShed, currentShedHistory, countConversions]);
+  }, [dailyReport, selectedShed, currentShedHistory, currentShedCountConversions]);
 
   const availableReportDates = useMemo(() => {
     const dateSet = new Set<string>();
@@ -538,11 +566,10 @@ export default function Home() {
       if (options.isInitial) {
         let initialReport: DailyReport | null = null;
         if (loadedHistory && loadedHistory.length > 0) {
-          initialReport = loadedHistory.find(r => r.date === yesterdayStr && (r.shed || 'Shed 1') === currentShed)
-            || loadedHistory.find(r => r.date === yesterdayStr)
+          initialReport = loadedHistory.find(r => r.date === yesterdayStr && normalizeShed(r.shed) === normalizeShed(currentShed))
             || null;
         }
-        if (!initialReport && data.dailyReport && data.dailyReport.date === yesterdayStr) {
+        if (!initialReport && data.dailyReport && data.dailyReport.date === yesterdayStr && normalizeShed(data.dailyReport.shed) === normalizeShed(currentShed)) {
           initialReport = data.dailyReport;
         }
         if (initialReport) {
@@ -554,11 +581,10 @@ export default function Home() {
         // Background refresh: preserve user's current selected date and shed
         let updatedReport: DailyReport | null = null;
         if (loadedHistory && loadedHistory.length > 0) {
-          updatedReport = loadedHistory.find(r => r.date === currentSelectedDate && (r.shed || 'Shed 1') === currentShed)
-            || loadedHistory.find(r => r.date === currentSelectedDate)
+          updatedReport = loadedHistory.find(r => r.date === currentSelectedDate && normalizeShed(r.shed) === normalizeShed(currentShed))
             || null;
         }
-        if (!updatedReport && data.dailyReport && data.dailyReport.date === currentSelectedDate) {
+        if (!updatedReport && data.dailyReport && data.dailyReport.date === currentSelectedDate && normalizeShed(data.dailyReport.shed) === normalizeShed(currentShed)) {
           updatedReport = data.dailyReport;
         }
         if (updatedReport) {
@@ -1221,10 +1247,11 @@ export default function Home() {
   };
 
   const copyAllocationsFromReport = (sourceDate: string, targetShift?: Shift | 'ALL') => {
-    const sourceReport = reportHistory.find(r => r.date === sourceDate && (r.shed || 'Shed 1') === (selectedShed || 'Shed 1')) ||
-      reportHistory.find(r => r.date === sourceDate);
+    const activeNorm = normalizeShed(selectedShed);
+    const sourceReport = currentShedHistory.find(r => r.date === sourceDate) ||
+      reportHistory.find(r => r.date === sourceDate && normalizeShed(r.shed) === activeNorm);
     if (!sourceReport) {
-      alert(`Source report for date ${sourceDate} not found.`);
+      alert(`Source report for date ${sourceDate} not found in ${selectedShed}.`);
       return;
     }
 
@@ -1421,9 +1448,10 @@ export default function Home() {
     });
     await apiClient.saveCountConversion(cleanConv);
 
-    // Live 40s recalculation across dailyReport and reportHistory
+    // Live 40s recalculation across dailyReport and reportHistory for this shed
     const factor = cleanConv.multiplicationFactor;
     const recalcReport = (r: DailyReport): DailyReport => {
+      if (convShed !== 'All Sheds' && normalizeShed(r.shed) !== normalizeShed(convShed)) return r;
       let changed = false;
       const newEntries = (r.entries || []).map(e => {
         if (e.count && isCountNameMatching(e.count, cleanCount)) {
@@ -2066,7 +2094,7 @@ export default function Home() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
             <CountSummary
               report={activeDailyReport}
-              countConversions={countConversions}
+              countConversions={currentShedCountConversions}
               isTvMode={isTvMode}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
@@ -2080,7 +2108,7 @@ export default function Home() {
             <CountWiseFrames
               report={activeDailyReport}
               workers={currentShedWorkers}
-              countConversions={countConversions}
+              countConversions={currentShedCountConversions}
               isTvMode={isTvMode}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
@@ -2094,8 +2122,8 @@ export default function Home() {
             <MasterDataTable
               report={activeDailyReport}
               workers={currentShedWorkers}
-              rules={incentiveRules}
-              countConversions={countConversions}
+              rules={currentShedRules}
+              countConversions={currentShedCountConversions}
               isTvMode={isTvMode}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
@@ -2124,8 +2152,8 @@ export default function Home() {
         return (
           <DailyIncentive
             report={activeDailyReport}
-            workers={workers}
-            rules={incentiveRules}
+            workers={currentShedWorkers}
+            rules={currentShedRules}
             isTvMode={isTvMode}
             onUpdateEntry={(entry) => {
               updateActiveReport(prev => {
@@ -2143,8 +2171,8 @@ export default function Home() {
         return (
           <MachineDailyIncentive
             report={activeDailyReport}
-            workers={workers}
-            rules={incentiveRules}
+            workers={currentShedWorkers}
+            rules={currentShedRules}
             isTvMode={isTvMode}
             onSelectDate={handleTopDateChange}
             machineSiderCounts={settings.machineSiderCounts}
@@ -2182,13 +2210,13 @@ export default function Home() {
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
             <MonthlyCountGpss
-              history={reportHistory}
+              history={currentShedHistory}
               selectedMonth={tvActiveMonth}
               selectedYear={tvActiveYear}
               onMonthChange={setSelectedMonth}
               onYearChange={setSelectedYear}
               selectedShed={selectedShed}
-              countConversions={countConversions}
+              countConversions={currentShedCountConversions}
               onNavigateToMatrix={() => setActiveTab('running-count-incentives')}
               isTvMode={isTvMode}
             />
@@ -2203,7 +2231,7 @@ export default function Home() {
           <MonthlyGrid
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             machineEm={machineEm}
             type="gps"
             selectedMonth={tvActiveMonth}
@@ -2233,7 +2261,7 @@ export default function Home() {
           <AiMonthlyGrid
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             selectedMonth={tvActiveMonth}
             selectedYear={tvActiveYear}
             onMonthChange={setSelectedMonth}
@@ -2258,7 +2286,7 @@ export default function Home() {
           <MonthAbstract
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             month={tvActiveMonth}
             year={tvActiveYear}
             isTvMode={isTvMode}
@@ -2277,7 +2305,7 @@ export default function Home() {
           <AiMonthAbstract
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             month={tvActiveMonth}
             year={tvActiveYear}
             isTvMode={isTvMode}
@@ -2294,7 +2322,7 @@ export default function Home() {
           <IncentiveLedgerReport
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             machineEm={machineEm}
             initialMonth={selectedMonth}
             initialYear={selectedYear}
@@ -2312,7 +2340,7 @@ export default function Home() {
           <SiderMonthlyPerformance
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             isTvMode={isTvMode}
             month={tvActiveMonth}
             year={tvActiveYear}
@@ -2330,7 +2358,7 @@ export default function Home() {
           <OperatorEmFormat
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             machineEm={machineEm}
             onUpdateMachineEm={async (newData, sheetUrl) => {
               setMachineEm(newData);
@@ -2362,7 +2390,7 @@ export default function Home() {
           <AiMonthlyPerformance
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             isTvMode={isTvMode}
             month={tvActiveMonth}
             year={tvActiveYear}
@@ -2381,7 +2409,7 @@ export default function Home() {
             month={tvActiveMonth}
             year={tvActiveYear}
             onUpdateReport={(updatedReport) => {
-              setReportHistory(prev => prev.map(r => r.date === updatedReport.date && (r.shed || 'Shed 1') === selectedShed ? updatedReport : r));
+              setReportHistory(prev => prev.map(r => r.date === updatedReport.date && normalizeShed(r.shed) === normalizeShed(selectedShed) ? updatedReport : r));
               if (dailyReport.date === updatedReport.date) setDailyReport(updatedReport);
               apiClient.saveDailyReport(updatedReport).catch(() => {});
             }}
@@ -2392,7 +2420,7 @@ export default function Home() {
       case 'running-count-incentives':
         return (
           <RunningCountIncentives
-            rules={incentiveRules}
+            rules={currentShedRules}
             isTvMode={isTvMode}
             report={activeDailyReport}
             history={currentShedHistory}
@@ -2410,7 +2438,7 @@ export default function Home() {
         );
 
       case 'best-shift':
-        return <BestShift report={activeDailyReport} workers={currentShedWorkers} rules={incentiveRules} isTvMode={isTvMode} />;
+        return <BestShift report={activeDailyReport} workers={currentShedWorkers} rules={currentShedRules} isTvMode={isTvMode} />;
 
       case 'best':
         return (
@@ -2418,7 +2446,7 @@ export default function Home() {
             history={currentShedHistory}
             workers={currentShedWorkers}
             isTvMode={isTvMode}
-            rules={incentiveRules}
+            rules={currentShedRules}
             month={selectedMonth}
             year={selectedYear}
             showMonthOnTv={settings.tvShowBestSiderMonth !== false}
@@ -2430,7 +2458,7 @@ export default function Home() {
           <BestOperatorsEm
             history={currentShedHistory}
             workers={currentShedWorkers}
-            rules={incentiveRules}
+            rules={currentShedRules}
             machineEm={machineEm}
             isTvMode={isTvMode}
             month={selectedMonth}
@@ -2506,8 +2534,8 @@ export default function Home() {
               onSaveMachine={saveMachine}
               onDeleteMachine={deleteMachine}
               onResetStandardMachines={resetStandardMachines}
-              workers={workers}
-              countConversions={countConversions}
+              workers={currentShedWorkers}
+              countConversions={currentShedCountConversions}
               report={activeDailyReport}
               allReports={reportHistory}
               selectedDate={activeDailyReport.date}

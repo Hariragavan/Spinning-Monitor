@@ -321,12 +321,26 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
         entries.forEach(e => {
           if (e.siderIds && e.siderIds.length > 0) {
             e.siderIds.filter(Boolean).forEach(id => {
+              const cleanId = String(id || '').trim().toUpperCase();
+              const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+                (w.id && w.id.toUpperCase() === cleanId) ||
+                (w.tNo && w.tNo.toUpperCase() === cleanId)
+              );
+              if (!isBelongingToCurrentShed) return;
               const w = resolveWorker(id, undefined, workers);
               if (w?.name) sidersSet.add(`${w.name}${w.tNo ? ` (${w.tNo})` : ''}`);
             });
           } else if (e.siderId) {
-            const w = resolveWorker(e.siderId, e.siderName, workers);
-            if (w?.name) sidersSet.add(`${w.name}${w.tNo ? ` (${w.tNo})` : ''}`);
+            const cleanId = String(e.siderId || '').trim().toUpperCase();
+            const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+              (w.id && w.id.toUpperCase() === cleanId) ||
+              (w.tNo && w.tNo.toUpperCase() === cleanId) ||
+              (w.name && e.siderName && w.name.trim().toLowerCase() === e.siderName.trim().toLowerCase())
+            );
+            if (isBelongingToCurrentShed) {
+              const w = resolveWorker(e.siderId, e.siderName, workers);
+              if (w?.name) sidersSet.add(`${w.name}${w.tNo ? ` (${w.tNo})` : ''}`);
+            }
           }
         });
 
@@ -334,8 +348,15 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
         let gaiterNameStr = '';
         const gaiterId = entries[0]?.gaiterId || report.gaiters?.[entries[0]?.shift || 'I']?.[0];
         if (gaiterId) {
-          const gw = resolveWorker(gaiterId, entries[0]?.gaiterName, workers);
-          if (gw?.name) gaiterNameStr = `${gw.name}${gw.tNo ? ` (${gw.tNo})` : ''}`;
+          const cleanGid = String(gaiterId || '').trim().toUpperCase();
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && w.id.toUpperCase() === cleanGid) ||
+            (w.tNo && w.tNo.toUpperCase() === cleanGid)
+          );
+          if (isBelongingToCurrentShed) {
+            const gw = resolveWorker(gaiterId, entries[0]?.gaiterName, workers);
+            if (gw?.name) gaiterNameStr = `${gw.name}${gw.tNo ? ` (${gw.tNo})` : ''}`;
+          }
         }
 
         return {

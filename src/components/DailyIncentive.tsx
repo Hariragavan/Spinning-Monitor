@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../types';
 import { Coins, User, Zap, Target, ArrowRight, ShieldCheck, Award, Save, X, Plus, Calendar, Printer, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateSiderSlotIncentive, resolveWorker, getActiveRule, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { cn, calculateSiderSlotIncentive, resolveWorker, getActiveRule, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate, normalizeShed } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -191,7 +191,10 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
     }[] = [];
 
     shifts.forEach(shift => {
-      const shiftEntries = (report.entries || []).filter(e => e.shift === shift);
+      const activeNorm = normalizeShed(shed || report.shed);
+      const shiftEntries = (report.entries || []).filter(e => 
+        e.shift === shift && (!e.shed || normalizeShed(e.shed) === activeNorm)
+      );
       if (shiftEntries.length === 0) return;
 
       const workerMap = new Map<string, {
@@ -218,8 +221,18 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
           const clean = String(rawId).trim();
           if (!clean || invalidMarkers.includes(clean.toUpperCase())) continue;
 
-          entryHasAssignedWorker = true;
           const worker = resolveWorker(clean, entry.siderName, workers);
+          // Strictly verify that the worker belongs to the current shed
+          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+            (w.id && (w.id.toUpperCase() === clean.toUpperCase() || w.id === worker.id)) ||
+            (w.tNo && (w.tNo.toUpperCase() === clean.toUpperCase() || w.tNo === worker.tNo)) ||
+            (w.name && w.name.trim().toLowerCase() === worker.name.trim().toLowerCase())
+          );
+          if (!isBelongingToCurrentShed) {
+            continue;
+          }
+
+          entryHasAssignedWorker = true;
           const workerKey = (worker.id || worker.tNo || worker.name || clean).toUpperCase();
 
           if (!workerMap.has(workerKey)) {
