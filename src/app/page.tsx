@@ -282,7 +282,26 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
 const DEFAULT_WORKERS: Sider[] = [];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('view') || params.get('page');
+      if (tabParam) return tabParam;
+      const pathSlug = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
+      if (pathSlug) return pathSlug;
+    }
+    return 'dashboard';
+  });
+
+  const setActiveTab = useCallback((newTab: string) => {
+    setActiveTabState(newTab);
+    if (typeof window !== 'undefined') {
+      const newPath = newTab === 'dashboard' ? '/' : `/${newTab}`;
+      if (window.location.pathname !== newPath) {
+        window.history.pushState({ tab: newTab }, '', newPath + window.location.search);
+      }
+    }
+  }, []);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
@@ -670,7 +689,7 @@ export default function Home() {
     };
   }, [refreshAllData]);
 
-  // URL Parameter Routing
+  // URL Parameter & Path Routing with Browser History Support
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('tv') === 'true' || params.get('mode') === 'tv') {
@@ -682,8 +701,24 @@ export default function Home() {
       setActiveTab('assignments');
     } else if (tabParam) {
       setActiveTab(tabParam);
+    } else {
+      const pathSlug = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
+      if (pathSlug) {
+        setActiveTab(pathSlug);
+      }
     }
-  }, []);
+
+    // Listen to browser Back/Forward navigation
+    const handlePopState = () => {
+      const pathSlug = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
+      const currentParams = new URLSearchParams(window.location.search);
+      const currentTab = currentParams.get('tab') || currentParams.get('view') || currentParams.get('page');
+      setActiveTabState(currentTab || pathSlug || 'dashboard');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [setActiveTab]);
 
   // ESC key to exit TV mode
   useEffect(() => {
@@ -1253,6 +1288,24 @@ export default function Home() {
       createBlankReport(newDate, true);
     }
   };
+
+  // Auto-detect calendar day rollover at midnight: switch date and refresh data automatically
+  const calendarDayRef = useRef(getTodayUniversalDate());
+  useEffect(() => {
+    const checkMidnightRollover = () => {
+      const currentToday = getTodayUniversalDate();
+      if (currentToday !== calendarDayRef.current) {
+        console.log(`[Midnight Rollover] Calendar day changed from ${calendarDayRef.current} to ${currentToday}. Auto-refreshing for next date...`);
+        calendarDayRef.current = currentToday;
+        const nextTargetDate = getYesterdayUniversalDate();
+        handleTopDateChange(nextTargetDate);
+        refreshAllData({ isInitial: true });
+      }
+    };
+
+    const midnightTimer = setInterval(checkMidnightRollover, 20000);
+    return () => clearInterval(midnightTimer);
+  }, [handleTopDateChange, refreshAllData]);
 
   const changeReportDate = (oldDate: string, newDate: string) => {
     if (oldDate === newDate) return;

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule } from '../types';
 import { Trophy, Award, Coins, Calendar, Star, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn, resolveWorker, calculateIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
 
 interface BestSiderProps {
@@ -76,29 +76,19 @@ export const BestSider: React.FC<BestSiderProps> = ({
     filteredHistory.forEach(report => {
       if (!report || !report.entries) return;
       report.entries.forEach(entry => {
-        const assignedIds = new Set<string>();
-        if (entry.siderId) assignedIds.add(entry.siderId);
-        if (entry.siderIds) {
-          entry.siderIds.forEach(id => {
-            if (id) assignedIds.add(id);
-          });
-        }
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+          const rawId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+          if (!rawId) continue;
+          const cleanId = String(rawId).trim().toUpperCase();
+          const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+          if (invalidMarkers.includes(cleanId)) continue;
 
-        if (assignedIds.size === 0) {
-          const fallbackTNo = entry.siderName?.split(' ')[0] || (entry.siderName ? entry.siderName.substring(0, 5) : null);
-          if (fallbackTNo) assignedIds.add(fallbackTNo);
-        }
-
-        // Calculate dynamic incentive
-        let amount = entry.incentiveAmount || 0;
-        if (amount === 0 && rules && rules.length > 0) {
-          amount = calculateIncentive(entry, rules, report.date);
-        }
-        
-        assignedIds.forEach(idVal => {
-          const worker = resolveWorker(idVal, entry.siderName, workers);
+          const worker = resolveWorker(rawId, entry.siderName, workers);
           const tNo = worker.tNo || worker.id;
-          if (!tNo) return;
+          if (!tNo) continue;
+
+          const amount = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, report.shed);
 
           if (totals.has(tNo)) {
             const current = totals.get(tNo)!;
@@ -118,7 +108,7 @@ export const BestSider: React.FC<BestSiderProps> = ({
               photoUrl: worker.photoUrl
             });
           }
-        });
+        }
       });
     });
 

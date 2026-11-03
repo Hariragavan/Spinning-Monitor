@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, MachineEmData, FrozenMonthRecord } from '../types';
 import { Calendar, LayoutGrid, Target, ArrowRight, Printer, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronRight, Lock, Unlock, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
 import { motion } from 'motion/react';
 import { getMonthKey } from '../lib/frozenMonths';
 import * as XLSX from 'xlsx';
@@ -255,7 +255,16 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
       if (entries.length === 0) return null;
       if (metricType === 'gps') return entries.reduce((acc, curr) => acc + curr.gpsActual, 0) / entries.length;
       if (metricType === 'production') return entries.reduce((acc, curr) => acc + curr.productionActual, 0);
-      if (metricType === 'incentive') return entries.reduce((acc, curr) => acc + calculateIncentive(curr, rules), 0);
+      if (metricType === 'incentive') {
+        return entries.reduce((acc, curr) => {
+          const numSlots = curr.siderIds?.length || (curr.siderId ? 1 : 2);
+          let entryPayout = 0;
+          for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+            entryPayout += calculateSiderSlotIncentive(curr, sIdx, report, rules, workers, report.shed);
+          }
+          return acc + entryPayout;
+        }, 0);
+      }
     } else {
       // 1. Calculate Machine Assignments
       const entries = report.entries.filter(e => {
@@ -317,7 +326,36 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
         hasData = true;
         if (metricType === 'gps') totalValue = entries.reduce((acc, curr) => acc + curr.gpsActual, 0) / entries.length;
         else if (metricType === 'production') totalValue = entries.reduce((acc, curr) => acc + curr.productionActual, 0);
-        else if (metricType === 'incentive') totalValue = entries.reduce((acc, curr) => acc + calculateIncentive(curr, rules), 0);
+        else if (metricType === 'incentive') {
+          let workerIncentiveSum = 0;
+          report.entries.forEach(e => {
+            const numSlots = e.siderIds?.length || (e.siderId ? 1 : 2);
+            for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+              const rawId = e.siderIds?.[sIdx] || (sIdx === 0 ? e.siderId : '');
+              if (!rawId) continue;
+              const resolved = resolveWorker(rawId, e.siderName, workers);
+              const normWorkerName = (workerName || '').toLowerCase().trim();
+              const normResolvedName = (resolved.name || '').toLowerCase().trim();
+              const isTNoReal = (t: string) => {
+                if (!t) return false;
+                const clean = t.trim();
+                if (clean === "" || clean.toLowerCase() === "n/a" || clean.toLowerCase() === "unknown") return false;
+                if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean)) return false;
+                if (clean.startsWith('T-') || clean.startsWith('w-')) return false;
+                return true;
+              };
+              const hasTNoConflict = isTNoReal(resolved.tNo) && isTNoReal(tNo) && resolved.tNo.trim().toUpperCase() !== tNo.trim().toUpperCase();
+              let idMatches = resolved.id === workerId || (isTNoReal(resolved.tNo) && isTNoReal(tNo) && resolved.tNo.trim().toUpperCase() === tNo.trim().toUpperCase());
+              if (!idMatches && !hasTNoConflict && normResolvedName && normWorkerName && normResolvedName === normWorkerName) {
+                idMatches = true;
+              }
+              if (idMatches) {
+                workerIncentiveSum += calculateSiderSlotIncentive(e, sIdx, report, rules, workers, report.shed);
+              }
+            }
+          });
+          totalValue = workerIncentiveSum;
+        }
       }
 
       // 2. Add Gaiter Incentives if in Incentive mode

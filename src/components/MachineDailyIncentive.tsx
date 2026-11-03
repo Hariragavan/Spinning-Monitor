@@ -62,9 +62,14 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
 
   // Process data for the machine-wise rows
   const tableRows = useMemo(() => {
+    const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+    const shiftsList: Shift[] = ['I', 'II', 'III'];
+
     const rows: {
       frameNo: string;
-      slotIdx: number;
+      slotIdx?: number;
+      slotLabel: string;
+      isCombined?: boolean;
       totalSlots?: number;
       isKttm: boolean;
       displayCount: string;
@@ -88,7 +93,47 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
       const uniqueCounts = Array.from(new Set(machineEntries.map(e => e.count).filter(Boolean)));
       const displayCount = uniqueCounts.join(', ') || '-';
 
-      for (let slotIdx = 0; slotIdx < numSlots; slotIdx++) {
+      // Check if this machine can be displayed as a single COMBINED row with 'LH RH'
+      // Condition: 2 slots, not KTTM, and in every shift that has assignments, the exact same worker is assigned to both sides
+      let isSameWorkerAcrossShifts = !isKttm && numSlots === 2;
+      if (isSameWorkerAcrossShifts) {
+        for (const shift of shiftsList) {
+          const entry = report.entries.find(e => e.frameNo === frameNo && e.shift === shift);
+          if (!entry) continue;
+
+          const raw0 = (entry.siderIds && entry.siderIds.length > 0 ? (entry.siderIds[0] || '') : (entry.siderId || '')).trim();
+          const raw1 = (entry.siderIds && entry.siderIds.length > 1 ? (entry.siderIds[1] || '') : '').trim();
+
+          const isAssigned0 = Boolean(raw0 && !invalidMarkers.includes(raw0.toUpperCase()));
+          const isAssigned1 = Boolean(raw1 && !invalidMarkers.includes(raw1.toUpperCase()));
+
+          // If neither slot is assigned in this shift, it does not prevent combining
+          if (!isAssigned0 && !isAssigned1) continue;
+
+          // If one is assigned and the other is not, different operators!
+          if (isAssigned0 !== isAssigned1) {
+            isSameWorkerAcrossShifts = false;
+            break;
+          }
+
+          // Both assigned: verify if they resolve to the same worker
+          const w0 = resolveWorker(raw0, entry.siderName, workers);
+          const w1 = resolveWorker(raw1, undefined, workers);
+          const isMatch = Boolean(
+            (w0.tNo && w1.tNo && w0.tNo.toUpperCase() === w1.tNo.toUpperCase()) ||
+            (w0.id && w1.id && w0.id.toUpperCase() === w1.id.toUpperCase()) ||
+            (w0.name && w1.name && w0.name.toLowerCase().trim() === w1.name.toLowerCase().trim())
+          );
+
+          if (!isMatch) {
+            isSameWorkerAcrossShifts = false;
+            break;
+          }
+        }
+      }
+
+      if (isSameWorkerAcrossShifts) {
+        // COMBINED ROW (LH RH): both sides worked by same operator
         const shiftsData = {} as Record<Shift, {
           gps: number;
           name: string;
@@ -96,13 +141,68 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
           assigned: boolean;
         }>;
 
-        const shiftsList: Shift[] = ['I', 'II', 'III'];
         shiftsList.forEach(shift => {
           const entry = report.entries.find(e => e.frameNo === frameNo && e.shift === shift);
           if (entry) {
-            const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
+            const raw0 = (entry.siderIds && entry.siderIds.length > 0 ? (entry.siderIds[0] || '') : (entry.siderId || '')).trim();
+            const raw1 = (entry.siderIds && entry.siderIds.length > 1 ? (entry.siderIds[1] || '') : '').trim();
+            const hasAssigned = Boolean(
+              (raw0 && !invalidMarkers.includes(raw0.toUpperCase())) ||
+              (raw1 && !invalidMarkers.includes(raw1.toUpperCase()))
+            );
+
+            let workerName = '';
+            if (hasAssigned) {
+              const res = resolveWorker(raw0 || raw1, entry.siderName, workers);
+              if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
+                workerName = res.name;
+              }
+            }
+
+            // Sum slot 0 and slot 1 incentives according to allocation rules
+            const inc0 = calculateSiderSlotIncentive(entry, 0, report, rules, workers, shed);
+            const inc1 = calculateSiderSlotIncentive(entry, 1, report, rules, workers, shed);
+            const totalInc = inc0 + inc1;
+
+            shiftsData[shift] = {
+              gps: entry.gpsActual,
+              name: workerName,
+              incentive: totalInc,
+              assigned: !!workerName
+            };
+          } else {
+            shiftsData[shift] = {
+              gps: 0,
+              name: '',
+              incentive: 0,
+              assigned: false
+            };
+          }
+        });
+
+        rows.push({
+          frameNo,
+          slotLabel: 'LH RH',
+          isCombined: true,
+          totalSlots: numSlots,
+          isKttm: false,
+          displayCount,
+          shiftsData
+        });
+      } else if (isKttm && numSlots === 1) {
+        // Single slot KTTM machine
+        const shiftsData = {} as Record<Shift, {
+          gps: number;
+          name: string;
+          incentive: number;
+          assigned: boolean;
+        }>;
+
+        shiftsList.forEach(shift => {
+          const entry = report.entries.find(e => e.frameNo === frameNo && e.shift === shift);
+          if (entry) {
+            const workerId = entry.siderIds?.[0] || entry.siderId || '';
             const cleanId = String(workerId || '').trim();
-            const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
             const isUnassigned = !cleanId || invalidMarkers.includes(cleanId.toUpperCase());
 
             let worker: any = null;
@@ -112,12 +212,8 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
                 worker = res;
               }
             }
-            
-            // Calculate dynamic GPS incentive for the entry based on Incentive Master and workload rules
-            let incentive = 0;
-            if (worker) {
-              incentive = calculateSiderSlotIncentive(entry, slotIdx, report, rules, workers, shed);
-            }
+
+            const incentive = worker ? calculateSiderSlotIncentive(entry, 0, report, rules, workers, shed) : 0;
 
             shiftsData[shift] = {
               gps: entry.gpsActual,
@@ -137,12 +233,75 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
 
         rows.push({
           frameNo,
-          slotIdx,
-          totalSlots: numSlots,
-          isKttm,
+          slotIdx: 0,
+          slotLabel: '',
+          isCombined: false,
+          totalSlots: 1,
+          isKttm: true,
           displayCount,
           shiftsData
         });
+      } else {
+        // SPLIT ROWS: Different operators on LH and RH (or custom multi-slot)
+        for (let slotIdx = 0; slotIdx < numSlots; slotIdx++) {
+          const slotLabel = numSlots === 2 
+            ? (slotIdx === 0 ? 'LH' : 'RH')
+            : `S${slotIdx + 1}`;
+
+          const shiftsData = {} as Record<Shift, {
+            gps: number;
+            name: string;
+            incentive: number;
+            assigned: boolean;
+          }>;
+
+          shiftsList.forEach(shift => {
+            const entry = report.entries.find(e => e.frameNo === frameNo && e.shift === shift);
+            if (entry) {
+              const workerId = entry.siderIds?.[slotIdx] || (slotIdx === 0 ? entry.siderId : '');
+              const cleanId = String(workerId || '').trim();
+              const isUnassigned = !cleanId || invalidMarkers.includes(cleanId.toUpperCase());
+
+              let worker: any = null;
+              if (!isUnassigned) {
+                const res = resolveWorker(cleanId, entry.siderName, workers);
+                if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
+                  worker = res;
+                }
+              }
+
+              let incentive = 0;
+              if (worker) {
+                incentive = calculateSiderSlotIncentive(entry, slotIdx, report, rules, workers, shed);
+              }
+
+              shiftsData[shift] = {
+                gps: entry.gpsActual,
+                name: worker ? worker.name : '',
+                incentive: worker ? incentive : 0,
+                assigned: !!worker
+              };
+            } else {
+              shiftsData[shift] = {
+                gps: 0,
+                name: '',
+                incentive: 0,
+                assigned: false
+              };
+            }
+          });
+
+          rows.push({
+            frameNo,
+            slotIdx,
+            slotLabel,
+            isCombined: false,
+            totalSlots: numSlots,
+            isKttm,
+            displayCount,
+            shiftsData
+          });
+        }
       }
     });
 
@@ -308,9 +467,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
   const exportToExcel = () => {
     const dataRows: any[] = [];
     tableRows.forEach(row => {
-      const rfLabel = (!row.isKttm && (row.totalSlots || 0) > 1)
-        ? `${row.frameNo} (${row.slotIdx === 0 ? 'LH' : row.slotIdx === 1 ? 'RH' : `S${row.slotIdx + 1}`})`
-        : row.frameNo;
+      const rfLabel = row.slotLabel ? `${row.frameNo} (${row.slotLabel})` : row.frameNo;
 
       dataRows.push({
         'Rf No': rfLabel,
@@ -371,9 +528,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     csv += `Rf No,Count,Shift 1 GPS,Shift 1 Operator,Shift 1 Incentive,Shift 2 GPS,Shift 2 Operator,Shift 2 Incentive,Shift 3 GPS,Shift 3 Operator,Shift 3 Incentive,Total Machine Payout\n`;
 
     tableRows.forEach(row => {
-      const rfLabel = (!row.isKttm && (row.totalSlots || 0) > 1)
-        ? `${row.frameNo} (${row.slotIdx === 0 ? 'LH' : row.slotIdx === 1 ? 'RH' : `S${row.slotIdx + 1}`})`
-        : row.frameNo;
+      const rfLabel = row.slotLabel ? `${row.frameNo} (${row.slotLabel})` : row.frameNo;
       const tot = row.shiftsData.I.incentive + row.shiftsData.II.incentive + row.shiftsData.III.incentive;
       csv += `"${rfLabel}","${row.displayCount}",${row.shiftsData.I.gps > 0 ? Math.round(row.shiftsData.I.gps) : 0},"${row.shiftsData.I.name || ''}",${row.shiftsData.I.incentive},${row.shiftsData.II.gps > 0 ? Math.round(row.shiftsData.II.gps) : 0},"${row.shiftsData.II.name || ''}",${row.shiftsData.II.incentive},${row.shiftsData.III.gps > 0 ? Math.round(row.shiftsData.III.gps) : 0},"${row.shiftsData.III.name || ''}",${row.shiftsData.III.incentive},${tot}\n`;
     });
@@ -504,22 +659,22 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               {/* Machine Rows */}
               {tableRows.map((row, idx) => (
                 <tr 
-                  key={`mach-${row.frameNo}-${row.slotIdx}-${idx}`}
+                  key={`mach-${row.frameNo}-${row.slotLabel || 'main'}-${idx}`}
                   className={cn("border-b border-stone-200 hover:bg-stone-50 transition-colors font-bold text-stone-800", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}
                 >
                   {/* Machine Rf No */}
                   <td className={cn("border-r-2 border-stone-900 font-black text-stone-900 bg-stone-50/50 uppercase", isTvMode ? "px-3 py-2 text-lg md:text-xl font-black" : "px-2 py-1")}>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <span>{row.frameNo}</span>
-                      {!row.isKttm && (row.totalSlots || 0) > 1 && (
+                      {row.slotLabel && (
                         <span className={cn(
-                          "text-[9px] px-1 py-0.2 rounded font-black tracking-tight",
-                          row.slotIdx === 0 ? "bg-blue-100 text-blue-800" :
-                          row.slotIdx === 1 ? "bg-indigo-100 text-indigo-800" :
-                          row.slotIdx === 2 ? "bg-purple-100 text-purple-800" :
-                          "bg-pink-100 text-pink-800"
+                          "text-[9px] px-1.5 py-0.5 rounded font-black tracking-tight border",
+                          row.slotLabel === 'LH RH' ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
+                          row.slotLabel === 'LH' ? "bg-blue-100 text-blue-800 border-blue-200" :
+                          row.slotLabel === 'RH' ? "bg-indigo-100 text-indigo-800 border-indigo-200" :
+                          "bg-purple-100 text-purple-800 border-purple-200"
                         )}>
-                          {row.slotIdx === 0 ? 'LH' : row.slotIdx === 1 ? 'RH' : `S${row.slotIdx + 1}`}
+                          {row.slotLabel}
                         </span>
                       )}
                     </div>

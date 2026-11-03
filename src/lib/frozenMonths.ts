@@ -1,5 +1,5 @@
 import { DailyReport, Sider, IncentiveRule, Shift } from '../types';
-import { calculateIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from './utils';
+import { calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from './utils';
 
 export interface FrozenMonthAbstractItem {
   id: string;
@@ -81,26 +81,24 @@ export function computeFrozenMonthRecord(
 
     if (report.entries) {
       report.entries.forEach(entry => {
-        const assignedIds = new Set<string>();
-        if (entry.siderId) assignedIds.add(entry.siderId);
-        if (entry.siderIds) {
-          entry.siderIds.forEach(id => {
-            if (id) assignedIds.add(id);
-          });
-        }
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+          const rawId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+          if (!rawId) continue;
+          const cleanId = String(rawId).trim().toUpperCase();
+          const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+          if (invalidMarkers.includes(cleanId)) continue;
 
-        const amount = calculateIncentive(entry, rules, report.date);
-
-        assignedIds.forEach(id => {
-          const worker = resolveWorker(id, entry.siderName, workers);
+          const worker = resolveWorker(rawId, entry.siderName, workers);
           const tNo = worker.tNo || worker.id;
-          if (!tNo) return;
+          if (!tNo) continue;
 
+          const amount = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, report.shed);
           const existing = dailyIncentives.get(tNo) || { worker, amount: 0, gps: 0 };
           existing.amount += amount;
           existing.gps += entry.gpsActual;
           dailyIncentives.set(tNo, existing);
-        });
+        }
       });
     }
 

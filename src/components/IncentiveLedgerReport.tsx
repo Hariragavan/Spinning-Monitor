@@ -434,7 +434,16 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           const hasTNoMatch = !hasTNoConflict && entry.siderId && entry.siderId === targetWorker.tNo;
 
           if (hasDirectId || hasNameMatch || hasTNoMatch) {
-            const incentive = calculateIncentive(entry, rules, report.date) || 0;
+            const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+            let incentive = 0;
+            for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+              const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+              if (!wId) continue;
+              const wObj = resolveWorker(wId, entry.siderName, workers);
+              if (wObj.id === targetWorker.id || wObj.tNo === targetWorker.tNo || (wObj.name && wObj.name.toLowerCase() === targetWorker.name.toLowerCase())) {
+                incentive += calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, entry.shed || report.shed);
+              }
+            }
             const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
             let emValue = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
             if (emValue === undefined) {
@@ -554,14 +563,6 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
       const dailyIncentives = new Map<string, { workerObj: Sider; payout: number; gps: number; entryCount: number; emSum: number; emCount: number }>();
 
       report.entries.forEach(entry => {
-        const assignedIds = new Set<string>();
-        if (entry.siderId) assignedIds.add(entry.siderId);
-        if (entry.siderIds) {
-          entry.siderIds.forEach(id => { if (id) assignedIds.add(id); });
-        }
-
-        const payout = calculateIncentive(entry, rules, report.date);
-
         const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
         let emValue = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
         if (emValue === undefined) {
@@ -569,10 +570,19 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
         }
         const hasEm = emValue !== undefined && emValue > 0;
 
-        assignedIds.forEach(id => {
-          const workerObj = resolveWorker(id, entry.siderName, workers);
-          const key = workerObj.tNo || workerObj.id;
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+          const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+          if (!wId) continue;
+          const cleanId = String(wId).trim().toUpperCase();
+          const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+          if (invalidMarkers.includes(cleanId)) continue;
 
+          const workerObj = resolveWorker(wId, entry.siderName, workers);
+          const key = workerObj.tNo || workerObj.id;
+          if (!key) continue;
+
+          const payout = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, entry.shed || report.shed);
           const existing = dailyIncentives.get(key) || { workerObj, payout: 0, gps: 0, entryCount: 0, emSum: 0, emCount: 0 };
           existing.payout += payout;
           existing.gps += entry.gpsActual;
@@ -582,7 +592,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
             existing.emCount += 1;
           }
           dailyIncentives.set(key, existing);
-        });
+        }
       });
 
       // Also parse Gaiter allotments in this report

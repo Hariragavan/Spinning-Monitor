@@ -789,8 +789,8 @@ export function calculateSiderSlotIncentive(
 
   const totalSidesInShift = workerMachines.reduce((sum, m) => sum + m.sides, 0);
 
-  // If worker is assigned 2 sides: normal workload -> NO INCENTIVE (0%)
-  if (totalSidesInShift === 2) {
+  // If worker is assigned 2 sides or only 1 side (<= 2): normal workload -> NO INCENTIVE (0%)
+  if (totalSidesInShift <= 2) {
     return 0;
   }
 

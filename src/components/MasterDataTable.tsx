@@ -5,7 +5,7 @@ import {
   Coins, ArrowUpDown, ChevronDown, CheckCircle, AlertTriangle,
   Layers, Users, Gauge, FileText, Check, Sparkles, Printer, FileSpreadsheet
 } from 'lucide-react';
-import { cn, calculateIncentive, resolveWorker, isCountNameMatching } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, isCountNameMatching } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
 
@@ -231,24 +231,30 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
     }[] = [];
 
     (report.entries || []).forEach(e => {
-      const inc = calculateIncentive(e, rules, report.date);
-      const workerIds = (e.siderIds && e.siderIds.length > 0) ? e.siderIds : (e.siderId ? [e.siderId] : []);
-      if (workerIds.length > 0) {
-        workerIds.forEach(id => {
-          if (!id) return;
-          const w = resolveWorker(id, e.siderName, workers);
-          list.push({
-            tNo: w.tNo || 'N/A',
-            name: w.name || 'Unassigned',
-            role: 'Operator',
-            shift: e.shift,
-            machine: e.frameNo,
-            count: e.count,
-            gps: Math.round(e.gpsActual || 0),
-            incentive: inc
-          });
+      const numSlots = e.siderIds?.length || (e.siderId ? 1 : 2);
+      let hasSlotAssigned = false;
+      for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+        const id = e.siderIds?.[sIdx] || (sIdx === 0 ? e.siderId : '');
+        if (!id) continue;
+        const cleanId = String(id).trim().toUpperCase();
+        const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+        if (invalidMarkers.includes(cleanId)) continue;
+
+        hasSlotAssigned = true;
+        const w = resolveWorker(id, e.siderName, workers);
+        const inc = calculateSiderSlotIncentive(e, sIdx, report, rules, workers, e.shed || report.shed);
+        list.push({
+          tNo: w.tNo || 'N/A',
+          name: w.name || 'Unassigned',
+          role: 'Operator',
+          shift: e.shift,
+          machine: e.frameNo,
+          count: e.count,
+          gps: Math.round(e.gpsActual || 0),
+          incentive: inc
         });
-      } else if (e.siderName) {
+      }
+      if (!hasSlotAssigned && e.siderName) {
         list.push({
           tNo: 'N/A',
           name: e.siderName,
@@ -257,7 +263,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
           machine: e.frameNo,
           count: e.count,
           gps: Math.round(e.gpsActual || 0),
-          incentive: inc
+          incentive: 0
         });
       }
     });
