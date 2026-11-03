@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../types';
-import { Coins, User, Zap, Target, ArrowRight, ShieldCheck, Award, Edit3, Save, X, Plus, Calendar, Trash2, Printer, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getActiveRule, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { Coins, User, Zap, Target, ArrowRight, ShieldCheck, Award, Save, X, Plus, Calendar, Printer, Download, FileSpreadsheet } from 'lucide-react';
+import { cn, calculateSiderSlotIncentive, resolveWorker, getActiveRule, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 
@@ -16,9 +16,16 @@ interface DailyIncentiveProps {
   shed?: string;
 }
 
-export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers, rules, onUpdateEntry, onSelectDate, isTvMode = false, onChangeReportDate, shed }) => {
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editData, setEditData] = useState<Partial<ProductionEntry>>({});
+export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ 
+  report, 
+  workers, 
+  rules, 
+  onUpdateEntry, 
+  onSelectDate, 
+  isTvMode = false, 
+  onChangeReportDate, 
+  shed 
+}) => {
   const [isAddingMode, setIsAddingMode] = useState(false);
   const [newEntry, setNewEntry] = useState<Partial<ProductionEntry>>({
     frameNo: '',
@@ -163,48 +170,46 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
     return results;
   }, [report, workers, rules]);
 
-  const incentiveData = useMemo(() => {
-    const flatResults: any[] = [];
+  // Grouped operator incentive table:
+  // Each operator appears ONLY ONCE per shift.
+  // Worked machines formatted as e.g. "SP001, SP002 (LH)".
+  // Unique counts and GPSS of worked machines, with total incentive.
+  const groupedIncentiveData = useMemo(() => {
     const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
+    const shifts: Shift[] = ['I', 'II', 'III'];
+    const groupedRows: {
+      id: string;
+      tNo: string;
+      name: string;
+      worker: Sider | null;
+      mcNoDisplay: string;
+      shift: Shift;
+      countDisplay: string;
+      gpssDisplay: string;
+      incentive: number;
+      isUnassigned: boolean;
+    }[] = [];
 
-    report.entries.forEach((entry, entryIdx) => {
-      const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+    shifts.forEach(shift => {
+      const shiftEntries = (report.entries || []).filter(e => e.shift === shift);
+      if (shiftEntries.length === 0) return;
 
-      // Collect legitimately assigned workers for this machine
-      const assignedWorkerIds: string[] = [];
-      const hasSiderIds = entry.siderIds && entry.siderIds.some(id => id && !invalidMarkers.includes(String(id).trim().toUpperCase()));
+      const workerMap = new Map<string, {
+        worker: Sider;
+        tNo: string;
+        name: string;
+        shift: Shift;
+        machineSlots: {
+          entry: ProductionEntry;
+          slotIdx: number;
+          payout: number;
+        }[];
+      }>();
 
-      if (hasSiderIds) {
-        entry.siderIds!.forEach(rawId => {
-          const clean = String(rawId || '').trim();
-          if (clean && !invalidMarkers.includes(clean.toUpperCase())) {
-            const resolved = resolveWorker(clean, undefined, workers);
-            const key = resolved.id || clean;
-            if (!assignedWorkerIds.includes(key)) {
-              assignedWorkerIds.push(key);
-            }
-          }
-        });
-      } else if (entry.siderId) {
-        const clean = String(entry.siderId).trim();
-        if (clean && !invalidMarkers.includes(clean.toUpperCase())) {
-          const resolved = resolveWorker(clean, entry.siderName, workers);
-          const key = resolved.id || clean;
-          assignedWorkerIds.push(key);
-        }
-      }
+      shiftEntries.forEach(entry => {
+        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+        let entryHasAssignedWorker = false;
 
-      if (assignedWorkerIds.length === 0) {
-        // Machine has NO worker assigned: incentive is 0, worker is null
-        flatResults.push({
-          ...entry,
-          entryIndex: entryIdx,
-          worker: null,
-          incentive: 0
-        });
-      } else {
-        // Compute payout for each slot using canonical worker key
-        const workerPayoutMap = new Map<string, number>();
         for (let sIdx = 0; sIdx < numSlots; sIdx++) {
           const rawId = (entry.siderIds && entry.siderIds.length > sIdx) 
             ? entry.siderIds[sIdx] 
@@ -213,75 +218,146 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
           const clean = String(rawId).trim();
           if (!clean || invalidMarkers.includes(clean.toUpperCase())) continue;
 
-          const resolved = resolveWorker(clean, entry.siderName, workers);
-          const key = resolved.id || clean;
+          entryHasAssignedWorker = true;
+          const worker = resolveWorker(clean, entry.siderName, workers);
+          const workerKey = (worker.id || worker.tNo || worker.name || clean).toUpperCase();
+
+          if (!workerMap.has(workerKey)) {
+            workerMap.set(workerKey, {
+              worker,
+              tNo: worker.tNo || worker.id || clean,
+              name: worker.name || clean,
+              shift,
+              machineSlots: []
+            });
+          }
+
           const payout = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, shed);
-          workerPayoutMap.set(key, (workerPayoutMap.get(key) || 0) + payout);
+          workerMap.get(workerKey)!.machineSlots.push({
+            entry,
+            slotIdx: sIdx,
+            payout
+          });
         }
 
-        assignedWorkerIds.forEach(key => {
-          const worker = resolveWorker(key, entry.siderName, workers);
-          const payout = workerPayoutMap.get(key) || 0;
-          flatResults.push({
-            ...entry,
-            entryIndex: entryIdx,
-            siderId: worker.tNo || worker.id || key,
-            siderName: worker.name,
-            worker,
-            incentive: payout
+        // If this machine entry had NO worker assigned on either slot
+        if (!entryHasAssignedWorker) {
+          groupedRows.push({
+            id: `unassigned-${entry.frameNo}-${shift}`,
+            tNo: '—',
+            name: 'UNASSIGNED',
+            worker: null,
+            mcNoDisplay: entry.frameNo,
+            shift,
+            countDisplay: entry.count || '—',
+            gpssDisplay: entry.gpsActual !== undefined && entry.gpsActual !== null ? Math.round(entry.gpsActual).toString() : '—',
+            incentive: 0,
+            isUnassigned: true
           });
+        }
+      });
+
+      // Aggregate each worker's machine slots for this shift
+      workerMap.forEach((wData, workerKey) => {
+        const frameMap = new Map<string, {
+          frameNo: string;
+          entry: ProductionEntry;
+          slots: number[];
+          payout: number;
+        }>();
+
+        wData.machineSlots.forEach(ms => {
+          const fNo = ms.entry.frameNo;
+          if (!frameMap.has(fNo)) {
+            frameMap.set(fNo, {
+              frameNo: fNo,
+              entry: ms.entry,
+              slots: [],
+              payout: 0
+            });
+          }
+          frameMap.get(fNo)!.slots.push(ms.slotIdx);
+          frameMap.get(fNo)!.payout += ms.payout;
         });
-      }
+
+        const mcLabels: string[] = [];
+        const counts: string[] = [];
+        const gpsList: number[] = [];
+        let totalWorkerShiftIncentive = 0;
+
+        frameMap.forEach((fData, fNo) => {
+          const entry = fData.entry;
+          const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+
+          let sideLabel = fNo;
+          if (numSlots > 1) {
+            const has0 = fData.slots.includes(0);
+            const has1 = fData.slots.includes(1);
+            if (has0 && has1) {
+              sideLabel = fNo;
+            } else if (has0) {
+              sideLabel = `${fNo} (LH)`;
+            } else if (has1) {
+              sideLabel = `${fNo} (RH)`;
+            } else {
+              sideLabel = `${fNo} (S${fData.slots[0] + 1})`;
+            }
+          }
+          mcLabels.push(sideLabel);
+
+          if (entry.count) {
+            counts.push(entry.count);
+          }
+          if (entry.gpsActual !== undefined && entry.gpsActual !== null) {
+            gpsList.push(Math.round(entry.gpsActual));
+          }
+
+          totalWorkerShiftIncentive += fData.payout;
+        });
+
+        let countDisplay = '—';
+        if (counts.length > 0) {
+          const allSame = counts.every(c => c === counts[0]);
+          countDisplay = allSame ? counts[0] : counts.join(', ');
+        }
+
+        const gpssDisplay = gpsList.length > 0 ? gpsList.join(', ') : '—';
+
+        groupedRows.push({
+          id: `${workerKey}-${shift}`,
+          tNo: wData.tNo,
+          name: wData.name,
+          worker: wData.worker,
+          mcNoDisplay: mcLabels.join(', '),
+          shift,
+          countDisplay,
+          gpssDisplay,
+          incentive: totalWorkerShiftIncentive,
+          isUnassigned: false
+        });
+      });
     });
 
-    return flatResults;
+    // Sort: Shift I -> II -> III, assigned workers by T.No, unassigned at the end of each shift
+    const shiftOrder: Record<string, number> = { 'I': 1, 'II': 2, 'III': 3 };
+    groupedRows.sort((a, b) => {
+      const sA = shiftOrder[a.shift] || 99;
+      const sB = shiftOrder[b.shift] || 99;
+      if (sA !== sB) return sA - sB;
+      if (a.isUnassigned && !b.isUnassigned) return 1;
+      if (!a.isUnassigned && b.isUnassigned) return -1;
+      return (a.tNo || '').localeCompare(b.tNo || '', undefined, { numeric: true });
+    });
+
+    return groupedRows;
   }, [report, workers, rules, shed]);
 
   const totalIncentive = useMemo(() => {
-    const workerDailyPayouts = new Map<string, number>();
-
-    // Sider operator entries (strictly for assigned workers)
-    incentiveData.forEach(item => {
-      if (!item.worker) return;
-      const key = item.worker.tNo || item.worker.id || item.worker.name;
-      if (!key || key === 'UNASSIGNED') return;
-      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + (item.incentive || 0));
-    });
-
-    // Sider gaiter entries
-    gaiterData.forEach(item => {
-      const key = item.tNo || item.id || 'UNASSIGNED';
-      if (key === 'UNASSIGNED') return;
-      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + (item.incentive || 0));
-    });
-
-    // AI Linkconer entries
-    aiConeData.forEach(item => {
-      const key = item.tNo || item.id || 'UNASSIGNED';
-      if (key === 'UNASSIGNED') return;
-      workerDailyPayouts.set(key, (workerDailyPayouts.get(key) || 0) + (item.incentive || 0));
-    });
-
-    // Sum up capped worker payouts (capped at 120 each)
-    let companyTotal = 0;
-    workerDailyPayouts.forEach((amount) => {
-      companyTotal += Math.min(120, amount);
-    });
-
-    return companyTotal;
-  }, [incentiveData, gaiterData, aiConeData]);
-
-  const startEdit = (idx: number, entry: ProductionEntry) => {
-    setEditingIdx(idx);
-    setEditData({ ...entry });
-  };
-
-  const handleSave = () => {
-    if (editData) {
-      onUpdateEntry(editData);
-      setEditingIdx(null);
-    }
-  };
+    const opTotal = groupedIncentiveData.reduce((acc, row) => acc + (row.incentive || 0), 0);
+    const gaiterTotal = gaiterData.reduce((acc, g) => acc + (g.incentive || 0), 0);
+    const aiTotal = aiConeData.reduce((acc, a) => acc + (a.incentive || 0), 0);
+    return opTotal + gaiterTotal + aiTotal;
+  }, [groupedIncentiveData, gaiterData, aiConeData]);
 
   const handleAdd = () => {
     if (!newEntry.frameNo || !newEntry.siderId) {
@@ -302,27 +378,40 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
   };
 
   const exportToExcel = () => {
-    const rows: any[] = incentiveData.map((d, i) => ({
+    const rows: any[] = groupedIncentiveData.map((d, i) => ({
       'S.No': i + 1,
-      'T.No': d.worker?.tNo || (d.siderId && d.siderId !== 'UNASSIGNED' ? d.siderId : '—'),
-      'Operator Name': d.worker?.name && d.worker.name !== 'UNASSIGNED' ? d.worker.name : (d.siderName || 'UNASSIGNED'),
-      'Machine': d.frameNo,
-      'Shift': d.shift,
-      'Count': d.count,
-      'GPSS': d.gpsActual,
-      'Incentive (INR)': d.worker ? d.incentive : 0
+      'T.No': d.tNo || '—',
+      'Operator Name': d.name,
+      'Machine': d.mcNoDisplay,
+      'Shift': d.shift === 'II' ? '2' : d.shift === 'III' ? '3' : '1',
+      'Count': d.countDisplay,
+      'GPSS': d.gpssDisplay,
+      'Incentive (INR)': d.incentive
     }));
 
-    gaiterData.forEach((g, i) => {
+    gaiterData.forEach((g) => {
       rows.push({
-        'S.No': incentiveData.length + i + 1,
+        'S.No': rows.length + 1,
         'T.No': g.tNo || g.id,
         'Operator Name': `${g.name} (GAITER)`,
         'Machine': 'ALL / SHIFT',
-        'Shift': g.shift,
+        'Shift': g.shift === 'II' ? '2' : g.shift === 'III' ? '3' : '1',
         'Count': 'MIN GPS',
-        'GPSS': g.minGpsInShift,
+        'GPSS': Math.round(g.minGpsInShift),
         'Incentive (INR)': g.incentive
+      });
+    });
+
+    aiConeData.forEach((a) => {
+      rows.push({
+        'S.No': rows.length + 1,
+        'T.No': a.tNo || a.id,
+        'Operator Name': `${a.name} (AI CONE)`,
+        'Machine': 'AI CONE SUPPORT',
+        'Shift': a.shift === 'II' ? '2' : a.shift === 'III' ? '3' : '1',
+        'Count': 'AVG UTIL',
+        'GPSS': `${Math.round(a.avgUtilityInShift)}%`,
+        'Incentive (INR)': a.incentive
       });
     });
 
@@ -342,12 +431,13 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
       { wch: 8 },
       { wch: 12 },
       { wch: 28 },
-      { wch: 12 },
+      { wch: 24 },
       { wch: 8 },
-      { wch: 12 },
-      { wch: 10 },
+      { wch: 16 },
+      { wch: 14 },
       { wch: 16 }
     ];
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Daily Incentive');
     const safeDate = (report.date || 'live').replace(/[/\\?%*:|"<>]/g, '-');
@@ -359,15 +449,22 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
     let csv = `KTTM SPINNING MILLS - DAILY INCENTIVE STATEMENT (${report.date})\n\n`;
     csv += `S.No,T.No,Operator Name,Machine,Shift,Count,GPSS,Incentive (INR)\n`;
     
-    incentiveData.forEach((d, i) => {
-      const tNo = d.worker?.tNo || (d.siderId && d.siderId !== 'UNASSIGNED' ? d.siderId : '—');
-      const name = d.worker?.name && d.worker.name !== 'UNASSIGNED' ? d.worker.name : (d.siderName || 'UNASSIGNED');
-      const inc = d.worker ? d.incentive : 0;
-      csv += `${i + 1},"${tNo}","${name}","${d.frameNo}","${d.shift}","${d.count}",${d.gpsActual},${inc}\n`;
+    let sNo = 1;
+    groupedIncentiveData.forEach((d) => {
+      const tNo = d.tNo || '—';
+      const name = d.name || 'UNASSIGNED';
+      const shiftStr = d.shift === 'II' ? '2' : d.shift === 'III' ? '3' : '1';
+      csv += `${sNo++},"${tNo}","${name}","${d.mcNoDisplay}","${shiftStr}","${d.countDisplay}","${d.gpssDisplay}",${d.incentive}\n`;
     });
 
-    gaiterData.forEach((g, i) => {
-      csv += `${incentiveData.length + i + 1},"${g.tNo || g.id}","${g.name} (GAITER)","ALL","${g.shift}","MIN GPS",${g.minGpsInShift},${g.incentive}\n`;
+    gaiterData.forEach((g) => {
+      const shiftStr = g.shift === 'II' ? '2' : g.shift === 'III' ? '3' : '1';
+      csv += `${sNo++},"${g.tNo || g.id}","${g.name} (GAITER)","ALL / SHIFT","${shiftStr}","MIN GPS",${Math.round(g.minGpsInShift)},${g.incentive}\n`;
+    });
+
+    aiConeData.forEach((a) => {
+      const shiftStr = a.shift === 'II' ? '2' : a.shift === 'III' ? '3' : '1';
+      csv += `${sNo++},"${a.tNo || a.id}","${a.name} (AI CONE)","AI CONE SUPPORT","${shiftStr}","AVG UTIL","${Math.round(a.avgUtilityInShift)}%",${a.incentive}\n`;
     });
 
     csv += `TOTAL,,,,,,,${totalIncentive}\n`;
@@ -576,85 +673,45 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
               <tr className={cn("border-b-2 border-stone-900 font-black uppercase tracking-wider bg-stone-100", isTvMode ? "text-base md:text-lg" : "text-xs")}>
                 <th className={cn("border-r-2 border-stone-900 text-left", isTvMode ? "px-4 py-3 w-[110px]" : "px-3 py-1.5 w-[90px]")}>T.No</th>
                 <th className={cn("border-r-2 border-stone-900 text-left", isTvMode ? "px-4 py-3" : "px-3 py-1.5")}>Name</th>
-                <th className={cn("border-r-2 border-stone-900 text-left", isTvMode ? "px-4 py-3 w-[120px]" : "px-3 py-1.5 w-[100px]")}>MC No</th>
-                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-3 py-3 w-[60px]" : "px-2 py-1.5 w-[50px]")}>Sh</th>
-                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[110px]" : "px-3 py-1.5 w-[90px]")}>Count</th>
-                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[110px]" : "px-3 py-1.5 w-[90px]")}>GPSS</th>
-                <th className={cn("border-r-2 border-stone-900 text-right", isTvMode ? "px-4 py-3 w-[160px]" : "px-3 py-1.5 w-[130px]")}>Incentive</th>
-                {!isTvMode && <th className="px-2 py-1.5 font-black text-center bg-stone-200 w-[50px] no-print"></th>}
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[200px]" : "px-3 py-1.5 w-[160px]")}>MC.No</th>
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-3 py-3 w-[70px]" : "px-2 py-1.5 w-[60px]")}>Shift</th>
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[130px]" : "px-3 py-1.5 w-[110px]")}>Count</th>
+                <th className={cn("border-r-2 border-stone-900 text-center", isTvMode ? "px-4 py-3 w-[120px]" : "px-3 py-1.5 w-[100px]")}>GPSS</th>
+                <th className={cn("text-right", isTvMode ? "px-4 py-3 w-[160px]" : "px-3 py-1.5 w-[130px]")}>Incentive</th>
               </tr>
             </thead>
             <tbody>
-              {incentiveData.length > 0 || gaiterData.length > 0 ? (
+              {groupedIncentiveData.length > 0 || gaiterData.length > 0 || aiConeData.length > 0 ? (
                 <>
-                  {incentiveData.map((data, idx) => (
-                    <tr key={`entry-${idx}`} className={cn("border-b border-stone-200 group hover:bg-stone-50 transition-colors", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}>
+                  {groupedIncentiveData.map((data) => (
+                    <tr key={data.id} className={cn("border-b border-stone-200 group hover:bg-stone-50 transition-colors", isTvMode ? "text-base md:text-lg" : "text-xs md:text-sm")}>
                       <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 tabular-nums whitespace-nowrap", isTvMode ? "px-4 py-3 text-lg md:text-xl font-black" : "px-3 py-1.5")}>
-                        {editingIdx === idx ? (
-                           <input 
-                            className="w-full bg-yellow-50 outline-none p-1 font-bold text-xs"
-                            value={editData.siderId || ''}
-                            onChange={e => setEditData({...editData, siderId: e.target.value})}
-                           />
-                        ) : (data.worker?.tNo || (data.siderId && data.siderId !== 'UNASSIGNED' ? data.siderId : '—'))}
+                        {data.tNo}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-xl font-black" : "px-3 py-1.5")}>
-                        {editingIdx === idx ? (
-                           <input 
-                            className="w-full bg-yellow-50 outline-none p-1 font-bold text-xs"
-                            value={editData.siderName || ''}
-                            onChange={e => setEditData({...editData, siderName: e.target.value})}
-                           />
-                        ) : (data.worker?.name && data.worker.name !== 'UNASSIGNED' ? data.worker.name : (data.siderName || <span className="text-stone-400 font-normal italic">UNASSIGNED</span>))}
+                        {data.isUnassigned ? (
+                          <span className="text-stone-400 font-normal italic">UNASSIGNED</span>
+                        ) : (
+                          data.name
+                        )}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-stone-900 font-bold text-center whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-lg font-black" : "px-3 py-1.5")}>
-                        {data.frameNo}
+                        {data.mcNoDisplay}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5")}>
                         {data.shift === 'II' ? '2' : data.shift === 'III' ? '3' : '1'}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center text-stone-700 font-bold whitespace-nowrap", isTvMode ? "px-4 py-3 text-base md:text-lg" : "px-3 py-1.5")}>
-                        {data.count}
+                        {data.countDisplay}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl font-black" : "px-3 py-1.5")}>
-                        {editingIdx === idx ? (
-                          <input 
-                            type="number"
-                            className="w-full bg-yellow-50 outline-none p-1 font-bold text-center text-xs"
-                            value={editData.gpsActual || 0}
-                            onChange={e => setEditData({...editData, gpsActual: Number(e.target.value)})}
-                          />
-                        ) : (Math.round(data.gpsActual) || '')}
+                        {data.gpssDisplay}
                       </td>
-                      <td className={cn("border-r-2 border-stone-900 text-right font-black text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-emerald-800" : "px-3 py-1.5 text-sm md:text-base")}>
-                        {editingIdx === idx ? (
-                           <input 
-                            type="number"
-                            className="w-full bg-yellow-50 outline-none p-1 font-black text-right text-xs"
-                            value={editData.incentiveAmount || 0}
-                            onChange={e => setEditData({...editData, incentiveAmount: Number(e.target.value)})}
-                           />
-                        ) : (data.worker && data.incentive > 0 ? `₹${data.incentive.toLocaleString()}` : (
-                           <span className="text-stone-300 font-medium italic">0</span>
-                        ))}
+                      <td className={cn("text-right font-black text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-emerald-800" : "px-3 py-1.5 text-sm md:text-base")}>
+                        {data.incentive > 0 ? `₹${data.incentive.toLocaleString()}` : (
+                          <span className="text-stone-300 font-medium italic">0</span>
+                        )}
                       </td>
-                      {!isTvMode && (
-                        <td className="px-2 py-1.5 text-center bg-stone-50/50 no-print">
-                          {editingIdx === idx ? (
-                            <div className="flex items-center justify-center gap-1.5">
-                               <button onClick={handleSave} className="text-emerald-600 hover:scale-110 transition-transform"><Save size={16} /></button>
-                               <button onClick={() => setEditingIdx(null)} className="text-stone-400 hover:scale-110 transition-transform"><X size={16} /></button>
-                            </div>
-                          ) : (
-                            <button 
-                              onClick={() => startEdit(idx, data)}
-                              className="text-stone-400 hover:text-emerald-600 transition-colors p-1"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      )}
                     </tr>
                   ))}
 
@@ -667,8 +724,11 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                       <td className={cn("border-r-2 border-stone-900 font-bold text-stone-900 uppercase whitespace-nowrap italic", isTvMode ? "px-4 py-3 text-base md:text-xl font-black" : "px-3 py-1.5")}>
                         {data.name} <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded ml-1.5 not-italic font-black">GAITER</span>
                       </td>
-                      <td colSpan={2} className={cn("border-r-2 border-stone-900 text-amber-700 font-black text-center uppercase tracking-wider bg-amber-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
-                        Shift Support ({data.shift === 'II' ? '2' : data.shift === 'III' ? '3' : '1'})
+                      <td className={cn("border-r-2 border-stone-900 text-amber-700 font-black text-center uppercase tracking-wider bg-amber-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
+                        Shift Support
+                      </td>
+                      <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5")}>
+                        {data.shift === 'II' ? '2' : data.shift === 'III' ? '3' : '1'}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center text-stone-500 font-bold", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
                         Min Shift GPS
@@ -676,14 +736,9 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                       <td className={cn("border-r-2 border-stone-900 text-center font-black text-amber-700 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl" : "px-3 py-1.5")}>
                         {Math.round(data.minGpsInShift)}
                       </td>
-                      <td className={cn("border-r-2 border-stone-900 text-right font-black text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-emerald-800" : "px-3 py-1.5 text-sm md:text-base")}>
+                      <td className={cn("text-right font-black text-stone-900 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-emerald-800" : "px-3 py-1.5 text-sm md:text-base")}>
                         {data.incentive > 0 ? `₹${data.incentive.toLocaleString()}` : <span className="text-stone-300 font-medium italic">0</span>}
                       </td>
-                      {!isTvMode && (
-                        <td className="px-2 py-1.5 text-center bg-amber-50/50 no-print">
-                          <Zap size={14} className="mx-auto text-amber-500" />
-                        </td>
-                      )}
                     </tr>
                   ))}
 
@@ -702,17 +757,11 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                           AI CONE
                         </span>
                       </td>
-                      <td
-                        colSpan={2}
-                        className={cn("border-r-2 border-stone-900 text-purple-700 font-black text-center uppercase tracking-wider bg-purple-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}
-                      >
-                        AI Cone Support (
-                        {data.shift === "II"
-                          ? "2"
-                          : data.shift === "III"
-                            ? "3"
-                            : "1"}
-                        )
+                      <td className={cn("border-r-2 border-stone-900 text-purple-700 font-black text-center uppercase tracking-wider bg-purple-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
+                        AI Cone Support
+                      </td>
+                      <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5")}>
+                        {data.shift === "II" ? "2" : data.shift === "III" ? "3" : "1"}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center text-stone-500 font-bold", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs leading-none")}>
                         Avg Shift Util
@@ -720,7 +769,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                       <td className={cn("border-r-2 border-stone-900 text-center font-black text-purple-700 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl" : "px-3 py-1.5")}>
                         {Math.round(data.avgUtilityInShift)}%
                       </td>
-                      <td className={cn("border-r-2 border-stone-900 text-right font-black text-stone-950 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-purple-900" : "px-3 py-1.5 text-sm md:text-base")}>
+                      <td className={cn("text-right font-black text-stone-950 tabular-nums", isTvMode ? "px-4 py-3 text-xl md:text-2xl text-purple-900" : "px-3 py-1.5 text-sm md:text-base")}>
                         {data.incentive > 0 ? (
                           `₹${data.incentive.toLocaleString()}`
                         ) : (
@@ -729,11 +778,6 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                           </span>
                         )}
                       </td>
-                      {!isTvMode && (
-                        <td className="px-2 py-1.5 text-center bg-purple-50/50 no-print">
-                          <Zap size={14} className="mx-auto text-purple-500" />
-                        </td>
-                      )}
                     </tr>
                   ))}
 
@@ -741,14 +785,14 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({ report, workers,
                     <td colSpan={6} className={cn("text-center text-rose-600 border-r-2 border-stone-900 uppercase tracking-wider", isTvMode ? "px-6 py-4 text-lg md:text-2xl" : "px-4 py-2.5 text-xs md:text-sm")}>
                       Total Incentive Amount For the Day
                     </td>
-                    <td colSpan={isTvMode ? 1 : 2} className={cn("text-right text-rose-600 tabular-nums font-mono print:col-span-1", isTvMode ? "px-6 py-4 text-2xl md:text-3xl font-black" : "px-4 py-2.5 text-sm md:text-lg")}>
+                    <td className={cn("text-right text-rose-600 tabular-nums font-mono", isTvMode ? "px-6 py-4 text-2xl md:text-3xl font-black" : "px-4 py-2.5 text-sm md:text-lg font-black")}>
                       ₹{totalIncentive.toLocaleString()}
                     </td>
                   </tr>
                 </>
               ) : (
                 <tr>
-                  <td colSpan={8} className="px-8 py-24 text-center">
+                  <td colSpan={7} className="px-8 py-24 text-center">
                     <div className="flex flex-col items-center justify-center opacity-20">
                       <Target size={48} className="mb-4" />
                       <p className="font-black tracking-widest uppercase text-sm">No Payout Data Found</p>

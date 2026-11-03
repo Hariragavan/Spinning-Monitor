@@ -661,12 +661,17 @@ export function generateUUID(): string {
 
 /**
  * Calculates the exact sider/operator incentive for a specific machine entry and slot,
- * strictly honoring the mill allocation rules:
- * - KTTM shed: NO WORKLOAD RESTRICTION. Standard Incentive Master slab rate applies directly.
+ * strictly honoring the updated mill allocation rules:
+ * - KTTM shed:
+ *   If worker assigned for 1 side: 50% of machine amount.
+ *   If worker assigned for 2 sides: 100% of machine amount (each slot gets 50%).
+ *   No 3rd and 4th side in KTTM.
  * - Shed 1, Shed 2, Shed 3:
- *   1. One operator works for both sides of one machine: NO INCENTIVE (0%)
- *   2. Worked additional machine left or right side: 25% incentive on the additional machine side
- *   3. Worked both machines both sides: 50% incentive total (25% on LH and 25% on RH of the additional machine)
+ *   1. If an operator is assigned for two sides for the same machine alone: NO INCENTIVE (0%).
+ *   2. If the same operator is assigned for an additional 3rd side:
+ *      Earns 100% of the 2-side machine + 50% of the 3rd side machine.
+ *      The other operator on the 3rd side machine earns the other 50%.
+ *   3. If assigned for 4 sides: 100% + 100% (both machines 100%).
  */
 export function calculateSiderSlotIncentive(
   entry: ProductionEntry,
@@ -704,103 +709,90 @@ export function calculateSiderSlotIncentive(
   const baseIncentive = calculateIncentive(entry, rules, report.date, effectiveShed);
   if (baseIncentive <= 0) return 0;
 
-  // Standard slot share for this entry
+  // Check matching on THIS entry
   const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
-  const slotShare = numSlots > 1 ? Math.round(baseIncentive / numSlots) : baseIncentive;
+  const raw0 = (entry.siderIds && entry.siderIds.length > 0 ? (entry.siderIds[0] || '') : (entry.siderId || '')).trim();
+  const raw1 = (entry.siderIds && entry.siderIds.length > 1 ? (entry.siderIds[1] || '') : '').trim();
 
-  // RULE EXEMPTION: "this rule is for the 1,2,3 sheds, no rule for kttm"
+  const is0Match = Boolean(raw0 && !invalidMarkers.includes(raw0.toUpperCase()) && (() => {
+    const w0 = resolveWorker(raw0, entry.siderName, workers);
+    return (w0.tNo && worker.tNo && w0.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
+           (w0.id && worker.id && w0.id.toUpperCase() === worker.id.toUpperCase()) ||
+           (w0.name && worker.name && w0.name.toLowerCase().trim() === worker.name.toLowerCase().trim());
+  })());
+
+  const is1Match = Boolean(raw1 && !invalidMarkers.includes(raw1.toUpperCase()) && (() => {
+    const w1 = resolveWorker(raw1, undefined, workers);
+    return (w1.tNo && worker.tNo && w1.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
+           (w1.id && worker.id && w1.id.toUpperCase() === worker.id.toUpperCase()) ||
+           (w1.name && worker.name && w1.name.toLowerCase().trim() === worker.name.toLowerCase().trim());
+  })());
+
+  const sidesOnThisMachine = numSlots === 1 ? 2 : (is0Match && is1Match ? 2 : (is0Match || is1Match ? 1 : 0));
+  if (sidesOnThisMachine === 0) return 0;
+
+  // KTTM RULE: "if worker assigned for 1 side 50% , 2sides 100% no 3rd and 4th side"
   if (isKttm) {
     if (!worker || (!worker.id && !worker.tNo && !worker.name)) return 0;
-    return slotShare;
+    if (sidesOnThisMachine === 1) {
+      return Math.round(baseIncentive * 0.5);
+    }
+    return numSlots === 1 ? baseIncentive : Math.round(baseIncentive / 2);
   }
 
-  // FOR SHED 1, 2, 3:
-  const targetShift = entry.shift;
-
+  // SHED 1, 2, 3 RULE:
   // Find all machine allocations for this worker in this shift
+  const targetShift = entry.shift;
   const workerMachines: {
     frameNo: string;
-    entry: ProductionEntry;
     sides: number;
     baseIncentive: number;
-    match0: boolean;
-    match1: boolean;
   }[] = [];
 
   report.entries.forEach(e => {
     if (e.shift !== targetShift) return;
-    const raw0 = (e.siderIds && e.siderIds.length > 0 ? (e.siderIds[0] || '') : (e.siderId || '')).trim();
-    const raw1 = (e.siderIds && e.siderIds.length > 1 ? (e.siderIds[1] || '') : '').trim();
+    const eRaw0 = (e.siderIds && e.siderIds.length > 0 ? (e.siderIds[0] || '') : (e.siderId || '')).trim();
+    const eRaw1 = (e.siderIds && e.siderIds.length > 1 ? (e.siderIds[1] || '') : '').trim();
 
-    const is0Invalid = !raw0 || invalidMarkers.includes(raw0.toUpperCase());
-    const is1Invalid = !raw1 || invalidMarkers.includes(raw1.toUpperCase());
+    const m0 = Boolean(eRaw0 && !invalidMarkers.includes(eRaw0.toUpperCase()) && (() => {
+      const w0 = resolveWorker(eRaw0, e.siderName, workers);
+      return (w0.tNo && worker.tNo && w0.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
+             (w0.id && worker.id && w0.id.toUpperCase() === worker.id.toUpperCase()) ||
+             (w0.name && worker.name && w0.name.toLowerCase().trim() === worker.name.toLowerCase().trim());
+    })());
 
-    const w0 = is0Invalid ? null : resolveWorker(raw0, e.siderName, workers);
-    const w1 = is1Invalid ? null : resolveWorker(raw1, undefined, workers);
+    const m1 = Boolean(eRaw1 && !invalidMarkers.includes(eRaw1.toUpperCase()) && (() => {
+      const w1 = resolveWorker(eRaw1, undefined, workers);
+      return (w1.tNo && worker.tNo && w1.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
+             (w1.id && worker.id && w1.id.toUpperCase() === worker.id.toUpperCase()) ||
+             (w1.name && worker.name && w1.name.toLowerCase().trim() === worker.name.toLowerCase().trim());
+    })());
 
-    const match0 = Boolean(w0 && (
-      (w0.id && worker.id && w0.id.toUpperCase() === worker.id.toUpperCase()) ||
-      (w0.tNo && worker.tNo && w0.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
-      (w0.name && worker.name && w0.name.toLowerCase().trim() === worker.name.toLowerCase().trim())
-    ));
-
-    const match1 = Boolean(w1 && (
-      (w1.id && worker.id && w1.id.toUpperCase() === worker.id.toUpperCase()) ||
-      (w1.tNo && worker.tNo && w1.tNo.toUpperCase() === worker.tNo.toUpperCase()) ||
-      (w1.name && worker.name && w1.name.toLowerCase().trim() === worker.name.toLowerCase().trim())
-    ));
-
-    if (match0 || match1) {
+    if (m0 || m1) {
       const eBase = calculateIncentive(e, rules, report.date, e.shed || report.shed || effectiveShed);
+      const eNumSlots = e.siderIds?.length || (e.siderId ? 1 : 2);
       workerMachines.push({
         frameNo: e.frameNo,
-        entry: e,
-        sides: (match0 && match1) ? 2 : 1,
-        baseIncentive: eBase,
-        match0,
-        match1
+        sides: eNumSlots === 1 ? 2 : (m0 && m1 ? 2 : 1),
+        baseIncentive: eBase
       });
     }
   });
 
-  const totalSides = workerMachines.reduce((sum, m) => sum + m.sides, 0);
+  const totalSidesInShift = workerMachines.reduce((sum, m) => sum + m.sides, 0);
 
-  // Rule 1: "if operator works for 2 sides no incentive"
-  // (also if 1 side: no incentive)
-  if (totalSides <= 2) {
+  // If worker is assigned both sides of 1 machine and NO other machine (totalSides === 2 across 1 machine):
+  // "if a operator assigned for two sides for same machine no incentive"
+  if (totalSidesInShift === 2 && workerMachines.length === 1) {
     return 0;
   }
 
-  // Rule 2: "if operator works for 2 sides and adition one side give then 25% incentive"
-  // (Worker works both sides of 1 machine and 1 additional side: totalSides === 3)
-  if (totalSides === 3) {
-    const additionalMachine = workerMachines.find(m => m.sides === 1);
-    if (additionalMachine && entry.frameNo === additionalMachine.frameNo) {
-      // The additional 1 side earns 25% incentive
-      return Math.round(baseIncentive * 0.25);
-    }
-    // The base 2 sides machine has NO incentive (0%)
-    return 0;
+  // Otherwise:
+  // "if same operator assigned for 3rd side incetive amnt for 2sidesd (100)+3rd side (50)"
+  // "if operator assigned for 4th side additional (50) ... 100%+100%"
+  // "and one operator is assigned for 3rd side he gets 50% of that machine , and another operator gets the another 50% of that machine incentive"
+  if (sidesOnThisMachine === 2) {
+    return numSlots === 1 ? baseIncentive : Math.round(baseIncentive / 2);
   }
-
-  // Rule 3: "if they work 4 sides give them 50%"
-  // (Worker works both sides of 2 machines: totalSides >= 4)
-  if (totalSides >= 4) {
-    // Determine which machine is the earning (additional) machine:
-    // Prefer higher base incentive; if tie, higher frame number (the second machine)
-    const sorted = [...workerMachines].sort((a, b) => {
-      if (b.baseIncentive !== a.baseIncentive) return b.baseIncentive - a.baseIncentive;
-      return b.frameNo.localeCompare(a.frameNo, undefined, { numeric: true });
-    });
-    const earningMachine = sorted[0];
-
-    if (entry.frameNo === earningMachine.frameNo) {
-      // The additional machine receives 50% total: 25% on LH (slot 0) and 25% on RH (slot 1)
-      return Math.round(baseIncentive * 0.25);
-    }
-    // The base machine receives NO incentive (0%)
-    return 0;
-  }
-
-  return 0;
+  return Math.round(baseIncentive * 0.5);
 }
