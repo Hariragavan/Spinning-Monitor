@@ -234,7 +234,12 @@ export function calculateIncentive(entry: ProductionEntry, rules: IncentiveRule[
   const rule = getActiveRule(entry.count, 'Sider', rules, reportDate, effectiveShed);
   if (rule && rule.payouts && rule.payouts.length > 0) {
     const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
-    const bestPayout = sortedPayouts.find((p) => entry.gpsActual >= p.gpsThreshold);
+    const actualGps = Math.round(Number(entry.gpsActual || 0));
+    const rawGps = Number(entry.gpsActual || 0);
+    const bestPayout = sortedPayouts.find((p) => {
+      const threshold = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
+      return actualGps >= threshold || rawGps >= threshold;
+    });
     if (bestPayout) return bestPayout.amount;
     return 0;
   }
@@ -705,12 +710,11 @@ export function calculateSiderSlotIncentive(
   const shedLower = effectiveShed.toLowerCase();
   const isKttm = shedLower.includes('kttm') || (entry.frameNo || '').toUpperCase().startsWith('K');
 
-  // Base slab incentive for the current entry from Incentive Master rules
+  // Base slab incentive for the current entry from Incentive Master rules based on its GPSS
   const baseIncentive = calculateIncentive(entry, rules, report.date, effectiveShed);
   if (baseIncentive <= 0) return 0;
 
   // Check matching on THIS entry
-  const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
   const raw0 = (entry.siderIds && entry.siderIds.length > 0 ? (entry.siderIds[0] || '') : (entry.siderId || '')).trim();
   const raw1 = (entry.siderIds && entry.siderIds.length > 1 ? (entry.siderIds[1] || '') : '').trim();
 
@@ -728,7 +732,12 @@ export function calculateSiderSlotIncentive(
            (w1.name && worker.name && w1.name.toLowerCase().trim() === worker.name.toLowerCase().trim());
   })());
 
-  const sidesOnThisMachine = numSlots === 1 ? 2 : (is0Match && is1Match ? 2 : (is0Match || is1Match ? 1 : 0));
+  // Ensure this specific slot matches the worker being evaluated
+  if (slotIdx === 0 && !is0Match) return 0;
+  if (slotIdx === 1 && !is1Match) return 0;
+
+  // Determine whether worker worked slot 0, slot 1, or both on this machine
+  const sidesOnThisMachine = (is0Match && is1Match) ? 2 : (is0Match || is1Match ? 1 : 0);
   if (sidesOnThisMachine === 0) return 0;
 
   // KTTM RULE: "if worker assigned for 1 side 50% , 2sides 100% no 3rd and 4th side"
@@ -737,7 +746,7 @@ export function calculateSiderSlotIncentive(
     if (sidesOnThisMachine === 1) {
       return Math.round(baseIncentive * 0.5);
     }
-    return numSlots === 1 ? baseIncentive : Math.round(baseIncentive / 2);
+    return Math.round(baseIncentive / 2);
   }
 
   // SHED 1, 2, 3 RULE:
@@ -770,10 +779,9 @@ export function calculateSiderSlotIncentive(
 
     if (m0 || m1) {
       const eBase = calculateIncentive(e, rules, report.date, e.shed || report.shed || effectiveShed);
-      const eNumSlots = e.siderIds?.length || (e.siderId ? 1 : 2);
       workerMachines.push({
         frameNo: e.frameNo,
-        sides: eNumSlots === 1 ? 2 : (m0 && m1 ? 2 : 1),
+        sides: (m0 && m1) ? 2 : 1,
         baseIncentive: eBase
       });
     }
@@ -781,18 +789,18 @@ export function calculateSiderSlotIncentive(
 
   const totalSidesInShift = workerMachines.reduce((sum, m) => sum + m.sides, 0);
 
-  // If worker is assigned both sides of 1 machine and NO other machine (totalSides === 2 across 1 machine):
-  // "if a operator assigned for two sides for same machine no incentive"
-  if (totalSidesInShift === 2 && workerMachines.length === 1) {
+  // If worker is assigned 2 sides: normal workload -> NO INCENTIVE (0%)
+  if (totalSidesInShift === 2) {
     return 0;
   }
 
-  // Otherwise:
-  // "if same operator assigned for 3rd side incetive amnt for 2sidesd (100)+3rd side (50)"
-  // "if operator assigned for 4th side additional (50) ... 100%+100%"
-  // "and one operator is assigned for 3rd side he gets 50% of that machine , and another operator gets the another 50% of that machine incentive"
+  // If operator is assigned for 3 sides:
+  // - 100% incentive for the one machine 2 sides (each slot gets 50% = Math.round(baseIncentive / 2), so sum is 100%)
+  // - 50% incentive for the 3rd side machine's incentive (slot gets Math.round(baseIncentive * 0.5))
+  // - The other operator sharing the 3rd side machine (totalSidesInShift === 1) gets 50%
+  // If operator is assigned for 4 sides: 100% + 100% (both machines 100%)
   if (sidesOnThisMachine === 2) {
-    return numSlots === 1 ? baseIncentive : Math.round(baseIncentive / 2);
+    return Math.round(baseIncentive / 2);
   }
   return Math.round(baseIncentive * 0.5);
 }

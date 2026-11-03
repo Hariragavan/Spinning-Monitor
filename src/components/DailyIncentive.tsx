@@ -287,21 +287,18 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
 
         frameMap.forEach((fData, fNo) => {
           const entry = fData.entry;
-          const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+          const has0 = fData.slots.includes(0);
+          const has1 = fData.slots.includes(1);
 
           let sideLabel = fNo;
-          if (numSlots > 1) {
-            const has0 = fData.slots.includes(0);
-            const has1 = fData.slots.includes(1);
-            if (has0 && has1) {
-              sideLabel = fNo;
-            } else if (has0) {
-              sideLabel = `${fNo} (LH)`;
-            } else if (has1) {
-              sideLabel = `${fNo} (RH)`;
-            } else {
-              sideLabel = `${fNo} (S${fData.slots[0] + 1})`;
-            }
+          if (has0 && has1) {
+            sideLabel = fNo; // Both sides worked
+          } else if (has0) {
+            sideLabel = `${fNo} (LH)`;
+          } else if (has1) {
+            sideLabel = `${fNo} (RH)`;
+          } else if (fData.slots.length > 0) {
+            sideLabel = `${fNo} (S${fData.slots[0] + 1})`;
           }
           mcLabels.push(sideLabel);
 
