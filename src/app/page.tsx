@@ -282,16 +282,7 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
 const DEFAULT_WORKERS: Sider[] = [];
 
 export default function Home() {
-  const [activeTab, setActiveTabState] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get('tab') || params.get('view') || params.get('page');
-      if (tabParam) return tabParam;
-      const pathSlug = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
-      if (pathSlug) return pathSlug;
-    }
-    return 'dashboard';
-  });
+  const [activeTab, setActiveTabState] = useState<string>('dashboard');
 
   const setActiveTab = useCallback((newTab: string) => {
     setActiveTabState(newTab);
@@ -308,18 +299,7 @@ export default function Home() {
   const [machineEm, setMachineEm] = useState<MachineEmData>({});
   const [frozenMonths, setFrozenMonths] = useState<Record<string, FrozenMonthRecord>>({});
   const [workers, setWorkers] = useState<Sider[]>(DEFAULT_WORKERS);
-  const [machines, setMachines] = useState<MachineMasterItem[]>(() => {
-    if (typeof window !== 'undefined') {
-      const cached = localStorage.getItem('spinning_machines');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        } catch {}
-      }
-    }
-    return [];
-  });
+  const [machines, setMachines] = useState<MachineMasterItem[]>([]);
   const [incentiveRules, setIncentiveRules] = useState<IncentiveRule[]>(DEFAULT_INCENTIVE_RULES);
   const [countConversions, setCountConversions] = useState<CountConversion[]>(DEFAULT_COUNT_CONVERSIONS);
   const [dailyReport, setDailyReport] = useState<DailyReport>(mockData);
@@ -691,6 +671,18 @@ export default function Home() {
 
   // URL Parameter & Path Routing with Browser History Support
   useEffect(() => {
+    // 1. Client-side cached machine restoration
+    try {
+      const cached = localStorage.getItem('spinning_machines');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMachines(parsed);
+        }
+      }
+    } catch {}
+
+    // 2. Synchronize active tab from URL path or search parameters safely on client mount
     const params = new URLSearchParams(window.location.search);
     if (params.get('tv') === 'true' || params.get('mode') === 'tv') {
       setIsTvMode(true);
@@ -698,17 +690,17 @@ export default function Home() {
     const tabParam = params.get('tab') || params.get('view') || params.get('page');
     if (tabParam === 'supervisor' || params.get('supervisor') === 'true') {
       setIsSupervisorMode(true);
-      setActiveTab('assignments');
+      setActiveTabState('assignments');
     } else if (tabParam) {
-      setActiveTab(tabParam);
+      setActiveTabState(tabParam);
     } else {
       const pathSlug = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
       if (pathSlug) {
-        setActiveTab(pathSlug);
+        setActiveTabState(pathSlug);
       }
     }
 
-    // Listen to browser Back/Forward navigation
+    // 3. Listen to browser Back/Forward navigation
     const handlePopState = () => {
       const pathSlug = window.location.pathname.replace(/^\/+/, '').split('/')[0].toLowerCase();
       const currentParams = new URLSearchParams(window.location.search);
@@ -718,7 +710,7 @@ export default function Home() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [setActiveTab]);
+  }, []);
 
   // ESC key to exit TV mode
   useEffect(() => {
