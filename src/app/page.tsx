@@ -27,12 +27,19 @@ import { FitterMonthlyPerformance } from '@/components/FitterMonthlyPerformance'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { OperatorEmFormat } from '@/components/OperatorEmFormat';
 import { PerformanceChart } from '@/components/PerformanceChart';
-import { Sidebar, ALL_NAV_ITEMS } from '@/components/Sidebar';
+import { Sidebar, ALL_NAV_ITEMS, NAV_SECTIONS } from '@/components/Sidebar';
 import { MasterDataTable } from '@/components/MasterDataTable';
 import { TvDashboard, TV_MAIN_PAGES } from '@/components/TvDashboard';
 import { CountSummary } from '@/components/CountSummary';
 import { CountWiseFrames } from '@/components/CountWiseFrames';
 import { MonthlyCountGpss } from '@/components/MonthlyCountGpss';
+import { IotMachineDashboard } from '@/components/iot/IotMachineDashboard';
+import { IotEmployeeDashboard } from '@/components/iot/IotEmployeeDashboard';
+import { IotProductionEntry } from '@/components/iot/IotProductionEntry';
+import { IotReports } from '@/components/iot/IotReports';
+import { IotMaintenance } from '@/components/iot/IotMaintenance';
+import { IotConfiguration } from '@/components/iot/IotConfiguration';
+import { IotShifts } from '@/components/iot/IotShifts';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
@@ -282,14 +289,14 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
 const DEFAULT_WORKERS: Sider[] = [];
 
 export default function Home() {
-  const [activeTab, setActiveTabState] = useState<string>('dashboard');
+  const [activeTab, setActiveTabState] = useState<string>("dashboard");
 
   const setActiveTab = useCallback((newTab: string) => {
     setActiveTabState(newTab);
-    if (typeof window !== 'undefined') {
-      const newPath = newTab === 'dashboard' ? '/' : `/${newTab}`;
+    if (typeof window !== "undefined") {
+      const newPath = newTab === "dashboard" ? "/" : "/" + newTab;
       if (window.location.pathname !== newPath) {
-        window.history.pushState({ tab: newTab }, '', newPath + window.location.search);
+        window.history.pushState({ tab: newTab }, "", newPath + window.location.search);
       }
     }
   }, []);
@@ -2029,6 +2036,50 @@ export default function Home() {
 
   const renderContent = () => {
     switch (activeTab) {
+      // IOT Dashboard Views
+      case 'iot-machine-dashboard':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotMachineDashboard />
+          </div>
+        );
+      case 'iot-employee-dashboard':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotEmployeeDashboard />
+          </div>
+        );
+      case 'iot-production-entry':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotProductionEntry />
+          </div>
+        );
+      case 'iot-reports':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotReports />
+          </div>
+        );
+      case 'iot-maintenance':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotMaintenance />
+          </div>
+        );
+      case 'iot-configuration':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotConfiguration />
+          </div>
+        );
+      case 'iot-shifts':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotShifts />
+          </div>
+        );
+
       case 'dashboard':
         return (
           <motion.div 
@@ -3605,7 +3656,7 @@ export default function Home() {
                 )}
                 <div className="flex flex-col min-w-0">
                   <span className="text-[9.5px] font-black uppercase tracking-widest text-stone-400 leading-none">
-                    Page
+                    {NAV_SECTIONS.find(sec => sec.items.some(it => it.id === activeTab))?.title || 'Page'}
                   </span>
                   <span className="text-xs sm:text-sm font-black text-stone-900 tracking-tight leading-tight truncate mt-0.5 max-w-[150px] sm:max-w-[220px]">
                     {ALL_NAV_ITEMS.find(item => item.id === activeTab)?.label || activeTab}
@@ -3613,28 +3664,36 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Center Section: Horizontal Slide Bar for Shed 1, Shed 2, Shed 3, KTTM */}
+              {/* Center Section: Horizontal Slide Bar (Spinning) or Live Stream Pill (IoT) */}
               <div className="flex-1 flex justify-center px-2">
-                <div className="inline-flex items-center bg-stone-100/90 p-1 rounded-2xl border border-stone-200/90 shadow-2xs">
-                  {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
-                    const isSelected = selectedShed === shed;
-                    return (
-                      <button
-                        key={shed}
-                        onClick={() => setSelectedShed(shed)}
-                        className={cn(
-                          "relative px-3.5 py-1 rounded-xl text-xs transition-all duration-200 cursor-pointer flex items-center gap-1.5",
-                          isSelected
-                            ? "bg-emerald-600 text-white shadow-xs font-black"
-                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 font-bold"
-                        )}
-                      >
-                        <span className={cn("w-1.5 h-1.5 rounded-full transition-colors", isSelected ? "bg-white" : "bg-stone-400")} />
-                        <span>{shed}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {activeTab.startsWith('iot-') ? (
+                  <div className="inline-flex items-center gap-2 bg-blue-50/90 px-3.5 py-1.5 rounded-2xl border border-blue-200/80 shadow-2xs text-blue-950">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span className="text-[11px] font-black uppercase tracking-wider">Live IoT Telemetry Stream</span>
+                    <span className="text-[10px] text-blue-600 font-bold hidden md:inline">• MongoDB Collections Synced</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center bg-stone-100/90 p-1 rounded-2xl border border-stone-200/90 shadow-2xs">
+                    {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
+                      const isSelected = selectedShed === shed;
+                      return (
+                        <button
+                          key={shed}
+                          onClick={() => setSelectedShed(shed)}
+                          className={cn(
+                            "relative px-3.5 py-1 rounded-xl text-xs transition-all duration-200 cursor-pointer flex items-center gap-1.5",
+                            isSelected
+                              ? "bg-emerald-600 text-white shadow-xs font-black"
+                              : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60 font-bold"
+                          )}
+                        >
+                          <span className={cn("w-1.5 h-1.5 rounded-full transition-colors", isSelected ? "bg-white" : "bg-stone-400")} />
+                          <span>{shed}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Right Section: Interactive Date Picker, Available Dates Dropdown, TV mode */}
@@ -3750,8 +3809,8 @@ export default function Home() {
             )}
           </AnimatePresence>
 
-          <main className="flex-1 overflow-y-auto">
-            <div className="w-full max-w-full p-2.5 md:p-3.5 lg:p-4.5 h-full relative">
+          <main className="flex-1 overflow-y-auto bg-stone-100">
+            <div className="w-full max-w-full h-full relative p-2.5 md:p-3.5 lg:p-4.5">
               {!isSystemReady && (
                 <div className="absolute inset-0 z-[100] bg-white flex flex-col items-center justify-center text-center p-10">
                   <div className="w-20 h-20 bg-stone-100 rounded-[2rem] flex items-center justify-center text-stone-300 mb-6 animate-pulse">
@@ -3763,7 +3822,7 @@ export default function Home() {
               )}
 
               <AnimatePresence mode="wait">
-                <div key={activeTab}>
+                <div key={activeTab} className="w-full">
                   {renderContent()}
                 </div>
               </AnimatePresence>

@@ -3,23 +3,24 @@ import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Users, Coins, Trophy,
   Gauge, Monitor, BarChart3, Calendar, Database, Grid3X3, Wrench, UserCheck,
   FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity,
-  FileSpreadsheet
+  FileSpreadsheet, Cpu, Clock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-interface NavItem {
+export interface NavItem {
   id: string;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
   badge?: string;
+  emoji?: string;
 }
 
-interface NavSection {
+export interface NavSection {
   title: string;
   items: NavItem[];
 }
 
-interface SidebarProps {
+export interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onTvMode: () => void;
@@ -39,6 +40,18 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
       { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
       { id: 'daily-incentive-machine', label: 'Daily Incentive (Machine)', icon: Grid3X3 },
+    ]
+  },
+  {
+    title: 'IOT Dashboard',
+    items: [
+      { id: 'iot-machine-dashboard', label: 'Machine Dashboard', icon: Cpu, badge: 'Live' },
+      { id: 'iot-employee-dashboard', label: 'Employee Dashboard', icon: Users },
+      { id: 'iot-production-entry', label: 'Production Entry', icon: FileText },
+      { id: 'iot-reports', label: 'Reports (5)', icon: BarChart3 },
+      { id: 'iot-maintenance', label: 'Maintenance Calendar', icon: Calendar },
+      { id: 'iot-configuration', label: 'Configuration', icon: Settings },
+      { id: 'iot-shifts', label: 'Shift Configuration', icon: Clock },
     ]
   },
   {
@@ -96,10 +109,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const activeItemLabel = NAV_SECTIONS
-    .flatMap(s => s.items)
-    .find(item => item.id === activeTab)?.label || activeTab;
-
   const filteredSections = NAV_SECTIONS.map(section => ({
     ...section,
     items: section.items.filter(item =>
@@ -111,25 +120,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       className={cn(
-        "bg-white border-r border-stone-200/80 flex flex-col h-screen select-none transition-all duration-300 ease-in-out z-40 shrink-0 overflow-x-hidden",
-        isCollapsed ? "w-[68px]" : "w-60"
+        "flex flex-col h-screen select-none transition-all duration-300 ease-in-out z-40 shrink-0 overflow-x-hidden bg-white text-stone-900 border-r border-stone-200/80 shadow-xs",
+        isCollapsed ? "w-[68px]" : "w-[250px]"
       )}
     >
       {/* Brand Header */}
       <div className={cn(
-        "h-14 border-b border-stone-200/80 bg-white shrink-0 flex items-center transition-all duration-300",
-        isCollapsed ? "justify-center px-1.5" : "px-3 gap-2"
+        "h-16 shrink-0 flex items-center border-b border-stone-200/80 px-3 gap-2 transition-all duration-300",
+        isCollapsed && "justify-center px-1.5"
       )}>
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 hover:text-stone-900 border border-stone-200/80 transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0 group"
+            className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 hover:text-stone-900 border border-stone-200/80 transition-all cursor-pointer active:scale-95 shrink-0 group"
             title={isCollapsed ? "Open menu" : "Close menu"}
           >
             {isCollapsed ? (
-              <Menu size={17} className="transition-transform group-hover:scale-110" />
+              <Menu size={16} className="transition-transform group-hover:scale-110" />
             ) : (
-              <ArrowLeft size={17} className="transition-transform group-hover:-translate-x-0.5" />
+              <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-0.5" />
             )}
           </button>
         )}
@@ -145,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Quick Search (Only when expanded) */}
+      {/* Quick Search */}
       {!isCollapsed && (
         <div className="px-3 pt-2.5 pb-1 shrink-0">
           <div className="relative">
@@ -163,18 +172,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Sections */}
       <nav className={cn(
-        "flex-1 overflow-y-auto overflow-x-hidden no-scrollbar",
-        isCollapsed ? "px-1.5 py-2.5 space-y-2" : "px-2.5 py-2.5 space-y-3"
+        "flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-2.5 py-2 space-y-2.5",
+        isCollapsed && "px-1.5 py-2 space-y-2"
       )}>
         {filteredSections.map((section, idx) => (
-          <div key={section.title} className="space-y-0.5">
-            {/* Section Title when Expanded or Divider when Collapsed */}
+          <div key={section.title} className="space-y-1">
             {!isCollapsed ? (
-              <div className="px-2.5 pt-1.5 pb-0.5 text-[8.5px] font-black uppercase tracking-[0.2em] text-stone-400">
-                {section.title}
+              <div className="px-2.5 pb-1 text-[9.5px] font-extrabold uppercase tracking-[1.5px] text-stone-400 flex items-center justify-between">
+                <span>{section.title}</span>
+                {section.title === 'IOT Dashboard' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                )}
               </div>
             ) : (
-              idx > 0 && <div className="w-5 h-px bg-stone-200 my-1.5 mx-auto" />
+              idx > 0 && <div className="w-5 h-px my-1.5 mx-auto bg-stone-200" />
             )}
 
             {section.items.map((item) => {
@@ -194,15 +205,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           : "text-stone-500 hover:text-stone-900 hover:bg-stone-100"
                       )}
                     >
-                      <Icon
-                        size={17}
-                        className={cn(
-                          "shrink-0 transition-colors",
-                          isActive ? "text-emerald-400" : "text-stone-500 hover:text-stone-900"
-                        )}
-                      />
-                      {isActive && (
-                        <span className="absolute -left-1 top-2 bottom-2 w-1 bg-emerald-500 rounded-r-full" />
+                      {item.emoji ? (
+                        <span className="text-base">{item.emoji}</span>
+                      ) : (
+                        <Icon
+                          size={17}
+                          className={cn(
+                            "shrink-0 transition-colors",
+                            isActive ? "text-emerald-400" : "text-stone-500 hover:text-stone-900"
+                          )}
+                        />
+                      )}
+                      {item.badge && (
+                        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
                       )}
                     </button>
                   </div>
@@ -214,24 +229,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
                   className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all duration-150 group text-left cursor-pointer",
+                    "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 group text-left cursor-pointer",
                     isActive
                       ? "bg-stone-900 text-stone-50 shadow-sm font-black translate-x-0.5"
                       : "text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-bold text-xs"
                   )}
                 >
-                  <Icon
-                    size={15}
-                    className={cn(
-                      "shrink-0 transition-colors",
-                      isActive ? "text-emerald-400" : "text-stone-400 group-hover:text-stone-800"
-                    )}
-                  />
-                  <span className="text-[11.5px] truncate leading-tight flex-1">
+                  {item.emoji ? (
+                    <span className="text-base shrink-0 leading-none">{item.emoji}</span>
+                  ) : (
+                    <Icon
+                      size={16}
+                      className={cn(
+                        "shrink-0 transition-colors",
+                        isActive ? "text-emerald-400" : "text-stone-400 group-hover:text-stone-800"
+                      )}
+                    />
+                  )}
+                  <span className="text-[13px] truncate leading-tight flex-1">
                     {item.label}
                   </span>
                   {item.badge && (
-                    <span className="text-[7.5px] font-black uppercase px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">
+                    <span className={cn(
+                      "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
+                      isActive ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-800"
+                    )}>
                       {item.badge}
                     </span>
                   )}
@@ -295,25 +317,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </nav>
 
-      {/* Sidebar Footer */}
+      {/* Sidebar Footer User Card */}
       <div className={cn(
         "border-t border-stone-200/80 bg-stone-50/50 shrink-0",
         isCollapsed ? "p-3 flex justify-center" : "p-3.5"
       )}>
         {isCollapsed ? (
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 overflow-hidden border border-emerald-200 font-black text-xs uppercase shadow-2xs cursor-default" title="Direct Access • Database Connected">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden font-black text-xs uppercase shadow-2xs cursor-default bg-emerald-100 text-emerald-700 border border-emerald-200">
             AD
           </div>
         ) : (
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 overflow-hidden border border-emerald-200 shrink-0 font-black text-xs uppercase shadow-xs">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden shrink-0 font-black text-xs uppercase shadow-xs bg-emerald-100 text-emerald-700 border border-emerald-200">
               AD
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-black text-stone-900 truncate uppercase leading-tight">Direct Access</p>
+              <p className="text-[11px] font-black text-stone-900 truncate uppercase leading-tight">
+                Direct Access
+              </p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-[9px] font-bold text-emerald-700 uppercase tracking-widest leading-none">Database Connected</p>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-emerald-500" />
+                <p className="text-[9px] font-bold uppercase tracking-widest leading-none text-emerald-700">
+                  Database Connected
+                </p>
               </div>
             </div>
           </div>

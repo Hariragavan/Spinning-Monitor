@@ -22,9 +22,21 @@ if (process.env.NODE_ENV === 'development') {
   clientPromise = client.connect();
 }
 
+/**
+ * Returns database instance for Spinning Monitor operations (spinning_monitor)
+ */
 export async function getDb(): Promise<Db> {
   const connectedClient = await clientPromise;
   return connectedClient.db();
+}
+
+/**
+ * Returns database instance for IoT telemetry (iot_machine - exact same database used by Scm-iot)
+ */
+export async function getIotDb(): Promise<Db> {
+  const connectedClient = await clientPromise;
+  const dbName = process.env.IOT_DB_NAME || 'iot_machine';
+  return connectedClient.db(dbName);
 }
 
 export default clientPromise;
