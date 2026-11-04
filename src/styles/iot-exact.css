@@ -5125,3 +5125,176 @@
     display: flex;
     gap: 0.5rem;
 }
+
+
+/* ==========================================================================
+   SCM IOT FULL-WIDTH & RESPONSIVE ALIGNMENT OVERRIDES
+   Guarantees all 7 IoT modules take 100% container width without column pinching
+   ========================================================================== */
+
+.iot-system-scope,
+.iot-system-scope * {
+  box-sizing: border-box;
+}
+
+.iot-system-scope {
+  display: block !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.dashboard-page,
+.content {
+  display: block !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0.25rem 0 2rem 0 !important;
+}
+
+.topbar {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 1.25rem !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  margin-bottom: 1.5rem !important;
+  padding: 1.5rem 2rem !important;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%) !important;
+  border: 1px solid #bfdbfe !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.08) !important;
+}
+
+.topbar-brand {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 320px !important;
+  min-width: 280px !important;
+}
+
+.topbar-brand .title,
+.topbar .title {
+  font-size: 1.65rem !important;
+  font-weight: 800 !important;
+  color: #1e3a8a !important;
+  margin: 0 0 0.25rem 0 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.2 !important;
+}
+
+.topbar-brand .subtitle,
+.topbar .subtitle {
+  color: #3b82f6 !important;
+  margin: 0 !important;
+  font-size: 0.88rem !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  max-width: 700px !important;
+}
+
+.filters-card {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-end !important;
+  gap: 0.75rem !important;
+  flex-wrap: wrap !important;
+}
+
+.kpi-header {
+  display: block !important;
+  width: 100% !important;
+  margin-bottom: 1.75rem !important;
+}
+
+.kpi-row {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 1rem !important;
+  width: 100% !important;
+}
+
+@media (max-width: 1200px) {
+  .kpi-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .kpi-row {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+  }
+}
+
+.machine-cards-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important;
+  gap: 1.25rem !important;
+  width: 100% !important;
+}
+
+.machine-details-container {
+  display: block !important;
+  width: 100% !important;
+  margin-top: 2rem !important;
+}
+
+.entry-layout {
+  display: grid !important;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr) !important;
+  gap: 1.5rem !important;
+  width: 100% !important;
+  align-items: start !important;
+}
+
+@media (max-width: 900px) {
+  .entry-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.maintenance-layout {
+  display: grid !important;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) !important;
+  gap: 1.5rem !important;
+  width: 100% !important;
+}
+
+@media (max-width: 900px) {
+  .maintenance-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.machine-config-layout {
+  display: grid !important;
+  grid-template-columns: 240px minmax(0, 1fr) !important;
+  gap: 2rem !important;
+  width: 100% !important;
+}
+
+@media (max-width: 850px) {
+  .machine-config-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.table-wrapper,
+.telemetry-table-wrapper {
+  width: 100% !important;
+  overflow-x: auto !important;
+}
+
+.data-table,
+.telemetry-table {
+  width: 100% !important;
+  min-width: 100% !important;
+  border-collapse: collapse !important;
+}

@@ -78,6 +78,7 @@ export const iotApi = {
     if (filter?.toDate) params.set('toDate', filter.toDate);
     if (filter?.shift) params.set('shift', filter.shift);
     if (filter?.operator) params.set('operator', filter.operator);
+    params.set('_t', String(Date.now()));
 
     const fallback: SpinfoOverviewResponse = getSampleSpinfoOverview();
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
@@ -146,6 +147,7 @@ export const iotApi = {
     if (filter?.date) params.set('date', filter.date);
     if (filter?.shiftName) params.set('shiftName', filter.shiftName);
     if (filter?.shiftId) params.set('shiftId', filter.shiftId);
+    params.set('_t', String(Date.now()));
 
     let list = getStored<EmployeeMetric[]>('employee_metrics', SAMPLE_EMPLOYEE_METRICS);
     if (filter?.employeeId) {

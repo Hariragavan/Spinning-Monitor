@@ -94,7 +94,7 @@ export const IotShifts: React.FC = () => {
   };
 
   return (
-    <main className="content w-full">
+    <div className="content w-full">
       <header className="topbar">
         <div>
           <h1 className="title">Shift Configuration</h1>
@@ -226,6 +226,6 @@ export const IotShifts: React.FC = () => {
           )}
         </section>
       </section>
-    </main>
+    </div>
   );
 };

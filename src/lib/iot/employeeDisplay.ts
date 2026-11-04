@@ -36,3 +36,4 @@ export function employeeInitials(employeeId: Value, employeeName: Value, fallbac
   }
   return value.slice(0, 2).toUpperCase();
 }
+

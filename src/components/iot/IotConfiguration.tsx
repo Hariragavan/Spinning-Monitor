@@ -245,7 +245,7 @@ export const IotConfiguration: React.FC = () => {
   };
 
   return (
-    <main className="content w-full">
+    <div className="content w-full">
       <header className="topbar">
         <div>
           <h1 className="title">System Configuration Module</h1>
@@ -711,6 +711,6 @@ export const IotConfiguration: React.FC = () => {
           </div>
         </section>
       )}
-    </main>
+    </div>
   );
 };

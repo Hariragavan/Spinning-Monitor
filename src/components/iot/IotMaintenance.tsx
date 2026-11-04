@@ -179,7 +179,7 @@ export const IotMaintenance: React.FC = () => {
   };
 
   return (
-    <main className="content w-full">
+    <div className="content w-full">
       <header className="topbar">
         <div>
           <h1 className="title">Maintenance Calendar</h1>
@@ -381,6 +381,6 @@ export const IotMaintenance: React.FC = () => {
           )}
         </section>
       </section>
-    </main>
+    </div>
   );
 };

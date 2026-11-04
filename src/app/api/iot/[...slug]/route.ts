@@ -46,8 +46,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const shift = searchParams.get('shift') || undefined;
       const operator = searchParams.get('operator') || undefined;
 
-      const data = await getIotOverview();
-      return NextResponse.json({ success: true, data });
+      const force = Boolean(searchParams.get('force') || searchParams.get('_t'));
+      const data = await getIotOverview({ fromDate, toDate, shift, operator }, force);
+      return NextResponse.json({ success: true, data }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+      });
     }
 
     // 2. Machine Detail
@@ -76,16 +79,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
     // 5. Employee Performance & Dashboard
     if (path === 'dashboard/employee' || path === 'employee-dashboard') {
-      const employeeId = searchParams.get('employeeId');
-      const machineId = searchParams.get('machineId');
+      const employeeId = searchParams.get('employeeId') || undefined;
+      const machineId = searchParams.get('machineId') || undefined;
+      const date = searchParams.get('date') || undefined;
+      const shiftName = searchParams.get('shiftName') || searchParams.get('shift') || undefined;
+      const shiftId = searchParams.get('shiftId') || undefined;
 
-      let metrics = await getIotEmployeeMetrics();
+      let metrics = await getIotEmployeeMetrics({
+        employeeId,
+        machineId,
+        date,
+        shiftName,
+        shiftId
+      });
+
       if (employeeId) metrics = metrics.filter(m => m.employeeId === employeeId);
       if (machineId) metrics = metrics.filter(m => m.machineId === machineId);
 
       return NextResponse.json({
         success: true,
         data: metrics
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
       });
     }
 

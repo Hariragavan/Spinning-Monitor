@@ -172,7 +172,7 @@ export const IotProductionEntry: React.FC = () => {
   };
 
   return (
-    <main className="content w-full">
+    <div className="content w-full">
       <header className="topbar">
         <div>
           <div className="brand-eyebrow">
@@ -427,6 +427,6 @@ export const IotProductionEntry: React.FC = () => {
           </div>
         </section>
       </section>
-    </main>
+    </div>
   );
 };

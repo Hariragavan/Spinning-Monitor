@@ -58,9 +58,9 @@ export const IotMachineDashboard: React.FC = () => {
   const spindleRangeRight = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
 
   // Fetch live overview
-  const loadOverview = useCallback(async () => {
+  const loadOverview = useCallback(async (isInitial: boolean = false) => {
     try {
-      setLoading(true);
+      if (isInitial) setLoading(true);
       setErrorMessage(null);
       const data = await iotApi.getSpinfoOverview({
         fromDate: selectedFromDate,
@@ -79,14 +79,20 @@ export const IotMachineDashboard: React.FC = () => {
         if (sList && sList.length > 0) setShifts(sList);
       } catch {}
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to connect to IoT Telemetry stream.');
+      if (isInitial) {
+        setErrorMessage(err?.message || 'Failed to connect to IoT Telemetry stream.');
+      }
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, [selectedFromDate, selectedToDate, selectedShift, selectedOperator]);
 
   useEffect(() => {
-    loadOverview();
+    loadOverview(true);
+    const interval = setInterval(() => {
+      loadOverview(false);
+    }, 5000);
+    return () => clearInterval(interval);
   }, [loadOverview]);
 
   // Open Machine Diagnostics Modal
@@ -225,7 +231,7 @@ export const IotMachineDashboard: React.FC = () => {
         {errorMessage && (
           <div className="state-banner error-banner">
             <span>{errorMessage}</span>
-            <button className="btn-retry" onClick={loadOverview}>Retry</button>
+            <button className="btn-retry" onClick={() => loadOverview(true)}>Retry</button>
           </div>
         )}
 
@@ -309,7 +315,7 @@ export const IotMachineDashboard: React.FC = () => {
 
             <button
               className="btn btn-primary"
-              onClick={loadOverview}
+              onClick={() => loadOverview(true)}
               disabled={loading}
               title="Click to instantly refresh live telemetry"
             >

@@ -211,7 +211,7 @@ export const IotReports: React.FC = () => {
   };
 
   return (
-    <main className="content w-full">
+    <div className="content w-full">
       {/* Top Bar */}
       <header className="topbar">
         <div>
@@ -610,6 +610,6 @@ export const IotReports: React.FC = () => {
           </div>
         )}
       </section>
-    </main>
+    </div>
   );
 };

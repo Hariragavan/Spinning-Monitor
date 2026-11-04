@@ -44,7 +44,7 @@ const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backen
 // Memory cache for sub-second responses
 let cachedOverview: SpinfoOverviewResponse | null = null;
 let lastCacheTime = 0;
-const CACHE_TTL_MS = 15000; // 15 seconds
+const CACHE_TTL_MS = 2500; // 2.5 seconds for live telemetry
 
 /**
  * Transforms raw MAG SPinFO record from https://iot-machine-backend.onrender.com/api/common
@@ -287,9 +287,9 @@ export async function fetchLiveRenderStream(limit: number = 5): Promise<any | nu
 // -------------------------------------------------------------
 // Live Overview & Telemetry (connected to Render API & iot_machine DB)
 // -------------------------------------------------------------
-export async function getIotOverview(filter?: any): Promise<SpinfoOverviewResponse> {
+export async function getIotOverview(filter?: any, forceRefresh: boolean = false): Promise<SpinfoOverviewResponse> {
   const now = Date.now();
-  if (cachedOverview && now - lastCacheTime < CACHE_TTL_MS) {
+  if (!forceRefresh && cachedOverview && now - lastCacheTime < CACHE_TTL_MS) {
     return cachedOverview;
   }
 
@@ -527,53 +527,95 @@ export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
 // -------------------------------------------------------------
 // Employee Telemetry & Patrol Metrics
 // -------------------------------------------------------------
-export async function getIotEmployeeMetrics(filter?: any): Promise<EmployeeMetric[]> {
-  // 1. Try pulling live employee metrics from Render /api/dashboard/overview
+export async function getIotEmployeeMetrics(filter?: {
+  employeeId?: string;
+  machineId?: string;
+  date?: string;
+  shiftName?: string;
+  shiftId?: string;
+}): Promise<EmployeeMetric[]> {
+  // 1. Try pulling live employee metrics from Render /api/dashboard/employee
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/dashboard/overview`, {
+    const params = new URLSearchParams();
+    if (filter?.date) params.set('date', filter.date);
+    if (filter?.shiftName) params.set('shiftName', filter.shiftName);
+    if (filter?.shiftId) params.set('shiftId', filter.shiftId);
+    if (filter?.machineId) params.set('machineId', filter.machineId);
+    if (filter?.employeeId) params.set('employeeId', filter.employeeId);
+    params.set('_t', String(Date.now()));
+
+    let res = await fetch(`${REMOTE_IOT_API}/dashboard/employee?${params.toString()}`, {
       headers: { 'X-Company-Slug': 'scm' },
       cache: 'no-store'
     });
+
+    let rawList: any[] = [];
     if (res.ok) {
       const json = await res.json();
-      if (json.success && json.data && Array.isArray(json.data.employees)) {
-        const mapped: EmployeeMetric[] = json.data.employees.map((emp: any, idx: number) => ({
-          employeeId: String(emp.employeeId || `EMP${idx + 1}`),
-          employeeName: String(emp.employeeName || `Operator ${idx + 1}`),
-          machineId: String(emp.machineId || 'IOT_D1'),
-          roundsCompleted: Number(emp.rounds || 14),
-          expectedRounds: 16,
-          avgGapMinutes: Number(emp.avgGapMinutes || 8.5),
-          longestGapMinutes: 18,
-          activeStatus: 'ACTIVE',
-          idleMinutes: Number(emp.idleMinutes || 25),
-          performancePercent: Number(emp.performancePercent || 98),
-          lastActiveTime: 'Just now',
-          recentTaps: Array.isArray(emp.taps) ? emp.taps.map((t: any) => ({
-            time: t.time || '10:30',
-            stationId: t.deviceId || 'DEV_01',
-            status: 'ON_TIME',
-            gapMinutes: Number(t.gapMinutes || 0)
-          })) : []
-        }));
-
-        if (mapped.length > 0) {
-          // Persist in local iot_machine database
-          try {
-            const db = await getIotDb();
-            for (const m of mapped) {
-              await db.collection(IOT_COLLECTIONS.EMPLOYEES).updateOne(
-                { employeeId: m.employeeId },
-                { $set: m },
-                { upsert: true }
-              );
-            }
-          } catch (_) {}
-          return mapped;
-        }
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        rawList = json.data;
       }
     }
-  } catch (_) {}
+
+    // Fallback: If no records for given date (e.g. today before taps), query the latest active shift date (2026-11-03)
+    if (rawList.length === 0 && (!filter?.date || filter.date === new Date().toISOString().slice(0, 10))) {
+      try {
+        const fallbackRes = await fetch(`${REMOTE_IOT_API}/dashboard/employee?date=2026-11-03&_t=${Date.now()}`, {
+          headers: { 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (fallbackRes.ok) {
+          const fbJson = await fallbackRes.json();
+          if (fbJson.success && Array.isArray(fbJson.data) && fbJson.data.length > 0) {
+            rawList = fbJson.data;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (rawList.length > 0) {
+      const mapped: EmployeeMetric[] = rawList.map((emp: any, idx: number) => ({
+        employeeId: String(emp.employeeId || `EMP${idx + 1}`),
+        employeeName: String(emp.employeeName || `Operator ${idx + 1}`),
+        machineId: String(emp.machineId || 'IOT_D1'),
+        roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+        rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+        expectedRounds: Number(emp.expectedRounds || 8),
+        avgGapMinutes: Number(emp.avgGapMinutes || 0),
+        longestGapMinutes: Number(emp.longestGapMinutes || 0),
+        activeStatus: 'ACTIVE',
+        idleMinutes: Number(emp.idleMinutes || 0),
+        performancePercent: Number(emp.performancePercent || 0),
+        lastActiveTime: 'Just now',
+        taps: Array.isArray(emp.taps) ? emp.taps : [],
+        hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+        date: emp.date || filter?.date || '2026-11-03',
+        shift: emp.shift || filter?.shiftName || 'Shift 1',
+        recentTaps: Array.isArray(emp.taps) ? emp.taps.map((t: any) => ({
+          time: t.time || '10:30',
+          stationId: t.deviceId || 'DEV_01',
+          status: 'ON_TIME',
+          gapMinutes: Number(t.gapMinutes || 0)
+        })) : []
+      }));
+
+      // Persist in local iot_machine database
+      try {
+        const db = await getIotDb();
+        for (const m of mapped) {
+          await db.collection(IOT_COLLECTIONS.EMPLOYEES).updateOne(
+            { employeeId: m.employeeId, machineId: m.machineId },
+            { $set: m },
+            { upsert: true }
+          );
+        }
+      } catch (_) {}
+
+      return mapped;
+    }
+  } catch (err) {
+    console.warn('[IoT DB] getIotEmployeeMetrics fetch error:', err);
+  }
 
   // 2. Read from local iot_machine database
   try {

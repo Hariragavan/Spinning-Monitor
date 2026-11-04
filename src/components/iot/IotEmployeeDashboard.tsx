@@ -46,7 +46,7 @@ export const IotEmployeeDashboard: React.FC = () => {
   const [machineId, setMachineId] = useState('');
   const [shiftName, setShiftName] = useState('');
   const [shiftId, setShiftId] = useState('');
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState('2026-11-03');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -87,12 +87,12 @@ export const IotEmployeeDashboard: React.FC = () => {
     }
   };
 
-  const refresh = async () => {
+  const refresh = async (showLoading: boolean = false) => {
     const selectedShift = shifts.find(s => s.name === shiftName);
     const resolvedShiftId = selectedShift?.shiftId || '';
     setShiftId(resolvedShiftId);
 
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const [metrics, prod] = await Promise.all([
         iotApi.getEmployeePerformance({
@@ -109,13 +109,14 @@ export const IotEmployeeDashboard: React.FC = () => {
           employeeId: employeeId || undefined
         }).catch(() => [])
       ]);
-      setEmployeeMetrics(metrics.length ? metrics : SAMPLE_EMPLOYEE_METRICS);
+      if (metrics && metrics.length > 0) {
+        setEmployeeMetrics(metrics);
+      }
       setProductionRows(prod || []);
     } catch (err) {
       console.error('Failed to refresh employee performance:', err);
-      setEmployeeMetrics(SAMPLE_EMPLOYEE_METRICS);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -124,7 +125,11 @@ export const IotEmployeeDashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    refresh();
+    refresh(true);
+    const interval = setInterval(() => {
+      refresh(false);
+    }, 10000);
+    return () => clearInterval(interval);
   }, [employeeId, machineId, shiftName, selectedDate]);
 
   // Calculations for KPIs
@@ -232,7 +237,7 @@ export const IotEmployeeDashboard: React.FC = () => {
   };
 
   return (
-    <main className="content w-full">
+    <div className="content w-full">
       {/* Top Bar / Executive Control Header */}
       <header className="topbar">
         <div className="topbar-brand">
@@ -329,7 +334,7 @@ export const IotEmployeeDashboard: React.FC = () => {
 
           <button
             className="btn btn-primary"
-            onClick={refresh}
+            onClick={() => refresh(true)}
             disabled={loading}
             id="emp-refresh-btn"
           >
@@ -910,6 +915,6 @@ export const IotEmployeeDashboard: React.FC = () => {
           </section>
         </div>
       )}
-    </main>
+    </div>
   );
 };
