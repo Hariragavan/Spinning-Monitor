@@ -8,7 +8,17 @@ import {
   Shift
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import { SAMPLE_OVERVIEW } from '@/lib/iot/sampleIotData';
+
+const EMPTY_OVERVIEW: SpinfoOverviewResponse = {
+  success: true,
+  dataTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+  shiftDate: new Date().toISOString().slice(0, 10),
+  shift: 1,
+  frameStatus: { totalMachines: 0, reporting: 0, running: 0, runningPercent: 0, stopped: 0, doffing: 0, stoppedAndDoffing: 0, offline: 0, totalEndBreaks: 0, leftBreaks: 0, rightBreaks: 0 },
+  performanceAndCare: { averageRpm: 0, totalEndBreaks: 0, outsideRpmCount: 0, productionYieldPercent: 0, productionYieldKg: 0, targetProductionKg: 0, yieldAchievedPercent: 0, completedRounds: 0, totalRoundsScheduled: 0, skippedRounds: 0, incompleteRounds: 0, totalDevices: 0, devicesInBounds: 0, sensorBoundBreaches: 0, speedBreachAlerts: 0, preventiveCleaningDue: 0, preventiveCleaningDueCount: 0, dueMachineNames: [] },
+  hourlyProduction: { shiftTotalKg: 0, totalProduction: 0, totalTarget: 0, peakHour: 'H1', avgPerHourKg: 0, chart: [] },
+  machines: []
+};
 
 export type ActiveKpiType =
   | 'TOTAL_MACHINES'
@@ -35,7 +45,7 @@ export interface IotMachineDashboardProps {
 }
 
 export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ selectedDate }) => {
-  const [overview, setOverview] = useState<SpinfoOverviewResponse>(() => SAMPLE_OVERVIEW);
+  const [overview, setOverview] = useState<SpinfoOverviewResponse>(EMPTY_OVERVIEW);
   const [selectedMachineDetail, setSelectedMachineDetail] = useState<SpinfoMachineDetailResponse | null>(null);
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
 

@@ -8,12 +8,6 @@ import {
   ProductionReportRow
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import {
-  SAMPLE_MAPPINGS,
-  SAMPLE_SHIFTS,
-  SAMPLE_EMPLOYEES,
-  SAMPLE_PRODUCTION_ENTRIES
-} from '@/lib/iot/sampleIotData';
 import { employeeDisplayName } from '@/lib/iot/employeeDisplay';
 
 const MIN_OUTPUT = 140;
@@ -23,10 +17,10 @@ export interface IotProductionEntryProps {
 }
 
 export const IotProductionEntry: React.FC<IotProductionEntryProps> = ({ selectedDate: propDate }) => {
-  const [machines, setMachines] = useState<MachineMapping[]>(() => SAMPLE_MAPPINGS);
-  const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
-  const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
-  const [todayEntries, setTodayEntries] = useState<ProductionReportRow[]>(() => SAMPLE_PRODUCTION_ENTRIES);
+  const [machines, setMachines] = useState<MachineMapping[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [todayEntries, setTodayEntries] = useState<ProductionReportRow[]>([]);
 
   // Form fields
   const [shiftDate, setShiftDate] = useState(() => propDate || new Date().toISOString().slice(0, 10));
@@ -56,13 +50,12 @@ export const IotProductionEntry: React.FC<IotProductionEntryProps> = ({ selected
         iotApi.getEmployees(),
         iotApi.getMachineMappings().catch(() => [])
       ]);
-      setShifts(shfs.length ? shfs : SAMPLE_SHIFTS);
-      setEmployees(emps.length ? emps : SAMPLE_EMPLOYEES);
-      const loadedMaps = maps.length ? maps : SAMPLE_MAPPINGS;
-      setMachines(loadedMaps);
+      setShifts(shfs || []);
+      setEmployees(emps || []);
+      setMachines(maps || []);
 
-      if (loadedMaps.length && !machineId) {
-        setMachineId(loadedMaps[0].mappingId);
+      if (maps && maps.length > 0 && !machineId) {
+        setMachineId(maps[0].mappingId);
       }
 
       loadEntriesForDate(shiftDate);
@@ -76,9 +69,9 @@ export const IotProductionEntry: React.FC<IotProductionEntryProps> = ({ selected
   const loadEntriesForDate = async (d: string) => {
     try {
       const res = await iotApi.getProductionReport({ date: d });
-      setTodayEntries(res.length ? res : SAMPLE_PRODUCTION_ENTRIES);
+      setTodayEntries(res || []);
     } catch {
-      setTodayEntries(SAMPLE_PRODUCTION_ENTRIES);
+      setTodayEntries([]);
     }
   };
 

@@ -3,16 +3,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Machine, DeviceHealth, MaintenanceEntry } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import {
-  SAMPLE_MACHINES,
-  SAMPLE_DEVICES,
-  SAMPLE_MAINTENANCE
-} from '@/lib/iot/sampleIotData';
 
 export const IotMaintenance: React.FC = () => {
-  const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
-  const [devices, setDevices] = useState<DeviceHealth[]>(() => SAMPLE_DEVICES);
-  const [entries, setEntries] = useState<MaintenanceEntry[]>(() => SAMPLE_MAINTENANCE);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [devices, setDevices] = useState<DeviceHealth[]>([]);
+  const [entries, setEntries] = useState<MaintenanceEntry[]>([]);
   const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
   const [editingId, setEditingId] = useState('');
@@ -40,10 +35,10 @@ export const IotMaintenance: React.FC = () => {
         iotApi.getDevices(),
         iotApi.getMaintenance()
       ]);
-      setMachines(m.length ? m : SAMPLE_MACHINES);
-      setDevices(d.length ? d : SAMPLE_DEVICES);
-      setEntries(e.length ? e : SAMPLE_MAINTENANCE);
-      if (m.length && !form.machineId) {
+      setMachines(m || []);
+      setDevices(d || []);
+      setEntries(e || []);
+      if (m && m.length > 0 && !form.machineId) {
         setForm(prev => ({ ...prev, machineId: m[0].machineId }));
       }
     } catch (err) {

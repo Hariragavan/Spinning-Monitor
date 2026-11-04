@@ -219,34 +219,79 @@ function transformCommonToOverview(rawDoc: any): SpinfoOverviewResponse {
 }
 
 /**
- * Auto-seeds or syncs initial data into local iot_machine database
+ * Auto-seeds or syncs initial data from REMOTE_IOT_API into local iot_machine database
  */
 export async function ensureIotSeeded(): Promise<void> {
   try {
     const db = await getIotDb();
 
-    // 1. Seed Shifts in iot_machine
+    // 1. Sync Shifts if empty
     const shiftsCol = db.collection<Shift>(IOT_COLLECTIONS.SHIFTS);
     if ((await shiftsCol.countDocuments()) === 0) {
-      await shiftsCol.insertMany(SAMPLE_SHIFTS);
+      try {
+        const res = await fetch(`${REMOTE_IOT_API}/master/shifts`, {
+          headers: { 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+            const mapped = json.data.map((s: any) => ({
+              shiftId: String(s._id || s.shiftId || s.name || s.shiftName),
+              name: String(s.name || s.shiftName || 'Shift 1'),
+              shiftName: String(s.shiftName || s.name || 'Shift 1'),
+              startTime: String(s.startTime || '06:00'),
+              endTime: String(s.endTime || '14:00'),
+              active: s.active !== false
+            }));
+            await shiftsCol.insertMany(mapped);
+          }
+        }
+      } catch (_) {}
     }
 
-    // 2. Seed Maintenance in iot_machine
-    const maintCol = db.collection<MaintenanceEntry>(IOT_COLLECTIONS.MAINTENANCE);
-    if ((await maintCol.countDocuments()) === 0) {
-      await maintCol.insertMany(SAMPLE_MAINTENANCE);
+    // 2. Sync Machines if empty
+    const machinesCol = db.collection(IOT_COLLECTIONS.MACHINES);
+    if ((await machinesCol.countDocuments()) === 0) {
+      try {
+        const res = await fetch(`${REMOTE_IOT_API}/master/machines`, {
+          headers: { 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+            const mapped = json.data.map((m: any) => {
+              const copy = { ...m };
+              delete copy._id;
+              return copy;
+            });
+            await machinesCol.insertMany(mapped);
+          }
+        }
+      } catch (_) {}
     }
 
-    // 3. Seed Production Entries in iot_machine
-    const prodCol = db.collection<ProductionReportRow>(IOT_COLLECTIONS.PRODUCTION_ENTRIES);
-    if ((await prodCol.countDocuments()) === 0) {
-      await prodCol.insertMany(SAMPLE_PRODUCTION_ENTRIES);
-    }
-
-    // 4. Seed Mappings in iot_machine
-    const mapCol = db.collection<MachineMapping>(IOT_COLLECTIONS.MAPPINGS);
+    // 3. Sync Mappings if empty
+    const mapCol = db.collection(IOT_COLLECTIONS.MAPPINGS);
     if ((await mapCol.countDocuments()) === 0) {
-      await mapCol.insertMany(SAMPLE_MAPPINGS);
+      try {
+        const res = await fetch(`${REMOTE_IOT_API}/master/machine-mappings`, {
+          headers: { 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+            const mapped = json.data.map((m: any) => {
+              const copy = { ...m };
+              delete copy._id;
+              return copy;
+            });
+            await mapCol.insertMany(mapped);
+          }
+        }
+      } catch (_) {}
     }
   } catch (err) {
     console.warn('[IoT DB] ensureIotSeeded error:', err);
@@ -366,19 +411,57 @@ export async function getIotOverview(filter?: any, forceRefresh: boolean = false
     }
   } catch (e) {}
 
-  // 3. Fallback to sample data for the exact date and shift
-  const sampleCopy: SpinfoOverviewResponse = getSampleSpinfoOverview({
-    fromDate: targetDate,
-    shift: shiftNum !== undefined ? String(shiftNum) : undefined
-  });
-  if (targetDate) {
-    sampleCopy.shiftDate = targetDate;
-  }
-  if (shiftNum !== undefined) {
-    sampleCopy.shift = shiftNum;
-  }
-  overviewCache.set(cacheKey, { data: sampleCopy, timestamp: now });
-  return sampleCopy;
+  // 3. If no telemetry is available, return empty metrics structure
+  const emptyOverview: SpinfoOverviewResponse = {
+    success: true,
+    dataTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+    shiftDate: targetDate || new Date().toISOString().slice(0, 10),
+    shift: shiftNum ?? 1,
+    frameStatus: {
+      totalMachines: 0,
+      reporting: 0,
+      running: 0,
+      runningPercent: 0,
+      stopped: 0,
+      doffing: 0,
+      stoppedAndDoffing: 0,
+      offline: 0,
+      totalEndBreaks: 0,
+      leftBreaks: 0,
+      rightBreaks: 0
+    },
+    performanceAndCare: {
+      averageRpm: 0,
+      totalEndBreaks: 0,
+      outsideRpmCount: 0,
+      productionYieldPercent: 0,
+      productionYieldKg: 0,
+      targetProductionKg: 0,
+      yieldAchievedPercent: 0,
+      completedRounds: 0,
+      totalRoundsScheduled: 0,
+      skippedRounds: 0,
+      incompleteRounds: 0,
+      totalDevices: 0,
+      devicesInBounds: 0,
+      sensorBoundBreaches: 0,
+      speedBreachAlerts: 0,
+      preventiveCleaningDue: 0,
+      preventiveCleaningDueCount: 0,
+      dueMachineNames: []
+    },
+    hourlyProduction: {
+      shiftTotalKg: 0,
+      totalProduction: 0,
+      totalTarget: 0,
+      peakHour: 'H1',
+      avgPerHourKg: 0,
+      chart: []
+    },
+    machines: []
+  };
+  overviewCache.set(cacheKey, { data: emptyOverview, timestamp: now });
+  return emptyOverview;
 }
 
 // -------------------------------------------------------------
@@ -414,19 +497,7 @@ export async function getIotMachinesList(): Promise<SpinfoMachineItem[]> {
 export async function getIotMachinesMaster(): Promise<Machine[]> {
   await ensureIotSeeded();
 
-  // 1. Gather all 46 machines from the live overview stream
-  const overview = await getIotOverview();
-  const overviewMachines: Machine[] = (overview.machines || []).map(m => ({
-    machineId: m.machineId,
-    machineName: m.machineName || m.machineId,
-    millId: '0',
-    cleaningIntervalDays: m.cleaning?.intervalDays || 2,
-    expectedProductionOutput: m.shiftTargetProduction || 98.4,
-    expectedRuntimeMinutes: 480,
-    expectedRoundsPerHour: 2
-  }));
-
-  // 2. Try fetching additional hardware machines from Render API /master/machines
+  // 1. Fetch hardware machines directly from Render API /master/machines
   try {
     const res = await fetch(`${REMOTE_IOT_API}/master/machines`, {
       headers: { 'X-Company-Slug': 'scm' },
@@ -442,16 +513,9 @@ export async function getIotMachinesMaster(): Promise<Machine[]> {
           cleaningIntervalDays: Number(m.cleaningIntervalDays) || 2
         }));
 
-        const combined = [...hwMachines];
-        for (const om of overviewMachines) {
-          if (!combined.some(c => c.machineId === om.machineId)) {
-            combined.push(om);
-          }
-        }
-
         try {
           const db = await getIotDb();
-          for (const m of combined) {
+          for (const m of hwMachines) {
             await db.collection(IOT_COLLECTIONS.MACHINES).updateOne(
               { machineId: m.machineId },
               { $set: m },
@@ -460,21 +524,21 @@ export async function getIotMachinesMaster(): Promise<Machine[]> {
           }
         } catch (_) {}
 
-        return combined;
+        return hwMachines;
       }
     }
   } catch (_) {}
 
-  // 3. Read from local iot_machine database
+  // 2. Read from local iot_machine database (hardware machines only)
   try {
     const db = await getIotDb();
     const list = await db.collection<Machine>(IOT_COLLECTIONS.MACHINES)
-      .find({}, { projection: { _id: 0 } })
+      .find({ machineId: { $not: { $regex: /^RF/i } } }, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
   } catch (e) {}
 
-  return overviewMachines.length > 0 ? overviewMachines : SAMPLE_MACHINES;
+  return [];
 }
 
 // -------------------------------------------------------------
@@ -523,7 +587,7 @@ export async function getIotEmployeesMaster(): Promise<Employee[]> {
     if (list.length > 0) return list;
   } catch (e) {}
 
-  return SAMPLE_EMPLOYEES;
+  return [];
 }
 
 // -------------------------------------------------------------
@@ -575,7 +639,7 @@ export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
     if (list.length > 0) return list;
   } catch (e) {}
 
-  return SAMPLE_DEVICES;
+  return [];
 }
 
 // -------------------------------------------------------------
@@ -680,7 +744,7 @@ export async function getIotEmployeeMetrics(filter?: {
     if (stored.length > 0) return stored;
   } catch (_) {}
 
-  return SAMPLE_EMPLOYEE_METRICS;
+  return [];
 }
 
 // -------------------------------------------------------------
@@ -740,7 +804,7 @@ export async function getIotShifts(): Promise<Shift[]> {
     }
   } catch (e) {}
 
-  return SAMPLE_SHIFTS;
+  return [];
 }
 
 export async function saveIotShift(shift: Shift): Promise<Shift> {
@@ -779,7 +843,7 @@ export async function getIotProductionEntries(): Promise<ProductionReportRow[]> 
       .toArray();
     if (list.length > 0) return list;
   } catch (e) {}
-  return SAMPLE_PRODUCTION_ENTRIES;
+  return [];
 }
 
 export async function saveIotProductionEntry(entry: ProductionReportRow): Promise<ProductionReportRow> {
@@ -818,7 +882,7 @@ export async function getIotMaintenance(): Promise<MaintenanceEntry[]> {
       .toArray();
     if (list.length > 0) return list;
   } catch (e) {}
-  return SAMPLE_MAINTENANCE;
+  return [];
 }
 
 export async function saveIotMaintenance(entry: MaintenanceEntry): Promise<MaintenanceEntry> {
@@ -880,7 +944,7 @@ export async function getIotMappings(): Promise<MachineMapping[]> {
       .toArray();
     if (list.length > 0) return list;
   } catch (e) {}
-  return SAMPLE_MAPPINGS;
+  return [];
 }
 
 export async function saveIotMapping(mapping: MachineMapping): Promise<MachineMapping> {

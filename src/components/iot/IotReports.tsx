@@ -9,11 +9,6 @@ import {
   MachineRoundPerformance
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import {
-  SAMPLE_MACHINES,
-  SAMPLE_EMPLOYEES,
-  SAMPLE_SHIFTS
-} from '@/lib/iot/sampleIotData';
 import { employeeLabel, employeeDisplayName } from '@/lib/iot/employeeDisplay';
 
 export interface IotReportsProps {
@@ -21,9 +16,9 @@ export interface IotReportsProps {
 }
 
 export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }) => {
-  const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
-  const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
-  const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
 
   const [activeReportType, setActiveReportType] = useState<ReportFilter['reportType']>('rpm_efficiency');
   const [machineId, setMachineId] = useState('');
@@ -39,7 +34,7 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
     }
   }, [propDate]);
 
-  const [reportTitle, setReportTitle] = useState('Spinning & Machine Efficiency');
+  const [reportTitle, setReportTitle] = useState('RPM & Machine Efficiency Report');
   const [reportData, setReportData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -63,11 +58,11 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
         iotApi.getEmployees(),
         iotApi.getShifts()
       ]);
-      setMachines(m.length ? m : SAMPLE_MACHINES);
-      setEmployees(e.length ? e : SAMPLE_EMPLOYEES);
-      setShifts(s.length ? s : SAMPLE_SHIFTS);
+      setMachines(m || []);
+      setEmployees(e || []);
+      setShifts(s || []);
 
-      if (m.length && !machineId) {
+      if (m && m.length > 0 && !machineId) {
         setMachineId(m[0].machineId);
       }
     } catch (err) {
@@ -90,7 +85,7 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
       setReportData(res.data || []);
     } catch {
       setReportTitle(getDefaultTitle(activeReportType));
-      setReportData(getSampleReportRows(activeReportType));
+      setReportData([]);
     } finally {
       setLoading(false);
     }
@@ -98,49 +93,12 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
 
   const getDefaultTitle = (type: ReportFilter['reportType']) => {
     switch (type) {
-      case 'rpm_efficiency': return 'Spinning & Machine Efficiency';
+      case 'rpm_efficiency': return 'RPM & Machine Efficiency Report';
       case 'employee_productivity': return 'Employee Productivity & Round Gap Report';
       case 'downtime_modes': return 'Machine Downtime & Mode Analysis Report';
       case 'duty_coverage': return 'Device & Employee Duty Coverage Report';
-      case 'cleaning_maintenance': return 'Cleaning & Maintenance Schedule Report';
+      case 'cleaning_maintenance': return 'Machine Cleaning & Maintenance Schedule Report';
       default: return 'Database Analytical Reports';
-    }
-  };
-
-  const getSampleReportRows = (type: ReportFilter['reportType']) => {
-    if (type === 'rpm_efficiency') {
-      return [
-        { deviceId: 'IOT_D1', machineId: 'IOT_01', avgRPM: 17200, minRPM: 16000, maxRPM: 18000, count: 48, violationsCount: 0, efficiencyPercent: 96, expectedProduction: 140, actualProduction: 142, expectedRuntimeMinutes: 480, actualRuntimeMinutes: 470, lastRPM: 17250 },
-        { deviceId: 'IOT_D2', machineId: 'IOT_01', avgRPM: 17150, minRPM: 16000, maxRPM: 18000, count: 48, violationsCount: 1, efficiencyPercent: 94, expectedProduction: 140, actualProduction: 138, expectedRuntimeMinutes: 480, actualRuntimeMinutes: 465, lastRPM: 17100 },
-        { deviceId: 'IOT_D3', machineId: 'IOT_02', avgRPM: 16800, minRPM: 16000, maxRPM: 18000, count: 48, violationsCount: 0, efficiencyPercent: 92, expectedProduction: 140, actualProduction: 135, expectedRuntimeMinutes: 480, actualRuntimeMinutes: 450, lastRPM: 16850 }
-      ];
-    } else if (type === 'employee_productivity') {
-      return [
-        { employeeId: '2343230214', employeeName: 'Ramesh', machinesOperated: 'IOT_01', totalCardTaps: 4, averageTapGapMinutes: 1.2, idlePercentage: 1.2, performanceReductionPercent: 0, avgGapMinutes: 1.2 },
-        { employeeId: '3157579526', employeeName: 'Sambari(24673)', machinesOperated: 'IOT_01 + IOT_02', totalCardTaps: 24, averageTapGapMinutes: 2.8, idlePercentage: 2.8, performanceReductionPercent: 12, avgGapMinutes: 2.8 },
-        { employeeId: '2075521798', employeeName: 'Karthik', machinesOperated: 'IOT_02', totalCardTaps: 8, averageTapGapMinutes: 0.8, idlePercentage: 0.8, performanceReductionPercent: 0, avgGapMinutes: 0.8 },
-        { employeeId: '2509127430', employeeName: 'Murugan', machinesOperated: 'IOT_03', totalCardTaps: 2, averageTapGapMinutes: 0.1, idlePercentage: 0.1, performanceReductionPercent: 0, avgGapMinutes: 0.1 },
-        { employeeId: '1328481243', employeeName: 'Suresh', machinesOperated: 'IOT_01', totalCardTaps: 36, averageTapGapMinutes: 26.5, idlePercentage: 26.5, performanceReductionPercent: 35, avgGapMinutes: 26.5 },
-        { employeeId: '621665542', employeeName: 'Rahul(34257)', machinesOperated: 'IOT_02', totalCardTaps: 18, averageTapGapMinutes: 19.2, idlePercentage: 19.2, performanceReductionPercent: 24, avgGapMinutes: 19.2 },
-        { employeeId: '562288134', employeeName: 'Mangal(33786)', machinesOperated: 'IOT_01', totalCardTaps: 16, averageTapGapMinutes: 15.4, idlePercentage: 15.4, performanceReductionPercent: 18, avgGapMinutes: 15.4 }
-      ];
-    } else if (type === 'downtime_modes') {
-      return [
-        { mode: 'Normal Running', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
-        { mode: 'Doffing Stop', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
-        { mode: 'Creeling / Maintenance', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
-        { mode: 'End Breakage Interruption', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' }
-      ];
-    } else if (type === 'duty_coverage') {
-      return [
-        { deviceId: 'IOT_D1', machineId: 'IOT_01', position: 'Front', side: 'L', minRPM: 16000, maxRPM: 18000, assignedEmployeeId: '562288134', assignedEmployeeName: 'Mangal(33786)', lastActiveEmployeeId: '562288134', lastActiveEmployeeName: 'Mangal(33786)', lastSeenAt: new Date().toISOString() },
-        { deviceId: 'IOT_D2', machineId: 'IOT_01', position: 'Back', side: 'R', minRPM: 16000, maxRPM: 18000, assignedEmployeeId: '3157579526', assignedEmployeeName: 'Sambari(24673)', lastActiveEmployeeId: '3157579526', lastActiveEmployeeName: 'Sambari(24673)', lastSeenAt: new Date().toISOString() }
-      ];
-    } else {
-      return [
-        { machineId: 'M1', machineName: 'Spinning Frame 1', millId: 'SCM-1', cleaningIntervalDays: 7, lastCleaningAt: '2026-11-01', nextCleaningAt: '2026-11-08', lastMaintenanceAt: '2026-10-25', status: 'COMPLIANT' },
-        { machineId: 'M2', machineName: 'Spinning Frame 2', millId: 'SCM-1', cleaningIntervalDays: 7, lastCleaningAt: '2026-10-20', nextCleaningAt: '2026-10-27', lastMaintenanceAt: '2026-10-20', status: 'CLEANING OVERDUE' }
-      ];
     }
   };
 

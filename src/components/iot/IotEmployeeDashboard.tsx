@@ -12,12 +12,6 @@ import {
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
 import {
-  SAMPLE_EMPLOYEES,
-  SAMPLE_MACHINES,
-  SAMPLE_SHIFTS,
-  SAMPLE_EMPLOYEE_METRICS
-} from '@/lib/iot/sampleIotData';
-import {
   employeeDisplayName,
   employeeLabel,
   employeeInitials
@@ -39,10 +33,10 @@ export interface IotEmployeeDashboardProps {
 }
 
 export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ selectedDate: propDate }) => {
-  const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
-  const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
-  const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
-  const [employeeMetrics, setEmployeeMetrics] = useState<EmployeeMetric[]>(() => SAMPLE_EMPLOYEE_METRICS);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [employeeMetrics, setEmployeeMetrics] = useState<EmployeeMetric[]>([]);
   const [productionRows, setProductionRows] = useState<ProductionReportRow[]>([]);
   const [mappings, setMappings] = useState<MachineMapping[]>([]);
 
@@ -80,15 +74,15 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
         iotApi.getShifts(),
         iotApi.getMachineMappings().catch(() => [])
       ]);
-      setEmployees(emps.length ? emps : SAMPLE_EMPLOYEES);
-      setMachines(machs.length ? machs : SAMPLE_MACHINES);
-      setShifts(shfs.length ? shfs : SAMPLE_SHIFTS);
+      setEmployees(emps || []);
+      setMachines(machs || []);
+      setShifts(shfs || []);
       setMappings(maps || []);
 
-      if (machs.length && !machineId) {
+      if (machs && machs.length > 0 && !machineId) {
         setMachineId(machs[0].machineId);
       }
-      if (shfs.length && !shiftName) {
+      if (shfs && shfs.length > 0 && !shiftName) {
         setShiftName(shfs[0].name || shfs[0].shiftName || 'Shift 1');
         setShiftId(shfs[0].shiftId);
       }

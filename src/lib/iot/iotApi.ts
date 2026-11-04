@@ -80,13 +80,23 @@ export const iotApi = {
     if (filter?.operator) params.set('operator', filter.operator);
     params.set('_t', String(Date.now()));
 
-    const fallback: SpinfoOverviewResponse = getSampleSpinfoOverview();
+    const emptyFallback: SpinfoOverviewResponse = {
+      success: true,
+      dataTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      shiftDate: filter?.fromDate || new Date().toISOString().slice(0, 10),
+      shift: filter?.shift ? Number(filter.shift.replace(/\D/g, '')) || 1 : 1,
+      frameStatus: { totalMachines: 0, reporting: 0, running: 0, runningPercent: 0, stopped: 0, doffing: 0, stoppedAndDoffing: 0, offline: 0, totalEndBreaks: 0, leftBreaks: 0, rightBreaks: 0 },
+      performanceAndCare: { averageRpm: 0, totalEndBreaks: 0, outsideRpmCount: 0, productionYieldPercent: 0, productionYieldKg: 0, targetProductionKg: 0, yieldAchievedPercent: 0, completedRounds: 0, totalRoundsScheduled: 0, skippedRounds: 0, incompleteRounds: 0, totalDevices: 0, devicesInBounds: 0, sensorBoundBreaches: 0, speedBreachAlerts: 0, preventiveCleaningDue: 0, preventiveCleaningDueCount: 0, dueMachineNames: [] },
+      hourlyProduction: { shiftTotalKg: 0, totalProduction: 0, totalTarget: 0, peakHour: 'H1', avgPerHourKg: 0, chart: [] },
+      machines: []
+    };
+
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
       `${this.baseUrl}/spinfo/overview?${params.toString()}`,
       { method: 'GET' },
-      { success: true, data: fallback }
+      { success: true, data: emptyFallback }
     );
-    return res.data || fallback;
+    return res.data || emptyFallback;
   },
 
   async getMachineDetail(
@@ -125,7 +135,7 @@ export const iotApi = {
 
   // 2. Employees & Duty Tracking
   async getEmployees(): Promise<Employee[]> {
-    const stored = getStored<Employee[]>('employees', SAMPLE_EMPLOYEES);
+    const stored = getStored<Employee[]>('employees', []);
     const res = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
       `${this.baseUrl}/master/employees`,
       { method: 'GET' },
@@ -149,7 +159,7 @@ export const iotApi = {
     if (filter?.shiftId) params.set('shiftId', filter.shiftId);
     params.set('_t', String(Date.now()));
 
-    let list = getStored<EmployeeMetric[]>('employee_metrics', SAMPLE_EMPLOYEE_METRICS);
+    let list = getStored<EmployeeMetric[]>('employee_metrics', []);
     if (filter?.employeeId) {
       list = list.filter(m => m.employeeId === filter.employeeId);
     }
@@ -167,7 +177,7 @@ export const iotApi = {
 
   // 3. Machines & Mappings
   async getMachines(): Promise<Machine[]> {
-    const stored = getStored<Machine[]>('machines', SAMPLE_MACHINES);
+    const stored = getStored<Machine[]>('machines', []);
     const res = await fetchWithFallback<{ success: boolean; data: Machine[] }>(
       `${this.baseUrl}/master/machines`,
       { method: 'GET' },
@@ -177,7 +187,7 @@ export const iotApi = {
   },
 
   async getMachineMappings(): Promise<MachineMapping[]> {
-    const stored = getStored<MachineMapping[]>('mappings', SAMPLE_MAPPINGS);
+    const stored = getStored<MachineMapping[]>('mappings', []);
     const res = await fetchWithFallback<{ success: boolean; data: MachineMapping[] }>(
       `${this.baseUrl}/master/machine-mappings`,
       { method: 'GET' },
@@ -238,7 +248,7 @@ export const iotApi = {
 
   // 4. Devices
   async getDevices(): Promise<DeviceHealth[]> {
-    const stored = getStored<DeviceHealth[]>('devices', SAMPLE_DEVICES);
+    const stored = getStored<DeviceHealth[]>('devices', []);
     const res = await fetchWithFallback<{ success: boolean; data: DeviceHealth[] }>(
       `${this.baseUrl}/master/devices`,
       { method: 'GET' },
@@ -281,7 +291,7 @@ export const iotApi = {
 
   // 5. Shifts
   async getShifts(): Promise<Shift[]> {
-    const stored = getStored<Shift[]>('shifts', SAMPLE_SHIFTS);
+    const stored = getStored<Shift[]>('shifts', []);
     const res = await fetchWithFallback<{ success: boolean; data: Shift[] }>(
       `${this.baseUrl}/master/shifts`,
       { method: 'GET' },
@@ -339,7 +349,7 @@ export const iotApi = {
 
   // 6. Maintenance
   async getMaintenance(): Promise<MaintenanceEntry[]> {
-    const stored = getStored<MaintenanceEntry[]>('maintenance', SAMPLE_MAINTENANCE);
+    const stored = getStored<MaintenanceEntry[]>('maintenance', []);
     const res = await fetchWithFallback<{ success: boolean; data: MaintenanceEntry[] }>(
       `${this.baseUrl}/master/maintenance`,
       { method: 'GET' },
@@ -397,7 +407,7 @@ export const iotApi = {
 
   // 7. Production Entries
   async getProductionReport(filter?: ProductionReportFilter): Promise<ProductionReportRow[]> {
-    const stored = getStored<ProductionReportRow[]>('production_entries', SAMPLE_PRODUCTION_ENTRIES);
+    const stored = getStored<ProductionReportRow[]>('production_entries', []);
     let list = [...stored];
     if (filter?.date) list = list.filter(r => r.date === filter.date);
     if (filter?.shiftId) list = list.filter(r => r.shiftId === filter.shiftId);
@@ -518,140 +528,19 @@ export const iotApi = {
       }
     } catch {}
 
-    // Fallback sample reports
-    const overview = getSampleSpinfoOverview();
+    const defaultTitles: Record<string, string> = {
+      rpm_efficiency: 'RPM & Machine Efficiency Report',
+      employee_productivity: 'Employee Productivity & Round Gap Report',
+      downtime_modes: 'Machine Downtime & Mode Analysis Report',
+      duty_coverage: 'Device & Employee Duty Coverage Report',
+      cleaning_maintenance: 'Machine Cleaning & Maintenance Schedule Report'
+    };
 
-    switch (filter.reportType) {
-      case 'rpm_efficiency': {
-        const rows = overview.machines.map(m => ({
-          deviceId: 'IOT_D1',
-          machineId: m.machineId,
-          count: m.count,
-          runStatus: m.runStatus,
-          avgRPM: m.spindleSpeedCurrent,
-          minRPM: 16000,
-          maxRPM: 18000,
-          violationsCount: 0,
-          efficiencyPercent: Math.round((m.shiftProduction / (m.shiftTargetProduction || 1)) * 100),
-          actualProduction: m.shiftProduction,
-          expectedProduction: m.shiftTargetProduction,
-          actualRuntimeMinutes: 470,
-          expectedRuntimeMinutes: 480,
-          lastRPM: m.spindleSpeedCurrent
-        }));
-        return {
-          success: true,
-          reportType: 'rpm_efficiency',
-          title: 'Spinning & Machine Efficiency',
-          data: rows,
-          summary: {
-            totalMachines: rows.length,
-            averageEfficiency: Math.round(rows.reduce((s, r) => s + r.efficiencyPercent, 0) / rows.length),
-            averageRpm: Math.round(rows.reduce((s, r) => s + r.avgRPM, 0) / rows.length),
-            totalProduction: rows.reduce((s, r) => s + r.actualProduction, 0).toFixed(1)
-          }
-        };
-      }
-      case 'employee_productivity': {
-        const rows = SAMPLE_EMPLOYEE_METRICS.map(emp => ({
-          employeeId: emp.employeeId,
-          employeeName: emp.employeeName,
-          machinesOperated: emp.machineId,
-          totalCardTaps: emp.roundsCompleted * 4,
-          averageTapGapMinutes: emp.avgGapMinutes,
-          idlePercentage: Math.max(0, 100 - (emp.performancePercent || 75)),
-          idleMinutes: Math.round((100 - (emp.performancePercent || 75)) * 4.8),
-          performanceReductionPercent: Math.max(0, 100 - (emp.performancePercent || 75)),
-          avgGapMinutes: emp.avgGapMinutes
-        }));
-        return {
-          success: true,
-          reportType: 'employee_productivity',
-          title: 'Employee Productivity & Round Gap Report',
-          data: rows,
-          summary: {
-            totalOperators: rows.length,
-            averageRounds: (rows.reduce((s, r) => s + r.totalCardTaps, 0) / rows.length).toFixed(1),
-            averageGapMinutes: (rows.reduce((s, r) => s + r.averageTapGapMinutes, 0) / rows.length).toFixed(1)
-          }
-        };
-      }
-      case 'downtime_modes': {
-        const rows = [
-          { mode: 'Normal Running', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
-          { mode: 'Doffing Stop', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
-          { mode: 'Creeling / Maintenance', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
-          { mode: 'End Breakage Interruption', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' }
-        ];
-        return {
-          success: true,
-          reportType: 'downtime_modes',
-          title: 'Machine Downtime & Modes',
-          data: rows,
-          summary: {
-            totalDowntimeHours: 0,
-            totalEndBreaks: 0
-          }
-        };
-      }
-      case 'duty_coverage': {
-        const devices = await this.getDevices();
-        const rows = devices.map(d => ({
-          deviceId: d.deviceId,
-          machineId: d.machineId,
-          position: d.position || '1',
-          side: d.side || 'L',
-          minRPM: d.minRPM || 16000,
-          maxRPM: d.maxRPM || 18000,
-          assignedEmployeeId: d.assignedEmployeeId || '562288134',
-          assignedEmployeeName: d.assignedEmployeeName || 'Mangal(33786)',
-          lastActiveEmployeeId: d.assignedEmployeeId || '562288134',
-          lastActiveEmployeeName: d.assignedEmployeeName || 'Mangal(33786)',
-          lastSeenAt: d.lastSeen
-        }));
-        return {
-          success: true,
-          reportType: 'duty_coverage',
-          title: 'Device & Employee Duty Coverage',
-          data: rows,
-          summary: {
-            totalDevices: rows.length,
-            healthyDevices: rows.filter(r => r.assignedEmployeeId).length,
-            coveragePercent: 100
-          }
-        };
-      }
-      case 'cleaning_maintenance': {
-        const maintenance = await this.getMaintenance();
-        const rows = maintenance.map(m => ({
-          machineId: m.machineId,
-          machineName: `Spinning Frame ${m.machineId}`,
-          millId: 'SCM-1',
-          cleaningIntervalDays: 7,
-          lastCleaningAt: '2026-11-01',
-          nextCleaningAt: '2026-11-08',
-          lastMaintenanceAt: m.scheduledDate,
-          status: m.status === 'completed' ? 'COMPLIANT' : 'CLEANING OVERDUE'
-        }));
-        return {
-          success: true,
-          reportType: 'cleaning_maintenance',
-          title: 'Cleaning & Maintenance Schedule',
-          data: rows,
-          summary: {
-            totalScheduled: rows.length,
-            completed: rows.filter(r => r.status === 'COMPLIANT').length,
-            pending: rows.filter(r => r.status !== 'COMPLIANT').length
-          }
-        };
-      }
-      default:
-        return {
-          success: true,
-          reportType: filter.reportType,
-          title: 'Report',
-          data: []
-        };
-    }
+    return {
+      success: true,
+      reportType: filter.reportType,
+      title: defaultTitles[filter.reportType] || 'Database Analytical Reports',
+      data: []
+    };
   }
 };

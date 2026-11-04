@@ -3,10 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { Shift } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import { SAMPLE_SHIFTS } from '@/lib/iot/sampleIotData';
 
 export const IotShifts: React.FC = () => {
-  const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [editingId, setEditingId] = useState('');
 
   const [form, setForm] = useState<Omit<Shift, 'shiftId'>>({
@@ -25,7 +24,7 @@ export const IotShifts: React.FC = () => {
     setLoading(true);
     try {
       const data = await iotApi.getShifts();
-      setShifts(data.length ? data : SAMPLE_SHIFTS);
+      setShifts(data || []);
     } catch (err) {
       console.error('Failed to load shifts:', err);
     } finally {

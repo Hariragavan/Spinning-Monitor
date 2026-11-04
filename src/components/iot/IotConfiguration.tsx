@@ -10,21 +10,15 @@ import {
   MachineMappingInput
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import {
-  SAMPLE_EMPLOYEES,
-  SAMPLE_DEVICES,
-  SAMPLE_MACHINES,
-  SAMPLE_MAPPINGS
-} from '@/lib/iot/sampleIotData';
 import { employeeLabel } from '@/lib/iot/employeeDisplay';
 
 export const IotConfiguration: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'assign_devices' | 'rpm_bounds' | 'machine_config' | 'machine_mapping'>('assign_devices');
 
-  const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
-  const [devices, setDevices] = useState<DeviceHealth[]>(() => SAMPLE_DEVICES);
-  const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
-  const [mappings, setMappings] = useState<MachineMapping[]>(() => SAMPLE_MAPPINGS);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [devices, setDevices] = useState<DeviceHealth[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [mappings, setMappings] = useState<MachineMapping[]>([]);
 
   // Tab 1 state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -60,16 +54,16 @@ export const IotConfiguration: React.FC = () => {
         iotApi.getMachines(),
         iotApi.getMachineMappings().catch(() => [])
       ]);
-      setEmployees(e.length ? e : SAMPLE_EMPLOYEES);
-      setDevices(d.length ? d : SAMPLE_DEVICES);
-      setMachines(m.length ? m : SAMPLE_MACHINES);
-      setMappings(maps.length ? maps : SAMPLE_MAPPINGS);
+      setEmployees(e || []);
+      setDevices(d || []);
+      setMachines(m || []);
+      setMappings(maps || []);
 
-      if (e.length && !selectedEmployeeId) {
+      if (e && e.length > 0 && !selectedEmployeeId) {
         setSelectedEmployeeId(e[0].employeeId);
         setSelectedDeviceIds(e[0].assignedDeviceIds || []);
       }
-      if (m.length && !selectedMachineId) {
+      if (m && m.length > 0 && !selectedMachineId) {
         setSelectedMachineId(m[0].machineId);
       }
     } catch (err) {

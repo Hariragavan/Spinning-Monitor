@@ -2040,25 +2040,25 @@ export default function Home() {
       case 'iot-machine-dashboard':
         return (
           <div className="iot-system-scope w-full">
-            <IotMachineDashboard selectedDate={activeDailyReport.date} />
+            <IotMachineDashboard />
           </div>
         );
       case 'iot-employee-dashboard':
         return (
           <div className="iot-system-scope w-full">
-            <IotEmployeeDashboard selectedDate={activeDailyReport.date} />
+            <IotEmployeeDashboard />
           </div>
         );
       case 'iot-production-entry':
         return (
           <div className="iot-system-scope w-full">
-            <IotProductionEntry selectedDate={activeDailyReport.date} />
+            <IotProductionEntry />
           </div>
         );
       case 'iot-reports':
         return (
           <div className="iot-system-scope w-full">
-            <IotReports selectedDate={activeDailyReport.date} />
+            <IotReports />
           </div>
         );
       case 'iot-maintenance':
@@ -3696,56 +3696,67 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Right Section: Interactive Date Picker, Available Dates Dropdown, TV mode */}
+              {/* Right Section: Interactive Date Picker (Spinning Mill) or IoT Live Status Badge (IoT) */}
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {/* Date Selection: Left & Right navigation arrows together before date selection */}
-                <div className="flex items-center gap-1.5 bg-stone-100/90 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs">
-                  <div className="flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleTopDateChange(shiftUniversalDate(activeDailyReport.date, -1))}
-                      className="p-1 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
-                      title="Previous day"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTopDateChange(shiftUniversalDate(activeDailyReport.date, 1))}
-                      className="p-1 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
-                      title="Next day"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
+                {activeTab.startsWith('iot-') ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/80 text-blue-900 rounded-xl border border-blue-200 text-xs font-bold shadow-2xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>Remote IoT API Live</span>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {/* Date Selection: Left & Right navigation arrows together before date selection */}
+                    <div className="flex items-center gap-1.5 bg-stone-100/90 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs">
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleTopDateChange(shiftUniversalDate(activeDailyReport.date, -1))}
+                          className="p-1 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                          title="Previous day"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTopDateChange(shiftUniversalDate(activeDailyReport.date, 1))}
+                          className="p-1 rounded-lg hover:bg-stone-200 text-stone-700 transition-colors cursor-pointer"
+                          title="Next day"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
 
-                  <CalendarDatePicker
-                    value={activeDailyReport.date}
-                    onChange={(newDate) => handleTopDateChange(newDate)}
-                    className="shrink-0"
-                  />
-                  {activeDailyReport.date !== getYesterdayUniversalDate() && (
+                      <CalendarDatePicker
+                        value={activeDailyReport.date}
+                        onChange={(newDate) => handleTopDateChange(newDate)}
+                        className="shrink-0"
+                      />
+                      {activeDailyReport.date !== getYesterdayUniversalDate() && (
+                        <button
+                          type="button"
+                          onClick={() => handleTopDateChange(getYesterdayUniversalDate())}
+                          className="px-2 py-1 text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-2xs cursor-pointer hidden sm:inline-flex"
+                          title="Jump to Yesterday's Date"
+                        >
+                          Today
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Auto Refresh Button (Symbol Only) */}
                     <button
                       type="button"
-                      onClick={() => handleTopDateChange(getYesterdayUniversalDate())}
-                      className="px-2 py-1 text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-2xs cursor-pointer hidden sm:inline-flex"
-                      title="Jump to Yesterday's Date"
+                      onClick={() => refreshAllData()}
+                      disabled={isRefreshing}
+                      className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl transition-all border border-stone-200 cursor-pointer shadow-2xs flex items-center justify-center"
+                      title="Auto-refreshes every 5 minutes. Click to refresh latest data immediately"
                     >
-                      Today
+                      <RefreshCw size={15} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
                     </button>
-                  )}
-                </div>
-
-                {/* Auto Refresh Button (Symbol Only) */}
-                <button
-                  type="button"
-                  onClick={() => refreshAllData()}
-                  disabled={isRefreshing}
-                  className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl transition-all border border-stone-200 cursor-pointer shadow-2xs flex items-center justify-center"
-                  title="Auto-refreshes every 5 minutes. Click to refresh latest data immediately"
-                >
-                  <RefreshCw size={15} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
-                </button>
+                  </>
+                )}
 
                 <div className="h-4 w-px bg-stone-200 mx-0.5 hidden sm:block" />
 

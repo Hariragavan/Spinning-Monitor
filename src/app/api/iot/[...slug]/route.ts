@@ -162,20 +162,53 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       return NextResponse.json({ success: true, data: rows });
     }
 
-    // 10b. Round Performance Reports
+    // 10b. Round Performance Reports (queries /dashboard/machine on remote IoT API)
     if (path === 'reports/round-performance' || path === 'round-performance') {
-      const machineId = searchParams.get('machineId');
-      const employeeId = searchParams.get('employeeId');
-      const date = searchParams.get('date');
-      const shift = searchParams.get('shift');
+      const machineId = searchParams.get('machineId') || undefined;
+      const employeeId = searchParams.get('employeeId') || undefined;
+      const date = searchParams.get('date') || searchParams.get('from') || searchParams.get('fromDate') || undefined;
+      const shift = searchParams.get('shift') || searchParams.get('shiftName') || undefined;
 
-      const metrics = await getIotEmployeeMetrics({
-        machineId: machineId || undefined,
-        employeeId: employeeId || undefined,
-        date: date || undefined,
-        shiftName: shift || undefined
+      const p = new URLSearchParams();
+      if (machineId) p.set('machineId', machineId);
+      if (employeeId) p.set('employeeId', employeeId);
+      if (date) p.set('date', date);
+      if (shift) p.set('shiftName', shift);
+      p.set('_t', String(Date.now()));
+
+      try {
+        const res = await fetch(`${REMOTE_IOT_API}/dashboard/machine?${p.toString()}`, {
+          headers: { 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const roundGaps = json.data?.roundGaps || json.roundGaps || {};
+          return NextResponse.json({
+            success: true,
+            data: {
+              rounds: Array.isArray(roundGaps.rounds) ? roundGaps.rounds : [],
+              deviceGaps: Array.isArray(roundGaps.deviceGaps) ? roundGaps.deviceGaps : [],
+              employees: Array.isArray(roundGaps.employees) ? roundGaps.employees : [],
+              totalCompletedRounds: Number(roundGaps.completedRounds ?? roundGaps.totalCompletedRounds ?? 0),
+              totalGapMinutes: Number(roundGaps.totalGapMinutes ?? 0),
+              averageGapMinutes: Number(roundGaps.averageGapMinutes ?? 0)
+            }
+          });
+        }
+      } catch (_) {}
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          rounds: [],
+          deviceGaps: [],
+          employees: [],
+          totalCompletedRounds: 0,
+          totalGapMinutes: 0,
+          averageGapMinutes: 0
+        }
       });
-      return NextResponse.json({ success: true, data: metrics });
     }
 
     // 10c. Shift Summaries / Telemetry
@@ -212,42 +245,52 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       }
     }
 
-    // 11. Reports (5 Types)
-    if (path.startsWith('reports') || path.startsWith('report')) {
+    // 11. Reports (5 Database-backed Operational Reports from REMOTE_IOT_API)
+    if (path === 'reports' || path === 'report' || path === 'master/reports') {
       const reportType = searchParams.get('reportType') || 'rpm_efficiency';
-      const fromDate = searchParams.get('from') || searchParams.get('fromDate') || undefined;
-      const toDate = searchParams.get('to') || searchParams.get('toDate') || undefined;
-      const shift = searchParams.get('shift') || searchParams.get('shiftId') || undefined;
-      const machineId = searchParams.get('machineId') || undefined;
+      const machineId = searchParams.get('machineId');
+      const employeeId = searchParams.get('employeeId');
+      const shiftId = searchParams.get('shiftId');
+      const from = searchParams.get('from') || searchParams.get('fromDate');
+      const to = searchParams.get('to') || searchParams.get('toDate');
 
-      const overview = await getIotOverview({ fromDate, toDate, shift });
-      let rows = overview.machines.map(m => ({
-        machineId: m.machineId,
-        count: m.count,
-        runStatus: m.runStatus,
-        currentRpm: m.spindleSpeedCurrent,
-        targetRpm: 16700,
-        efficiencyPercent: Math.round((m.shiftProduction / (m.shiftTargetProduction || 1)) * 100),
-        shiftProduction: m.shiftProduction,
-        shiftTarget: m.shiftTargetProduction,
-        wastePercent: m.shiftWaste
-      }));
+      const p = new URLSearchParams();
+      p.set('reportType', reportType);
+      if (machineId) p.set('machineId', machineId);
+      if (employeeId) p.set('employeeId', employeeId);
+      if (shiftId) p.set('shiftId', shiftId);
+      if (from) p.set('from', from);
+      if (to) p.set('to', to);
+      p.set('_t', String(Date.now()));
 
-      if (machineId) {
-        rows = rows.filter(m => m.machineId === machineId);
+      try {
+        const res = await fetch(`${REMOTE_IOT_API}/master/reports?${p.toString()}`, {
+          headers: { 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const json = await res.json();
+          return NextResponse.json(json, {
+            headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+          });
+        }
+      } catch (err: any) {
+        console.warn('Reports fetch from remote failed:', err?.message);
       }
+
+      const defaultTitles: Record<string, string> = {
+        rpm_efficiency: 'RPM & Machine Efficiency Report',
+        employee_productivity: 'Employee Productivity & Round Gap Report',
+        downtime_modes: 'Machine Downtime & Mode Analysis Report',
+        duty_coverage: 'Device & Employee Duty Coverage Report',
+        cleaning_maintenance: 'Machine Cleaning & Maintenance Schedule Report'
+      };
 
       return NextResponse.json({
         success: true,
         reportType,
-        title: 'Spinning & Machine Efficiency Report',
-        data: rows,
-        summary: {
-          totalMachines: rows.length,
-          averageEfficiency: Math.round(rows.reduce((s, r) => s + r.efficiencyPercent, 0) / rows.length),
-          averageRpm: Math.round(rows.reduce((s, r) => s + r.currentRpm, 0) / rows.length),
-          totalProduction: rows.reduce((s, r) => s + r.shiftProduction, 0).toFixed(1)
-        }
+        title: defaultTitles[reportType] || 'Operational Report',
+        data: []
       });
     }
 
