@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getIotDb } from '@/lib/mongodb';
 import {
   getIotOverview,
   getIotMachineDetail,
@@ -15,7 +16,9 @@ import {
   deleteIotShift,
   getIotMappings,
   saveIotMapping,
-  getIotEmployeeMetrics
+  getIotEmployeeMetrics,
+  fetchLiveRenderStream,
+  IOT_COLLECTIONS
 } from '@/lib/iot/iotDb';
 import {
   SAMPLE_OVERVIEW,
@@ -27,6 +30,8 @@ import {
   getSampleMachineDetail,
   getSampleSpinfoOverview
 } from '@/lib/iot/sampleIotData';
+
+const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
   const { slug } = await params;
@@ -137,6 +142,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
     // 10. Production Entries / Reports
     if (
+      path === 'production' ||
       path === 'production/report' ||
       path === 'production/entries' ||
       path === 'production-entry' ||
@@ -154,6 +160,56 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       if (employeeId) rows = rows.filter(r => r.employeeId === employeeId);
 
       return NextResponse.json({ success: true, data: rows });
+    }
+
+    // 10b. Round Performance Reports
+    if (path === 'reports/round-performance' || path === 'round-performance') {
+      const machineId = searchParams.get('machineId');
+      const employeeId = searchParams.get('employeeId');
+      const date = searchParams.get('date');
+      const shift = searchParams.get('shift');
+
+      const metrics = await getIotEmployeeMetrics({
+        machineId: machineId || undefined,
+        employeeId: employeeId || undefined,
+        date: date || undefined,
+        shiftName: shift || undefined
+      });
+      return NextResponse.json({ success: true, data: metrics });
+    }
+
+    // 10c. Shift Summaries / Telemetry
+    if (path === 'spinfo/shifts' || path === 'shifts/summary') {
+      const date = searchParams.get('date') || searchParams.get('shiftDate');
+      try {
+        const db = await getIotDb();
+        const filter: any = {};
+        if (date) filter.shiftDate = date;
+        const summaries = await db.collection(IOT_COLLECTIONS.COMMON).find(filter).sort({ createdAt: -1 }).limit(20).toArray();
+        return NextResponse.json({ success: true, data: summaries });
+      } catch {
+        return NextResponse.json({ success: true, data: [] });
+      }
+    }
+
+    // 10d. Raw Common Stream
+    if (path === 'common') {
+      const shift = searchParams.get('shift');
+      const shiftDate = searchParams.get('shiftDate');
+      const limit = parseInt(searchParams.get('limit') || '5', 10);
+      const shiftNum = shift ? parseInt(shift.replace(/\D/g, ''), 10) || undefined : undefined;
+      const doc = await fetchLiveRenderStream(limit, shiftNum, shiftDate);
+      if (doc) return NextResponse.json({ success: true, data: Array.isArray(doc) ? doc : [doc] });
+      try {
+        const db = await getIotDb();
+        const q: any = {};
+        if (shiftNum !== undefined) q.shift = shiftNum;
+        if (shiftDate) q.shiftDate = shiftDate;
+        const docs = await db.collection(IOT_COLLECTIONS.COMMON).find(q).sort({ createdAt: -1 }).limit(limit).toArray();
+        return NextResponse.json({ success: true, data: docs });
+      } catch {
+        return NextResponse.json({ success: true, data: [] });
+      }
     }
 
     // 11. Reports (5 Types)
@@ -186,6 +242,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       });
     }
 
+    // Fallback: Proxy to Render remote API if unhandled
+    try {
+      const remoteRes = await fetch(`${REMOTE_IOT_API}/${path}?${searchParams.toString()}`, {
+        headers: { 'X-Company-Slug': 'scm' },
+        cache: 'no-store'
+      });
+      if (remoteRes.ok) {
+        const json = await remoteRes.json();
+        return NextResponse.json(json);
+      }
+    } catch {}
+
     // Unknown route
     return NextResponse.json({ success: false, error: `Route not found: ${path}` }, { status: 404 });
   } catch (error: any) {
@@ -201,6 +269,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     const body = await req.json();
 
     if (
+      path === 'production' ||
       path === 'production/entries' ||
       path === 'production-entry' ||
       path === 'production-entries'
@@ -256,7 +325,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug
       return NextResponse.json({ success: true, data: saved });
     }
 
-    if (path.startsWith('production/entries') || path.startsWith('production-entry/')) {
+    if (
+      path === 'production' ||
+      path.startsWith('production/') ||
+      path.startsWith('production/entries') ||
+      path.startsWith('production-entry/')
+    ) {
       const saved = await saveIotProductionEntry(body);
       return NextResponse.json({ success: true, data: saved });
     }
@@ -283,6 +357,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ s
     }
 
     if (
+      path === 'production' ||
+      path.startsWith('production/') ||
       path.startsWith('production/entries') ||
       path.startsWith('production-entry') ||
       path.startsWith('production-entries')

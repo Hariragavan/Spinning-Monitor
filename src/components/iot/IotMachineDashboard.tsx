@@ -243,6 +243,11 @@ export const IotMachineDashboard: React.FC = () => {
               <span className="eyebrow-text">LIVE TELEMETRY STREAM</span>
               <span className="eyebrow-divider">/</span>
               <span className="eyebrow-sub">CONTROL CENTER</span>
+              {overview?.shift && (
+                <span className="ml-2.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-xs">
+                  Shift {overview.shift} · {overview.shiftDate}
+                </span>
+              )}
             </div>
             <h1 className="title">Machine Telemetry Intelligence</h1>
             <p className="subtitle">Real-time sensor telemetry, rotational speed curve diagnostics, operating mode allocation & shift audit</p>

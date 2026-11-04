@@ -41,9 +41,8 @@ export const IOT_COLLECTIONS = {
 
 const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
 
-// Memory cache for sub-second responses
-let cachedOverview: SpinfoOverviewResponse | null = null;
-let lastCacheTime = 0;
+// Memory cache for sub-second responses keyed by shift & date
+const overviewCache = new Map<string, { data: SpinfoOverviewResponse; timestamp: number }>();
 const CACHE_TTL_MS = 2500; // 2.5 seconds for live telemetry
 
 /**
@@ -257,9 +256,16 @@ export async function ensureIotSeeded(): Promise<void> {
  * Fetches live MAG SPinFO stream directly from https://iot-machine-backend.onrender.com/api/common
  * and saves into the local iot_machine database.
  */
-export async function fetchLiveRenderStream(limit: number = 5): Promise<any | null> {
+export async function fetchLiveRenderStream(limit: number = 5, shiftNum?: number, date?: string): Promise<any | null> {
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/common?limit=${limit}&sort=createdAt&order=desc`, {
+    let url = `${REMOTE_IOT_API}/common?limit=${limit}&sort=createdAt&order=desc`;
+    if (shiftNum !== undefined && shiftNum !== null) {
+      url += `&shift=${shiftNum}`;
+    }
+    if (date) {
+      url += `&shiftDate=${encodeURIComponent(date)}`;
+    }
+    const res = await fetch(url, {
       headers: { 'X-Company-Slug': 'scm' },
       cache: 'no-store'
     });
@@ -288,43 +294,84 @@ export async function fetchLiveRenderStream(limit: number = 5): Promise<any | nu
 // Live Overview & Telemetry (connected to Render API & iot_machine DB)
 // -------------------------------------------------------------
 export async function getIotOverview(filter?: any, forceRefresh: boolean = false): Promise<SpinfoOverviewResponse> {
+  // 1. Extract shift number from filter
+  let shiftNum: number | undefined;
+  if (filter?.shift !== undefined && filter?.shift !== null) {
+    if (typeof filter.shift === 'number') {
+      shiftNum = filter.shift;
+    } else if (typeof filter.shift === 'string') {
+      const trimmed = filter.shift.trim();
+      if (trimmed && trimmed !== 'All Shifts' && trimmed !== 'all') {
+        const match = trimmed.match(/\d+/);
+        if (match) shiftNum = parseInt(match[0], 10);
+      }
+    }
+  }
+
+  const targetDate = filter?.fromDate || filter?.toDate || filter?.shiftDate;
+  const cacheKey = `${shiftNum ?? 'all'}_${targetDate ?? 'any'}`;
   const now = Date.now();
-  if (!forceRefresh && cachedOverview && now - lastCacheTime < CACHE_TTL_MS) {
-    return cachedOverview;
+
+  const cached = overviewCache.get(cacheKey);
+  if (!forceRefresh && cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
   }
 
   await ensureIotSeeded();
 
-  // 1. Try pulling live telemetry from https://iot-machine-backend.onrender.com
-  const liveRemoteDoc = await fetchLiveRenderStream(3);
+  // 1. Try pulling live telemetry from https://iot-machine-backend.onrender.com with shift filter
+  const liveRemoteDoc = await fetchLiveRenderStream(3, shiftNum, targetDate);
   if (liveRemoteDoc) {
     const overview = transformCommonToOverview(liveRemoteDoc);
-    cachedOverview = overview;
-    lastCacheTime = now;
+    overviewCache.set(cacheKey, { data: overview, timestamp: now });
     return overview;
   }
 
-  // 2. Read from local MongoDB iot_machine.commondatas
+  // 2. Read from local MongoDB iot_machine.commondatas matching shift and date
   try {
     const db = await getIotDb();
-    const latestLocalDoc = await db.collection(IOT_COLLECTIONS.COMMON)
-      .find({})
+    const query: any = {};
+    if (shiftNum !== undefined) query.shift = shiftNum;
+    if (targetDate) query.shiftDate = targetDate;
+
+    let localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
+      .find(query)
       .sort({ createdAt: -1, _id: -1 })
       .limit(1)
       .toArray();
 
-    if (latestLocalDoc.length > 0) {
-      const overview = transformCommonToOverview(latestLocalDoc[0]);
-      cachedOverview = overview;
-      lastCacheTime = now;
+    // If query with shift and date returned nothing, try with just shift
+    if (localDocs.length === 0 && shiftNum !== undefined) {
+      localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
+        .find({ shift: shiftNum })
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(1)
+        .toArray();
+    }
+
+    // If still nothing, fallback to latest document
+    if (localDocs.length === 0) {
+      localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
+        .find({})
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(1)
+        .toArray();
+    }
+
+    if (localDocs.length > 0) {
+      const overview = transformCommonToOverview(localDocs[0]);
+      overviewCache.set(cacheKey, { data: overview, timestamp: now });
       return overview;
     }
   } catch (e) {}
 
   // 3. Fallback to sample data
-  cachedOverview = SAMPLE_OVERVIEW;
-  lastCacheTime = now;
-  return SAMPLE_OVERVIEW;
+  const sampleCopy: SpinfoOverviewResponse = JSON.parse(JSON.stringify(SAMPLE_OVERVIEW));
+  if (shiftNum !== undefined) {
+    sampleCopy.shift = shiftNum;
+  }
+  overviewCache.set(cacheKey, { data: sampleCopy, timestamp: now });
+  return sampleCopy;
 }
 
 // -------------------------------------------------------------
