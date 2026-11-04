@@ -13,7 +13,8 @@ import {
   ReportResponse,
   ProductionEntryInput,
   ProductionReportRow,
-  ProductionReportFilter
+  ProductionReportFilter,
+  MachineRoundPerformance
 } from '@/types/iot';
 import {
   SAMPLE_EMPLOYEES,
@@ -48,41 +49,24 @@ function setStored<T>(key: string, value: T): void {
   } catch {}
 }
 
-const DEFAULT_BACKEND_URL = '/api/iot';
-
-async function fetchWithFallback<T>(url: string, options?: RequestInit, fallback?: T): Promise<T> {
+async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: T): Promise<T> {
   try {
-    const res = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Company-Slug': 'scm',
-        ...(options?.headers || {})
-      }
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json && typeof json === 'object') {
-        if ('data' in json && json.data !== null && json.data !== undefined) {
-          return json.data as T;
-        }
-        if (json.data === null && fallback !== undefined) {
-          return fallback;
-        }
-        return json as T;
-      }
-    }
-  } catch {
-    // API not reachable, proceed to fallback
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    if (fallback !== undefined) return fallback;
+    throw err;
   }
-  if (fallback !== undefined) return fallback;
-  throw new Error(`API call failed to ${url}`);
 }
 
 export const iotApi = {
-  baseUrl: DEFAULT_BACKEND_URL,
+  baseUrl: '/api/iot',
 
-  // 1. Telemetry / SPinFO
+  // 1. Spinfo Overview & Machine Details
   async getSpinfoOverview(filter?: {
     fromDate?: string;
     toDate?: string;
@@ -95,50 +79,50 @@ export const iotApi = {
     if (filter?.shift) params.set('shift', filter.shift);
     if (filter?.operator) params.set('operator', filter.operator);
 
-    const fallback = getSampleSpinfoOverview(filter);
-    return fetchWithFallback<SpinfoOverviewResponse>(
+    const fallback: SpinfoOverviewResponse = getSampleSpinfoOverview();
+    const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
       `${this.baseUrl}/spinfo/overview?${params.toString()}`,
       { method: 'GET' },
-      fallback
+      { success: true, data: fallback }
     );
+    return res.data || fallback;
   },
 
-  async getSpinfoMachineDetail(machineId: string, filter?: {
-    fromDate?: string;
-    toDate?: string;
-    shift?: string;
-  }): Promise<SpinfoMachineDetailResponse> {
+  async getMachineDetail(
+    machineId: string,
+    filter?: {
+      fromDate?: string;
+      toDate?: string;
+      shift?: string;
+      operator?: string;
+    }
+  ): Promise<SpinfoMachineDetailResponse> {
     const params = new URLSearchParams();
     if (filter?.fromDate) params.set('fromDate', filter.fromDate);
     if (filter?.toDate) params.set('toDate', filter.toDate);
     if (filter?.shift) params.set('shift', filter.shift);
+    if (filter?.operator) params.set('operator', filter.operator);
 
-    const fallback = getSampleMachineDetail(machineId);
-    return fetchWithFallback<SpinfoMachineDetailResponse>(
-      `${this.baseUrl}/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
+    const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
+    const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
+      `${this.baseUrl}/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
       { method: 'GET' },
-      fallback
+      { success: true, data: fallback }
     );
+    return res.data || fallback;
   },
 
-  async getMachineDetail(machineId: string, filter?: {
-    fromDate?: string;
-    toDate?: string;
-    shift?: string;
-  }): Promise<SpinfoMachineDetailResponse> {
-    return this.getSpinfoMachineDetail(machineId, filter);
-  },
-
-  async syncSpinfo(): Promise<{ success: boolean; message: string; overview: SpinfoOverviewResponse }> {
-    const overview = getSampleSpinfoOverview();
-    return fetchWithFallback(
-      `${this.baseUrl}/spinfo/sync?limit=100`,
-      { method: 'GET' },
-      { success: true, message: 'Telemetry synchronized', overview }
+  async syncSpinfoData(): Promise<SpinfoOverviewResponse> {
+    const fallback = getSampleSpinfoOverview();
+    const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
+      `${this.baseUrl}/spinfo/sync`,
+      { method: 'POST' },
+      { success: true, data: fallback }
     );
+    return res.data || fallback;
   },
 
-  // 2. Employees & Machine Operators
+  // 2. Employees & Duty Tracking
   async getEmployees(): Promise<Employee[]> {
     const stored = getStored<Employee[]>('employees', SAMPLE_EMPLOYEES);
     const res = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
@@ -154,12 +138,14 @@ export const iotApi = {
     machineId?: string;
     date?: string;
     shiftName?: string;
+    shiftId?: string;
   }): Promise<EmployeeMetric[]> {
     const params = new URLSearchParams();
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
     if (filter?.machineId) params.set('machineId', filter.machineId);
     if (filter?.date) params.set('date', filter.date);
     if (filter?.shiftName) params.set('shiftName', filter.shiftName);
+    if (filter?.shiftId) params.set('shiftId', filter.shiftId);
 
     let list = getStored<EmployeeMetric[]>('employee_metrics', SAMPLE_EMPLOYEE_METRICS);
     if (filter?.employeeId) {
@@ -237,6 +223,17 @@ export const iotApi = {
     return true;
   },
 
+  async saveMachineConfig(machineId: string, config: any): Promise<any> {
+    try {
+      await fetch(`${this.baseUrl}/master/machines/${encodeURIComponent(machineId)}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+    } catch {}
+    return config;
+  },
+
   // 4. Devices
   async getDevices(): Promise<DeviceHealth[]> {
     const stored = getStored<DeviceHealth[]>('devices', SAMPLE_DEVICES);
@@ -274,6 +271,10 @@ export const iotApi = {
       });
     } catch {}
     return true;
+  },
+
+  async saveEmployeeDeviceMapping(payload: { employeeId: string; deviceIds: string[]; employeeName?: string }): Promise<boolean> {
+    return this.assignDevicesToEmployee(payload.employeeId, payload.deviceIds, payload.employeeName);
   },
 
   // 5. Shifts
@@ -314,6 +315,14 @@ export const iotApi = {
       }
     } catch {}
     return updated;
+  },
+
+  async createShift(shift: Omit<Shift, 'shiftId'>): Promise<Shift> {
+    return this.saveShift(shift);
+  },
+
+  async updateShift(shiftId: string, shift: Omit<Shift, 'shiftId'>): Promise<Shift> {
+    return this.saveShift(shift, shiftId);
   },
 
   async deleteShift(shiftId: string): Promise<boolean> {
@@ -366,6 +375,24 @@ export const iotApi = {
     return updated;
   },
 
+  async createMaintenance(entry: Omit<MaintenanceEntry, 'maintenanceId'>): Promise<MaintenanceEntry> {
+    return this.saveMaintenance(entry);
+  },
+
+  async updateMaintenance(maintenanceId: string, entry: Omit<MaintenanceEntry, 'maintenanceId'>): Promise<MaintenanceEntry> {
+    return this.saveMaintenance(entry, maintenanceId);
+  },
+
+  async deleteMaintenance(maintenanceId: string): Promise<boolean> {
+    const list = await this.getMaintenance();
+    const next = list.filter(m => m.maintenanceId !== maintenanceId);
+    setStored('maintenance', next);
+    try {
+      await fetch(`${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`, { method: 'DELETE' });
+    } catch {}
+    return true;
+  },
+
   // 7. Production Entries
   async getProductionReport(filter?: ProductionReportFilter): Promise<ProductionReportRow[]> {
     const stored = getStored<ProductionReportRow[]>('production_entries', SAMPLE_PRODUCTION_ENTRIES);
@@ -382,7 +409,7 @@ export const iotApi = {
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
 
     const res = await fetchWithFallback<{ success: boolean; data: ProductionReportRow[] }>(
-      `${this.baseUrl}/production/report?${params.toString()}`,
+      `${this.baseUrl}/production?${params.toString()}`,
       { method: 'GET' },
       { success: true, data: list }
     );
@@ -390,43 +417,40 @@ export const iotApi = {
   },
 
   async createProductionEntry(entry: ProductionEntryInput): Promise<ProductionReportRow> {
-    const stored = getStored<ProductionReportRow[]>('production_entries', SAMPLE_PRODUCTION_ENTRIES);
-    const newRow: ProductionReportRow = {
+    const list = await this.getProductionReport();
+    const newEntry: ProductionReportRow = {
       entryId: `pe_${Date.now()}`,
       date: entry.date,
       enteredAt: new Date().toISOString(),
-      shiftId: entry.shiftId,
-      shiftName: entry.shiftId === 'shift_1' ? 'Shift 1' : entry.shiftId === 'shift_2' ? 'Shift 2' : 'Shift 3',
-      machineId: entry.machineId,
-      machineName: entry.machineId,
-      employeeId: entry.employeeId,
-      employeeName: entry.employeeName || entry.employeeId,
+      shiftId: entry.shiftId || '',
+      machineId: entry.machineId || '',
+      employeeId: entry.employeeId || '',
+      employeeName: entry.employeeName || 'Operator',
       counts: entry.counts,
       speed: entry.speed,
       productionOutput: entry.productionOutput || 0,
-      targetOutput: entry.targetOutput || 98.4,
-      wastePercent: entry.wastePercent || 1.4,
-      runtimeMinutes: entry.runtimeMinutes || 460,
+      wastePercent: entry.wastePercent,
+      runtimeMinutes: entry.runtimeMinutes,
+      targetOutput: entry.targetOutput,
       notes: entry.notes
     };
-    const next = [newRow, ...stored];
-    setStored('production_entries', next);
+    setStored('production_entries', [newEntry, ...list]);
     try {
-      await fetch(`${this.baseUrl}/production/entries`, {
+      await fetch(`${this.baseUrl}/production`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(entry)
       });
     } catch {}
-    return newRow;
+    return newEntry;
   },
 
   async updateProductionEntry(entryId: string, entry: Partial<ProductionEntryInput>): Promise<boolean> {
-    const stored = getStored<ProductionReportRow[]>('production_entries', SAMPLE_PRODUCTION_ENTRIES);
-    const next = stored.map(r => r.entryId === entryId ? { ...r, ...entry, productionOutput: entry.productionOutput ?? r.productionOutput } : r);
+    const list = await this.getProductionReport();
+    const next = list.map(e => e.entryId === entryId ? { ...e, ...entry } : e);
     setStored('production_entries', next);
     try {
-      await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, {
+      await fetch(`${this.baseUrl}/production/${encodeURIComponent(entryId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(entry)
@@ -436,42 +460,93 @@ export const iotApi = {
   },
 
   async deleteProductionEntry(entryId: string): Promise<boolean> {
-    const stored = getStored<ProductionReportRow[]>('production_entries', SAMPLE_PRODUCTION_ENTRIES);
-    const next = stored.filter(r => r.entryId !== entryId);
+    const list = await this.getProductionReport();
+    const next = list.filter(e => e.entryId !== entryId);
     setStored('production_entries', next);
     try {
-      await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+      await fetch(`${this.baseUrl}/production/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
     } catch {}
     return true;
   },
 
-  // 8. Reports (5 types)
+  // 8. Round Performance
+  async getMachineRoundPerformance(filter?: {
+    machineId?: string;
+    employeeId?: string;
+    fromDate?: string;
+    toDate?: string;
+  }): Promise<MachineRoundPerformance> {
+    const params = new URLSearchParams();
+    if (filter?.machineId) params.set('machineId', filter.machineId);
+    if (filter?.employeeId) params.set('employeeId', filter.employeeId);
+    if (filter?.fromDate) params.set('fromDate', filter.fromDate);
+    if (filter?.toDate) params.set('toDate', filter.toDate);
+
+    const fallback: MachineRoundPerformance = {
+      rounds: [],
+      deviceGaps: [],
+      employees: [],
+      totalCompletedRounds: 0,
+      totalGapMinutes: 0,
+      averageGapMinutes: 0
+    };
+
+    const res = await fetchWithFallback<{ success: boolean; data: MachineRoundPerformance }>(
+      `${this.baseUrl}/reports/round-performance?${params.toString()}`,
+      { method: 'GET' },
+      { success: true, data: fallback }
+    );
+    return res.data || fallback;
+  },
+
+  // 9. Analytical Reports
   async getReports(filter: ReportFilter): Promise<ReportResponse> {
+    const params = new URLSearchParams();
+    params.set('reportType', filter.reportType);
+    if (filter.machineId) params.set('machineId', filter.machineId);
+    if (filter.employeeId) params.set('employeeId', filter.employeeId);
+    if (filter.shiftId) params.set('shiftId', filter.shiftId);
+    if (filter.from) params.set('from', filter.from);
+    if (filter.to) params.set('to', filter.to);
+
+    try {
+      const res = await fetch(`${this.baseUrl}/reports?${params.toString()}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+
+    // Fallback sample reports
     const overview = getSampleSpinfoOverview();
 
     switch (filter.reportType) {
       case 'rpm_efficiency': {
         const rows = overview.machines.map(m => ({
+          deviceId: 'IOT_D1',
           machineId: m.machineId,
           count: m.count,
           runStatus: m.runStatus,
-          currentRpm: m.spindleSpeedCurrent,
-          targetRpm: 16700,
+          avgRPM: m.spindleSpeedCurrent,
+          minRPM: 16000,
+          maxRPM: 18000,
+          violationsCount: 0,
           efficiencyPercent: Math.round((m.shiftProduction / (m.shiftTargetProduction || 1)) * 100),
-          shiftProduction: m.shiftProduction,
-          shiftTarget: m.shiftTargetProduction,
-          wastePercent: m.shiftWaste
+          actualProduction: m.shiftProduction,
+          expectedProduction: m.shiftTargetProduction,
+          actualRuntimeMinutes: 470,
+          expectedRuntimeMinutes: 480,
+          lastRPM: m.spindleSpeedCurrent
         }));
         return {
           success: true,
           reportType: 'rpm_efficiency',
-          title: 'Spinning & Machine Efficiency Report',
+          title: 'Spinning & Machine Efficiency',
           data: rows,
           summary: {
             totalMachines: rows.length,
             averageEfficiency: Math.round(rows.reduce((s, r) => s + r.efficiencyPercent, 0) / rows.length),
-            averageRpm: Math.round(rows.reduce((s, r) => s + r.currentRpm, 0) / rows.length),
-            totalProduction: rows.reduce((s, r) => s + r.shiftProduction, 0).toFixed(1)
+            averageRpm: Math.round(rows.reduce((s, r) => s + r.avgRPM, 0) / rows.length),
+            totalProduction: rows.reduce((s, r) => s + r.actualProduction, 0).toFixed(1)
           }
         };
       }
@@ -479,43 +554,41 @@ export const iotApi = {
         const rows = SAMPLE_EMPLOYEE_METRICS.map(emp => ({
           employeeId: emp.employeeId,
           employeeName: emp.employeeName,
-          assignedMachine: emp.machineId,
-          roundsCompleted: emp.roundsCompleted,
-          expectedRounds: emp.expectedRounds || 16,
-          completionPercent: Math.round((emp.roundsCompleted / (emp.expectedRounds || 16)) * 100),
-          averageGapMinutes: emp.avgGapMinutes,
-          status: emp.activeStatus
+          machinesOperated: emp.machineId,
+          totalCardTaps: emp.roundsCompleted * 4,
+          averageTapGapMinutes: emp.avgGapMinutes,
+          idlePercentage: Math.max(0, 100 - (emp.performancePercent || 75)),
+          idleMinutes: Math.round((100 - (emp.performancePercent || 75)) * 4.8),
+          performanceReductionPercent: Math.max(0, 100 - (emp.performancePercent || 75)),
+          avgGapMinutes: emp.avgGapMinutes
         }));
         return {
           success: true,
           reportType: 'employee_productivity',
-          title: 'Employee Productivity & Patrol Gaps Report',
+          title: 'Employee Productivity & Round Gap Report',
           data: rows,
           summary: {
             totalOperators: rows.length,
-            averageRounds: (rows.reduce((s, r) => s + r.roundsCompleted, 0) / rows.length).toFixed(1),
-            averageGapMinutes: (rows.reduce((s, r) => s + r.averageGapMinutes, 0) / rows.length).toFixed(1)
+            averageRounds: (rows.reduce((s, r) => s + r.totalCardTaps, 0) / rows.length).toFixed(1),
+            averageGapMinutes: (rows.reduce((s, r) => s + r.averageTapGapMinutes, 0) / rows.length).toFixed(1)
           }
         };
       }
       case 'downtime_modes': {
-        const rows = overview.machines.map(m => ({
-          machineId: m.machineId,
-          runMinutes: m.runStatus === 'STOP' ? 240 : 445,
-          doffMinutes: 20,
-          mendingMinutes: m.totalEndBreakCount * 3,
-          stoppageMinutes: m.runStatus === 'STOP' ? 210 : 15,
-          totalEndBreaks: m.totalEndBreakCount,
-          status: m.runStatus
-        }));
+        const rows = [
+          { mode: 'Normal Running', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
+          { mode: 'Doffing Stop', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
+          { mode: 'Creeling / Maintenance', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' },
+          { mode: 'End Breakage Interruption', totalDowntimeMinutes: 0, eventCount: 0, machineName: 'All machines', deviceId: 'All devices' }
+        ];
         return {
           success: true,
           reportType: 'downtime_modes',
-          title: 'Machine Downtime & Operating Modes Report',
+          title: 'Machine Downtime & Modes',
           data: rows,
           summary: {
-            totalDowntimeHours: (rows.reduce((s, r) => s + r.stoppageMinutes, 0) / 60).toFixed(1),
-            totalEndBreaks: rows.reduce((s, r) => s + r.totalEndBreaks, 0)
+            totalDowntimeHours: 0,
+            totalEndBreaks: 0
           }
         };
       }
@@ -524,45 +597,49 @@ export const iotApi = {
         const rows = devices.map(d => ({
           deviceId: d.deviceId,
           machineId: d.machineId,
-          position: d.position || 'Station',
-          status: d.status,
-          batteryLevel: `${d.batteryLevel || 95}%`,
-          signalStrength: `${d.signalStrength || -60} dBm`,
-          lastSeen: d.lastSeen
+          position: d.position || '1',
+          side: d.side || 'L',
+          minRPM: d.minRPM || 16000,
+          maxRPM: d.maxRPM || 18000,
+          assignedEmployeeId: d.assignedEmployeeId || '562288134',
+          assignedEmployeeName: d.assignedEmployeeName || 'Mangal(33786)',
+          lastActiveEmployeeId: d.assignedEmployeeId || '562288134',
+          lastActiveEmployeeName: d.assignedEmployeeName || 'Mangal(33786)',
+          lastSeenAt: d.lastSeen
         }));
         return {
           success: true,
           reportType: 'duty_coverage',
-          title: 'Device & Tap Station Duty Coverage Report',
+          title: 'Device & Employee Duty Coverage',
           data: rows,
           summary: {
             totalDevices: rows.length,
-            healthyDevices: rows.filter(r => r.status === 'HEALTHY').length,
-            coveragePercent: 98
+            healthyDevices: rows.filter(r => r.assignedEmployeeId).length,
+            coveragePercent: 100
           }
         };
       }
       case 'cleaning_maintenance': {
         const maintenance = await this.getMaintenance();
         const rows = maintenance.map(m => ({
-          maintenanceId: m.maintenanceId,
           machineId: m.machineId,
-          type: m.type.toUpperCase(),
-          title: m.title || 'Routine Maintenance',
-          scheduledDate: m.scheduledDate,
-          assignedPerson: m.assignedPerson,
-          status: m.status.toUpperCase(),
-          completionDate: m.completionDate || '-'
+          machineName: `Spinning Frame ${m.machineId}`,
+          millId: 'SCM-1',
+          cleaningIntervalDays: 7,
+          lastCleaningAt: '2026-11-01',
+          nextCleaningAt: '2026-11-08',
+          lastMaintenanceAt: m.scheduledDate,
+          status: m.status === 'completed' ? 'COMPLIANT' : 'CLEANING OVERDUE'
         }));
         return {
           success: true,
           reportType: 'cleaning_maintenance',
-          title: 'Cleaning & Maintenance Schedule Report',
+          title: 'Cleaning & Maintenance Schedule',
           data: rows,
           summary: {
             totalScheduled: rows.length,
-            completed: rows.filter(r => r.status === 'COMPLETED').length,
-            pending: rows.filter(r => r.status === 'PLANNED').length
+            completed: rows.filter(r => r.status === 'COMPLIANT').length,
+            pending: rows.filter(r => r.status !== 'COMPLIANT').length
           }
         };
       }

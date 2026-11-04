@@ -102,9 +102,15 @@ export interface DeviceHealth {
   rpm?: number;
   minRpm?: number;
   maxRpm?: number;
+  minRPM?: number;
+  maxRPM?: number;
+  expectedRPM?: number;
   batteryLevel?: number;
   signalStrength?: number;
   position?: string;
+  side?: string;
+  assignedEmployeeId?: string;
+  assignedEmployeeName?: string;
 }
 
 export interface EmployeeTapDetail {
@@ -113,6 +119,7 @@ export interface EmployeeTapDetail {
   cardTap?: string;
   gapMinutes?: number;
   interval?: number;
+  tapNumber?: number;
 }
 
 export interface EmployeeHourlyMetric {
@@ -128,9 +135,12 @@ export interface EmployeeMetric {
   machineId: string;
   machineName?: string;
   roundsCompleted: number;
+  rounds?: number;
   totalRounds?: number;
   expectedRounds?: number;
   avgGapMinutes: number;
+  performancePercent?: number;
+  idleMinutes?: number;
   lastTapTime?: string | null;
   activeStatus?: 'ACTIVE' | 'IDLE' | 'ABSENT';
   taps?: EmployeeTapDetail[];
@@ -207,9 +217,9 @@ export interface ReportResponse {
 
 export interface ProductionEntryInput {
   date: string;
-  shiftId: string;
-  machineId: string;
-  employeeId: string;
+  shiftId?: string;
+  machineId?: string;
+  employeeId?: string;
   employeeName?: string;
   counts?: number | null;
   speed?: number | null;
@@ -239,6 +249,9 @@ export interface ProductionReportRow {
   runtimeMinutes?: number;
   targetOutput?: number;
   notes?: string;
+  tapCount?: number;
+  gapMinutes?: number;
+  roundsCompleted?: number;
 }
 
 export interface ProductionReportFilter {
@@ -504,4 +517,3 @@ export interface Company {
   active: boolean;
   description?: string;
 }
-

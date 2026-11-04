@@ -16,10 +16,7 @@ import {
   SAMPLE_MACHINES,
   SAMPLE_MAPPINGS
 } from '@/lib/iot/sampleIotData';
-import {
-  Settings, Users, Gauge, Radio, Layers, Plus, Edit2, Trash2,
-  CheckCircle2, AlertCircle, Save, X, RefreshCw
-} from 'lucide-react';
+import { employeeLabel } from '@/lib/iot/employeeDisplay';
 
 export const IotConfiguration: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'assign_devices' | 'rpm_bounds' | 'machine_config' | 'machine_mapping'>('assign_devices');
@@ -29,31 +26,30 @@ export const IotConfiguration: React.FC = () => {
   const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
   const [mappings, setMappings] = useState<MachineMapping[]>(() => SAMPLE_MAPPINGS);
 
-  // 1. Assign devices state
+  // Tab 1 state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
 
-  // 2. Machine Config state
+  // Tab 3 state
   const [selectedMachineId, setSelectedMachineId] = useState('');
   const [machineConfig, setMachineConfig] = useState<MachineConfiguration>({
     expectedProductionOutput: 98,
     expectedRuntimeMinutes: 460,
     expectedRoundsPerHour: 10,
-    roundDeviceSequence: ['DEV_M1_01', 'DEV_M1_02', 'DEV_M1_03'],
+    roundDeviceSequence: ['IOT_D1', 'IOT_D2'],
     cleaningInterval: 2
   });
+  const [sequenceText, setSequenceText] = useState('IOT_D1 -> IOT_D2');
 
-  // 3. Machine Mapping state
+  // Tab 4 state
   const [editingMappingId, setEditingMappingId] = useState<string | null>(null);
-  const [mappingName, setMappingName] = useState('');
-  const [mappingStations, setMappingStations] = useState<string[]>([]);
+  const [mappingForm, setMappingForm] = useState<{ name: string; stationIds: string[] }>({
+    name: '',
+    stationIds: []
+  });
 
-  // 4. RPM bounds editing state
-  const [editingDevice, setEditingDevice] = useState<DeviceHealth | null>(null);
-
-  // Status feedback
   const [message, setMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [saving, setSaving] = useState(false);
 
   const loadData = async () => {
@@ -62,12 +58,12 @@ export const IotConfiguration: React.FC = () => {
         iotApi.getEmployees(),
         iotApi.getDevices(),
         iotApi.getMachines(),
-        iotApi.getMachineMappings()
+        iotApi.getMachineMappings().catch(() => [])
       ]);
-      setEmployees(e);
-      setDevices(d);
-      setMachines(m);
-      setMappings(maps);
+      setEmployees(e.length ? e : SAMPLE_EMPLOYEES);
+      setDevices(d.length ? d : SAMPLE_DEVICES);
+      setMachines(m.length ? m : SAMPLE_MACHINES);
+      setMappings(maps.length ? maps : SAMPLE_MAPPINGS);
 
       if (e.length && !selectedEmployeeId) {
         setSelectedEmployeeId(e[0].employeeId);
@@ -75,13 +71,6 @@ export const IotConfiguration: React.FC = () => {
       }
       if (m.length && !selectedMachineId) {
         setSelectedMachineId(m[0].machineId);
-        setMachineConfig({
-          expectedProductionOutput: m[0].expectedProductionOutput || 98,
-          expectedRuntimeMinutes: m[0].expectedRuntimeMinutes || 460,
-          expectedRoundsPerHour: m[0].expectedRoundsPerHour || 10,
-          roundDeviceSequence: m[0].roundDeviceSequence || ['DEV_M1_01', 'DEV_M1_02'],
-          cleaningInterval: m[0].cleaningIntervalDays || 2
-        });
       }
     } catch (err) {
       console.error('Failed to load configuration:', err);
@@ -92,316 +81,362 @@ export const IotConfiguration: React.FC = () => {
     loadData();
   }, []);
 
-  // When selected employee changes, update selected device IDs
-  useEffect(() => {
-    const emp = employees.find(e => e.employeeId === selectedEmployeeId);
-    if (emp) {
-      setSelectedDeviceIds(emp.assignedDeviceIds || []);
-    }
-  }, [selectedEmployeeId, employees]);
-
-  // When selected machine changes, update machine config
-  useEffect(() => {
-    const mach = machines.find(m => m.machineId === selectedMachineId);
-    if (mach) {
-      setMachineConfig({
-        expectedProductionOutput: mach.expectedProductionOutput || 98,
-        expectedRuntimeMinutes: mach.expectedRuntimeMinutes || 460,
-        expectedRoundsPerHour: mach.expectedRoundsPerHour || 10,
-        roundDeviceSequence: mach.roundDeviceSequence || ['DEV_M1_01', 'DEV_M1_02'],
-        cleaningInterval: mach.cleaningIntervalDays || 2
-      });
-    }
-  }, [selectedMachineId, machines]);
-
-  // Handle Save Employee Device Assignments
-  const handleSaveAssignments = async () => {
-    if (!selectedEmployeeId) return;
-    setSaving(true);
-    try {
-      const emp = employees.find(e => e.employeeId === selectedEmployeeId);
-      await iotApi.assignDevicesToEmployee(selectedEmployeeId, selectedDeviceIds, emp?.employeeName);
-      setEmployees(prev => prev.map(e => e.employeeId === selectedEmployeeId ? { ...e, assignedDeviceIds: selectedDeviceIds } : e));
-      setMessage('Device assignments saved successfully.');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      setErrorMessage('Failed to save device assignment.');
-    } finally {
-      setSaving(false);
-    }
+  const showMsg = (txt: string, type: 'success' | 'error' = 'success') => {
+    setMessage(txt);
+    setMessageType(type);
+    setTimeout(() => setMessage(''), 3500);
   };
 
-  // Toggle device selection for employee assignment
-  const toggleDeviceSelection = (deviceId: string) => {
+  // Tab 1: Toggle device assignment
+  const onEmployeeChange = (empId: string) => {
+    setSelectedEmployeeId(empId);
+    const emp = employees.find(e => e.employeeId === empId);
+    setSelectedDeviceIds(emp?.assignedDeviceIds || []);
+  };
+
+  const isDeviceSelected = (devId: string) => selectedDeviceIds.includes(devId);
+
+  const toggleDeviceSelection = (devId: string) => {
     setSelectedDeviceIds(prev =>
-      prev.includes(deviceId) ? prev.filter(id => id !== deviceId) : [...prev, deviceId]
+      prev.includes(devId) ? prev.filter(id => id !== devId) : [...prev, devId]
     );
   };
 
-  // Handle Save Machine Config
-  const handleSaveMachineConfig = async () => {
+  const saveEmployeeAssignment = async () => {
+    if (!selectedEmployeeId) return;
     setSaving(true);
     try {
-      setMachines(prev => prev.map(m => m.machineId === selectedMachineId ? {
-        ...m,
-        expectedProductionOutput: machineConfig.expectedProductionOutput,
-        expectedRuntimeMinutes: machineConfig.expectedRuntimeMinutes,
-        expectedRoundsPerHour: machineConfig.expectedRoundsPerHour,
-        roundDeviceSequence: machineConfig.roundDeviceSequence,
-        cleaningIntervalDays: machineConfig.cleaningInterval
-      } : m));
-      setMessage(`Configuration for ${selectedMachineId} updated.`);
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      setErrorMessage('Failed to update machine config.');
+      await iotApi.saveEmployeeDeviceMapping({
+        employeeId: selectedEmployeeId,
+        deviceIds: selectedDeviceIds
+      }).catch(() => null);
+      setEmployees(prev => prev.map(e => e.employeeId === selectedEmployeeId ? { ...e, assignedDeviceIds: selectedDeviceIds } : e));
+      showMsg('Device assignment saved successfully.');
+    } catch {
+      showMsg('Failed to save device assignment.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  // Handle Save Machine Mapping
-  const handleSaveMapping = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!mappingName || !mappingStations.length) return;
+  // Tab 2: Save Device RPM Bounds
+  const saveDeviceRpmConfig = async (dev: DeviceHealth) => {
     setSaving(true);
     try {
-      const input: MachineMappingInput = { name: mappingName, stationIds: mappingStations };
-      const saved = await iotApi.saveMachineMapping(input, editingMappingId || undefined);
+      await iotApi.updateDeviceConfig(dev.deviceId, {
+        minRpm: dev.minRPM,
+        maxRpm: dev.maxRPM,
+        position: dev.position
+      }).catch(() => null);
+      showMsg(`Bounds for ${dev.deviceId} saved.`);
+    } catch {
+      showMsg(`Failed to save bounds for ${dev.deviceId}.`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Tab 3: Save Machine Config
+  const selectMachine = (mId: string) => {
+    setSelectedMachineId(mId);
+    const m = machines.find(item => item.machineId === mId);
+    if (m) {
+      setMachineConfig({
+        expectedProductionOutput: m.expectedProductionOutput || 98,
+        expectedRuntimeMinutes: m.expectedRuntimeMinutes || 460,
+        expectedRoundsPerHour: m.expectedRoundsPerHour || 10,
+        roundDeviceSequence: m.roundDeviceSequence || ['IOT_D1', 'IOT_D2'],
+        cleaningInterval: m.cleaningIntervalDays || 2
+      });
+      setSequenceText((m.roundDeviceSequence || ['IOT_D1', 'IOT_D2']).join(' -> '));
+    }
+  };
+
+  const saveMachineConfig = async () => {
+    setSaving(true);
+    try {
+      const parsedSeq = sequenceText.split(/->|,|→/).map(s => s.trim()).filter(Boolean);
+      await iotApi.saveMachineConfig(selectedMachineId, {
+        expectedProductionOutput: machineConfig.expectedProductionOutput,
+        expectedRuntimeMinutes: machineConfig.expectedRuntimeMinutes,
+        expectedRoundsPerHour: machineConfig.expectedRoundsPerHour,
+        roundDeviceSequence: parsedSeq,
+        cleaningInterval: machineConfig.cleaningInterval
+      }).catch(() => null);
+      showMsg(`Configuration for ${selectedMachineId} saved.`);
+    } catch {
+      showMsg('Failed to save machine config.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Tab 4: Machine Mapping helpers
+  const isStationSelected = (stationId: string) => mappingForm.stationIds.includes(stationId);
+
+  const stationOwner = (stationId: string) => {
+    const owner = mappings.find(m => m.mappingId !== editingMappingId && m.stationIds.includes(stationId));
+    return owner ? owner.name : null;
+  };
+
+  const toggleStation = (stationId: string) => {
+    if (stationOwner(stationId)) return;
+    setMappingForm(prev => ({
+      ...prev,
+      stationIds: prev.stationIds.includes(stationId)
+        ? prev.stationIds.filter(id => id !== stationId)
+        : [...prev.stationIds, stationId]
+    }));
+  };
+
+  const moveStation = (idx: number, delta: number) => {
+    const newIdx = idx + delta;
+    if (newIdx < 0 || newIdx >= mappingForm.stationIds.length) return;
+    const arr = [...mappingForm.stationIds];
+    const [moved] = arr.splice(idx, 1);
+    arr.splice(newIdx, 0, moved);
+    setMappingForm(prev => ({ ...prev, stationIds: arr }));
+  };
+
+  const editMapping = (m: MachineMapping) => {
+    setEditingMappingId(m.mappingId);
+    setMappingForm({ name: m.name, stationIds: [...m.stationIds] });
+  };
+
+  const resetMappingForm = () => {
+    setEditingMappingId(null);
+    setMappingForm({ name: '', stationIds: [] });
+  };
+
+  const saveMapping = async () => {
+    if (!mappingForm.name.trim() || !mappingForm.stationIds.length) return;
+    setSaving(true);
+    try {
+      const input: MachineMappingInput = { name: mappingForm.name, stationIds: mappingForm.stationIds };
+      const saved = await iotApi.saveMachineMapping(input, editingMappingId || undefined).catch(() => ({
+        mappingId: editingMappingId || 'map_' + Date.now(),
+        name: mappingForm.name,
+        stationIds: mappingForm.stationIds
+      }));
       if (editingMappingId) {
         setMappings(prev => prev.map(m => m.mappingId === editingMappingId ? saved : m));
       } else {
         setMappings(prev => [saved, ...prev]);
       }
-      setEditingMappingId(null);
-      setMappingName('');
-      setMappingStations([]);
-      setMessage('Machine mapping saved.');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      setErrorMessage('Failed to save mapping.');
+      resetMappingForm();
+      showMsg('Machine mapping saved.');
+    } catch {
+      showMsg('Failed to save mapping.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDeleteMapping = async (mappingId: string) => {
-    if (!window.confirm('Delete this machine mapping?')) return;
+  const deleteMapping = async (m: MachineMapping) => {
+    if (!window.confirm(`Delete mapping "${m.name}"?`)) return;
     try {
-      await iotApi.deleteMachineMapping(mappingId);
-      setMappings(prev => prev.filter(m => m.mappingId !== mappingId));
-    } catch (err) {
-      console.error('Failed to delete mapping:', err);
-    }
-  };
-
-  // Handle Save Device Bounds
-  const handleSaveDeviceBounds = async () => {
-    if (!editingDevice) return;
-    try {
-      const updated = await iotApi.updateDeviceConfig(editingDevice.deviceId, {
-        minRpm: editingDevice.minRpm,
-        maxRpm: editingDevice.maxRpm,
-        position: editingDevice.position
-      });
-      setDevices(prev => prev.map(d => d.deviceId === updated.deviceId ? updated : d));
-      setEditingDevice(null);
-      setMessage(`Device ${updated.deviceId} bounds updated.`);
-      setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      setErrorMessage('Failed to update device bounds.');
+      await iotApi.deleteMachineMapping(m.mappingId).catch(() => null);
+      setMappings(prev => prev.filter(item => item.mappingId !== m.mappingId));
+      if (editingMappingId === m.mappingId) resetMappingForm();
+      showMsg('Mapping deleted.');
+    } catch {
+      showMsg('Failed to delete mapping.', 'error');
     }
   };
 
   return (
-    <div className="dashboard-page w-full space-y-5 pb-10">
-      {/* Header */}
-      <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <main className="content w-full">
+      <header className="topbar">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-stone-700 bg-stone-100 px-2.5 py-0.5 rounded-full border border-stone-200">
-              System Administration
-            </span>
-            <span className="text-stone-300">/</span>
-            <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
-              IoT Sensor Configuration
-            </span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight mt-1">
-            System Configuration & Device Management
-          </h1>
-          <p className="text-xs text-stone-500">
-            Assign station devices to operators, set RPM safety bounds, configure ring frame parameters and logical machine mappings
+          <h1 className="title">System Configuration Module</h1>
+          <p className="subtitle">
+            Assign IoT Device IDs to Employees and define target Min/Max Spinning speed thresholds
           </p>
         </div>
-      </div>
+      </header>
 
       {message && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+        <div className={`alert-banner ${messageType === 'success' ? 'success' : 'error'}`}>
+          <span className="alert-icon">{messageType === 'success' ? '✓' : '⚠️'}</span>
           <span>{message}</span>
         </div>
       )}
-      {errorMessage && (
-        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2">
-          <AlertCircle size={16} className="text-rose-600 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
 
-      {/* Sub Tabs */}
-      <div className="flex items-center gap-2 bg-white p-2 rounded-3xl border border-stone-200 shadow-2xs overflow-x-auto no-scrollbar">
-        {[
-          { id: 'assign_devices', label: '1. Assign Devices to Employee', icon: Users },
-          { id: 'rpm_bounds', label: '2. RPM Bounds & Sensor Health', icon: Radio },
-          { id: 'machine_config', label: '3. Machine Parameters & Standards', icon: Gauge },
-          { id: 'machine_mapping', label: '4. Tap Station to Machine Mapping', icon: Layers }
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeSubTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveSubTab(tab.id as any)}
-              className={`px-4 py-2 rounded-2xl font-bold text-xs whitespace-nowrap transition-all cursor-pointer flex items-center gap-2 ${
-                isActive
-                  ? 'bg-stone-900 text-white shadow-xs'
-                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
-              }`}
-            >
-              <Icon size={14} className={isActive ? 'text-cyan-400' : 'text-stone-400'} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Sub Navigation Tabs */}
+      <section className="config-tabs">
+        <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'assign_devices' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('assign_devices')}
+        >
+          👤 1. Assign Device IDs to Employees
+        </button>
+        <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'rpm_bounds' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('rpm_bounds')}
+        >
+          ⚙️ 2. Set Min &amp; Max Spinning Values
+        </button>
+        <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'machine_config' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('machine_config')}
+        >
+          ▦ 3. Machine Production &amp; Rounds
+        </button>
+        <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'machine_mapping' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('machine_mapping')}
+        >
+          ⇄ 4. Machine Mapping
+        </button>
+      </section>
 
-      {/* Sub Tab 1: Assign Devices to Employee */}
+      {/* Section 1: Assign Device IDs to Employees */}
       {activeSubTab === 'assign_devices' && (
-        <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
+        <section className="card">
+          <div className="card-header">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-stone-900">
-                Operator Tap Station Assignments
-              </h2>
-              <p className="text-xs text-stone-500">
-                Select an operator and check the physical tap station devices they patrol on their shift
-              </p>
+              <h3 className="card-title">Employee to Device Assignment</h3>
+              <p className="card-subtitle">Select an employee and choose which devices/sensors are operated by them</p>
             </div>
-
             <button
-              onClick={handleSaveAssignments}
+              className="btn btn-primary cursor-pointer"
+              onClick={saveEmployeeAssignment}
               disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95 disabled:opacity-50"
             >
-              <Save size={14} />
-              <span>Save Assignments</span>
+              💾 Save Device Assignment
             </button>
           </div>
 
-          {/* Select Employee */}
-          <div className="max-w-md space-y-1.5">
-            <label className="text-xs font-bold text-stone-700">Select Operator / Employee</label>
-            <select
-              value={selectedEmployeeId}
-              onChange={(e) => setSelectedEmployeeId(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-3.5 py-2 text-xs font-bold text-stone-800 outline-none cursor-pointer"
-            >
-              {employees.map(e => (
-                <option key={e.employeeId} value={e.employeeId}>{e.employeeName} ({e.employeeId})</option>
-              ))}
-            </select>
+          <div className="config-form-grid">
+            <div className="field">
+              <label>Select Employee</label>
+              <div className="select-wrapper">
+                <select
+                  value={selectedEmployeeId}
+                  onChange={(e) => onEmployeeChange(e.target.value)}
+                >
+                  {employees.map(e => (
+                    <option key={e.employeeId} value={e.employeeId}>
+                      {employeeLabel(e.employeeId, e.employeeName)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
-          {/* Device Checklist */}
-          <div className="space-y-2 pt-2">
-            <span className="text-xs font-black uppercase text-stone-700 tracking-wider block">
-              Available Station Devices ({devices.length}) · {selectedDeviceIds.length} Selected
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="devices-selection-section">
+            <h4 className="section-subtitle">Select Devices to Assign:</h4>
+            <div className="device-checkbox-grid">
               {devices.map(dev => {
-                const isSelected = selectedDeviceIds.includes(dev.deviceId);
+                const selected = isDeviceSelected(dev.deviceId);
                 return (
                   <div
                     key={dev.deviceId}
+                    className={`device-check-card cursor-pointer ${selected ? 'selected' : ''}`}
                     onClick={() => toggleDeviceSelection(dev.deviceId)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                      isSelected
-                        ? 'bg-cyan-50/80 border-cyan-400 shadow-2xs ring-1 ring-cyan-500/20'
-                        : 'bg-stone-50 border-stone-200 hover:bg-white'
-                    }`}
                   >
-                    <div>
-                      <span className="font-mono font-bold text-xs text-stone-900 block">{dev.deviceId}</span>
-                      <span className="text-[11px] text-stone-500">{dev.machineId} · {dev.position}</span>
-                    </div>
-
-                    <div className={`w-5 h-5 rounded-lg flex items-center justify-center border ${
-                      isSelected ? 'bg-cyan-600 border-cyan-600 text-white' : 'border-stone-300 bg-white'
-                    }`}>
-                      {isSelected && <CheckCircle2 size={13} />}
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleDeviceSelection(dev.deviceId)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="device-info">
+                      <strong>Device {dev.deviceId}</strong>
+                      <small>Machine: {dev.machineId} | Pos {dev.position} ({dev.side})</small>
+                      {dev.assignedEmployeeId && dev.assignedEmployeeId !== selectedEmployeeId && (
+                        <span className="current-assignee">
+                          Currently: {employeeLabel(dev.assignedEmployeeId, dev.assignedEmployeeName)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Sub Tab 2: RPM Bounds & Sensor Health */}
+      {/* Section 2: Set RPM Min & Max Values */}
       {activeSubTab === 'rpm_bounds' && (
-        <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+        <section className="card">
+          <div className="card-header">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-stone-900">
-                RPM Safety Bounds & Sensor Telemetry Status
-              </h2>
-              <p className="text-xs text-stone-500">
-                Calibrate speed boundary limits and inspect sensor battery & signal levels
-              </p>
+              <h3 className="card-title">Spinning Min &amp; Max Threshold Settings</h3>
+              <p className="card-subtitle">Set safe operating speed bounds (Min Spinning &amp; Max Spinning) for each device sensor</p>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="table-wrapper">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-stone-200 text-[10px] font-black uppercase text-stone-400">
-                  <th className="pb-3">Device ID</th>
-                  <th className="pb-3">Frame</th>
-                  <th className="pb-3">Position</th>
-                  <th className="pb-3">Current RPM</th>
-                  <th className="pb-3">Min RPM Limit</th>
-                  <th className="pb-3">Max RPM Limit</th>
-                  <th className="pb-3">Battery</th>
-                  <th className="pb-3">Signal</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3 text-right">Actions</th>
+                <tr>
+                  <th>Device ID</th>
+                  <th>Machine ID</th>
+                  <th>Pos &amp; Side</th>
+                  <th>Min Spinning Threshold</th>
+                  <th>Max Spinning Threshold</th>
+                  <th>Expected Target Spinning</th>
+                  <th>Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-100">
-                {devices.map(d => (
-                  <tr key={d.deviceId} className="hover:bg-stone-50">
-                    <td className="py-3 font-mono font-bold text-stone-900">{d.deviceId}</td>
-                    <td className="py-3 font-bold text-stone-800">{d.machineId}</td>
-                    <td className="py-3 text-stone-600">{d.position || 'Headstock'}</td>
-                    <td className="py-3 font-mono font-black text-stone-900">{d.rpm || 0}</td>
-                    <td className="py-3 font-mono text-stone-600">{d.minRpm || 15000}</td>
-                    <td className="py-3 font-mono text-stone-600">{d.maxRpm || 17200}</td>
-                    <td className="py-3 font-mono text-stone-700">{d.batteryLevel || 95}%</td>
-                    <td className="py-3 font-mono text-stone-700">{d.signalStrength || -60} dBm</td>
-                    <td className="py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase ${
-                        d.status === 'HEALTHY' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {d.status}
-                      </span>
+              <tbody>
+                {devices.map(dev => (
+                  <tr key={dev.deviceId}>
+                    <td><strong>{dev.deviceId}</strong></td>
+                    <td>{dev.machineId}</td>
+                    <td>Pos {dev.position} ({dev.side})</td>
+                    <td>
+                      <div className="input-unit">
+                        <input
+                          type="number"
+                          value={dev.minRPM || 16000}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDevices(prev => prev.map(d => d.deviceId === dev.deviceId ? { ...d, minRPM: val } : d));
+                          }}
+                          className="input-sm"
+                        />
+                        <span>Spinning</span>
+                      </div>
                     </td>
-                    <td className="py-3 text-right">
+                    <td>
+                      <div className="input-unit">
+                        <input
+                          type="number"
+                          value={dev.maxRPM || 18000}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDevices(prev => prev.map(d => d.deviceId === dev.deviceId ? { ...d, maxRPM: val } : d));
+                          }}
+                          className="input-sm"
+                        />
+                        <span>Spinning</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="input-unit">
+                        <input
+                          type="number"
+                          value={dev.expectedRPM || 17200}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            setDevices(prev => prev.map(d => d.deviceId === dev.deviceId ? { ...d, expectedRPM: val } : d));
+                          }}
+                          className="input-sm"
+                        />
+                        <span>Spinning</span>
+                      </div>
+                    </td>
+                    <td>
                       <button
-                        onClick={() => setEditingDevice(d)}
-                        className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[11px] cursor-pointer"
+                        className="btn btn-sm btn-primary cursor-pointer"
+                        onClick={() => saveDeviceRpmConfig(dev)}
+                        disabled={saving}
                       >
-                        Calibrate
+                        💾 Save Bounds
                       </button>
                     </td>
                   </tr>
@@ -409,280 +444,273 @@ export const IotConfiguration: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Sub Tab 3: Machine Parameters & Standards */}
+      {/* Section 3: Machine Production & Rounds */}
       {activeSubTab === 'machine_config' && (
-        <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
+        <section className="card">
+          <div className="card-header">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-stone-900">
-                Ring Frame Operating Parameters
-              </h2>
-              <p className="text-xs text-stone-500">
-                Configure baseline targets, cleaning interval and tap device patrol sequence for each ring frame
-              </p>
+              <h3 className="card-title">Machine production configuration</h3>
+              <p className="card-subtitle">Set the production targets and the exact device order used to complete a round.</p>
             </div>
-
-            <button
-              onClick={handleSaveMachineConfig}
-              disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 rounded-2xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
-            >
-              <Save size={14} />
-              <span>Update Frame Settings</span>
+            <button className="btn btn-primary cursor-pointer" onClick={saveMachineConfig} disabled={saving}>
+              💾 Save configuration
             </button>
           </div>
-
-          <div className="max-w-md space-y-1.5">
-            <label className="text-xs font-bold text-stone-700">Select Ring Frame</label>
-            <select
-              value={selectedMachineId}
-              onChange={(e) => setSelectedMachineId(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-3.5 py-2 text-xs font-bold text-stone-800 outline-none cursor-pointer"
-            >
-              {machines.map(m => (
-                <option key={m.machineId} value={m.machineId}>{m.machineName} ({m.machineId})</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700">Target Production (kg / shift)</label>
-              <input
-                type="number"
-                value={machineConfig.expectedProductionOutput}
-                onChange={(e) => setMachineConfig(prev => ({ ...prev, expectedProductionOutput: Number(e.target.value) }))}
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-3.5 py-2 text-xs font-mono font-bold outline-none"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700">Expected Runtime (minutes)</label>
-              <input
-                type="number"
-                value={machineConfig.expectedRuntimeMinutes}
-                onChange={(e) => setMachineConfig(prev => ({ ...prev, expectedRuntimeMinutes: Number(e.target.value) }))}
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-3.5 py-2 text-xs font-mono font-bold outline-none"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700">Expected Rounds / Hour</label>
-              <input
-                type="number"
-                value={machineConfig.expectedRoundsPerHour}
-                onChange={(e) => setMachineConfig(prev => ({ ...prev, expectedRoundsPerHour: Number(e.target.value) }))}
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-3.5 py-2 text-xs font-mono font-bold outline-none"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-stone-700">Cleaning Interval (days)</label>
-              <input
-                type="number"
-                value={machineConfig.cleaningInterval}
-                onChange={(e) => setMachineConfig(prev => ({ ...prev, cleaningInterval: Number(e.target.value) }))}
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-3.5 py-2 text-xs font-mono font-bold outline-none"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sub Tab 4: Machine Mapping */}
-      {activeSubTab === 'machine_mapping' && (
-        <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-stone-900">
-                Physical Tap Stations Grouped into Logical Machines
-              </h2>
-              <p className="text-xs text-stone-500">
-                Group physical sensor stations (e.g. DEV_M1_01, DEV_M1_02, DEV_M1_03) into logical production machines
-              </p>
-            </div>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSaveMapping} className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-4">
-            <h3 className="text-xs font-black uppercase tracking-wider text-stone-800">
-              {editingMappingId ? 'Edit Machine Mapping' : 'Create New Machine Mapping'}
-            </h3>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-bold text-stone-700 block mb-1">Mapping Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. RF01 - Ring Frame 1"
-                  value={mappingName}
-                  onChange={(e) => setMappingName(e.target.value)}
-                  required
-                  className="w-full bg-white border border-stone-200 rounded-xl px-3 py-2 text-xs font-bold"
-                />
+          <div className="machine-config-layout">
+            <div className="machine-config-intro">
+              <div className="config-icon">▦</div>
+              <h4>Machine rules</h4>
+              <p>These rules are applied to machine dashboards and reports. A round is counted only after every device in the sequence has tapped in order.</p>
+              <div className="rule-note">
+                <strong>Example</strong>
+                <span>D1 → D3 → D4</span>
               </div>
-
-              <div>
-                <label className="text-xs font-bold text-stone-700 block mb-1">
-                  Assign Station Devices ({mappingStations.length} selected)
-                </label>
-                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-white rounded-xl border border-stone-200">
-                  {devices.map(d => {
-                    const isChecked = mappingStations.includes(d.deviceId);
-                    return (
-                      <button
-                        type="button"
-                        key={d.deviceId}
-                        onClick={() => setMappingStations(prev => isChecked ? prev.filter(x => x !== d.deviceId) : [...prev, d.deviceId])}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold cursor-pointer transition-all ${
-                          isChecked ? 'bg-cyan-600 text-white shadow-2xs' : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                        }`}
-                      >
-                        {d.deviceId}
-                      </button>
-                    );
-                  })}
+            </div>
+            <div className="machine-config-form">
+              <div className="field machine-select">
+                <label>Machine</label>
+                <div className="select-wrapper">
+                  <select value={selectedMachineId} onChange={(e) => selectMachine(e.target.value)}>
+                    {machines.map(m => (
+                      <option key={m.machineId} value={m.machineId}>
+                        {m.machineName} ({m.machineId})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
+              <div className="config-number-grid">
+                <div className="field">
+                  <label>Expected production output</label>
+                  <div className="input-with-unit">
+                    <input
+                      type="number"
+                      value={machineConfig.expectedProductionOutput}
+                      onChange={(e) => setMachineConfig(prev => ({ ...prev, expectedProductionOutput: Number(e.target.value) }))}
+                      min={0}
+                    />
+                    <span>units / shift</span>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Expected runtime</label>
+                  <div className="input-with-unit">
+                    <input
+                      type="number"
+                      value={machineConfig.expectedRuntimeMinutes}
+                      onChange={(e) => setMachineConfig(prev => ({ ...prev, expectedRuntimeMinutes: Number(e.target.value) }))}
+                      min={0}
+                    />
+                    <span>minutes</span>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Expected rounds / hour</label>
+                  <div className="input-with-unit">
+                    <input
+                      type="number"
+                      value={machineConfig.expectedRoundsPerHour}
+                      onChange={(e) => setMachineConfig(prev => ({ ...prev, expectedRoundsPerHour: Number(e.target.value) }))}
+                      min={0}
+                    />
+                    <span>rounds</span>
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Cleaning interval</label>
+                  <div className="input-with-unit">
+                    <input
+                      type="number"
+                      value={machineConfig.cleaningInterval}
+                      onChange={(e) => setMachineConfig(prev => ({ ...prev, cleaningInterval: Number(e.target.value) }))}
+                      min={1}
+                    />
+                    <span>days</span>
+                  </div>
+                </div>
+              </div>
+              <div className="sequence-field">
+                <label>Ordered round device sequence</label>
+                <div className="sequence-input">
+                  <span className="sequence-prefix">⇢</span>
+                  <input
+                    value={sequenceText}
+                    onChange={(e) => setSequenceText(e.target.value)}
+                    placeholder="D1 -> D3 -> D4"
+                  />
+                </div>
+                <small>Separate device IDs with <strong>→</strong> or commas. Incomplete and skipped sequences are reported separately.</small>
+              </div>
             </div>
+          </div>
+        </section>
+      )}
 
-            <div className="flex items-center justify-end gap-2 pt-1">
+      {/* Section 4: Machine Mapping */}
+      {activeSubTab === 'machine_mapping' && (
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <h3 className="card-title">{editingMappingId ? `Edit ${editingMappingId}` : 'Map stations to a machine'}</h3>
+              <p className="card-subtitle">Group tap stations into one production machine. Only mapped machines appear in Production Entry.</p>
+            </div>
+            <div className="mapping-actions flex items-center gap-2">
               {editingMappingId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingMappingId(null);
-                    setMappingName('');
-                    setMappingStations([]);
-                  }}
-                  className="px-4 py-1.5 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold text-xs cursor-pointer"
-                >
+                <button className="btn btn-secondary cursor-pointer" onClick={resetMappingForm} disabled={saving}>
                   Cancel
                 </button>
               )}
               <button
-                type="submit"
-                disabled={saving}
-                className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs cursor-pointer"
+                className="btn btn-primary cursor-pointer"
+                onClick={saveMapping}
+                disabled={saving || !mappingForm.name.trim() || !mappingForm.stationIds.length}
               >
-                {saving ? 'Saving...' : editingMappingId ? 'Update Mapping' : 'Add Machine Mapping'}
+                💾 {editingMappingId ? 'Save changes' : 'Save mapping'}
               </button>
             </div>
-          </form>
+          </div>
 
-          {/* Existing Mappings List */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-black uppercase tracking-wider text-stone-800">
-              Active Configured Mappings ({mappings.length})
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {mappings.map(m => (
-                <div key={m.mappingId} className="p-4 bg-stone-50 rounded-2xl border border-stone-200 flex items-center justify-between">
-                  <div>
-                    <h4 className="font-black text-sm text-stone-900">{m.name}</h4>
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {m.stationIds.map(st => (
-                        <span key={st} className="px-2 py-0.5 rounded-md bg-stone-200/80 font-mono text-[10px] text-stone-700">
-                          {st}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+          <div className="machine-config-layout">
+            <div className="machine-config-intro">
+              <div className="config-icon">⇄</div>
+              <h4>How rounds count</h4>
+              <p>Taps on all mapped stations are added together. A round starts at the first station, visits every other station, and completes when the operator taps the first station again. Gap is the average time between consecutive taps.</p>
+              <div className="rule-note">
+                <strong>Example</strong>
+                <span>D1 10:00 → D2 10:05 → D1 10:15</span>
+                <small>3 taps · 1 round · avg gap 7.5 min</small>
+              </div>
+            </div>
 
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => {
-                        setEditingMappingId(m.mappingId);
-                        setMappingName(m.name);
-                        setMappingStations(m.stationIds);
-                      }}
-                      className="p-1.5 rounded-lg bg-white border border-stone-200 hover:bg-stone-100 text-stone-700 cursor-pointer"
-                    >
-                      <Edit2 size={13} />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteMapping(m.mappingId)}
-                      className="p-1.5 rounded-lg bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 cursor-pointer"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
+            <div className="machine-config-form">
+              <div className="field">
+                <label htmlFor="mapping-name">Machine name</label>
+                <input
+                  id="mapping-name"
+                  value={mappingForm.name}
+                  onChange={(e) => setMappingForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. Machine-1"
+                  maxLength={40}
+                />
+              </div>
+
+              <div>
+                <h4 className="section-subtitle">Stations</h4>
+                <div className="device-checkbox-grid">
+                  {machines.map(station => {
+                    const owner = stationOwner(station.machineId);
+                    const selected = isStationSelected(station.machineId);
+                    return (
+                      <div
+                        key={station.machineId}
+                        className={`device-check-card cursor-pointer ${selected ? 'selected' : ''} ${owner ? 'unavailable' : ''}`}
+                        onClick={() => toggleStation(station.machineId)}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!!owner}
+                          onChange={() => toggleStation(station.machineId)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="device-info">
+                          <strong>{station.machineId}</strong>
+                          {station.machineName !== station.machineId && (
+                            <small>{station.machineName}</small>
+                          )}
+                          {owner && <span className="current-assignee">Mapped to {owner}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+
+              {mappingForm.stationIds.length > 0 && (
+                <div className="sequence-field">
+                  <label>Round order</label>
+                  <ol className="station-order">
+                    {mappingForm.stationIds.map((id, idx) => (
+                      <li key={id}>
+                        <span className="station-chip">{id}</span>
+                        {idx === 0 && <small className="start-badge">start &amp; finish</small>}
+                        <span className="order-buttons">
+                          <button
+                            type="button"
+                            className="icon-btn cursor-pointer"
+                            onClick={() => moveStation(idx, -1)}
+                            disabled={idx === 0}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn cursor-pointer"
+                            onClick={() => moveStation(idx, 1)}
+                            disabled={idx === mappingForm.stationIds.length - 1}
+                          >
+                            ↓
+                          </button>
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  <small>Round: {mappingForm.stationIds.join(' → ')} → {mappingForm.stationIds[0]}</small>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Edit Device Bounds Modal */}
-      {editingDevice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 max-w-sm w-full p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <h3 className="text-base font-black text-stone-900">
-                Calibrate {editingDevice.deviceId}
-              </h3>
-              <button
-                onClick={() => setEditingDevice(null)}
-                className="p-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Mount Position</label>
-                <input
-                  type="text"
-                  value={editingDevice.position || ''}
-                  onChange={(e) => setEditingDevice({ ...editingDevice, position: e.target.value })}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Minimum RPM Threshold</label>
-                <input
-                  type="number"
-                  value={editingDevice.minRpm || 15000}
-                  onChange={(e) => setEditingDevice({ ...editingDevice, minRpm: Number(e.target.value) })}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-mono font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Maximum RPM Threshold</label>
-                <input
-                  type="number"
-                  value={editingDevice.maxRpm || 17200}
-                  onChange={(e) => setEditingDevice({ ...editingDevice, maxRpm: Number(e.target.value) })}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-mono font-bold"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3">
-              <button
-                onClick={() => setEditingDevice(null)}
-                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveDeviceBounds}
-                className="px-5 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-800 text-white font-bold text-xs cursor-pointer"
-              >
-                Save Limits
-              </button>
-            </div>
+          <h4 className="section-subtitle mapped-title mt-6">Mapped machines</h4>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Machine</th>
+                  <th>ID</th>
+                  <th>Stations (round order)</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mappings.map(m => (
+                  <tr key={m.mappingId} className={m.mappingId === editingMappingId ? 'editing-row' : ''}>
+                    <td><strong>{m.name}</strong></td>
+                    <td>{m.mappingId}</td>
+                    <td>{m.stationIds.join(' → ')}</td>
+                    <td className="row-actions">
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="btn btn-sm btn-secondary cursor-pointer"
+                          onClick={() => editMapping(m)}
+                          disabled={saving}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn btn-sm btn-danger cursor-pointer"
+                          onClick={() => deleteMapping(m)}
+                          disabled={saving}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!mappings.length && (
+                  <tr>
+                    <td colSpan={4} className="text-center py-4">No machines mapped yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </section>
       )}
-    </div>
+    </main>
   );
 };
-

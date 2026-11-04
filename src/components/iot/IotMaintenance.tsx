@@ -8,10 +8,6 @@ import {
   SAMPLE_DEVICES,
   SAMPLE_MAINTENANCE
 } from '@/lib/iot/sampleIotData';
-import {
-  Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Wrench, CheckCircle2,
-  Clock, AlertCircle, X, Check, Save, User, RefreshCw
-} from 'lucide-react';
 
 export const IotMaintenance: React.FC = () => {
   const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
@@ -19,8 +15,6 @@ export const IotMaintenance: React.FC = () => {
   const [entries, setEntries] = useState<MaintenanceEntry[]>(() => SAMPLE_MAINTENANCE);
   const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
-  // Modal / Form state
-  const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState('');
   const [form, setForm] = useState<Omit<MaintenanceEntry, 'maintenanceId'>>({
     type: 'preventive',
@@ -36,6 +30,7 @@ export const IotMaintenance: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -45,9 +40,9 @@ export const IotMaintenance: React.FC = () => {
         iotApi.getDevices(),
         iotApi.getMaintenance()
       ]);
-      setMachines(m);
-      setDevices(d);
-      setEntries(e);
+      setMachines(m.length ? m : SAMPLE_MACHINES);
+      setDevices(d.length ? d : SAMPLE_DEVICES);
+      setEntries(e.length ? e : SAMPLE_MAINTENANCE);
       if (m.length && !form.machineId) {
         setForm(prev => ({ ...prev, machineId: m[0].machineId }));
       }
@@ -62,7 +57,6 @@ export const IotMaintenance: React.FC = () => {
     loadData();
   }, []);
 
-  // Calendar helpers
   const monthLabel = useMemo(() => {
     return currentMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   }, [currentMonth]);
@@ -101,427 +95,292 @@ export const IotMaintenance: React.FC = () => {
     return entries.filter(e => dateKey(e.scheduledDate) === key);
   };
 
-  const openNewForDay = (day: Date) => {
+  const monthEntries = useMemo(() => {
+    const y = currentMonth.getFullYear();
+    const m = currentMonth.getMonth();
+    return entries.filter(e => {
+      const d = new Date(e.scheduledDate);
+      return d.getFullYear() === y && d.getMonth() === m;
+    });
+  }, [entries, currentMonth]);
+
+  const machineName = (mId: string) => {
+    const found = machines.find(m => m.machineId === mId);
+    return found ? found.machineName : mId;
+  };
+
+  const isCurrentMonth = (day: Date) => day.getMonth() === currentMonth.getMonth();
+  const isToday = (day: Date) => day.toDateString() === new Date().toDateString();
+
+  const selectDay = (day: Date) => {
+    setEditingId('');
+    setForm(prev => ({
+      ...prev,
+      scheduledDate: dateKey(day)
+    }));
+  };
+
+  const editEntry = (e: MaintenanceEntry) => {
+    setEditingId(e.maintenanceId);
+    setForm({
+      type: e.type,
+      machineId: e.machineId,
+      deviceId: e.deviceId || '',
+      scheduledDate: dateKey(e.scheduledDate),
+      assignedPerson: e.assignedPerson || '',
+      status: e.status,
+      completionDate: e.completionDate ? dateKey(e.completionDate) : '',
+      notes: e.notes || ''
+    });
+  };
+
+  const reset = () => {
     setEditingId('');
     setForm({
       type: 'preventive',
-      machineId: machines[0]?.machineId || 'RF01',
+      machineId: machines.length ? machines[0].machineId : '',
       deviceId: '',
-      scheduledDate: dateKey(day),
+      scheduledDate: new Date().toISOString().slice(0, 10),
       assignedPerson: '',
       status: 'planned',
       completionDate: '',
       notes: ''
     });
-    setModalOpen(true);
-  };
-
-  const openEdit = (entry: MaintenanceEntry) => {
-    setEditingId(entry.maintenanceId);
-    setForm({
-      type: entry.type,
-      machineId: entry.machineId,
-      deviceId: entry.deviceId || '',
-      scheduledDate: entry.scheduledDate.slice(0, 10),
-      assignedPerson: entry.assignedPerson,
-      status: entry.status,
-      completionDate: entry.completionDate || '',
-      notes: entry.notes || ''
-    });
-    setModalOpen(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.machineId || !form.scheduledDate || !form.assignedPerson) return;
+    if (!form.machineId || !form.assignedPerson) {
+      setErrorMessage('Please select a machine and assigned person.');
+      return;
+    }
     setSaving(true);
+    setErrorMessage('');
     try {
-      const updated = await iotApi.saveMaintenance(form, editingId || undefined);
       if (editingId) {
-        setEntries(prev => prev.map(m => m.maintenanceId === editingId ? updated : m));
+        await iotApi.updateMaintenance(editingId, form).catch(() => null);
+        setEntries(prev => prev.map(item => item.maintenanceId === editingId ? { ...item, ...form } : item));
+        setMessage('Maintenance task updated.');
       } else {
-        setEntries(prev => [updated, ...prev]);
+        const created = await iotApi.createMaintenance(form).catch(() => ({
+          ...form,
+          maintenanceId: 'maint_' + Date.now()
+        }));
+        setEntries(prev => [created, ...prev]);
+        setMessage('Maintenance scheduled.');
       }
-      setModalOpen(false);
-      setMessage('Maintenance record saved successfully.');
+      reset();
       setTimeout(() => setMessage(''), 3000);
-    } catch (err) {
-      console.error('Failed to save maintenance:', err);
+    } catch {
+      setErrorMessage('Could not save maintenance entry.');
     } finally {
       setSaving(false);
     }
   };
 
-  // Mark completed shortcut
-  const markCompleted = async (entry: MaintenanceEntry) => {
-    const today = new Date().toISOString().slice(0, 10);
-    try {
-      const updated = await iotApi.saveMaintenance({
-        ...entry,
-        status: 'completed',
-        completionDate: today
-      }, entry.maintenanceId);
-      setEntries(prev => prev.map(m => m.maintenanceId === entry.maintenanceId ? updated : m));
-    } catch (err) {
-      console.error('Failed to update status:', err);
-    }
-  };
-
   return (
-    <div className="dashboard-page w-full space-y-5 pb-10">
-      {/* Header */}
-      <div className="bg-white rounded-3xl p-5 border border-stone-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <main className="content w-full">
+      <header className="topbar">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-              Plant Engineering
-            </span>
-            <span className="text-stone-300">/</span>
-            <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
-              Asset Reliability
-            </span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight mt-1">
-            Maintenance & Cleaning Calendar
-          </h1>
-          <p className="text-xs text-stone-500">
-            Schedule preventive inspections, electrical calibrations, ring rail servicing and cleaning cycles
-          </p>
+          <h1 className="title">Maintenance Calendar</h1>
+          <p className="subtitle">Plan preventive and electrical work by machine and device</p>
         </div>
-
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => {
-              setEditingId('');
-              setForm({
-                type: 'preventive',
-                machineId: machines[0]?.machineId || 'RF01',
-                deviceId: '',
-                scheduledDate: new Date().toISOString().slice(0, 10),
-                assignedPerson: '',
-                status: 'planned',
-                completionDate: '',
-                notes: ''
-              });
-              setModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer active:scale-95"
-          >
-            <Plus size={14} />
-            <span>Schedule Maintenance</span>
+        <div className="month-nav">
+          <button type="button" className="btn btn-light cursor-pointer" onClick={previousMonth} aria-label="Previous month">
+            ←
+          </button>
+          <strong>{monthLabel}</strong>
+          <button type="button" className="btn btn-light cursor-pointer" onClick={nextMonth} aria-label="Next month">
+            →
           </button>
         </div>
-      </div>
+      </header>
 
+      {errorMessage && (
+        <div className="empty-state error-state" role="alert">
+          {errorMessage}
+        </div>
+      )}
       {message && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-          <span>{message}</span>
+        <div className="alert-banner success">
+          {message}
         </div>
       )}
 
-      {/* Calendar Card */}
-      <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-5">
-        {/* Month Navigation */}
-        <div className="flex items-center justify-between pb-4 border-b border-stone-100">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-amber-50 text-amber-700 rounded-2xl border border-amber-200">
-              <CalendarIcon size={20} />
-            </div>
+      <section className="maintenance-layout">
+        <form className="card schedule-form" onSubmit={handleSave}>
+          <div className="card-header">
             <div>
-              <h2 className="text-lg font-black text-stone-900 tracking-tight">
-                {monthLabel}
-              </h2>
-              <span className="text-xs text-stone-500 font-medium">
-                {entries.length} total scheduled tasks
-              </span>
+              <h2 className="card-title">{editingId ? 'Edit entry' : 'Schedule maintenance'}</h2>
+              <p className="card-subtitle">Add a planned service window to the calendar.</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={previousMonth}
-              className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 cursor-pointer"
-            >
-              <ChevronLeft size={16} />
+          <div className="form-grid">
+            <label>
+              Maintenance type
+              <select
+                value={form.type}
+                onChange={(e) => setForm(prev => ({ ...prev, type: e.target.value as any }))}
+              >
+                <option value="preventive">Preventive maintenance</option>
+                <option value="electrical">Electrical maintenance</option>
+              </select>
+            </label>
+
+            <label>
+              Machine
+              <select
+                value={form.machineId}
+                onChange={(e) => setForm(prev => ({ ...prev, machineId: e.target.value }))}
+                required
+              >
+                <option value="">Select machine</option>
+                {machines.map(m => (
+                  <option key={m.machineId} value={m.machineId}>
+                    {m.machineName}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Device <span className="optional">Optional</span>
+              <select
+                value={form.deviceId}
+                onChange={(e) => setForm(prev => ({ ...prev, deviceId: e.target.value }))}
+              >
+                <option value="">All devices</option>
+                {devices.map(d => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.deviceId} ({d.machineId})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Scheduled date
+              <input
+                type="date"
+                value={form.scheduledDate}
+                onChange={(e) => setForm(prev => ({ ...prev, scheduledDate: e.target.value }))}
+                required
+              />
+            </label>
+
+            <label>
+              Assigned person
+              <input
+                type="text"
+                value={form.assignedPerson}
+                onChange={(e) => setForm(prev => ({ ...prev, assignedPerson: e.target.value }))}
+                required
+                placeholder="Technician name"
+              />
+            </label>
+
+            <label>
+              Status
+              <select
+                value={form.status}
+                onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value as any }))}
+              >
+                <option value="planned">Planned</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+
+            <label>
+              Completion date <span className="optional">Optional</span>
+              <input
+                type="date"
+                value={form.completionDate || ''}
+                onChange={(e) => setForm(prev => ({ ...prev, completionDate: e.target.value }))}
+              />
+            </label>
+
+            <label>
+              Notes
+              <textarea
+                value={form.notes || ''}
+                onChange={(e) => setForm(prev => ({ ...prev, notes: e.target.value }))}
+                rows={3}
+                placeholder="Add service notes..."
+              />
+            </label>
+          </div>
+
+          <div className="form-actions">
+            <button className="btn btn-primary cursor-pointer" type="submit" disabled={saving}>
+              {saving ? 'Saving...' : 'Save entry'}
             </button>
-            <button
-              onClick={() => setCurrentMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
-              className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs cursor-pointer"
-            >
-              Today
-            </button>
-            <button
-              onClick={nextMonth}
-              className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 cursor-pointer"
-            >
-              <ChevronRight size={16} />
+            <button className="btn btn-light cursor-pointer" type="button" onClick={reset}>
+              Clear
             </button>
           </div>
-        </div>
+        </form>
 
-        {/* Days of Week Header */}
-        <div className="grid grid-cols-7 gap-1 text-center font-black uppercase text-[10px] text-stone-400 tracking-wider">
-          {dayNames.map(d => (
-            <div key={d} className="py-2">{d}</div>
-          ))}
-        </div>
+        <section className="card calendar-card">
+          <div className="calendar-head">
+            <div>
+              <h2 className="card-title">{monthLabel} schedule</h2>
+              <p className="card-subtitle">{monthEntries.length} scheduled item(s)</p>
+            </div>
+            <div className="calendar-legend">
+              <span><i className="legend-dot preventive" />Preventive</span>
+              <span><i className="legend-dot electrical" />Electrical</span>
+            </div>
+          </div>
 
-        {/* Calendar Grid */}
-        <div className="grid grid-cols-7 gap-1.5">
-          {calendarDays.map((day, idx) => {
-            const isCurMonth = day.getMonth() === currentMonth.getMonth();
-            const isToday = day.toDateString() === new Date().toDateString();
-            const dayEntries = entriesForDay(day);
-
-            return (
-              <div
-                key={idx}
-                onClick={() => openNewForDay(day)}
-                className={`min-h-[95px] p-2 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between group ${
-                  isToday
-                    ? 'bg-amber-50/60 border-amber-300 ring-1 ring-amber-400/30'
-                    : isCurMonth
-                    ? 'bg-stone-50/70 border-stone-200/80 hover:bg-white hover:border-amber-300'
-                    : 'bg-stone-50/30 border-stone-100 text-stone-300 opacity-60'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className={`text-xs font-mono font-bold ${
-                    isToday ? 'w-5 h-5 rounded-full bg-amber-600 text-white flex items-center justify-center font-black text-[11px]' : 'text-stone-700'
-                  }`}>
-                    {day.getDate()}
-                  </span>
-                  {dayEntries.length > 0 && (
-                    <span className="text-[9px] font-black text-amber-700 font-mono">
-                      {dayEntries.length} task{dayEntries.length > 1 ? 's' : ''}
-                    </span>
-                  )}
-                </div>
-
-                {/* Entry badges */}
-                <div className="space-y-1 mt-1 overflow-hidden">
-                  {dayEntries.slice(0, 2).map(e => (
-                    <div
-                      key={e.maintenanceId}
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        openEdit(e);
-                      }}
-                      className={`px-1.5 py-0.5 rounded-lg text-[9.5px] font-bold truncate flex items-center justify-between border ${
-                        e.status === 'completed'
-                          ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
-                          : e.type === 'electrical'
-                          ? 'bg-blue-100 text-blue-900 border-blue-200'
-                          : 'bg-amber-100 text-amber-900 border-amber-200'
-                      }`}
-                    >
-                      <span className="truncate">{e.machineId} · {e.title || e.type}</span>
-                    </div>
-                  ))}
-                  {dayEntries.length > 2 && (
-                    <span className="text-[9px] text-stone-400 font-bold block">
-                      +{dayEntries.length - 2} more
-                    </span>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Task List Table */}
-      <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-sm space-y-4">
-        <h2 className="text-sm font-black uppercase tracking-wider text-stone-900">
-          All Maintenance Tasks ({entries.length})
-        </h2>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-stone-200 text-[10px] font-black uppercase text-stone-400">
-                <th className="pb-3">Machine</th>
-                <th className="pb-3">Type</th>
-                <th className="pb-3">Title / Task</th>
-                <th className="pb-3">Scheduled</th>
-                <th className="pb-3">Assigned Person</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {entries.map(e => (
-                <tr key={e.maintenanceId} className="hover:bg-stone-50">
-                  <td className="py-3 font-black text-stone-900">{e.machineId}</td>
-                  <td className="py-3 font-bold uppercase text-[10px]">
-                    <span className={`px-2 py-0.5 rounded-md ${e.type === 'electrical' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'}`}>
-                      {e.type}
-                    </span>
-                  </td>
-                  <td className="py-3 text-stone-700 font-medium">{e.title || 'Routine Maintenance'}</td>
-                  <td className="py-3 font-mono text-stone-600">{e.scheduledDate}</td>
-                  <td className="py-3 font-bold text-stone-800">{e.assignedPerson}</td>
-                  <td className="py-3">
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                      e.status === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-700'
-                    }`}>
-                      {e.status}
-                    </span>
-                  </td>
-                  <td className="py-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {e.status !== 'completed' && (
-                        <button
-                          onClick={() => markCompleted(e)}
-                          title="Mark as Completed"
-                          className="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[10px] cursor-pointer flex items-center gap-1"
-                        >
-                          <Check size={11} />
-                          <span>Complete</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => openEdit(e)}
-                        className="px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-[10px] cursor-pointer"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+          {loading ? (
+            <div className="empty-state">Loading maintenance...</div>
+          ) : (
+            <div className="calendar-grid">
+              {dayNames.map(dayName => (
+                <div key={dayName} className="weekday">{dayName}</div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Schedule / Edit Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
-          <form onSubmit={handleSave} className="bg-white rounded-3xl shadow-2xl border border-stone-200 max-w-lg w-full p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <h3 className="text-base font-black text-stone-900">
-                {editingId ? 'Edit Maintenance Task' : 'Schedule Maintenance'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="p-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Machine</label>
-                <select
-                  value={form.machineId}
-                  onChange={(e) => setForm(prev => ({ ...prev, machineId: e.target.value }))}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-bold cursor-pointer"
-                >
-                  {machines.map(m => (
-                    <option key={m.machineId} value={m.machineId}>{m.machineName} ({m.machineId})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Maintenance Type</label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm(prev => ({ ...prev, type: e.target.value }))}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-bold cursor-pointer"
-                >
-                  <option value="preventive">Preventive Maintenance</option>
-                  <option value="electrical">Electrical / Inverter Service</option>
-                  <option value="cleaning">Bi-Weekly Deep Cleaning</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-bold text-stone-700 block mb-1">Task Title / Notes</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Ring rail alignment & apron replacement"
-                  value={form.title || ''}
-                  onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Scheduled Date</label>
-                  <input
-                    type="date"
-                    value={form.scheduledDate}
-                    onChange={(e) => setForm(prev => ({ ...prev, scheduledDate: e.target.value }))}
-                    required
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-mono font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Assigned Person</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Senthil (Fitter)"
-                    value={form.assignedPerson}
-                    onChange={(e) => setForm(prev => ({ ...prev, assignedPerson: e.target.value }))}
-                    required
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Status</label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => setForm(prev => ({ ...prev, status: e.target.value }))}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-bold cursor-pointer"
+              {calendarDays.map((day, idx) => {
+                const dayTasks = entriesForDay(day);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`calendar-day ${!isCurrentMonth(day) ? 'outside' : ''} ${isToday(day) ? 'today' : ''}`}
+                    onClick={() => selectDay(day)}
                   >
-                    <option value="planned">Planned</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-stone-700 block mb-1">Completion Date (optional)</label>
-                  <input
-                    type="date"
-                    value={form.completionDate || ''}
-                    onChange={(e) => setForm(prev => ({ ...prev, completionDate: e.target.value }))}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 font-mono"
-                  />
-                </div>
-              </div>
+                    <span className="day-number">{day.getDate()}</span>
+                    {dayTasks.slice(0, 3).map(entry => (
+                      <span
+                        key={entry.maintenanceId}
+                        className={`calendar-event ${entry.type === 'electrical' ? 'electrical' : ''} ${entry.status === 'completed' ? 'completed' : ''}`}
+                        title={entry.title || entry.type}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          editEntry(entry);
+                        }}
+                      >
+                        <strong>{entry.title || (entry.type.charAt(0).toUpperCase() + entry.type.slice(1))}</strong>
+                        <small>{machineName(entry.machineId)}{entry.deviceId ? ` · ${entry.deviceId}` : ''}</small>
+                      </span>
+                    ))}
+                    {dayTasks.length > 3 && (
+                      <span className="more-events">+{dayTasks.length - 3} more</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+          )}
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold text-xs cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer"
-              >
-                {saving ? 'Saving...' : 'Save Schedule'}
-              </button>
+          {!loading && !monthEntries.length && (
+            <div className="calendar-empty">
+              No maintenance scheduled this month. Use the form to add the first entry.
             </div>
-          </form>
-        </div>
-      )}
-    </div>
+          )}
+        </section>
+      </section>
+    </main>
   );
 };
-
