@@ -196,7 +196,7 @@ export const IotShifts: React.FC = () => {
                 <tbody>
                   {shifts.map(shift => (
                     <tr key={shift.shiftId || shift.name}>
-                      <td><strong>{shift.name}</strong></td>
+                      <td><strong>{shift.name || shift.shiftName || 'Shift'}</strong></td>
                       <td>{shift.startTime}</td>
                       <td>{shift.endTime}</td>
                       <td>{shift.overnight ? 'Overnight' : 'Same day'}</td>

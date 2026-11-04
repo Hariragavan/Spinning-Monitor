@@ -18,20 +18,30 @@ import { employeeDisplayName } from '@/lib/iot/employeeDisplay';
 
 const MIN_OUTPUT = 140;
 
-export const IotProductionEntry: React.FC = () => {
+export interface IotProductionEntryProps {
+  selectedDate?: string;
+}
+
+export const IotProductionEntry: React.FC<IotProductionEntryProps> = ({ selectedDate: propDate }) => {
   const [machines, setMachines] = useState<MachineMapping[]>(() => SAMPLE_MAPPINGS);
   const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
   const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
   const [todayEntries, setTodayEntries] = useState<ProductionReportRow[]>(() => SAMPLE_PRODUCTION_ENTRIES);
 
   // Form fields
-  const [shiftDate, setShiftDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [shiftDate, setShiftDate] = useState(() => propDate || new Date().toISOString().slice(0, 10));
   const [shiftId, setShiftId] = useState('');
   const [machineId, setMachineId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [speed, setSpeed] = useState<string>('');
   const [counts, setCounts] = useState<string>('');
   const [productionOutput, setProductionOutput] = useState<string>('');
+
+  useEffect(() => {
+    if (propDate) {
+      setShiftDate(propDate);
+    }
+  }, [propDate]);
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -228,11 +238,14 @@ export const IotProductionEntry: React.FC = () => {
                 onChange={(e) => setShiftId(e.target.value)}
               >
                 <option value="">Auto-detect Shift</option>
-                {shifts.map(s => (
-                  <option key={s.shiftId} value={s.shiftId}>
-                    {s.name} ({s.startTime} - {s.endTime})
-                  </option>
-                ))}
+                {shifts.map(s => {
+                  const sName = s.name || s.shiftName || 'Shift';
+                  return (
+                    <option key={s.shiftId} value={s.shiftId}>
+                      {sName} ({s.startTime} - {s.endTime})
+                    </option>
+                  );
+                })}
               </select>
               <small className="hint">Optional (defaults to current shift)</small>
             </label>

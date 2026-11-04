@@ -9,7 +9,8 @@ import {
   SAMPLE_EMPLOYEE_METRICS,
   SAMPLE_PRODUCTION_ENTRIES,
   SAMPLE_DEVICES,
-  getSampleMachineDetail
+  getSampleMachineDetail,
+  getSampleSpinfoOverview
 } from './sampleIotData';
 import {
   SpinfoOverviewResponse,
@@ -340,22 +341,22 @@ export async function getIotOverview(filter?: any, forceRefresh: boolean = false
       .limit(1)
       .toArray();
 
-    // If query with shift and date returned nothing, try with just shift
-    if (localDocs.length === 0 && shiftNum !== undefined) {
-      localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
-        .find({ shift: shiftNum })
-        .sort({ createdAt: -1, _id: -1 })
-        .limit(1)
-        .toArray();
-    }
-
-    // If still nothing, fallback to latest document
-    if (localDocs.length === 0) {
-      localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
-        .find({})
-        .sort({ createdAt: -1, _id: -1 })
-        .limit(1)
-        .toArray();
+    // If no targetDate was specified (live mode), fallback to latest shift or latest doc
+    if (localDocs.length === 0 && !targetDate) {
+      if (shiftNum !== undefined) {
+        localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
+          .find({ shift: shiftNum })
+          .sort({ createdAt: -1, _id: -1 })
+          .limit(1)
+          .toArray();
+      }
+      if (localDocs.length === 0) {
+        localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
+          .find({})
+          .sort({ createdAt: -1, _id: -1 })
+          .limit(1)
+          .toArray();
+      }
     }
 
     if (localDocs.length > 0) {
@@ -365,8 +366,14 @@ export async function getIotOverview(filter?: any, forceRefresh: boolean = false
     }
   } catch (e) {}
 
-  // 3. Fallback to sample data
-  const sampleCopy: SpinfoOverviewResponse = JSON.parse(JSON.stringify(SAMPLE_OVERVIEW));
+  // 3. Fallback to sample data for the exact date and shift
+  const sampleCopy: SpinfoOverviewResponse = getSampleSpinfoOverview({
+    fromDate: targetDate,
+    shift: shiftNum !== undefined ? String(shiftNum) : undefined
+  });
+  if (targetDate) {
+    sampleCopy.shiftDate = targetDate;
+  }
   if (shiftNum !== undefined) {
     sampleCopy.shift = shiftNum;
   }
@@ -692,8 +699,9 @@ export async function getIotShifts(): Promise<Shift[]> {
       const json = await res.json();
       if (json.success && Array.isArray(json.data) && json.data.length > 0) {
         const mapped: Shift[] = json.data.map((s: any) => ({
-          shiftId: String(s._id || s.shiftId || s.name),
-          shiftName: String(s.name || s.shiftName),
+          shiftId: String(s._id || s.shiftId || s.name || s.shiftName),
+          name: String(s.name || s.shiftName || 'Shift 1'),
+          shiftName: String(s.shiftName || s.name || 'Shift 1'),
           startTime: String(s.startTime || '06:00'),
           endTime: String(s.endTime || '14:00'),
           active: s.active !== false
@@ -720,7 +728,16 @@ export async function getIotShifts(): Promise<Shift[]> {
     const list = await db.collection<Shift>(IOT_COLLECTIONS.SHIFTS)
       .find({}, { projection: { _id: 0 } })
       .toArray();
-    if (list.length > 0) return list;
+    if (list.length > 0) {
+      return list.map((s: any) => ({
+        shiftId: String(s.shiftId || s._id),
+        name: String(s.name || s.shiftName || 'Shift 1'),
+        shiftName: String(s.shiftName || s.name || 'Shift 1'),
+        startTime: String(s.startTime || '06:00'),
+        endTime: String(s.endTime || '14:00'),
+        active: s.active !== false
+      }));
+    }
   } catch (e) {}
 
   return SAMPLE_SHIFTS;

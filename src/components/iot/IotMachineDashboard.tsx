@@ -30,15 +30,26 @@ export type ModalTabType =
   | 'speed_production'
   | 'rounds_cleaning';
 
-export const IotMachineDashboard: React.FC = () => {
+export interface IotMachineDashboardProps {
+  selectedDate?: string;
+}
+
+export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ selectedDate }) => {
   const [overview, setOverview] = useState<SpinfoOverviewResponse>(() => SAMPLE_OVERVIEW);
   const [selectedMachineDetail, setSelectedMachineDetail] = useState<SpinfoMachineDetailResponse | null>(null);
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
 
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [selectedShift, setSelectedShift] = useState<string>('All Shifts');
-  const [selectedFromDate, setSelectedFromDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [selectedToDate, setSelectedToDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [selectedFromDate, setSelectedFromDate] = useState<string>(() => selectedDate || new Date().toISOString().slice(0, 10));
+  const [selectedToDate, setSelectedToDate] = useState<string>(() => selectedDate || new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    if (selectedDate) {
+      setSelectedFromDate(selectedDate);
+      setSelectedToDate(selectedDate);
+    }
+  }, [selectedDate]);
   const [selectedOperator, setSelectedOperator] = useState<string>('');
 
   const [activeKpi, setActiveKpi] = useState<ActiveKpiType>('TOTAL_MACHINES');
@@ -263,14 +274,19 @@ export const IotMachineDashboard: React.FC = () => {
               <div className="select-wrapper">
                 <select value={selectedShift} onChange={e => setSelectedShift(e.target.value)}>
                   <option value="All Shifts">All Shifts</option>
-                  {shifts.map(s => (
-                    <option key={s.shiftId} value={s.name}>{s.name}</option>
-                  ))}
+                  {shifts.map(s => {
+                    const sName = s.name || s.shiftName || 'Shift';
+                    return (
+                      <option key={s.shiftId || sName} value={sName}>
+                        {sName} {s.startTime && s.endTime ? `(${s.startTime} - ${s.endTime})` : ''}
+                      </option>
+                    );
+                  })}
                   {shifts.length === 0 && (
                     <>
-                      <option value="Shift 1">Shift 1 (07:00 - 15:30)</option>
-                      <option value="Shift 2">Shift 2 (15:30 - 00:00)</option>
-                      <option value="Shift 3">Shift 3 (00:00 - 07:00)</option>
+                      <option value="Shift 1">Shift 1 (06:00 - 14:00)</option>
+                      <option value="Shift 2">Shift 2 (14:01 - 22:00)</option>
+                      <option value="Shift 3">Shift 3 (22:01 - 06:00)</option>
                     </>
                   )}
                 </select>
@@ -300,7 +316,11 @@ export const IotMachineDashboard: React.FC = () => {
               <input
                 type="date"
                 value={selectedFromDate}
-                onChange={e => setSelectedFromDate(e.target.value)}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedFromDate(val);
+                  setSelectedToDate(val);
+                }}
                 className="date-input"
               />
             </div>

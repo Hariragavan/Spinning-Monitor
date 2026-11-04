@@ -34,7 +34,11 @@ export interface TapModalState {
   endTime?: string | Date | null;
 }
 
-export const IotEmployeeDashboard: React.FC = () => {
+export interface IotEmployeeDashboardProps {
+  selectedDate?: string;
+}
+
+export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ selectedDate: propDate }) => {
   const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
   const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
   const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
@@ -46,9 +50,15 @@ export const IotEmployeeDashboard: React.FC = () => {
   const [machineId, setMachineId] = useState('');
   const [shiftName, setShiftName] = useState('');
   const [shiftId, setShiftId] = useState('');
-  const [selectedDate, setSelectedDate] = useState('2026-11-03');
+  const [selectedDate, setSelectedDate] = useState(() => propDate || '2026-11-03');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (propDate) {
+      setSelectedDate(propDate);
+    }
+  }, [propDate]);
 
   // Tap Details Modal
   const [selectedTapModal, setSelectedTapModal] = useState<TapModalState | null>(null);
@@ -79,7 +89,7 @@ export const IotEmployeeDashboard: React.FC = () => {
         setMachineId(machs[0].machineId);
       }
       if (shfs.length && !shiftName) {
-        setShiftName(shfs[0].name);
+        setShiftName(shfs[0].name || shfs[0].shiftName || 'Shift 1');
         setShiftId(shfs[0].shiftId);
       }
     } catch (err) {
@@ -88,7 +98,7 @@ export const IotEmployeeDashboard: React.FC = () => {
   };
 
   const refresh = async (showLoading: boolean = false) => {
-    const selectedShift = shifts.find(s => s.name === shiftName);
+    const selectedShift = shifts.find(s => (s.name || s.shiftName) === shiftName);
     const resolvedShiftId = selectedShift?.shiftId || '';
     setShiftId(resolvedShiftId);
 
@@ -109,9 +119,7 @@ export const IotEmployeeDashboard: React.FC = () => {
           employeeId: employeeId || undefined
         }).catch(() => [])
       ]);
-      if (metrics && metrics.length > 0) {
-        setEmployeeMetrics(metrics);
-      }
+      setEmployeeMetrics(metrics || []);
       setProductionRows(prod || []);
     } catch (err) {
       console.error('Failed to refresh employee performance:', err);
@@ -309,11 +317,21 @@ export const IotEmployeeDashboard: React.FC = () => {
                 id="emp-shift-select"
               >
                 <option value="">All shifts</option>
-                {shifts.map(shift => (
-                  <option key={shift.shiftId || shift.name} value={shift.name}>
-                    {shift.name}
-                  </option>
-                ))}
+                {shifts.map(shift => {
+                  const sName = shift.name || shift.shiftName || 'Shift';
+                  return (
+                    <option key={shift.shiftId || sName} value={sName}>
+                      {sName} {shift.startTime && shift.endTime ? `(${shift.startTime} - ${shift.endTime})` : ''}
+                    </option>
+                  );
+                })}
+                {shifts.length === 0 && (
+                  <>
+                    <option value="Shift 1">Shift 1 (06:00 - 14:00)</option>
+                    <option value="Shift 2">Shift 2 (14:01 - 22:00)</option>
+                    <option value="Shift 3">Shift 3 (22:01 - 06:00)</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
@@ -807,7 +825,7 @@ export const IotEmployeeDashboard: React.FC = () => {
                     >
                       <option value="">All shifts</option>
                       {shifts.map(s => (
-                        <option key={s.shiftId} value={s.shiftId}>{s.name}</option>
+                        <option key={s.shiftId} value={s.shiftId}>{s.name || s.shiftName || 'Shift'}</option>
                       ))}
                     </select>
                   </div>

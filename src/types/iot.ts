@@ -68,6 +68,7 @@ export interface Shift {
   _id?: string;
   shiftId: string;
   name: string;
+  shiftName?: string;
   startTime: string;
   endTime: string;
   overnight?: boolean;

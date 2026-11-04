@@ -2040,25 +2040,25 @@ export default function Home() {
       case 'iot-machine-dashboard':
         return (
           <div className="iot-system-scope w-full">
-            <IotMachineDashboard />
+            <IotMachineDashboard selectedDate={activeDailyReport.date} />
           </div>
         );
       case 'iot-employee-dashboard':
         return (
           <div className="iot-system-scope w-full">
-            <IotEmployeeDashboard />
+            <IotEmployeeDashboard selectedDate={activeDailyReport.date} />
           </div>
         );
       case 'iot-production-entry':
         return (
           <div className="iot-system-scope w-full">
-            <IotProductionEntry />
+            <IotProductionEntry selectedDate={activeDailyReport.date} />
           </div>
         );
       case 'iot-reports':
         return (
           <div className="iot-system-scope w-full">
-            <IotReports />
+            <IotReports selectedDate={activeDailyReport.date} />
           </div>
         );
       case 'iot-maintenance':

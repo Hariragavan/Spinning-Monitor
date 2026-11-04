@@ -215,8 +215,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     // 11. Reports (5 Types)
     if (path.startsWith('reports') || path.startsWith('report')) {
       const reportType = searchParams.get('reportType') || 'rpm_efficiency';
-      const overview = await getIotOverview();
-      const rows = overview.machines.map(m => ({
+      const fromDate = searchParams.get('from') || searchParams.get('fromDate') || undefined;
+      const toDate = searchParams.get('to') || searchParams.get('toDate') || undefined;
+      const shift = searchParams.get('shift') || searchParams.get('shiftId') || undefined;
+      const machineId = searchParams.get('machineId') || undefined;
+
+      const overview = await getIotOverview({ fromDate, toDate, shift });
+      let rows = overview.machines.map(m => ({
         machineId: m.machineId,
         count: m.count,
         runStatus: m.runStatus,
@@ -227,6 +232,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
         shiftTarget: m.shiftTargetProduction,
         wastePercent: m.shiftWaste
       }));
+
+      if (machineId) {
+        rows = rows.filter(m => m.machineId === machineId);
+      }
 
       return NextResponse.json({
         success: true,

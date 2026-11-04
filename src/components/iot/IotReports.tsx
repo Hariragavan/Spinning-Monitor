@@ -16,7 +16,11 @@ import {
 } from '@/lib/iot/sampleIotData';
 import { employeeLabel, employeeDisplayName } from '@/lib/iot/employeeDisplay';
 
-export const IotReports: React.FC = () => {
+export interface IotReportsProps {
+  selectedDate?: string;
+}
+
+export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }) => {
   const [machines, setMachines] = useState<Machine[]>(() => SAMPLE_MACHINES);
   const [employees, setEmployees] = useState<Employee[]>(() => SAMPLE_EMPLOYEES);
   const [shifts, setShifts] = useState<Shift[]>(() => SAMPLE_SHIFTS);
@@ -25,8 +29,15 @@ export const IotReports: React.FC = () => {
   const [machineId, setMachineId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [shiftId, setShiftId] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(() => propDate || '');
+  const [toDate, setToDate] = useState(() => propDate || '');
+
+  useEffect(() => {
+    if (propDate) {
+      setFromDate(propDate);
+      setToDate(propDate);
+    }
+  }, [propDate]);
 
   const [reportTitle, setReportTitle] = useState('Spinning & Machine Efficiency');
   const [reportData, setReportData] = useState<any[]>([]);
@@ -290,11 +301,14 @@ export const IotReports: React.FC = () => {
             <div className="select-wrapper">
               <select value={shiftId} onChange={(e) => setShiftId(e.target.value)}>
                 <option value="">All Shifts</option>
-                {shifts.map(shift => (
-                  <option key={shift.shiftId || shift.name} value={shift.shiftId}>
-                    {shift.name} ({shift.startTime} - {shift.endTime})
-                  </option>
-                ))}
+                {shifts.map(shift => {
+                  const sName = shift.name || shift.shiftName || 'Shift';
+                  return (
+                    <option key={shift.shiftId || sName} value={shift.shiftId}>
+                      {sName} ({shift.startTime} - {shift.endTime})
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>
