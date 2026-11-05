@@ -167,6 +167,7 @@ export interface SystemSettings {
   tvSlideEnabled?: Record<string, boolean>;
   shed40sFormulas?: Record<string, string>;
   iotMachineMapping?: Record<string, string>;
+  iotMachineMappingByDate?: Record<string, Record<string, string>>;
 }
 
 export interface FrozenMonthAbstractItem {

@@ -3160,10 +3160,19 @@ export default function Home() {
             <IotMachineMatchingSettings
               machines={machines}
               currentMappings={settings.iotMachineMapping || {}}
+              mappingsByDate={settings.iotMachineMappingByDate || {}}
               machineEm={machineEm}
               activeDate={activeDailyReport?.date || undefined}
-              onSaveMappings={async (newMappings) => {
-                const updated = { ...settings, iotMachineMapping: newMappings };
+              onSaveMappings={async (newMappings, saveDate) => {
+                const effDate = saveDate || activeDailyReport?.date || new Date().toISOString().slice(0, 10);
+                const updated = {
+                  ...settings,
+                  iotMachineMapping: newMappings,
+                  iotMachineMappingByDate: {
+                    ...(settings.iotMachineMappingByDate || {}),
+                    [effDate]: newMappings
+                  }
+                };
                 setSettings(updated);
                 await apiClient.saveSettings(updated);
               }}

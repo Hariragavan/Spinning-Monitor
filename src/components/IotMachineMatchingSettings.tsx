@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Activity, Check, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Activity, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MachineMasterItem, MachineEmData } from '@/types';
 
@@ -11,15 +11,17 @@ const IOT_MACHINES_LIST = Array.from({ length: 46 }, (_, i) => `RF${String(i + 1
 interface IotMachineMatchingSettingsProps {
   machines: MachineMasterItem[];
   currentMappings?: Record<string, string>;
+  mappingsByDate?: Record<string, Record<string, string>>;
   machineEm: MachineEmData;
   activeDate?: string;
-  onSaveMappings: (mappings: Record<string, string>) => Promise<void>;
+  onSaveMappings: (mappings: Record<string, string>, date?: string) => Promise<void>;
   onMachineEmUpdated: (newEmData: MachineEmData) => void;
 }
 
 export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProps> = ({
   machines,
   currentMappings = {},
+  mappingsByDate = {},
   machineEm,
   activeDate,
   onSaveMappings,
@@ -27,7 +29,12 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
 }) => {
   // Only Shed 1, Shed 2, Shed 3 are involved (KTTM is strictly excluded)
   const [selectedShed, setSelectedShed] = useState<'Shed 1' | 'Shed 2' | 'Shed 3'>('Shed 1');
-  const [mappings, setMappings] = useState<Record<string, string>>(currentMappings || {});
+
+  // Selected Date for assignment (defaults to activeDate or today YYYY-MM-DD)
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    return activeDate || new Date().toISOString().slice(0, 10);
+  });
+
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [recentlySynced, setRecentlySynced] = useState<string | null>(null);
@@ -41,12 +48,32 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     date: string;
   }>>({});
 
-  // Sync state with incoming props
-  useEffect(() => {
-    if (currentMappings && Object.keys(currentMappings).length > 0) {
-      setMappings(currentMappings);
+  // Continuous Carry-Forward Resolution Algorithm:
+  // Finds the most recent mapping on or before targetDate
+  const resolveEffectiveMapping = useCallback((targetDate: string): { mapping: Record<string, string>; sourceDate: string } => {
+    if (mappingsByDate && Object.keys(mappingsByDate).length > 0) {
+      const dates = Object.keys(mappingsByDate).filter(d => d <= targetDate).sort().reverse();
+      if (dates.length > 0 && mappingsByDate[dates[0]]) {
+        return { mapping: mappingsByDate[dates[0]], sourceDate: dates[0] };
+      }
     }
-  }, [currentMappings]);
+    return { mapping: currentMappings || {}, sourceDate: targetDate };
+  }, [mappingsByDate, currentMappings]);
+
+  // Active mappings for the selected date
+  const [mappings, setMappings] = useState<Record<string, string>>(() => {
+    return resolveEffectiveMapping(selectedDate).mapping;
+  });
+
+  const effectiveSource = useMemo(() => {
+    return resolveEffectiveMapping(selectedDate);
+  }, [resolveEffectiveMapping, selectedDate]);
+
+  // When date changes, update mapping using carry-forward logic
+  useEffect(() => {
+    const eff = resolveEffectiveMapping(selectedDate);
+    setMappings(eff.mapping);
+  }, [selectedDate, resolveEffectiveMapping]);
 
   // Load latest EM for all 46 IoT machines
   const loadIotEmData = useCallback(async () => {
@@ -64,6 +91,17 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
   useEffect(() => {
     loadIotEmData();
   }, [loadIotEmData]);
+
+  // Track allocated IoT machines to enforce STRICT 1-TO-1 UNIQUE ALLOCATION
+  const allocatedIotToFrame = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [frame, iotNo] of Object.entries(mappings)) {
+      if (iotNo && iotNo !== 'NONE') {
+        map.set(iotNo, frame);
+      }
+    }
+    return map;
+  }, [mappings]);
 
   // Filter spinning machines strictly by selected shed (Shed 1, 2, or 3 only)
   const shedMachines = useMemo(() => {
@@ -87,14 +125,14 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     });
   }, [shedMachines, searchQuery, mappings]);
 
-  // Sync EM for updated mappings into spinning monitor
+  // Sync EM for updated mappings into spinning monitor for selectedDate
   const syncMappingsToSpinning = useCallback(async (newMappings: Record<string, string>, highlightMachine?: string) => {
     setIsSyncing(true);
     try {
       const res = await fetch('/api/iot/em/sync-to-spinning', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mappings: newMappings, date: activeDate })
+        body: JSON.stringify({ mappings: newMappings, date: selectedDate })
       });
       if (res.ok) {
         const json = await res.json();
@@ -106,28 +144,36 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
           }
         }
       }
-      await onSaveMappings(newMappings);
+      await onSaveMappings(newMappings, selectedDate);
       await loadIotEmData();
     } catch (err) {
       console.error('Failed to sync IoT EM to spinning:', err);
     } finally {
       setIsSyncing(false);
     }
-  }, [activeDate, onMachineEmUpdated, onSaveMappings, loadIotEmData]);
+  }, [selectedDate, onMachineEmUpdated, onSaveMappings, loadIotEmData]);
 
-  // Assign or unassign an IoT machine to a spinning machine
+  // Assign an IoT machine: GUARANTEES STRICT 1-TO-1 UNIQUE ALLOCATION
   const handleAssignMachine = async (spinningFrameNo: string, iotMachineNo: string) => {
     const updated = { ...mappings };
+
     if (!iotMachineNo || iotMachineNo === 'NONE') {
       delete updated[spinningFrameNo];
     } else {
+      // If this IoT machine is already assigned to another frame, remove it from that frame
+      for (const [otherFrame, assignedIot] of Object.entries(updated)) {
+        if (assignedIot === iotMachineNo && otherFrame !== spinningFrameNo) {
+          delete updated[otherFrame];
+        }
+      }
       updated[spinningFrameNo] = iotMachineNo;
     }
+
     setMappings(updated);
     await syncMappingsToSpinning(updated, spinningFrameNo);
   };
 
-  // Auto-match for the current shed based on numeric order or matching name
+  // Auto-match for the current shed: matches only available unassigned IoT machines 1-to-1
   const handleAutoMatchShed = async () => {
     const updated = { ...mappings };
     shedMachines.forEach(m => {
@@ -135,7 +181,12 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
       const numeric = parseInt(rf.replace(/\D/g, ''), 10);
       if (!isNaN(numeric) && numeric >= 1 && numeric <= 46) {
         const iotId = `RF${String(numeric).padStart(2, '0')}`;
-        updated[rf] = iotId;
+        // Ensure not already taken by another frame
+        const currentOwner = updated[rf];
+        const takenBy = Object.entries(updated).find(([f, id]) => id === iotId && f !== rf);
+        if (!takenBy || currentOwner === iotId) {
+          updated[rf] = iotId;
+        }
       }
     });
     setMappings(updated);
@@ -173,11 +224,11 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
             <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
               <span>IoT Machine Matching & EM Settings</span>
               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                Table: iot_em
+                1-to-1 Allocation · Table: iot_em
               </span>
             </h3>
             <p className="text-xs text-stone-500 font-bold mt-0.5">
-              Assign spinning machines to IoT machines (RF01 - RF46) to automatically synchronize End Mending (EM) telemetry.
+              Assign spinning machines to IoT machines. Persistent per date with continuous carry-forward until changed.
             </p>
           </div>
         </div>
@@ -216,6 +267,36 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
             </button>
           )}
         </div>
+      </div>
+
+      {/* DATE SELECTOR & CARRY-FORWARD BANNER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-stone-200 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar size={15} className="text-blue-600" />
+            <span className="text-xs font-bold text-stone-700">Assignment Date:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="border border-stone-300 rounded-xl px-2.5 py-1 text-xs font-mono font-bold text-stone-800 bg-stone-50 outline-hidden focus:ring-2 focus:ring-blue-500/20"
+            />
+          </div>
+
+          {effectiveSource.sourceDate !== selectedDate ? (
+            <span className="text-[10.5px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+              ⚡ Continuous: Inherited from <strong>{effectiveSource.sourceDate}</strong> until changed
+            </span>
+          ) : (
+            <span className="text-[10.5px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+              ✓ Configured specifically for <strong>{selectedDate}</strong>
+            </span>
+          )}
+        </div>
+
+        <span className="text-[11px] font-mono font-bold text-stone-500">
+          Strict 1-to-1 IoT Allocation Active
+        </span>
       </div>
 
       {/* SHED TABS (SHED 1, SHED 2, SHED 3 ONLY - KTTM EXCLUDED) */}
@@ -293,9 +374,6 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
             const liveEmData = currentIot ? iotLiveEmMap[currentIot] : null;
             const isJustSynced = recentlySynced === rf;
 
-            // Compute current EM value from spinning machineEm or live IoT
-            const spinningEmVal = activeDate ? machineEm?.[activeDate]?.[rf] : undefined;
-
             return (
               <div
                 key={rf}
@@ -347,7 +425,7 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                   </div>
                 </div>
 
-                {/* IOT DROPDOWN SELECTOR */}
+                {/* IOT DROPDOWN SELECTOR (STRICT 1-TO-1 UNIQUE ALLOCATION) */}
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-[11px] font-bold text-stone-600 flex items-center gap-1">
                     <Link2 size={12} className={currentIot ? "text-blue-600" : "text-stone-400"} />
@@ -359,7 +437,7 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                     onChange={(e) => handleAssignMachine(rf, e.target.value)}
                     disabled={isSyncing}
                     className={cn(
-                      "text-xs font-mono font-bold rounded-xl px-3 py-1.5 border transition-all cursor-pointer outline-hidden focus:ring-2 focus:ring-blue-500/20",
+                      "text-xs font-mono font-bold rounded-xl px-3 py-1.5 border transition-all cursor-pointer outline-hidden focus:ring-2 focus:ring-blue-500/20 max-w-[180px]",
                       currentIot
                         ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
                         : "bg-white text-stone-700 border-stone-300 hover:border-stone-400"
@@ -371,13 +449,19 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                     {IOT_MACHINES_LIST.map(iotNo => {
                       const emInfo = iotLiveEmMap[iotNo];
                       const emLabel = emInfo ? ` (${emInfo.emTotal.toFixed(1)}m)` : '';
+                      const assignedTo = allocatedIotToFrame.get(iotNo);
+                      const isAssignedToOther = assignedTo && assignedTo !== rf;
+
                       return (
                         <option
                           key={iotNo}
                           value={iotNo}
-                          className="bg-white text-stone-900 font-mono"
+                          className={cn(
+                            "bg-white font-mono",
+                            isAssignedToOther ? "text-amber-800 bg-amber-50 font-bold" : "text-stone-900"
+                          )}
                         >
-                          {iotNo} {emLabel}
+                          {iotNo} {emLabel} {isAssignedToOther ? `[Allocated to ${assignedTo}]` : ''}
                         </option>
                       );
                     })}
@@ -391,3 +475,4 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     </div>
   );
 };
+export default IotMachineMatchingSettings;

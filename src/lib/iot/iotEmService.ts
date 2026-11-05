@@ -555,10 +555,16 @@ export async function syncIotEmToSpinningMonitor(
       );
     }
 
-    // Persist mappings into settings collection
+    // Persist mappings into settings collection (both active and date-wise)
+    const effectiveDate = targetDate || new Date().toISOString().slice(0, 10);
+    const updateFields: any = {
+      iotMachineMapping: mappings,
+      [`iotMachineMappingByDate.${effectiveDate}`]: mappings
+    };
+
     await db.collection('settings').updateOne(
       { _id: 'system_settings' as any },
-      { $set: { iotMachineMapping: mappings } },
+      { $set: updateFields },
       { upsert: true }
     );
 

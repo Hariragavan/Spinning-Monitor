@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     'KTTM': '40s GPS = (Actual GPS × Count) / 40',
   },
   iotMachineMapping: {},
+  iotMachineMappingByDate: {},
 };
 
 export async function GET() {
