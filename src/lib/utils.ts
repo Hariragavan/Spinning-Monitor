@@ -604,20 +604,34 @@ export function isDateOnOrAfter01_07_2026(dateStr?: string): boolean {
   return date.getTime() >= targetDate.getTime();
 }
 
-export function getGaiterIncentive(report: DailyReport, shift: Shift, rules: IncentiveRule[], workers: Sider[]): number {
+export function getGaiterIncentive(
+  report: DailyReport,
+  shift: Shift,
+  rules: IncentiveRule[],
+  workers: Sider[],
+  gaiterId?: string,
+  shed?: string
+): number {
   if (!report || !report.entries) return 0;
 
-  const shiftEntries = report.entries.filter(e => e.shift === shift);
+  const effectiveShed = report.shed || shed || '';
+  const shedLower = effectiveShed.toLowerCase();
+  const isKttm = shedLower.includes('kttm');
+
+  const shiftEntries = report.entries.filter(e => {
+    if (e.shift !== shift) return false;
+    if (effectiveShed && e.shed && normalizeShed(e.shed) !== normalizeShed(effectiveShed)) return false;
+    return true;
+  });
+
   if (shiftEntries.length === 0) return 0;
 
-  const isOnOrAfterNewRule = isDateOnOrAfter01_07_2026(report.date);
-
-  if (isOnOrAfterNewRule) {
+  // KTTM Shed: Regular rules
+  if (isKttm) {
     const incentives: number[] = [];
-
     shiftEntries.forEach(entry => {
       const numSlots = entry.siderIds?.length || 1;
-      const baseIncentive = calculateIncentive(entry, rules, report.date);
+      const baseIncentive = calculateIncentive(entry, rules, report.date, effectiveShed);
 
       let hasWorker = false;
       for (let slotIdx = 0; slotIdx < numSlots; slotIdx++) {
@@ -648,16 +662,49 @@ export function getGaiterIncentive(report: DailyReport, shift: Shift, rules: Inc
       return Math.min(...incentives);
     }
     return 0;
-  } else {
-    const minGpsEntry = shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]);
-    if (!minGpsEntry) return 0;
-    
-    const fakeEntry: ProductionEntry = {
-      ...minGpsEntry,
-      frameNo: 'GAITER_CALC'
-    } as ProductionEntry;
-    return calculateIncentive(fakeEntry, rules, report.date);
   }
+
+  // Shed 1, 2, 3:
+  // "and for gaiter give him least amount of gps of which machine he assigned for
+  // like the 3rd machine gps amount is the lowest so give him that lowest amount to him
+  // this whole rule is for each shifts and for 1,2,3 sheds"
+  let assignedEntries: ProductionEntry[] = [];
+
+  if (gaiterId) {
+    const cleanGaiterId = String(gaiterId).trim();
+    const gaiterWorker = resolveWorker(cleanGaiterId, undefined, workers);
+
+    const matchesGaiter = (id?: string, name?: string) => {
+      if (!id && !name) return false;
+      if (id && cleanGaiterId && id.trim().toLowerCase() === cleanGaiterId.toLowerCase()) return true;
+      if (gaiterWorker) {
+        if (id && gaiterWorker.id && id.trim().toLowerCase() === gaiterWorker.id.toLowerCase()) return true;
+        if (id && gaiterWorker.tNo && id.trim().toLowerCase() === gaiterWorker.tNo.toLowerCase()) return true;
+        if (name && gaiterWorker.name && name.trim().toLowerCase() === gaiterWorker.name.toLowerCase()) return true;
+      }
+      return false;
+    };
+
+    assignedEntries = shiftEntries.filter(e => matchesGaiter(e.gaiterId, e.gaiterName));
+  }
+
+  // Fallback to all shift machines if no per-machine gaiter allocation was specified
+  if (assignedEntries.length === 0) {
+    assignedEntries = shiftEntries;
+  }
+
+  const machineIncentives: number[] = [];
+  assignedEntries.forEach(e => {
+    if (e.gpsActual !== undefined && e.gpsActual !== null) {
+      const baseIncentive = calculateIncentive(e, rules, report.date, effectiveShed);
+      machineIncentives.push(baseIncentive);
+    }
+  });
+
+  if (machineIncentives.length === 0) return 0;
+
+  const lowest = Math.min(...machineIncentives);
+  return lowest > 0 ? lowest : 0;
 }
 
 /**
@@ -686,11 +733,11 @@ export function generateUUID(): string {
  *   If worker assigned for 2 sides: 100% of machine amount (each slot gets 50%).
  *   No 3rd and 4th side in KTTM.
  * - Shed 1, Shed 2, Shed 3:
- *   1. If an operator is assigned for two sides for the same machine alone: NO INCENTIVE (0%).
- *   2. If the same operator is assigned for an additional 3rd side:
- *      Earns 100% of the 2-side machine + 50% of the 3rd side machine.
- *      The other operator on the 3rd side machine earns the other 50%.
- *   3. If assigned for 4 sides: 100% + 100% (both machines 100%).
+ *   (sides)(incentive)
+ *   (1) -> 0%
+ *   (2) -> 0% (one operator assigned to both sides: no incentive)
+ *   (3) -> 75% + 25%: 75% from 1st 2-side machine + 25% from 3rd side machine
+ *   (4) -> 75% + 50%: 75% from 1st 2-side machine + 50% from 3rd & 4th side machine
  */
 export function calculateSiderSlotIncentive(
   entry: ProductionEntry,
@@ -805,17 +852,43 @@ export function calculateSiderSlotIncentive(
   const totalSidesInShift = workerMachines.reduce((sum, m) => sum + m.sides, 0);
 
   // If worker is assigned 2 sides or only 1 side (<= 2): normal workload -> NO INCENTIVE (0%)
+  // (sides)(incentive)
+  // (1)(0)
+  // (2)(0)
   if (totalSidesInShift <= 2) {
     return 0;
   }
 
-  // If operator is assigned for 3 sides:
-  // - 100% incentive for the one machine 2 sides (each slot gets 50% = Math.round(baseIncentive / 2), so sum is 100%)
-  // - 50% incentive for the 3rd side machine's incentive (slot gets Math.round(baseIncentive * 0.5))
-  // - The other operator sharing the 3rd side machine (totalSidesInShift === 1) gets 50%
-  // If operator is assigned for 4 sides: 100% + 100% (both machines 100%)
+  // Find 2-sided machines worked by this operator
+  const twoSideMachines = workerMachines.filter(m => m.sides === 2);
+
   if (sidesOnThisMachine === 2) {
-    return Math.round(baseIncentive / 2);
+    const isFirstTwoSide = twoSideMachines.length > 0 && twoSideMachines[0].frameNo === entry.frameNo;
+    if (isFirstTwoSide) {
+      // (3) or (4) sides: 75% from 1st 2-side machine (split across 2 slots)
+      const totalMachineInc = Math.round(baseIncentive * 0.75);
+      return slotIdx === 0 
+        ? Math.floor(totalMachineInc / 2) 
+        : (totalMachineInc - Math.floor(totalMachineInc / 2));
+    } else {
+      // (4) sides: 2nd 2-side machine (3rd and 4th sides): 50% from 2nd machine
+      const totalMachineInc = Math.round(baseIncentive * 0.5);
+      return slotIdx === 0 
+        ? Math.floor(totalMachineInc / 2) 
+        : (totalMachineInc - Math.floor(totalMachineInc / 2));
+    }
   }
-  return Math.round(baseIncentive * 0.5);
+
+  // Operator worked 1 side on this machine:
+  // (3) sides: 25% from 3rd side machine
+  // (4) sides: 25% each from 3rd and 4th side machines (total 50%)
+  if (totalSidesInShift === 3) {
+    return Math.round(baseIncentive * 0.25);
+  }
+
+  if (totalSidesInShift >= 4) {
+    return Math.round(baseIncentive * 0.25);
+  }
+
+  return 0;
 }

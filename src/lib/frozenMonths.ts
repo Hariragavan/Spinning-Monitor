@@ -109,10 +109,10 @@ export function computeFrozenMonthRecord(
       if (shiftEntries.length === 0) return;
 
       const shiftGaiterIds = report.gaiters?.[shift] || [];
-      const incentive = getGaiterIncentive(report, shift, rules, workers);
       const minGpsEntry = shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]);
 
       shiftGaiterIds.forEach(gid => {
+        const incentive = getGaiterIncentive(report, shift, rules, workers, gid, report.shed);
         const worker = resolveWorker(gid, undefined, workers);
         const tNo = worker.tNo || worker.id;
         if (!tNo) return;

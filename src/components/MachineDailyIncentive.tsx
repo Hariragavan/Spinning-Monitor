@@ -359,12 +359,14 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
 
         if (worker) {
           const shiftEntries = report.entries.filter(e => e.shift === shift);
-          const minGpsEntry = shiftEntries.length > 0 
-            ? shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]) 
+          const assignedEntries = shiftEntries.filter(e => e.gaiterId === workerId || (e.gaiterName && e.gaiterName === worker.name));
+          const targetEntries = assignedEntries.length > 0 ? assignedEntries : shiftEntries;
+          const minGpsEntry = targetEntries.length > 0 
+            ? targetEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, targetEntries[0]) 
             : null;
 
           const gps = minGpsEntry ? minGpsEntry.gpsActual : 0;
-          const incentive = getGaiterIncentive(report, shift, rules, workers);
+          const incentive = getGaiterIncentive(report, shift, rules, workers, workerId, shed);
 
           shiftsData[shift] = {
             gps,
@@ -467,13 +469,15 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
       totals.III += row.shiftsData.III.incentive;
     });
 
-    // Add AI Linkconer incentives to the totals
-    totals.I += aiconerShiftData.I.incentive;
-    totals.II += aiconerShiftData.II.incentive;
-    totals.III += aiconerShiftData.III.incentive;
+    // Add AI Linkconer incentives to the totals (KTTM shed only)
+    if (isKttmShed) {
+      totals.I += aiconerShiftData.I.incentive;
+      totals.II += aiconerShiftData.II.incentive;
+      totals.III += aiconerShiftData.III.incentive;
+    }
 
     return totals;
-  }, [tableRows, gaiterRows, aiconerShiftData]);
+  }, [tableRows, gaiterRows, aiconerShiftData, isKttmShed]);
 
   const grandTotal = shiftTotals.I + shiftTotals.II + shiftTotals.III;
 
@@ -873,8 +877,9 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
         </div>
       </div>
 
-      {/* AI Linkconer Table */}
-      <div className="mt-4 space-y-2">
+      {/* AI Linkconer Table (KTTM shed only) */}
+      {isKttmShed && (
+        <div className="mt-4 space-y-2">
         <div className="flex items-center gap-1.5">
           <Zap className="text-purple-600 shrink-0" size={18} />
           <h3 className="text-sm md:text-base font-black text-stone-900 uppercase tracking-tight">Table for AI Linkconer</h3>
@@ -986,6 +991,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Print Signature Footer Block */}
       <div className="hidden print-signatures">

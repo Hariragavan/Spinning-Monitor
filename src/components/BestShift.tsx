@@ -129,7 +129,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
       const shiftEntries = report.entries.filter(e => e.shift === best.shift);
       if (shiftEntries.length > 0) {
         const minGpsEntry = shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]);
-        const incentive = Math.min(120, getGaiterIncentive(report, best.shift, rules, workers));
+        const incentive = Math.min(120, getGaiterIncentive(report, best.shift, rules, workers, gid, report.shed));
 
         const totalShiftDoffTime = shiftEntries.reduce((acc, e) => {
            const summary = report.summaries?.find(s => s.frameNo === e.frameNo);
@@ -264,7 +264,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
       let incentive = 0;
       if (minGpsEntry) {
         gps = minGpsEntry.gpsActual;
-        incentive = getGaiterIncentive(report, shiftVal, rules, workers);
+        incentive = getGaiterIncentive(report, shiftVal, rules, workers, workerId, report.shed);
       }
 
       return {

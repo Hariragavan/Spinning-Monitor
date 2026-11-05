@@ -418,7 +418,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
           });
           
           if (isGaiter) {
-            const gaiterIncentive = getGaiterIncentive(report, shift, rules, workers);
+            const gaiterIncentive = getGaiterIncentive(report, shift, rules, workers, workerId, report.shed);
             totalValue += gaiterIncentive;
             hasData = true;
           }

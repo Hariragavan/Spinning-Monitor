@@ -39,6 +39,7 @@ interface MachineAssignmentProps {
   onCopyAllocations: (sourceDate: string, targetShift?: Shift | 'ALL') => void;
   onChangeReportDate?: (oldDate: string, newDate: string) => void;
   isSupervisorMode?: boolean;
+  shed?: string;
 }
 
 export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
@@ -60,7 +61,14 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   onCopyAllocations,
   onChangeReportDate,
   isSupervisorMode = false,
+  shed
 }) => {
+  const isKttm = useMemo(() => {
+    if (shed && shed.toLowerCase().includes('kttm')) return true;
+    if (entries.some(e => (e.frameNo || '').toUpperCase().startsWith('K') || (e.shed || '').toLowerCase().includes('kttm'))) return true;
+    return false;
+  }, [shed, entries]);
+
   const [selectedShift, setSelectedShift] = useState<Shift | 'ALL'>('I');
   const [showCopyPanel, setShowCopyPanel] = useState(false);
   const [chosenCopyDate, setChosenCopyDate] = useState('');
@@ -452,91 +460,93 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2. SECTION 1: AI LINKCONER ALLOCATION (TOP AS REQUESTED)                 */}
+      {/* 2. SECTION 1: AI LINKCONER ALLOCATION (KTTM SHED ONLY)                    */}
       {/* ========================================================================= */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-sm border border-purple-800/40">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-800/50 mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-400/20">
-              <Cpu size={18} />
+      {isKttm && (
+        <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-sm border border-purple-800/40">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-800/50 mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-400/20">
+                <Cpu size={18} />
+              </div>
+              <div>
+                <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
+                  AI LINKCONER ALLOCATIONS
+                </h2>
+                <p className="text-[11px] text-purple-200 font-medium">
+                  1 dedicated Linkconer operator per shift
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
-                AI LINKCONER ALLOCATIONS
-              </h2>
-              <p className="text-[11px] text-purple-200 font-medium">
-                1 dedicated Linkconer operator per shift
-              </p>
-            </div>
+            <span className="px-3 py-1 bg-purple-500/20 text-purple-200 border border-purple-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
+              TOP PRIORITY ALLOCATION
+            </span>
           </div>
-          <span className="px-3 py-1 bg-purple-500/20 text-purple-200 border border-purple-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
-            TOP PRIORITY ALLOCATION
-          </span>
-        </div>
 
-        {/* 3 Shift Cards side-by-side */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {shifts.map(shift => {
-            const currentSelected = aiCones[shift]?.[0] || '';
-            const assignedWorker = workers.find(w => w.id === currentSelected);
+          {/* 3 Shift Cards side-by-side */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {shifts.map(shift => {
+              const currentSelected = aiCones[shift]?.[0] || '';
+              const assignedWorker = workers.find(w => w.id === currentSelected);
 
-            return (
-              <div 
-                key={`ai-cone-${shift}`} 
-                className={cn(
-                  "p-3.5 rounded-xl border transition-all",
-                  selectedShift === shift 
-                    ? "bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/30" 
-                    : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-purple-400/40"
-                )}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-purple-200">
-                    <span className="w-5 h-5 rounded-md bg-purple-400 text-purple-950 flex items-center justify-center text-[10px] font-black">
-                      {shift}
-                    </span>
-                    Shift {shift} Linkconer
-                  </span>
-                  {assignedWorker && (
-                    <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
-                      T.No {assignedWorker.tNo}
-                    </span>
+              return (
+                <div 
+                  key={`ai-cone-${shift}`} 
+                  className={cn(
+                    "p-3.5 rounded-xl border transition-all",
+                    selectedShift === shift 
+                      ? "bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/30" 
+                      : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-purple-400/40"
                   )}
-                </div>
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-purple-200">
+                      <span className="w-5 h-5 rounded-md bg-purple-400 text-purple-950 flex items-center justify-center text-[10px] font-black">
+                        {shift}
+                      </span>
+                      Shift {shift} Linkconer
+                    </span>
+                    {assignedWorker && (
+                      <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                        T.No {assignedWorker.tNo}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="relative">
-                  <select
-                    value={currentSelected}
-                    onChange={(e) => assignAiCone(shift, [e.target.value || ''])}
-                    className="w-full px-3 py-2 bg-purple-950/90 border border-purple-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer appearance-none"
-                  >
-                    <option value="" className="bg-stone-900 text-stone-400">-- No Linkconer Assigned --</option>
-                    {aiLinkconerWorkers.length > 0 && (
-                      <optgroup label="AI Linkconer Department" className="bg-stone-900 text-purple-300 font-bold">
-                        {aiLinkconerWorkers.map(w => (
+                  <div className="relative">
+                    <select
+                      value={currentSelected}
+                      onChange={(e) => assignAiCone(shift, [e.target.value || ''])}
+                      className="w-full px-3 py-2 bg-purple-950/90 border border-purple-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer appearance-none"
+                    >
+                      <option value="" className="bg-stone-900 text-stone-400">-- No Linkconer Assigned --</option>
+                      {aiLinkconerWorkers.length > 0 && (
+                        <optgroup label="AI Linkconer Department" className="bg-stone-900 text-purple-300 font-bold">
+                          {aiLinkconerWorkers.map(w => (
+                            <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                              {w.name} ({w.tNo})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="All Other Workers" className="bg-stone-900 text-stone-400">
+                        {otherAiWorkers.map(w => (
                           <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                            {w.name} ({w.tNo})
+                            {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
                           </option>
                         ))}
                       </optgroup>
-                    )}
-                    <optgroup label="All Other Workers" className="bg-stone-900 text-stone-400">
-                      {otherAiWorkers.map(w => (
-                        <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                          {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-400">
-                    <Zap size={13} />
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-400">
+                      <Zap size={13} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 3. SECTION 2: SHIFT SELECTION BAR (TO SEPARATE BY SHIFT)                 */}

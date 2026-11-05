@@ -966,10 +966,10 @@ export default function Home() {
     const shifts: Shift[] = ['I', 'II', 'III'];
     shifts.forEach(shift => {
       const gaiters = report.gaiters?.[shift] || [];
-      const payout = getGaiterIncentive(report, shift, incentiveRules, workers);
-      if (payout <= 0) return;
 
       gaiters.forEach(gid => {
+        const payout = getGaiterIncentive(report, shift, incentiveRules, workers, gid, report.shed);
+        if (payout <= 0) return;
         const workerObj = resolveWorker(gid, undefined, workers);
         const key = workerObj.tNo || workerObj.id;
         if (!workerIncentives[key]) {
@@ -2201,6 +2201,7 @@ export default function Home() {
             onCopyAllocations={copyAllocationsFromReport}
             onChangeReportDate={changeReportDate}
             isSupervisorMode={isSupervisorMode}
+            shed={selectedShed}
           />
         );
 

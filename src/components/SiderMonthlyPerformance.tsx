@@ -168,7 +168,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
         const shiftGaiters = report.gaiters?.[shift] || [];
 
         if (shiftGaiters.includes(targetWorker.id) || shiftGaiters.includes(targetWorker.tNo)) {
-          const incentive = getGaiterIncentive(report, shift, rules, workers);
+          const incentive = getGaiterIncentive(report, shift, rules, workers, targetWorker.id, report.shed);
           rows.push({
             date: report.date,
             shift,
