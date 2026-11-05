@@ -523,6 +523,7 @@ export default function Home() {
     description: ''
   });
 
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [syncResultModal, setSyncResultModal] = useState<{ show: boolean; title: string; message: string; success: boolean } | null>(null);
   const [whatsAppToast, setWhatsAppToast] = useState<{ show: boolean; url: string; phone: string } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -1657,12 +1658,13 @@ export default function Home() {
   }, [reportHistory]);
 
   const promptDeleteAllData = () => {
+    setDeleteConfirmText('');
     setDeleteConfirmModal({
       isOpen: true,
       type: 'all',
-      title: 'Delete All Data',
-      description: 'Are you sure you want to delete ALL historical records? This will permanently wipe all daily production entries, machine statistics, and incentive records across all sheds.',
-      targetInfo: 'Entire historical database (All Sheds & All Months)'
+      title: 'Wipe All Data (Complete Database Erase)',
+      description: 'Are you sure you want to completely erase ALL data? This will permanently wipe Machine Master, Count Master, Incentive Master, Worker Master, Daily Reports, and all production logs across all sheds.',
+      targetInfo: 'Entire Database: Machines, Counts, Incentive Rules, Workers, Reports, Production Logs'
     });
   };
 
@@ -1691,13 +1693,24 @@ export default function Home() {
     setDeleteConfirmModal(prev => ({ ...prev, isProcessing: true }));
     try {
       if (deleteConfirmModal.type === 'all') {
+        if (deleteConfirmText.trim() !== 'CONFIRM') {
+          alert('You must type CONFIRM to delete all data.');
+          setDeleteConfirmModal(prev => ({ ...prev, isProcessing: false }));
+          return;
+        }
+        await apiClient.wipeEntireDatabase();
         setReportHistory([]);
-        await apiClient.clearAllHistory();
+        setWorkers([]);
+        setMachines([]);
+        setCountConversions([]);
+        setIncentiveRules([]);
+        setDailyReport(createDefaultReportForShed(selectedShed, activeDailyReport.date));
+        setDeleteConfirmText('');
         setDeleteConfirmModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
         setSyncResultModal({
           show: true,
-          title: 'All Data Cleared',
-          message: 'All daily reports and incentive history records have been permanently cleared from Database.',
+          title: 'Entire Database Erased',
+          message: 'All machines, counts, incentive rules, workers, reports, and production logs have been completely wiped from the database.',
           success: true
         });
       } else if (deleteConfirmModal.type === 'month') {
@@ -3465,16 +3478,16 @@ export default function Home() {
                         Entire History
                       </span>
                     </div>
-                    <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete All Data</h4>
+                    <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete All Data (Wipe Everything)</h4>
                     <p className="text-xs text-stone-500 mb-5">
-                      Wipe all daily reports, machine production entries, and historical incentive statements across all sheds.
+                      Completely erase all machine masters, count conversions, incentive rules, workers, and historical daily reports across all sheds.
                     </p>
 
                     <div className="p-3.5 bg-red-50/70 border border-red-200/60 rounded-xl mb-6">
                       <div className="flex items-start gap-2">
                         <AlertTriangle size={15} className="text-red-600 shrink-0 mt-0.5" />
                         <p className="text-[11px] font-semibold text-red-800 leading-relaxed">
-                          This will permanently delete all {reportHistory.length} recorded daily reports from the database.
+                          This will permanently erase all machines, counts, rules, workers, and {reportHistory.length} daily reports from the database.
                         </p>
                       </div>
                     </div>
@@ -3859,9 +3872,25 @@ export default function Home() {
                     </div>
                   )}
 
+                  {deleteConfirmModal.type === 'all' && (
+                    <div className="p-3.5 bg-red-50/90 border-2 border-red-300 rounded-2xl space-y-2">
+                      <label className="text-[11px] font-black uppercase tracking-wider text-red-900 block">
+                        Type <span className="font-mono text-xs font-black text-white bg-red-600 px-1.5 py-0.5 rounded">CONFIRM</span> to delete all data:
+                      </label>
+                      <input
+                        type="text"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder='Type "CONFIRM"'
+                        autoFocus
+                        className="w-full px-3.5 py-2.5 bg-white border-2 border-red-300 focus:border-red-600 focus:ring-2 focus:ring-red-400/30 rounded-xl text-xs font-mono font-black text-red-950 uppercase tracking-widest outline-none transition-all placeholder:text-stone-300 placeholder:normal-case placeholder:font-sans"
+                      />
+                    </div>
+                  )}
+
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-800">
                     <AlertTriangle size={15} className="shrink-0 text-amber-600" />
-                    <span className="text-[11px] font-bold">This operation is irreversible and cannot be undone.</span>
+                    <span className="text-[11px] font-bold">This operation is irreversible and completely wipes all records.</span>
                   </div>
 
                   <div className="flex items-center justify-end gap-3 pt-2">
@@ -3875,19 +3904,19 @@ export default function Home() {
                     </button>
                     <button
                       type="button"
-                      disabled={deleteConfirmModal.isProcessing}
+                      disabled={deleteConfirmModal.isProcessing || (deleteConfirmModal.type === 'all' && deleteConfirmText.trim() !== 'CONFIRM')}
                       onClick={executeConfirmedDelete}
-                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-600/30 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-red-600/30 transition-all flex items-center gap-2 cursor-pointer"
                     >
                       {deleteConfirmModal.isProcessing ? (
                         <>
                           <Loader2 size={14} className="animate-spin" />
-                          Deleting...
+                          Deleting Everything...
                         </>
                       ) : (
                         <>
                           <Trash2 size={14} />
-                          Yes, Delete Data
+                          {deleteConfirmModal.type === 'all' ? 'Erase All Data' : 'Yes, Delete Data'}
                         </>
                       )}
                     </button>

@@ -76,6 +76,17 @@ export const apiClient = {
     return res.ok;
   },
 
+  async wipeEntireDatabase(): Promise<boolean> {
+    try {
+      const res = await fetch('/api/backup', {
+        method: 'DELETE'
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   async clearMonthData(month: string | number, year: string | number): Promise<boolean> {
     const res = await fetch('/api/reports/history', {
       method: 'POST',

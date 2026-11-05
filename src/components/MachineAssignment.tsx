@@ -167,11 +167,12 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const handleBatchAssignGaiter = () => {
     if (!selectedBatchGaiter) return;
     const indices = filteredEntriesWithIndex.map(item => item.idx);
+    const targetGaiterId = selectedBatchGaiter === '__NO_GAITER__' ? '' : selectedBatchGaiter;
     if (assignMachineGaiter) {
-      assignMachineGaiter(indices, selectedBatchGaiter);
+      assignMachineGaiter(indices, targetGaiterId);
     } else {
       const targetShift = selectedShift !== 'ALL' ? selectedShift : 'I';
-      assignGaiter(targetShift, [selectedBatchGaiter]);
+      assignGaiter(targetShift, targetGaiterId ? [targetGaiterId] : []);
     }
     setBatchGaiterModalOpen(false);
     setSelectedBatchGaiter('');
@@ -1027,6 +1028,9 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 outline-none focus:border-amber-500 font-mono"
                 >
                   <option value="">-- Select Gaiter Operator --</option>
+                  <option value="__NO_GAITER__" className="text-rose-600 font-black bg-rose-50">
+                    ❌ No Gaiter (Unassign / Clear All in View)
+                  </option>
                   {gaiterDeptWorkers.length > 0 && (
                     <optgroup label="Gaiter Department">
                       {gaiterDeptWorkers.map((w) => (
@@ -1045,7 +1049,9 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   </optgroup>
                 </select>
                 <span className="block text-[10px] text-stone-400 mt-1">
-                  This will set the chosen gaiter for all {filteredEntriesWithIndex.length} ringframes in the current view in one single click.
+                  {selectedBatchGaiter === '__NO_GAITER__'
+                    ? `This will remove/unassign the gaiter for all ${filteredEntriesWithIndex.length} ringframes in the current view.`
+                    : `This will set the chosen gaiter for all ${filteredEntriesWithIndex.length} ringframes in the current view in one single click.`}
                 </span>
               </div>
             </div>
@@ -1062,9 +1068,14 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                 type="button"
                 disabled={!selectedBatchGaiter}
                 onClick={handleBatchAssignGaiter}
-                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer"
+                className={cn(
+                  "px-5 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer",
+                  selectedBatchGaiter === '__NO_GAITER__'
+                    ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/30"
+                    : "bg-amber-500 hover:bg-amber-600 shadow-amber-500/30"
+                )}
               >
-                Apply to All Machines
+                {selectedBatchGaiter === '__NO_GAITER__' ? 'Unassign Gaiter from All' : 'Apply to All Machines'}
               </button>
             </div>
           </div>

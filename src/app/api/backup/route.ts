@@ -99,3 +99,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to restore backup' }, { status: 500 });
   }
 }
+
+export async function DELETE() {
+  try {
+    const db = await getDb();
+    await Promise.all([
+      db.collection('workers').deleteMany({}),
+      db.collection('machines').deleteMany({}),
+      db.collection('yarncounts').deleteMany({}),
+      db.collection('count_conversions').deleteMany({}),
+      db.collection('incentiverules').deleteMany({}),
+      db.collection('incentive_rules').deleteMany({}),
+      db.collection('reports').deleteMany({}),
+      db.collection('dailyproductionlogs').deleteMany({}),
+      db.collection('machineemlogs').deleteMany({}),
+      db.collection('shiftallocations').deleteMany({}),
+      db.collection('frozen_months').deleteMany({}),
+      db.collection('machine_em').deleteMany({}),
+      db.collection('millcalendars').deleteMany({}),
+    ]);
+    return NextResponse.json({ success: true, message: 'All database data completely erased.' });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error?.message || 'Failed to wipe database' }, { status: 500 });
+  }
+}
