@@ -97,8 +97,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const parts = path.split('/');
       const machineId = parts[parts.length - 1] || 'RF01';
       const fromDate = searchParams.get('fromDate') || undefined;
+      const toDate = searchParams.get('toDate') || undefined;
       const shift = searchParams.get('shift') || undefined;
-      const data = await getIotMachineDetail(decodeURIComponent(machineId), { fromDate, shift });
+      const data = await getIotMachineDetail(decodeURIComponent(machineId), { fromDate, toDate, shift });
       return NextResponse.json({ success: true, data }, {
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
       });

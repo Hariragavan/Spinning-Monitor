@@ -8,7 +8,7 @@ import {
   Shift
 } from '@/types/iot';
 import { iotApi, IOT_COMMON_API_URL } from '@/lib/iot/iotApi';
-import { getSampleSpinfoOverview } from '@/lib/iot/sampleIotData';
+import { getSampleSpinfoOverview, buildMachineDetailFromCommon } from '@/lib/iot/sampleIotData';
 
 const INITIAL_OVERVIEW: SpinfoOverviewResponse = getSampleSpinfoOverview();
 
@@ -45,11 +45,13 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   const [selectedRunStatus, setSelectedRunStatus] = useState<string>('All');
   const [selectedCount, setSelectedCount] = useState<string>('All');
   const [selectedFromDate, setSelectedFromDate] = useState<string>(() => selectedDate || '');
+  const [selectedToDate, setSelectedToDate] = useState<string>(() => selectedDate || '');
   const [userChangedDate, setUserChangedDate] = useState<boolean>(Boolean(selectedDate));
 
   useEffect(() => {
     if (selectedDate) {
       setSelectedFromDate(selectedDate);
+      setSelectedToDate(selectedDate);
       setUserChangedDate(true);
     }
   }, [selectedDate]);
@@ -95,6 +97,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
       setErrorMessage(null);
       const data = await iotApi.getSpinfoOverview({
         fromDate: userChangedDate && selectedFromDate ? selectedFromDate : undefined,
+        toDate: userChangedDate && selectedToDate ? selectedToDate : undefined,
         shift: selectedShift === 'All Shifts' ? undefined : selectedShift
       });
       if (data && data.frameStatus && Array.isArray(data.machines)) {
@@ -109,7 +112,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
       isFetchingRef.current = false;
       if (isInitial) setLoading(false);
     }
-  }, [selectedFromDate, userChangedDate, selectedShift]);
+  }, [selectedFromDate, selectedToDate, userChangedDate, selectedShift]);
 
   // Trigger load on initial mount and when user filter criteria change
   useEffect(() => {
@@ -214,19 +217,33 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   const openMachineModal = useCallback(async (machineId: string) => {
     setActiveMachineId(machineId);
     setModalOpen(true);
+
+    // 1. Immediately populate from active overview so popup opens with ZERO delay
+    if (overview && Array.isArray(overview.machines)) {
+      try {
+        const instantDetail = buildMachineDetailFromCommon(machineId, overview);
+        if (instantDetail && instantDetail.machine) {
+          setSelectedMachineDetail(instantDetail);
+        }
+      } catch (_) {}
+    }
+
     setDetailLoading(true);
     try {
       const detail = await iotApi.getMachineDetail(machineId, {
         fromDate: userChangedDate && selectedFromDate ? selectedFromDate : undefined,
+        toDate: userChangedDate && selectedToDate ? selectedToDate : undefined,
         shift: selectedShift === 'All Shifts' ? undefined : selectedShift
       });
-      setSelectedMachineDetail(detail);
+      if (detail && detail.machine) {
+        setSelectedMachineDetail(detail);
+      }
     } catch {
       // Handled by fallback inside API
     } finally {
       setDetailLoading(false);
     }
-  }, [userChangedDate, selectedFromDate, selectedShift]);
+  }, [userChangedDate, selectedFromDate, selectedToDate, selectedShift, overview]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
@@ -471,7 +488,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
           <div className="field">
             <label>
               <span className="field-icon">📅</span>
-              <span>Shift Date</span>
+              <span>From Date</span>
             </label>
             <input
               type="date"
@@ -485,13 +502,58 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             />
           </div>
 
+          <div className="field">
+            <label>
+              <span className="field-icon">📅</span>
+              <span>To Date</span>
+            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <input
+                type="date"
+                value={selectedToDate || overview.shiftDate || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedToDate(val);
+                  setUserChangedDate(Boolean(val));
+                }}
+                className="date-input"
+              />
+              <button
+                type="button"
+                className="btn-small-refresh"
+                onClick={() => loadOverview(true)}
+                disabled={loading}
+                title="Refresh live IoT telemetry"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#2563eb',
+                  cursor: 'pointer',
+                  fontSize: '1.15rem',
+                  fontWeight: 'bold',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                  flexShrink: 0
+                }}
+              >
+                <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
+              </button>
+            </div>
+          </div>
+
           {userChangedDate && (
             <button
               className="btn"
-              style={{ height: '36px', fontSize: '0.75rem', padding: '0 0.75rem' }}
+              style={{ height: '38px', fontSize: '0.75rem', padding: '0 0.75rem' }}
               onClick={() => {
                 setUserChangedDate(false);
                 setSelectedFromDate(overview.shiftDate || '');
+                setSelectedToDate(overview.shiftDate || '');
               }}
               title="Reset date filter to latest live stream"
             >

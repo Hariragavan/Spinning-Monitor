@@ -2,6 +2,7 @@ import { getIotDb } from '@/lib/mongodb';
 import {
   EMPTY_COMMON_OVERVIEW,
   SAMPLE_OVERVIEW,
+  getSampleSpinfoOverview,
   extractCommonRecords,
   selectAndMergeCommonRecord,
   transformCommonToOverview,
@@ -121,36 +122,74 @@ export async function ensureIotSeeded(): Promise<void> {
   }
 }
 
+function appendQueryParams(baseUrl: string, params: Record<string, string | number | undefined>): string {
+  try {
+    const url = new URL(baseUrl);
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== '') {
+        url.searchParams.set(k, String(v));
+      }
+    }
+    return url.toString();
+  } catch {
+    const query = Object.entries(params)
+      .filter(([_, v]) => v !== undefined && v !== '')
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join('&');
+    if (!query) return baseUrl;
+    return baseUrl.includes('?') ? `${baseUrl}&${query}` : `${baseUrl}?${query}`;
+  }
+}
+
 /**
- * Fetches live MAG SPinFO records directly from
- * https://iot-machine-backend-production.up.railway.app/api/common
- * (with fallback to Render /api/common) and archives into local MongoDB.
+ * Fetches live MAG SPinFO records directly from remote endpoints
+ * with strict 5-second timeout and non-blocking background MongoDB archive.
  */
 export async function fetchLiveRenderStream(
-  limit: number = 50,
+  limit: number = 5,
   shiftNum?: number,
   date?: string
 ): Promise<any[]> {
+  const queryParams = {
+    limit: limit || 5,
+    sort: 'createdAt',
+    order: 'desc',
+    date: date || undefined,
+    shift: shiftNum !== undefined ? shiftNum : undefined
+  };
+
   const urlsToTry = [
-    IOT_COMMON_API_URL,
-    `${REMOTE_IOT_API}/common?limit=${limit}&sort=createdAt&order=desc`
+    appendQueryParams(IOT_COMMON_API_URL, queryParams),
+    appendQueryParams(`${REMOTE_IOT_API}/common`, queryParams)
   ];
 
-  for (const baseUrl of urlsToTry) {
+  for (const url of urlsToTry) {
     try {
-      const res = await fetch(baseUrl, { cache: 'no-store' });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(url, {
+        headers: { Accept: 'application/json', 'X-Company-Slug': 'scm' },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
       if (res.ok) {
         const json = await res.json();
         const records = extractCommonRecords(json);
         if (records.length > 0) {
-          try {
-            const db = await getIotDb();
-            const col = db.collection(IOT_COLLECTIONS.COMMON);
-            for (const doc of records) {
-              const msgId = doc.msgId || doc._id || `${doc.shiftDate}_${doc.shift}_${doc.part || 1}`;
-              await col.updateOne({ msgId }, { $set: doc }, { upsert: true });
-            }
-          } catch (_) {}
+          // Asynchronously archive into local MongoDB without blocking the response
+          (async () => {
+            try {
+              const db = await getIotDb();
+              const col = db.collection(IOT_COLLECTIONS.COMMON);
+              for (const doc of records) {
+                const { _id, ...cleanDoc } = doc;
+                const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
+                await col.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
+              }
+            } catch (_) {}
+          })().catch(() => {});
+
           return records;
         }
       }
@@ -167,9 +206,11 @@ export async function getIotOverview(
   filter?: any,
   forceRefresh: boolean = false
 ): Promise<SpinfoOverviewResponse> {
-  const targetDate = filter?.fromDate || filter?.toDate || filter?.shiftDate;
+  const fromDate = filter?.fromDate;
+  const toDate = filter?.toDate;
+  const targetDate = fromDate || toDate || filter?.shiftDate;
   const shiftFilter = filter?.shift;
-  const cacheKey = `${shiftFilter ?? 'all'}_${targetDate ?? 'any'}`;
+  const cacheKey = `${shiftFilter ?? 'all'}_${fromDate ?? ''}_${toDate ?? ''}_${targetDate ?? 'any'}`;
   const now = Date.now();
 
   const cached = overviewCache.get(cacheKey);
@@ -177,11 +218,13 @@ export async function getIotOverview(
     return cached.data;
   }
 
-  // 1. Pull live telemetry from https://iot-machine-backend-production.up.railway.app/api/common
-  const liveRecords = await fetchLiveRenderStream(50);
+  // 1. Pull live telemetry from remote stream (limit: 5, fast & lightweight)
+  const liveRecords = await fetchLiveRenderStream(5, undefined, targetDate);
   if (liveRecords.length > 0) {
     const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(liveRecords, {
-      fromDate: targetDate,
+      fromDate,
+      toDate,
+      shiftDate: targetDate,
       shift: shiftFilter
     });
     if (record) {
@@ -191,20 +234,17 @@ export async function getIotOverview(
     }
   }
 
-  // 2. Fallback to local MongoDB iot_machine.commondatas
+  // 2. Fallback to local MongoDB collections
   try {
     const db = await getIotDb();
-    const localDocs = await db
-      .collection(IOT_COLLECTIONS.COMMON)
-      .find({})
-      .sort({ createdAt: -1, _id: -1 })
-      .limit(50)
-      .toArray();
 
-    const validLocal = extractCommonRecords(localDocs);
-    if (validLocal.length > 0) {
-      const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(validLocal, {
-        fromDate: targetDate,
+    // 2a. Check iot_spinfo_lives singleton snapshot
+    const liveDoc = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
+    if (liveDoc && Array.isArray(liveDoc.machines) && liveDoc.machines.length > 0) {
+      const { record, availableDates, availableShifts } = selectAndMergeCommonRecord([liveDoc], {
+        fromDate,
+        toDate,
+        shiftDate: targetDate,
         shift: shiftFilter
       });
       if (record) {
@@ -213,10 +253,43 @@ export async function getIotOverview(
         return overview;
       }
     }
+
+    // 2b. Check iot_commondatas
+    const localDocs = await db
+      .collection(IOT_COLLECTIONS.COMMON)
+      .find({})
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(10)
+      .toArray();
+
+    const validLocal = extractCommonRecords(localDocs);
+    if (validLocal.length > 0) {
+      const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(validLocal, {
+        fromDate,
+        toDate,
+        shiftDate: targetDate,
+        shift: shiftFilter
+      });
+      if (record) {
+        const overview = transformCommonToOverview(record, { availableDates, availableShifts });
+        overviewCache.set(cacheKey, { data: overview, timestamp: now });
+        return overview;
+      }
+    }
+
+    // 2c. Check iot_spinfo_histories
+    const historyDoc = await db
+      .collection(IOT_COLLECTIONS.SPINFO_HISTORIES)
+      .findOne({}, { sort: { recordedAt: -1, createdAt: -1 } });
+    if (historyDoc && Array.isArray(historyDoc.machines) && historyDoc.machines.length > 0) {
+      const overview = transformCommonToOverview(historyDoc);
+      overviewCache.set(cacheKey, { data: overview, timestamp: now });
+      return overview;
+    }
   } catch (_) {}
 
-  // 3. Return empty overview when no live telemetry is available
-  return EMPTY_COMMON_OVERVIEW;
+  // 3. Fallback to sample data so UI never displays an empty 0/0 state
+  return getSampleSpinfoOverview();
 }
 
 // -------------------------------------------------------------

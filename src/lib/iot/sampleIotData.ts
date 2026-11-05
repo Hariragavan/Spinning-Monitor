@@ -135,12 +135,33 @@ export function selectAndMergeCommonRecord(
     }
   }
 
-  // Filter by date if it matches available records
-  const requestedDate = filter?.shiftDate || filter?.fromDate || filter?.toDate;
-  if (requestedDate) {
-    const dateMatches = candidates.filter(r => String(r.shiftDate) === requestedDate);
-    if (dateMatches.length > 0) {
-      candidates = dateMatches;
+  // Filter by date range (fromDate & toDate) or exact shiftDate
+  const fromDate = filter?.fromDate;
+  const toDate = filter?.toDate;
+  const exactDate = filter?.shiftDate;
+
+  if (fromDate && toDate) {
+    const rangeMatches = candidates.filter(r => {
+      const d = String(r.shiftDate || '');
+      return d >= fromDate && d <= toDate;
+    });
+    if (rangeMatches.length > 0) {
+      candidates = rangeMatches;
+    }
+  } else if (fromDate) {
+    const fromMatches = candidates.filter(r => String(r.shiftDate || '') >= fromDate);
+    if (fromMatches.length > 0) {
+      candidates = fromMatches;
+    }
+  } else if (toDate) {
+    const toMatches = candidates.filter(r => String(r.shiftDate || '') <= toDate);
+    if (toMatches.length > 0) {
+      candidates = toMatches;
+    }
+  } else if (exactDate) {
+    const exactMatches = candidates.filter(r => String(r.shiftDate || '') === exactDate);
+    if (exactMatches.length > 0) {
+      candidates = exactMatches;
     }
   }
 

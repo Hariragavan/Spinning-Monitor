@@ -155,17 +155,6 @@ export const iotApi = {
     shift?: string;
     operator?: string;
   }): Promise<SpinfoOverviewResponse> {
-    // 1. Try direct live fetch from https://iot-machine-backend-production.up.railway.app/api/common
-    const liveCommon = await fetchLiveCommonPayload({
-      fromDate: filter?.fromDate,
-      shift: filter?.shift
-    });
-
-    if (liveCommon && Array.isArray(liveCommon.machines)) {
-      return transformCommonToOverview(liveCommon);
-    }
-
-    // 2. Fallback to Next.js API route (which also fetches from https://iot-machine-backend-production.up.railway.app/api/common server-side)
     const params = new URLSearchParams();
     if (filter?.fromDate) params.set('fromDate', filter.fromDate);
     if (filter?.toDate) params.set('toDate', filter.toDate);
@@ -174,12 +163,31 @@ export const iotApi = {
     params.set('_t', String(Date.now()));
 
     const fallback = getSampleSpinfoOverview();
-    const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
-      `/api/iot/spinfo/overview?${params.toString()}`,
-      { method: 'GET' },
-      { success: true, data: fallback }
-    );
-    return res.data || fallback;
+
+    // 1. Call Next.js API route first (fast, same-origin, memory-cached, server-side timeout resilient)
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
+        `/api/iot/spinfo/overview?${params.toString()}`,
+        { method: 'GET' },
+        { success: true, data: fallback }
+      );
+      if (res?.data && res.data.frameStatus && Array.isArray(res.data.machines) && res.data.machines.length > 0) {
+        return res.data;
+      }
+    } catch (_) {}
+
+    // 2. Direct remote fetch fallback
+    try {
+      const liveCommon = await fetchLiveCommonPayload({
+        fromDate: filter?.fromDate,
+        shift: filter?.shift
+      });
+      if (liveCommon && Array.isArray(liveCommon.machines)) {
+        return transformCommonToOverview(liveCommon);
+      }
+    } catch (_) {}
+
+    return fallback;
   },
 
   async getMachineDetail(
@@ -191,17 +199,6 @@ export const iotApi = {
       operator?: string;
     }
   ): Promise<SpinfoMachineDetailResponse> {
-    // 1. Try direct live fetch from https://iot-machine-backend-production.up.railway.app/api/common
-    const liveCommon = await fetchLiveCommonPayload({
-      fromDate: filter?.fromDate,
-      shift: filter?.shift
-    });
-
-    if (liveCommon && Array.isArray(liveCommon.machines)) {
-      return buildMachineDetailFromCommon(machineId, liveCommon);
-    }
-
-    // 2. Fallback to Next.js API route
     const params = new URLSearchParams();
     if (filter?.fromDate) params.set('fromDate', filter.fromDate);
     if (filter?.toDate) params.set('toDate', filter.toDate);
@@ -210,12 +207,31 @@ export const iotApi = {
     params.set('_t', String(Date.now()));
 
     const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
-    const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
-      `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
-      { method: 'GET' },
-      { success: true, data: fallback }
-    );
-    return res.data || fallback;
+
+    // 1. Call Next.js API route first
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
+        `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
+        { method: 'GET' },
+        { success: true, data: fallback }
+      );
+      if (res?.data && res.data.machine) {
+        return res.data;
+      }
+    } catch (_) {}
+
+    // 2. Direct remote fetch fallback
+    try {
+      const liveCommon = await fetchLiveCommonPayload({
+        fromDate: filter?.fromDate,
+        shift: filter?.shift
+      });
+      if (liveCommon && Array.isArray(liveCommon.machines)) {
+        return buildMachineDetailFromCommon(machineId, liveCommon);
+      }
+    } catch (_) {}
+
+    return fallback;
   },
 
   async syncSpinfoData(): Promise<SpinfoOverviewResponse> {

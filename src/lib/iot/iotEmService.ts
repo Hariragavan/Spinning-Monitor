@@ -204,10 +204,13 @@ export async function getLightweightMachineStatuses(): Promise<{
       const month = shiftDate.slice(0, 7);
       const shift = Number(rawItem.shift || 1);
 
-      // Save 45-second telemetry tick to iot_spinfo_histories
+      // Strip any immutable _id from remote payload to prevent MongoServerError code 66 and duplicate key conflicts
+      const { _id: _ignoredId, ...cleanItem } = rawItem;
+
+      // Save 45-second telemetry tick to iot_spinfo_histories with auto-generated Mongo _id
       const histCol = db.collection(IOT_COLLECTIONS.SPINFO_HISTORIES);
       await histCol.insertOne({
-        ...rawItem,
+        ...cleanItem,
         shiftDate,
         month,
         shift,
@@ -215,10 +218,10 @@ export async function getLightweightMachineStatuses(): Promise<{
         recordedAt: new Date()
       });
 
-      // Update live snapshot
-      await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).replaceOne(
-        {},
-        { ...rawItem, shiftDate, shift, updatedAt: new Date() },
+      // Update singleton live snapshot with fixed immutable _id
+      await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).updateOne(
+        { _id: 'spinfo_live_snapshot' as any },
+        { $set: { ...cleanItem, shiftDate, shift, updatedAt: new Date() } },
         { upsert: true }
       );
 
