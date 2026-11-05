@@ -22,16 +22,20 @@ import {
 } from '@/types/iot';
 
 export const IOT_COLLECTIONS = {
-  COMMON: 'commondatas',
-  MACHINES: 'machines',
-  EMPLOYEES: 'employees',
-  DEVICES: 'devices',
-  SHIFTS: 'shifts',
-  MAPPINGS: 'machinemappings',
-  PRODUCTION_ENTRIES: 'productionentries',
-  MAINTENANCE: 'maintenanceschedules',
-  SPINFO_LIVES: 'spinfolives',
-  SPINFO_HISTORIES: 'spinfohistories'
+  COMMON: 'iot_commondatas',
+  MACHINES: 'iot_machines',
+  EMPLOYEES: 'iot_employees',
+  DEVICES: 'iot_devices',
+  SHIFTS: 'iot_shifts',
+  MAPPINGS: 'iot_machine_mappings',
+  PRODUCTION_ENTRIES: 'iot_production_entries',
+  MAINTENANCE: 'iot_maintenance_schedules',
+  SPINFO_LIVES: 'iot_spinfo_lives',
+  SPINFO_HISTORIES: 'iot_spinfo_histories',
+  MACHINE_STATUS_EVENTS: 'iot_machine_status_events',
+  EMPLOYEE_ACTIVITIES: 'iot_employee_activities',
+  EMPLOYEE_PERFORMANCES: 'iot_employee_performances',
+  EM: 'iot_em'
 };
 
 export const REMOTE_IOT_API =

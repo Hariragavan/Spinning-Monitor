@@ -21,6 +21,11 @@ import {
   IOT_COLLECTIONS,
   IOT_COMMON_API_URL
 } from '@/lib/iot/iotDb';
+import {
+  getLightweightMachineStatuses,
+  syncIotEmAndManageShiftHistory,
+  getIotEmRecords
+} from '@/lib/iot/iotEmService';
 
 const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
 
@@ -30,6 +35,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const { searchParams } = new URL(req.url);
 
   try {
+    // 0. Lightweight 45-Second Machine Running Status check
+    if (path === 'status' || path === 'machine-status') {
+      const statuses = await getLightweightMachineStatuses();
+      return NextResponse.json(statuses, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+      });
+    }
+
+    // 0.1 Hourly End Mending (EM) records
+    if (path === 'em' || path === 'iot-em') {
+      const date = searchParams.get('date') || undefined;
+      const month = searchParams.get('month') || undefined;
+      const shift = searchParams.get('shift') || undefined;
+      const machineNo = searchParams.get('machineNo') || searchParams.get('machineId') || undefined;
+
+      const records = await getIotEmRecords({ date, month, shift, machineNo });
+      return NextResponse.json({ success: true, count: records.length, data: records });
+    }
+
+    // 0.2 Trigger EM 5-Minute Sync & Shift History Management
+    if (path === 'em/sync' || path === 'sync-em') {
+      const syncResult = await syncIotEmAndManageShiftHistory();
+      return NextResponse.json(syncResult);
+    }
     // 1. Spinfo & Dashboard Overview (sourced from https://iot-machine-backend-production.up.railway.app/api/common)
     if (
       path === 'spinfo/overview' ||

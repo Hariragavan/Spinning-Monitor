@@ -957,5 +957,108 @@ export const iotApi = {
       title: defaultTitles[filter.reportType] || 'Database Analytical Reports',
       data: []
     };
+  },
+
+  // 10. Lightweight 45-Second Machine Running Status check
+  async getLightweightMachineStatus(): Promise<{
+    success: boolean;
+    timestamp: string;
+    totalMachines: number;
+    running: number;
+    stopped: number;
+    doffing: number;
+    offline: number;
+    machines: Array<{
+      machine: string;
+      runStatus: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE';
+      statusBadge: string;
+      speed: number;
+      speedUnit: string;
+      count: string;
+      lastUpdated: string;
+    }>;
+  }> {
+    try {
+      const res = await fetch(`/api/iot/status?_t=${Date.now()}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (_) {}
+
+    return {
+      success: false,
+      timestamp: new Date().toISOString(),
+      totalMachines: 0,
+      running: 0,
+      stopped: 0,
+      doffing: 0,
+      offline: 0,
+      machines: []
+    };
+  },
+
+  // 11. Hourly End Mending (EM) records
+  async getHourlyEmRecords(filter?: {
+    date?: string;
+    month?: string;
+    shift?: string | number;
+    machineNo?: string;
+  }): Promise<{
+    success: boolean;
+    count: number;
+    data: Array<{
+      machineNo: string;
+      date: string;
+      month: string;
+      shift: number | string;
+      hour: number;
+      hourLabel: string;
+      emLeft: number;
+      emRight: number;
+      emTotal: number;
+      unit: string;
+      endBreakCountLeft: number;
+      endBreakCountRight: number;
+      totalEndBreaks: number;
+      isFinalized: boolean;
+      recordedAt: string;
+      updatedAt: string;
+    }>;
+  }> {
+    try {
+      const p = new URLSearchParams();
+      if (filter?.date) p.set('date', filter.date);
+      if (filter?.month) p.set('month', filter.month);
+      if (filter?.shift) p.set('shift', String(filter.shift));
+      if (filter?.machineNo) p.set('machineNo', filter.machineNo);
+      p.set('_t', String(Date.now()));
+
+      const res = await fetch(`/api/iot/em?${p.toString()}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (_) {}
+
+    return { success: false, count: 0, data: [] };
+  },
+
+  // 12. Trigger 5-Minute EM Sync
+  async syncIotEm(): Promise<any> {
+    try {
+      const res = await fetch(`/api/iot/em/sync?_t=${Date.now()}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (_) {}
+    return { success: false };
   }
 };

@@ -35,7 +35,7 @@ export async function getDb(): Promise<Db> {
  */
 export async function getIotDb(): Promise<Db> {
   const connectedClient = await clientPromise;
-  const dbName = process.env.IOT_DB_NAME || 'iot_machine';
+  const dbName = process.env.IOT_DB_NAME || 'spinning_monitor';
   return connectedClient.db(dbName);
 }
 

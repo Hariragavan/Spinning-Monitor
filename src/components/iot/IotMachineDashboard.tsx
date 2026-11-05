@@ -64,6 +64,14 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [activeModalTab, setActiveModalTab] = useState<ModalTabType>('overview');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  const [lastStatusTime, setLastStatusTime] = useState<Date | null>(null);
+
+  // Hourly EM (End Mending) Modal & Inspection State
+  const [emModalOpen, setEmModalOpen] = useState<boolean>(false);
+  const [emRecords, setEmRecords] = useState<any[]>([]);
+  const [emLoading, setEmLoading] = useState<boolean>(false);
+  const [emFilterShift, setEmFilterShift] = useState<string>('All');
+  const [emFilterMachine, setEmFilterMachine] = useState<string>('All');
 
   // 120 visual ticks per side representing spindle slots across the frame
   const visualTicks = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
@@ -108,6 +116,100 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     loadOverview(true);
   }, [loadOverview]);
 
+  // 1. Lightweight 45-Second Status Poller (updates ONLY running status immediately)
+  useEffect(() => {
+    let isMounted = true;
+    const statusInterval = setInterval(async () => {
+      try {
+        const res = await iotApi.getLightweightMachineStatus();
+        if (isMounted && res && res.success && Array.isArray(res.machines) && res.machines.length > 0) {
+          const map = new Map(res.machines.map(m => [m.machine, m]));
+          setOverview(prev => {
+            if (!prev || !prev.machines) return prev;
+            const updated = prev.machines.map(m => {
+              const live = map.get(m.machineId);
+              if (!live) return m;
+              return {
+                ...m,
+                runStatus: live.runStatus,
+                spindleSpeedCurrent: live.speed,
+                statusBadge: live.statusBadge
+              };
+            });
+            return {
+              ...prev,
+              frameStatus: {
+                ...prev.frameStatus,
+                running: res.running,
+                stopped: res.stopped,
+                doffing: res.doffing,
+                offline: res.offline,
+                runningPercent: Math.round((res.running / (res.totalMachines || 1)) * 100)
+              },
+              machines: updated
+            };
+          });
+          setLastStatusTime(new Date());
+        }
+      } catch (_) {}
+    }, 45000); // 45 seconds
+
+    return () => {
+      isMounted = false;
+      clearInterval(statusInterval);
+    };
+  }, []);
+
+  // 2. Periodic 5-Minute Full Refresh & EM Sync (refreshes all charts/KPIs once every 5 minutes)
+  useEffect(() => {
+    const fullRefreshInterval = setInterval(async () => {
+      loadOverview(false);
+      try {
+        await iotApi.syncIotEm();
+      } catch (_) {}
+    }, 300000); // 5 minutes
+
+    return () => clearInterval(fullRefreshInterval);
+  }, [loadOverview]);
+
+  // 3. Hourly EM (End Mending) Data Loader
+  const loadEmRecords = useCallback(async () => {
+    setEmLoading(true);
+    try {
+      const res = await iotApi.getHourlyEmRecords({
+        date: userChangedDate && selectedFromDate ? selectedFromDate : (overview.shiftDate || undefined),
+        shift: emFilterShift === 'All' ? undefined : emFilterShift,
+        machineNo: emFilterMachine === 'All' ? undefined : emFilterMachine
+      });
+      if (res && res.success && Array.isArray(res.data)) {
+        setEmRecords(res.data);
+      }
+    } catch (_) {}
+    finally {
+      setEmLoading(false);
+    }
+  }, [selectedFromDate, userChangedDate, overview.shiftDate, emFilterShift, emFilterMachine]);
+
+  const openEmModal = useCallback(() => {
+    setEmModalOpen(true);
+    loadEmRecords();
+  }, [loadEmRecords]);
+
+  const closeEmModal = useCallback(() => {
+    setEmModalOpen(false);
+  }, []);
+
+  const triggerManualEmSync = useCallback(async () => {
+    setEmLoading(true);
+    try {
+      await iotApi.syncIotEm();
+      await loadEmRecords();
+    } catch (_) {}
+    finally {
+      setEmLoading(false);
+    }
+  }, [loadEmRecords]);
+
   // Open Machine Detail Slide Popup
   const openMachineModal = useCallback(async (machineId: string) => {
     setActiveMachineId(machineId);
@@ -132,15 +234,17 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     setSelectedMachineDetail(null);
   }, []);
 
-  // Keyboard navigation for modal
+  // Keyboard navigation for modals (ESC key)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!modalOpen) return;
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') {
+        if (emModalOpen) closeEmModal();
+        if (modalOpen) closeModal();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [modalOpen, closeModal]);
+  }, [modalOpen, emModalOpen, closeModal, closeEmModal]);
 
   // Available counts from live JSON machines[]
   const availableCounts = useMemo(() => {
@@ -405,10 +509,50 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             <span>Quick Refresh</span>
           </button>
 
+          <button
+            className="btn"
+            style={{
+              height: '36px',
+              fontSize: '0.75rem',
+              padding: '0 0.85rem',
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              borderColor: '#93c5fd',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+            onClick={openEmModal}
+            title="Inspect hourly End Mending (EM) records saved in iot_em"
+          >
+            <span>⏱️</span>
+            <span>Hourly EM</span>
+            {emRecords.length > 0 && (
+              <span style={{
+                background: '#dbeafe',
+                color: '#1e40af',
+                fontSize: '10px',
+                padding: '1px 5px',
+                borderRadius: '999px',
+                fontWeight: 700
+              }}>
+                {emRecords.length}
+              </span>
+            )}
+          </button>
+
           {lastRefreshedAt && (
-            <div className="sync-indicator" title={`Synced with ${IOT_COMMON_API_URL}`}>
+            <div className="sync-indicator" title={`Synced with ${IOT_COMMON_API_URL} (5-min telemetry)`}>
               <span className="pulse-dot"></span>
               <span className="sync-text">Live: {lastRefreshedAt.toLocaleTimeString()}</span>
+            </div>
+          )}
+
+          {lastStatusTime && (
+            <div className="sync-indicator" title="Live 45-second machine running status check active">
+              <span className="pulse-dot" style={{ background: '#10b981' }}></span>
+              <span className="sync-text">Status: {lastStatusTime.toLocaleTimeString()} (45s)</span>
             </div>
           )}
         </div>
@@ -1769,6 +1913,201 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HOURLY END MENDING (EM) MODAL DIALOG — STRICTLY BOUND TO iot_em TABLE */}
+      {emModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs"
+          onClick={closeEmModal}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* MODAL HEADER */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+              <div className="flex items-center gap-3">
+                <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-700 text-xl font-bold">
+                  ⏱️
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    Hourly End Mending (EM) Intelligence
+                    <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                      Table: iot_em
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Hourly telemetry of Left/Right side EM. Active hour is continuously updated/replaced every 5 minutes and finalized at hour end.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition flex items-center gap-1.5 shadow-xs"
+                  onClick={triggerManualEmSync}
+                  disabled={emLoading}
+                >
+                  <span className={`inline-block ${emLoading ? 'animate-spin' : ''}`}>↻</span>
+                  <span>Sync EM Now</span>
+                </button>
+                <button
+                  onClick={closeEmModal}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition text-lg font-bold"
+                  title="Close (Esc)"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* MODAL FILTER STRIP */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 bg-white border-b border-slate-100 text-xs">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500 font-medium">Shift:</span>
+                  <select
+                    value={emFilterShift}
+                    onChange={e => setEmFilterShift(e.target.value)}
+                    className="border border-slate-300 rounded-md px-2.5 py-1 text-xs bg-slate-50 font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="All">All Shifts</option>
+                    <option value="1">Shift 1 (06:00 - 14:00)</option>
+                    <option value="2">Shift 2 (14:00 - 22:00)</option>
+                    <option value="3">Shift 3 (22:00 - 06:00)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500 font-medium">Machine:</span>
+                  <select
+                    value={emFilterMachine}
+                    onChange={e => setEmFilterMachine(e.target.value)}
+                    className="border border-slate-300 rounded-md px-2.5 py-1 text-xs bg-slate-50 font-medium text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="All">All Machines</option>
+                    {(overview?.machines || []).map(m => (
+                      <option key={m.machineId} value={m.machineId}>
+                        {m.machineId}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* QUICK SUMMARY BADGES */}
+              <div className="flex items-center gap-3">
+                <div className="px-3 py-1 bg-slate-100 rounded-lg text-slate-700 font-semibold">
+                  Records: <span className="text-blue-600">{emRecords.length}</span>
+                </div>
+                {emRecords.length > 0 && (
+                  <div className="px-3 py-1 bg-emerald-50 text-emerald-800 rounded-lg font-semibold border border-emerald-200">
+                    Avg Total EM:{' '}
+                    <span className="font-mono">
+                      {(
+                        emRecords.reduce((acc, r) => acc + (r.emTotal || 0), 0) / emRecords.length
+                      ).toFixed(2)}{' '}
+                      min
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* MODAL TABLE BODY */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {emLoading && emRecords.length === 0 ? (
+                <div className="py-16 text-center text-slate-500">
+                  <div className="inline-block w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+                  <p className="font-medium text-sm">Loading hourly End Mending telemetry...</p>
+                </div>
+              ) : emRecords.length === 0 ? (
+                <div className="py-16 text-center text-slate-400">
+                  <span className="text-4xl block mb-2">📊</span>
+                  <p className="font-semibold text-slate-700">No EM records found for selected filter</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Click &ldquo;Sync EM Now&rdquo; above to immediately snapshot live machine end mending data.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                        <th className="py-3 px-4">Machine</th>
+                        <th className="py-3 px-3">Date</th>
+                        <th className="py-3 px-3">Shift</th>
+                        <th className="py-3 px-3">Hour</th>
+                        <th className="py-3 px-3 text-right">EM Left (min)</th>
+                        <th className="py-3 px-3 text-right">EM Right (min)</th>
+                        <th className="py-3 px-3 text-right">Total EM (min)</th>
+                        <th className="py-3 px-3 text-center">Breaks (L / R)</th>
+                        <th className="py-3 px-3 text-center">Total Breaks</th>
+                        <th className="py-3 px-3 text-center">Hour Status</th>
+                        <th className="py-3 px-3 text-right">Last Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                      {emRecords.map((r, i) => (
+                        <tr key={`${r.machineNo}-${r.date}-${r.shift}-${r.hour}-${i}`} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-4 font-bold text-blue-700">{r.machineNo}</td>
+                          <td className="py-2.5 px-3 text-slate-600">{r.date}</td>
+                          <td className="py-2.5 px-3">
+                            <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-bold text-[10.5px]">
+                              Shift {r.shift}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-semibold text-slate-700">Hour {r.hour}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-700">{r.emLeft ?? 0}</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-700">{r.emRight ?? 0}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                            {r.emTotal ?? ((r.emLeft || 0) + (r.emRight || 0)).toFixed(2)} min
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono text-slate-600">
+                            {r.endBreakCountLeft ?? 0} / {r.endBreakCountRight ?? 0}
+                          </td>
+                          <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800">
+                            {r.totalEndBreaks ?? ((r.endBreakCountLeft || 0) + (r.endBreakCountRight || 0))}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            {r.isFinalized ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Finalized
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                                Live (Updating)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-right text-slate-500 text-[10.5px] font-mono">
+                            {r.updatedAt ? new Date(r.updatedAt).toLocaleTimeString() : 'Just now'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* MODAL FOOTER */}
+            <div className="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-slate-50 text-xs text-slate-500">
+              <span>
+                Periodic Sync: Every 5 minutes active hours are rewritten. Previous hours are finalized automatically.
+              </span>
+              <button
+                onClick={closeEmModal}
+                className="px-4 py-1.5 rounded-lg border border-slate-300 font-semibold text-slate-700 hover:bg-slate-200 transition"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
