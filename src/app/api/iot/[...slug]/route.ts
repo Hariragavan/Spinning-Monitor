@@ -24,7 +24,9 @@ import {
 import {
   getLightweightMachineStatuses,
   syncIotEmAndManageShiftHistory,
-  getIotEmRecords
+  getIotEmRecords,
+  getLatestEmForAllIotMachines,
+  syncIotEmToSpinningMonitor
 } from '@/lib/iot/iotEmService';
 
 const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
@@ -58,6 +60,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     if (path === 'em/sync' || path === 'sync-em') {
       const syncResult = await syncIotEmAndManageShiftHistory();
       return NextResponse.json(syncResult);
+    }
+
+    // 0.3 Latest EM for All 46 IoT Machines (for Settings machine matching dropdowns)
+    if (path === 'em/live-by-machine' || path === 'em/machines') {
+      const emMap = await getLatestEmForAllIotMachines();
+      return NextResponse.json({ success: true, count: Object.keys(emMap).length, data: emMap }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+      });
     }
     // 1. Spinfo & Dashboard Overview (sourced from https://iot-machine-backend-production.up.railway.app/api/common)
     if (
@@ -368,6 +378,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     ) {
       const saved = await saveIotMapping(body);
       return NextResponse.json({ success: true, data: saved });
+    }
+
+    // EM Sync from iot_em into spinning_monitor machine_em
+    if (path === 'em/sync-to-spinning' || path === 'em/match' || path === 'em/map') {
+      const mappings = body.mappings || body.mapping || body;
+      const targetDate = body.date || undefined;
+      const result = await syncIotEmToSpinningMonitor(mappings, targetDate);
+      return NextResponse.json(result);
     }
 
     return NextResponse.json({ success: true, data: body });

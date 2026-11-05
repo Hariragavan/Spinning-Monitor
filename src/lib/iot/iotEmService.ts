@@ -431,3 +431,145 @@ export async function getIotEmRecords(filter: {
     return [];
   }
 }
+
+/**
+ * 4. Get Latest EM for All 46 IoT Machines (for Settings dropdown & live badges)
+ * Returns { [machineNo]: { emTotal, emLeft, emRight, shift, hour, date, updatedAt } }
+ */
+export async function getLatestEmForAllIotMachines(): Promise<Record<string, {
+  machineNo: string;
+  emTotal: number;
+  emLeft: number;
+  emRight: number;
+  shift: number;
+  hour: number;
+  date: string;
+  updatedAt: string;
+}>> {
+  try {
+    const db = await getIotDb();
+    const emCol = db.collection<IotEmRecord>(IOT_COLLECTIONS.EM);
+
+    // Get latest record for each machine using aggregation
+    const latestList = await emCol.aggregate([
+      { $sort: { date: -1, shift: -1, hour: -1, updatedAt: -1 } },
+      {
+        $group: {
+          _id: '$machineNo',
+          machineNo: { $first: '$machineNo' },
+          emTotal: { $first: '$emTotal' },
+          emLeft: { $first: '$emLeft' },
+          emRight: { $first: '$emRight' },
+          shift: { $first: '$shift' },
+          hour: { $first: '$hour' },
+          date: { $first: '$date' },
+          updatedAt: { $first: '$updatedAt' }
+        }
+      }
+    ]).toArray();
+
+    const map: Record<string, any> = {};
+    for (const item of latestList) {
+      if (item.machineNo) {
+        map[item.machineNo] = {
+          machineNo: item.machineNo,
+          emTotal: Number(item.emTotal || 0),
+          emLeft: Number(item.emLeft || 0),
+          emRight: Number(item.emRight || 0),
+          shift: Number(item.shift || 1),
+          hour: Number(item.hour || 1),
+          date: String(item.date || ''),
+          updatedAt: item.updatedAt ? new Date(item.updatedAt).toISOString() : new Date().toISOString()
+        };
+      }
+    }
+    return map;
+  } catch (err) {
+    console.error('Error fetching latest EM for all IoT machines:', err);
+    return {};
+  }
+}
+
+/**
+ * 5. Sync Mapped IoT EM to Spinning Monitor machine_em Collection
+ * - Copies EM data from iot_em into spinning_monitor's machine_em table
+ * - Saves mapping configuration into settings
+ */
+export async function syncIotEmToSpinningMonitor(
+  mappings: Record<string, string>,
+  targetDate?: string
+): Promise<{
+  success: boolean;
+  updatedCount: number;
+  machineEm: Record<string, Record<string, Record<number, number>>>;
+}> {
+  try {
+    const db = await getIotDb();
+    const emCol = db.collection<IotEmRecord>(IOT_COLLECTIONS.EM);
+
+    // Load existing spinning machine_em data
+    const emDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
+    const merged: Record<string, Record<string, Record<number, number>>> = { ...(emDoc?.data || {}) };
+
+    let updatedCount = 0;
+
+    // Invert mapping: iotNo -> spinningFrameNo(s)
+    const iotToSpinningMap = new Map<string, string[]>();
+    for (const [spinningFrame, iotMachine] of Object.entries(mappings)) {
+      if (iotMachine && iotMachine !== 'None' && iotMachine !== 'unassigned') {
+        const cleanIot = iotMachine.trim().toUpperCase();
+        const current = iotToSpinningMap.get(cleanIot) || [];
+        current.push(spinningFrame);
+        iotToSpinningMap.set(cleanIot, current);
+      }
+    }
+
+    const trackedIotMachines = Array.from(iotToSpinningMap.keys());
+    if (trackedIotMachines.length > 0) {
+      const query: any = { machineNo: { $in: trackedIotMachines } };
+      if (targetDate) query.date = targetDate;
+
+      // Find all relevant iot_em records
+      const iotRecords = await emCol.find(query).sort({ date: 1, shift: 1, hour: 1 }).toArray();
+
+      for (const rec of iotRecords) {
+        const spinningFrames = iotToSpinningMap.get(rec.machineNo.toUpperCase()) || [];
+        const dateStr = rec.date;
+        const shiftNum = Number(rec.shift || 1);
+        const emVal = Number(rec.emTotal ?? ((rec.emLeft || 0) + (rec.emRight || 0)));
+
+        if (!merged[dateStr]) merged[dateStr] = {};
+
+        for (const frame of spinningFrames) {
+          if (!merged[dateStr][frame]) merged[dateStr][frame] = {};
+          merged[dateStr][frame][shiftNum] = emVal;
+          updatedCount++;
+        }
+      }
+
+      // Save updated machine_em to MongoDB
+      await db.collection('machine_em').updateOne(
+        { _id: 'machine_em_data' as any },
+        { $set: { data: merged } },
+        { upsert: true }
+      );
+    }
+
+    // Persist mappings into settings collection
+    await db.collection('settings').updateOne(
+      { _id: 'system_settings' as any },
+      { $set: { iotMachineMapping: mappings } },
+      { upsert: true }
+    );
+
+    return {
+      success: true,
+      updatedCount,
+      machineEm: merged
+    };
+  } catch (err) {
+    console.error('Error syncing iot_em to spinning monitor:', err);
+    return { success: false, updatedCount: 0, machineEm: {} };
+  }
+}
+

@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     'Shed 3': '40s GPS = Actual GPS × Multiplication Factor',
     'KTTM': '40s GPS = (Actual GPS × Count) / 40',
   },
+  iotMachineMapping: {},
 };
 
 export async function GET() {

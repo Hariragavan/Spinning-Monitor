@@ -40,6 +40,7 @@ import { IotReports } from '@/components/iot/IotReports';
 import { IotMaintenance } from '@/components/iot/IotMaintenance';
 import { IotConfiguration } from '@/components/iot/IotConfiguration';
 import { IotShifts } from '@/components/iot/IotShifts';
+import { IotMachineMatchingSettings } from '@/components/IotMachineMatchingSettings';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
@@ -3155,262 +3156,23 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Machine Configuration: Sides per Machine */}
-            <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 bg-blue-500/10 border border-blue-300 text-blue-700 rounded-2xl flex items-center justify-center shrink-0">
-                    <Activity size={22} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight">
-                      Machine Configuration & Side Allotments
-                    </h3>
-                    <p className="text-xs text-stone-500 font-bold mt-0.5">
-                      Spinning Frame Operator & Side Allotment Master (Showing Only Registered Machines)
-                    </p>
-                  </div>
-                </div>
+            {/* IoT Machine Matching Settings: Shed 1, Shed 2, Shed 3 Only */}
+            <IotMachineMatchingSettings
+              machines={machines}
+              currentMappings={settings.iotMachineMapping || {}}
+              machineEm={machineEm}
+              activeDate={activeDailyReport?.date || undefined}
+              onSaveMappings={async (newMappings) => {
+                const updated = { ...settings, iotMachineMapping: newMappings };
+                setSettings(updated);
+                await apiClient.saveSettings(updated);
+              }}
+              onMachineEmUpdated={(newEm) => {
+                setMachineEm(newEm);
+              }}
+            />
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    ref={settingsStatementInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleSettingsStatementUpload}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => settingsStatementInputRef.current?.click()}
-                    disabled={isUploadingSettingsStatement}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-                    title="Upload production statement Excel file to immediately populate machines and running counts"
-                  >
-                    {isUploadingSettingsStatement ? (
-                      <Loader2 size={13} className="animate-spin text-emerald-200" />
-                    ) : (
-                      <CloudUpload size={13} className="text-emerald-200" />
-                    )}
-                    <span>{isUploadingSettingsStatement ? 'Uploading...' : 'Upload Statement'}</span>
-                  </button>
-                  <button
-                    onClick={() => setAllMachinesSides(4)}
-                    className="px-3.5 py-2 bg-indigo-900 hover:bg-indigo-950 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Check size={13} className="text-indigo-300" />
-                    <span>Set All 4 Sides</span>
-                  </button>
-                  <button
-                    onClick={() => setAllMachinesSides(2)}
-                    className="px-3.5 py-2 bg-blue-900 hover:bg-blue-950 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Check size={13} className="text-blue-300" />
-                    <span>Set All 2 Sides (LH + RH)</span>
-                  </button>
-                  <button
-                    onClick={() => setAllMachinesSides(1)}
-                    className="px-3.5 py-2 bg-white hover:bg-stone-100 text-stone-800 border border-stone-300 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer"
-                  >
-                    <span>Set All 1 Side</span>
-                  </button>
-                </div>
-              </div>
 
-              {/* Explanatory Banner */}
-              <div className="bg-blue-50/80 border border-blue-200/70 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <Monitor size={18} className="text-blue-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-blue-950 font-medium leading-relaxed">
-                    <strong>Operator Allocation Rule:</strong> Machines loaded from today's production statement file automatically appear here with their running counts. You can set 1, 2, 3, or up to <strong>4 Siders</strong> per machine. Settings save automatically for future daily allocations.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
-                  <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg bg-white border border-blue-200 text-blue-900 shadow-2xs font-mono">
-                    Statement Date: {activeDailyReport?.date || 'Today'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Shed Filter Tabs & Search Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="inline-flex p-1 bg-white border border-stone-200 rounded-2xl shadow-2xs gap-1">
-                  {(['All', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shedTab => {
-                    const isSelected = settingsMachineShed === shedTab;
-                    const countInTab = shedTab === 'All'
-                      ? configurableMachinesList.length
-                      : configurableMachinesList.filter(m => (m.shed || 'Shed 1') === shedTab).length;
-
-                    return (
-                      <button
-                        key={shedTab}
-                        onClick={() => setSettingsMachineShed(shedTab)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
-                          isSelected
-                            ? "bg-blue-600 text-white shadow-2xs"
-                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
-                        )}
-                      >
-                        <span>{shedTab}</span>
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded-md text-[10px]",
-                          isSelected ? "bg-white/20 text-white" : "bg-stone-100 text-stone-500"
-                        )}>
-                          {countInTab}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="relative max-w-xs w-full">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                  <input
-                    type="text"
-                    placeholder="Search frame (e.g. 01, RF-1)..."
-                    value={settingsMachineSearch}
-                    onChange={(e) => setSettingsMachineSearch(e.target.value)}
-                    className="w-full bg-white border border-stone-200 rounded-xl pl-9 pr-3 py-2 text-xs font-bold text-stone-800 placeholder-stone-400 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                  />
-                </div>
-              </div>
-
-              {/* Filtered Machine Cards Grid */}
-              {(() => {
-                const filtered = configurableMachinesList.filter(item => {
-                  const mShed = item.shed || 'Shed 1';
-                  const matchesShed = settingsMachineShed === 'All' || mShed === settingsMachineShed;
-                  const matchesSearch = !settingsMachineSearch || item.rfNo.toLowerCase().includes(settingsMachineSearch.toLowerCase());
-                  return matchesShed && matchesSearch;
-                });
-
-                if (filtered.length === 0) {
-                  return (
-                    <div className="text-center py-12 bg-white rounded-2xl border border-stone-200">
-                      <p className="text-sm font-bold text-stone-400">No spinning frames found matching filters.</p>
-                      <p className="text-xs text-stone-400 mt-1">Upload a daily production statement or register machines in Machine Master.</p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 sm:gap-4">
-                    {filtered.map(item => {
-                      const rfNo = item.rfNo;
-                      const mShed = item.shed || 'Shed 1';
-                      const currentSides = settings.machineSiderCounts?.[rfNo] !== undefined 
-                        ? settings.machineSiderCounts[rfNo] 
-                        : 2;
-
-                      return (
-                        <div
-                          key={rfNo}
-                          className="bg-white rounded-2xl p-4 border border-stone-200 shadow-2xs hover:shadow-md hover:border-blue-300 transition-all flex flex-col justify-between"
-                        >
-                          <div className="flex items-center justify-between gap-1 mb-3 pb-2 border-b border-stone-100">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-black text-stone-900 text-sm tracking-tight font-mono">{rfNo}</span>
-                                {item.fromStatement ? (
-                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    Statement
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200">
-                                    Master
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[9px] font-black uppercase text-stone-400">{mShed}</span>
-                                {item.count && (
-                                  <span className="text-[9px] font-mono font-bold text-stone-500 truncate max-w-[90px]">
-                                    · {item.count}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <span
-                              className={cn(
-                                "text-[9px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider font-mono",
-                                currentSides === 2 
-                                  ? "bg-blue-100 text-blue-800 border border-blue-200"
-                                  : currentSides === 1
-                                  ? "bg-stone-100 text-stone-700 border border-stone-200"
-                                  : currentSides === 3
-                                  ? "bg-purple-100 text-purple-800 border border-purple-200"
-                                  : "bg-indigo-100 text-indigo-900 border border-indigo-200"
-                              )}
-                            >
-                              {currentSides === 2 ? 'LH + RH' : currentSides === 1 ? 'LH' : `${currentSides} SIDES`}
-                            </span>
-                          </div>
-
-                          {/* Visual Side Pills */}
-                          <div className="flex items-center justify-center gap-1 mb-3 flex-wrap">
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
-                              currentSides >= 1 ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-400"
-                            )}>
-                              LH
-                            </span>
-                            <span className={cn(
-                              "px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider transition-colors",
-                              currentSides >= 2 ? "bg-blue-600 text-white" : "bg-stone-100 text-stone-400"
-                            )}>
-                              RH
-                            </span>
-                            {currentSides >= 3 && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white">
-                                S3
-                              </span>
-                            )}
-                            {currentSides >= 4 && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white">
-                                S4
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Stepper Control */}
-                          <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
-                            <button
-                              onClick={() => updateMachineSides(rfNo, currentSides - 1)}
-                              disabled={currentSides <= 1}
-                              className={cn(
-                                "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
-                                currentSides <= 1
-                                  ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
-                                  : "bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 active:scale-90 cursor-pointer"
-                              )}
-                            >
-                              -
-                            </button>
-
-                            <span className="text-xl font-black text-stone-900 tabular-nums font-mono">
-                              {currentSides}
-                            </span>
-
-                            <button
-                              onClick={() => updateMachineSides(rfNo, currentSides + 1)}
-                              disabled={currentSides >= 4}
-                              className={cn(
-                                "w-8 h-8 rounded-xl flex items-center justify-center font-black text-sm transition-all",
-                                currentSides >= 4
-                                  ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
-                                  : "bg-blue-600 hover:bg-blue-700 text-white active:scale-90 cursor-pointer shadow-xs"
-                              )}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
 
             {/* Backup & Recovery */}
             <div>

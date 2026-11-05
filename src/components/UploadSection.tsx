@@ -620,8 +620,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
   const uploadCategories = [
     { id: 'daily_report', title: 'Production Statement', icon: FileUp, color: 'text-emerald-500' },
-    { id: 'incentive_report', title: 'Incentive Amount Sheet', icon: Coins, color: 'text-amber-500' },
-    { id: 'machine_em', title: 'Machine EM Update', icon: Gauge, color: 'text-blue-500' },
     { id: 'worker_master', title: 'Worker Master Update', icon: Contact, color: 'text-rose-500' },
   ];
 
@@ -1299,9 +1297,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
                 <button 
                   onClick={() => downloadTemplate(
-                    cat.id === 'daily_report' ? 'daily_report' :
-                    cat.id === 'worker_master' ? 'worker' : 
-                    cat.id === 'machine_em' ? 'em' : 'incentive'
+                    cat.id === 'daily_report' ? 'daily_report' : 'worker'
                   )}
                   className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-xl border border-emerald-200/80 transition-colors cursor-pointer"
                   title={`Download sample template for ${cat.title}`}
@@ -1321,10 +1317,6 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               <p className="text-xs text-stone-500 font-medium leading-relaxed flex-1 mb-4">
                 {cat.id === 'daily_report' 
                   ? 'Upload all sheds Daily Production Statement (Shed 1, Shed 2, Shed 3, KTTM) for telemetry, GPS, and production totals.' 
-                  : cat.id === 'incentive_report'
-                  ? 'Upload Daily Incentive Amount sheet for manual sider payouts and assignments.'
-                  : cat.id === 'machine_em'
-                  ? 'Upload Machine EM spreadsheet to update machine efficiency maintenance in the cloud.'
                   : 'Upload employee registry to sync names and ticket numbers.'}
               </p>
             </div>
