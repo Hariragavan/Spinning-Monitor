@@ -89,16 +89,8 @@ export async function GET(req: Request) {
       console.warn('MongoDB query warning (fallback serverless mode):', dbErr);
     }
 
-    // Default counts fallback if empty
-    if (counts.length === 0) {
-      counts = [
-        { count: '030/1-PH-PC', multiplicationFactor: 1.0, shed: 'Shed 1' },
-        { count: '040/1-PH-PC', multiplicationFactor: 1.0, shed: 'Shed 1' },
-        { count: '32/1-CH-CY', multiplicationFactor: 1.0, shed: 'Shed 2' },
-        { count: '26/1-CHY', multiplicationFactor: 1.0, shed: 'Shed 3' },
-        { count: '60s CW', multiplicationFactor: 1.0, shed: 'KTTM' },
-      ];
-    }
+    // If no counts defined in DB, keep counts as empty array
+    // (Do not re-inject deleted counts)
 
     // Filter reports by shed and date
     let filteredReports: DailyReport[] = filterItemsByShed(reports, shed);

@@ -300,8 +300,8 @@ export default function Home() {
   const [frozenMonths, setFrozenMonths] = useState<Record<string, FrozenMonthRecord>>({});
   const [workers, setWorkers] = useState<Sider[]>(DEFAULT_WORKERS);
   const [machines, setMachines] = useState<MachineMasterItem[]>([]);
-  const [incentiveRules, setIncentiveRules] = useState<IncentiveRule[]>(DEFAULT_INCENTIVE_RULES);
-  const [countConversions, setCountConversions] = useState<CountConversion[]>(DEFAULT_COUNT_CONVERSIONS);
+  const [incentiveRules, setIncentiveRules] = useState<IncentiveRule[]>([]);
+  const [countConversions, setCountConversions] = useState<CountConversion[]>([]);
   const [dailyReport, setDailyReport] = useState<DailyReport>(mockData);
   const [reportHistory, setReportHistory] = useState<DailyReport[]>([]);
   const [selectedShed, setSelectedShed] = useState<Shed>('Shed 1');
@@ -599,9 +599,11 @@ export default function Home() {
           localStorage.setItem('spinning_machines', JSON.stringify(data.machines));
         }
       }
-      if (data.rules && data.rules.length > 0) setIncentiveRules(data.rules);
-      if (data.counts && data.counts.length > 0) {
-        const cleanCounts = data.counts.filter(c => c.count && !['all', '40s'].includes(c.count.toLowerCase().trim()));
+      if (data.rules !== undefined) {
+        setIncentiveRules(data.rules || []);
+      }
+      if (data.counts !== undefined) {
+        const cleanCounts = (data.counts || []).filter(c => c.count && !['all', '40s'].includes(c.count.toLowerCase().trim()));
         setCountConversions(cleanCounts);
       }
 
@@ -1705,6 +1707,12 @@ export default function Home() {
         setCountConversions([]);
         setIncentiveRules([]);
         setDailyReport(createDefaultReportForShed(selectedShed, activeDailyReport.date));
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('spinning_machines');
+          localStorage.removeItem('spinning_settings');
+          localStorage.removeItem('spinning_data_updated');
+          localStorage.removeItem('spinning_leave_dates');
+        }
         setDeleteConfirmText('');
         setDeleteConfirmModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
         setSyncResultModal({

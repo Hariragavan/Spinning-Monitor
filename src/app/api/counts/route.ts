@@ -46,17 +46,8 @@ export async function GET(req: Request) {
       counts = (await db.collection('count_conversions').find(filter, { projection: { _id: 0 } }).toArray()) as any;
     }
     
-    // Seed defaults if totally empty
-    if (!counts || counts.length === 0) {
-      await db.collection('yarncounts').insertMany(DEFAULT_COUNT_CONVERSIONS);
-      await db.collection('count_conversions').insertMany(DEFAULT_COUNT_CONVERSIONS);
-      counts = shed && shed !== 'All' && shed !== 'All Sheds'
-        ? DEFAULT_COUNT_CONVERSIONS.filter(c => c.shed === shed || c.shed === 'All Sheds')
-        : DEFAULT_COUNT_CONVERSIONS;
-    }
-
     // Ensure shed is always defined
-    const normalizedCounts = counts.map((c: any) => ({
+    const normalizedCounts = (counts || []).map((c: any) => ({
       ...c,
       shed: c.shed || 'Shed 1'
     }));
@@ -139,6 +130,17 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const count = searchParams.get('count');
     const shed = searchParams.get('shed');
+    const all = searchParams.get('all');
+
+    if (all === 'true') {
+      const deleteFilter: any = {};
+      if (shed && shed !== 'All' && shed !== 'All Sheds') {
+        deleteFilter.shed = shed;
+      }
+      await db.collection('yarncounts').deleteMany(deleteFilter);
+      await db.collection('count_conversions').deleteMany(deleteFilter);
+      return NextResponse.json({ success: true, message: 'Counts wiped successfully' });
+    }
 
     if (!count) {
       return NextResponse.json({ success: false, error: 'count is required' }, { status: 400 });
