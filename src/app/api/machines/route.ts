@@ -13,7 +13,21 @@ export async function GET(req: Request) {
     }
 
     const machines = await db.collection('machines').find(filter, { projection: { _id: 0 } }).toArray();
-    return NextResponse.json({ success: true, data: machines });
+    const normalized = machines.map((m: any) => {
+      const rf = m.rfNo || m.frameNo || '';
+      return {
+        ...m,
+        id: m.id || `m-${rf}`,
+        rfNo: rf,
+        frameNo: m.frameNo || rf,
+        shed: m.shed || 'Shed 1',
+        count: m.count || '030/1-PH-PC',
+        spindles: m.spindles ?? 1200,
+        status: m.status || 'Active',
+        description: m.description || `RING FRAME ${rf}`
+      };
+    });
+    return NextResponse.json({ success: true, data: normalized });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch machines' }, { status: 500 });
   }

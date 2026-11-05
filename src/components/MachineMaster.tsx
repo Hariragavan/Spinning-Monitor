@@ -136,12 +136,12 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     // Counts defined in Count Master for this shed (or All Sheds)
     const fromConversions = countConversions
       .filter(c => c.shed === s || c.shed === 'All Sheds')
-      .map(c => c.count.trim());
+      .map(c => (c.count || '').trim());
 
     // Counts currently running on machines in this shed
     const fromMachines = machines
       .filter(m => (m.shed || 'Shed 1') === s)
-      .map(m => m.count.trim());
+      .map(m => (m.count || '').trim());
 
     // Real standard counts for this specific shed
     const defaults = SHED_REAL_COUNTS[s] || ['030/1-PH-PC'];
@@ -176,9 +176,10 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     const items: MachineMasterItem[] = [];
     dateMachineMap.forEach((data, key) => {
       const [rfUpper, shedLower] = key.split('__');
-      const existingRegistered = machines.find(m => 
-        m.rfNo.trim().toUpperCase() === rfUpper && (m.shed || 'Shed 1').toLowerCase() === shedLower
-      );
+      const existingRegistered = machines.find(m => {
+        const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+        return mRf === rfUpper && (m.shed || 'Shed 1').toLowerCase() === shedLower;
+      });
 
       items.push({
         id: existingRegistered?.id || `m-${rfUpper.toLowerCase()}-${(data.shed || 'shed-1').toLowerCase().replace(/\s+/g, '-')}`,
@@ -194,7 +195,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       });
     });
 
-    return items.sort((a, b) => a.rfNo.localeCompare(b.rfNo, undefined, { numeric: true }));
+    return items.sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
   }, [activeDateHasData, dateMachineMap, machines]);
 
   // Effective list shown in table based on viewMode
@@ -204,13 +205,14 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     setEditingId(machine.id);
     const mShed = machine.shed || currentShed || 'Shed 1';
     const shedCounts = getAvailableCountsForShed(mShed);
-    const key = `${machine.rfNo.trim().toUpperCase()}__${mShed.toLowerCase()}`;
+    const rf = (machine.rfNo || (machine as any).frameNo || '').trim().toUpperCase();
+    const key = `${rf}__${mShed.toLowerCase()}`;
     const dateData = dateMachineMap.get(key);
     setFormData({
-      rfNo: machine.rfNo,
+      rfNo: machine.rfNo || (machine as any).frameNo || '',
       description: machine.description || '',
       shed: mShed,
-      count: dateData?.count || machine.count || shedCounts[0] || shedCounts[0] || '030/1-PH-PC'
+      count: dateData?.count || machine.count || shedCounts[0] || '030/1-PH-PC'
     });
     setError(null);
   };
@@ -223,7 +225,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       rfNo: '',
       description: '',
       shed: activeShed,
-      count: shedCounts[0] || shedCounts[0] || '030/1-PH-PC'
+      count: shedCounts[0] || '030/1-PH-PC'
     });
     setError(null);
   };
@@ -239,7 +241,10 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     const cleanShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
 
     // Check duplicate RF No across same or other sheds
-    const duplicate = machines.find(m => m.id !== editingId && m.rfNo.toUpperCase() === cleanRfNo);
+    const duplicate = machines.find(m => {
+      const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+      return m.id !== editingId && mRf === cleanRfNo;
+    });
     if (duplicate && duplicate.id !== editingId) {
       setError(`Machine "${cleanRfNo}" already exists in ${duplicate.shed || 'registry'}. Each machine must be unique.`);
       return;
@@ -500,14 +505,15 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               </div>
             ) : (
               displayMachines.map((m, idx) => {
+                const rfNo = m.rfNo || (m as any).frameNo || 'M';
                 const mShed = m.shed || 'Shed 1';
-                const key = `${m.rfNo.trim().toUpperCase()}__${mShed.toLowerCase()}`;
+                const key = `${rfNo.trim().toUpperCase()}__${mShed.toLowerCase()}`;
                 const dateData = dateMachineMap.get(key);
-                const runningCount = dateData?.count || m.count;
+                const runningCount = dateData?.count || m.count || '030/1-PH-PC';
 
                 return (
                   <div 
-                    key={m.id || m.rfNo}
+                    key={m.id || rfNo}
                     className={cn(
                       "py-3.5 flex items-center justify-between gap-3 transition-colors rounded-xl px-2 -mx-2 hover:bg-stone-50/70",
                       editingId === m.id && "bg-emerald-50/50 border border-emerald-200"
@@ -520,18 +526,18 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                       
                       {/* GREEN PILL BADGE */}
                       <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-black font-mono shrink-0">
-                        {m.rfNo}
+                        {rfNo}
                       </span>
 
                       {/* SHED BADGE */}
                       <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold shrink-0">
-                        {m.shed || 'Shed 1'}
+                        {mShed}
                       </span>
 
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-black text-stone-900 tracking-tight">
-                            RF No: {m.rfNo}
+                            RF No: {rfNo}
                           </span>
                         </div>
                         <div className="text-[11px] text-stone-500 font-medium truncate mt-0.5 flex flex-wrap items-center gap-2">
@@ -563,7 +569,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (window.confirm(`Delete machine ${m.rfNo}?`)) {
+                          if (window.confirm(`Delete machine ${rfNo}?`)) {
                             onDeleteMachine(m.id);
                           }
                         }}
