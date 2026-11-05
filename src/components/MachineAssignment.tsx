@@ -39,6 +39,7 @@ interface MachineAssignmentProps {
   onCopyAllocations: (sourceDate: string, targetShift?: Shift | 'ALL') => void;
   onChangeReportDate?: (oldDate: string, newDate: string) => void;
   isSupervisorMode?: boolean;
+  shed?: string;
 }
 
 export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
@@ -60,7 +61,14 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   onCopyAllocations,
   onChangeReportDate,
   isSupervisorMode = false,
+  shed
 }) => {
+  const isKttm = useMemo(() => {
+    if (shed && shed.toLowerCase().includes('kttm')) return true;
+    if (entries.some(e => (e.frameNo || '').toUpperCase().startsWith('K') || (e.shed || '').toLowerCase().includes('kttm'))) return true;
+    return false;
+  }, [shed, entries]);
+
   const [selectedShift, setSelectedShift] = useState<Shift | 'ALL'>('I');
   const [showCopyPanel, setShowCopyPanel] = useState(false);
   const [chosenCopyDate, setChosenCopyDate] = useState('');
@@ -159,11 +167,12 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const handleBatchAssignGaiter = () => {
     if (!selectedBatchGaiter) return;
     const indices = filteredEntriesWithIndex.map(item => item.idx);
+    const targetGaiterId = selectedBatchGaiter === '__NO_GAITER__' ? '' : selectedBatchGaiter;
     if (assignMachineGaiter) {
-      assignMachineGaiter(indices, selectedBatchGaiter);
+      assignMachineGaiter(indices, targetGaiterId);
     } else {
       const targetShift = selectedShift !== 'ALL' ? selectedShift : 'I';
-      assignGaiter(targetShift, [selectedBatchGaiter]);
+      assignGaiter(targetShift, targetGaiterId ? [targetGaiterId] : []);
     }
     setBatchGaiterModalOpen(false);
     setSelectedBatchGaiter('');
@@ -452,91 +461,93 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2. SECTION 1: AI LINKCONER ALLOCATION (TOP AS REQUESTED)                 */}
+      {/* 2. SECTION 1: AI LINKCONER ALLOCATION (KTTM SHED ONLY)                    */}
       {/* ========================================================================= */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-sm border border-purple-800/40">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-800/50 mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-400/20">
-              <Cpu size={18} />
+      {isKttm && (
+        <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-5 text-white shadow-sm border border-purple-800/40">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-800/50 mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center border border-purple-400/20">
+                <Cpu size={18} />
+              </div>
+              <div>
+                <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
+                  AI LINKCONER ALLOCATIONS
+                </h2>
+                <p className="text-[11px] text-purple-200 font-medium">
+                  1 dedicated Linkconer operator per shift
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
-                AI LINKCONER ALLOCATIONS
-              </h2>
-              <p className="text-[11px] text-purple-200 font-medium">
-                1 dedicated Linkconer operator per shift
-              </p>
-            </div>
+            <span className="px-3 py-1 bg-purple-500/20 text-purple-200 border border-purple-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
+              TOP PRIORITY ALLOCATION
+            </span>
           </div>
-          <span className="px-3 py-1 bg-purple-500/20 text-purple-200 border border-purple-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
-            TOP PRIORITY ALLOCATION
-          </span>
-        </div>
 
-        {/* 3 Shift Cards side-by-side */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {shifts.map(shift => {
-            const currentSelected = aiCones[shift]?.[0] || '';
-            const assignedWorker = workers.find(w => w.id === currentSelected);
+          {/* 3 Shift Cards side-by-side */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {shifts.map(shift => {
+              const currentSelected = aiCones[shift]?.[0] || '';
+              const assignedWorker = workers.find(w => w.id === currentSelected);
 
-            return (
-              <div 
-                key={`ai-cone-${shift}`} 
-                className={cn(
-                  "p-3.5 rounded-xl border transition-all",
-                  selectedShift === shift 
-                    ? "bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/30" 
-                    : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-purple-400/40"
-                )}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-purple-200">
-                    <span className="w-5 h-5 rounded-md bg-purple-400 text-purple-950 flex items-center justify-center text-[10px] font-black">
-                      {shift}
-                    </span>
-                    Shift {shift} Linkconer
-                  </span>
-                  {assignedWorker && (
-                    <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
-                      T.No {assignedWorker.tNo}
-                    </span>
+              return (
+                <div 
+                  key={`ai-cone-${shift}`} 
+                  className={cn(
+                    "p-3.5 rounded-xl border transition-all",
+                    selectedShift === shift 
+                      ? "bg-purple-950/70 border-purple-400 ring-2 ring-purple-400/30" 
+                      : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-purple-400/40"
                   )}
-                </div>
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-purple-200">
+                      <span className="w-5 h-5 rounded-md bg-purple-400 text-purple-950 flex items-center justify-center text-[10px] font-black">
+                        {shift}
+                      </span>
+                      Shift {shift} Linkconer
+                    </span>
+                    {assignedWorker && (
+                      <span className="text-[10px] font-mono font-bold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
+                        T.No {assignedWorker.tNo}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="relative">
-                  <select
-                    value={currentSelected}
-                    onChange={(e) => assignAiCone(shift, [e.target.value || ''])}
-                    className="w-full px-3 py-2 bg-purple-950/90 border border-purple-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer appearance-none"
-                  >
-                    <option value="" className="bg-stone-900 text-stone-400">-- No Linkconer Assigned --</option>
-                    {aiLinkconerWorkers.length > 0 && (
-                      <optgroup label="AI Linkconer Department" className="bg-stone-900 text-purple-300 font-bold">
-                        {aiLinkconerWorkers.map(w => (
+                  <div className="relative">
+                    <select
+                      value={currentSelected}
+                      onChange={(e) => assignAiCone(shift, [e.target.value || ''])}
+                      className="w-full px-3 py-2 bg-purple-950/90 border border-purple-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer appearance-none"
+                    >
+                      <option value="" className="bg-stone-900 text-stone-400">-- No Linkconer Assigned --</option>
+                      {aiLinkconerWorkers.length > 0 && (
+                        <optgroup label="AI Linkconer Department" className="bg-stone-900 text-purple-300 font-bold">
+                          {aiLinkconerWorkers.map(w => (
+                            <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                              {w.name} ({w.tNo})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <optgroup label="All Other Workers" className="bg-stone-900 text-stone-400">
+                        {otherAiWorkers.map(w => (
                           <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                            {w.name} ({w.tNo})
+                            {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
                           </option>
                         ))}
                       </optgroup>
-                    )}
-                    <optgroup label="All Other Workers" className="bg-stone-900 text-stone-400">
-                      {otherAiWorkers.map(w => (
-                        <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                          {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-400">
-                    <Zap size={13} />
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-400">
+                      <Zap size={13} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 3. SECTION 2: SHIFT SELECTION BAR (TO SEPARATE BY SHIFT)                 */}
@@ -1017,6 +1028,9 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 outline-none focus:border-amber-500 font-mono"
                 >
                   <option value="">-- Select Gaiter Operator --</option>
+                  <option value="__NO_GAITER__" className="text-rose-600 font-black bg-rose-50">
+                    ❌ No Gaiter (Unassign / Clear All in View)
+                  </option>
                   {gaiterDeptWorkers.length > 0 && (
                     <optgroup label="Gaiter Department">
                       {gaiterDeptWorkers.map((w) => (
@@ -1035,7 +1049,9 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   </optgroup>
                 </select>
                 <span className="block text-[10px] text-stone-400 mt-1">
-                  This will set the chosen gaiter for all {filteredEntriesWithIndex.length} ringframes in the current view in one single click.
+                  {selectedBatchGaiter === '__NO_GAITER__'
+                    ? `This will remove/unassign the gaiter for all ${filteredEntriesWithIndex.length} ringframes in the current view.`
+                    : `This will set the chosen gaiter for all ${filteredEntriesWithIndex.length} ringframes in the current view in one single click.`}
                 </span>
               </div>
             </div>
@@ -1052,9 +1068,14 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                 type="button"
                 disabled={!selectedBatchGaiter}
                 onClick={handleBatchAssignGaiter}
-                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer"
+                className={cn(
+                  "px-5 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer",
+                  selectedBatchGaiter === '__NO_GAITER__'
+                    ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/30"
+                    : "bg-amber-500 hover:bg-amber-600 shadow-amber-500/30"
+                )}
               >
-                Apply to All Machines
+                {selectedBatchGaiter === '__NO_GAITER__' ? 'Unassign Gaiter from All' : 'Apply to All Machines'}
               </button>
             </div>
           </div>

@@ -69,23 +69,28 @@ export async function GET(req: Request) {
       rules = (rDocs as unknown as IncentiveRule[]) || [];
       counts = (cDocs as unknown as CountConversion[]) || [];
       reports = (repDocs as unknown as DailyReport[]) || [];
-      machines = (mDocs as unknown as MachineMasterItem[]) || [];
+      machines = ((mDocs as any[]) || []).map((m: any) => {
+        const rf = m.rfNo || m.frameNo || '';
+        return {
+          ...m,
+          id: m.id || `m-${rf}`,
+          rfNo: rf,
+          frameNo: m.frameNo || rf,
+          shed: m.shed || 'Shed 1',
+          count: m.count || '030/1-PH-PC',
+          spindles: m.spindles ?? 1200,
+          status: m.status || 'Active',
+          description: m.description || `RING FRAME ${rf}`
+        };
+      });
       settings = setDoc ? (({ _id, ...rest }) => rest)(setDoc) : {};
       machineEm = emDoc?.data || {};
     } catch (dbErr) {
       console.warn('MongoDB query warning (fallback serverless mode):', dbErr);
     }
 
-    // Default counts fallback if empty
-    if (counts.length === 0) {
-      counts = [
-        { count: '030/1-PH-PC', multiplicationFactor: 1.0, shed: 'Shed 1' },
-        { count: '040/1-PH-PC', multiplicationFactor: 1.0, shed: 'Shed 1' },
-        { count: '32/1-CH-CY', multiplicationFactor: 1.0, shed: 'Shed 2' },
-        { count: '26/1-CHY', multiplicationFactor: 1.0, shed: 'Shed 3' },
-        { count: '60s CW', multiplicationFactor: 1.0, shed: 'KTTM' },
-      ];
-    }
+    // If no counts defined in DB, keep counts as empty array
+    // (Do not re-inject deleted counts)
 
     // Filter reports by shed and date
     let filteredReports: DailyReport[] = filterItemsByShed(reports, shed);

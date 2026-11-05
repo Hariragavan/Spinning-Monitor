@@ -261,7 +261,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
 
         const hasGaiterId = shiftGaiterIds.includes(targetWorker.id) || shiftGaiterIds.includes(targetWorker.tNo);
         if (hasGaiterId) {
-          const incentive = getGaiterIncentive(report, shift, rules, workers);
+          const incentive = getGaiterIncentive(report, shift, rules, workers, targetWorker.id, report.shed);
           results.push({
             date: report.date,
             shift,
@@ -372,11 +372,13 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
         const shiftEntries = report.entries?.filter(e => e.shift === shift) || [];
         if (shiftEntries.length === 0) return;
         
-        const payout = getGaiterIncentive(report, shift, rules, workers);
-        if (payout > 0) {
-          const shiftGaiters = report.gaiters?.[shift] || [];
-          shiftGaiters.forEach(id => { if (id) activeWorkerIds.add(id); });
-        }
+        const shiftGaiters = report.gaiters?.[shift] || [];
+        shiftGaiters.forEach(id => {
+          if (id) {
+            const payout = getGaiterIncentive(report, shift, rules, workers, id, report.shed);
+            if (payout > 0) activeWorkerIds.add(id);
+          }
+        });
       });
     });
 
@@ -474,7 +476,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
 
         const hasGaiterId = shiftGaiterIds.includes(targetWorker.id) || shiftGaiterIds.includes(targetWorker.tNo);
         if (hasGaiterId) {
-          const incentive = getGaiterIncentive(report, shift, rules, workers) || 0;
+          const incentive = getGaiterIncentive(report, shift, rules, workers, targetWorker.id, report.shed) || 0;
           results.push({
             date: report.date,
             shift,
@@ -610,9 +612,9 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
         
         const minGpsEntry = shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]);
         const shiftGaiters = report.gaiters?.[shift] || [];
-        const payout = getGaiterIncentive(report, shift, rules, workers);
 
         shiftGaiters.forEach(gid => {
+          const payout = getGaiterIncentive(report, shift, rules, workers, gid, report.shed);
           const cleanGid = String(gid || '').trim().toUpperCase();
           const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
             (w.id && (w.id.toUpperCase() === cleanGid)) ||

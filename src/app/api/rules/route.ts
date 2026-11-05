@@ -95,6 +95,17 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url);
     const count = searchParams.get('count');
     const shed = searchParams.get('shed');
+    const all = searchParams.get('all');
+
+    if (all === 'true') {
+      const deleteFilter: any = {};
+      if (shed && shed !== 'All' && shed !== 'All Sheds') {
+        deleteFilter.shed = shed;
+      }
+      await db.collection('incentiverules').deleteMany(deleteFilter);
+      await db.collection('incentive_rules').deleteMany(deleteFilter);
+      return NextResponse.json({ success: true, message: 'Incentive rules wiped successfully' });
+    }
 
     if (!count) {
       return NextResponse.json({ success: false, error: 'count is required' }, { status: 400 });

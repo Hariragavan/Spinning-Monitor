@@ -102,65 +102,36 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   }, [countConversions, selectedShedTab]);
 
 // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
-  // Generate rule cards: Every registered count from Count Master for this shed MUST have an incentive rule card displayed
+  // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
   const filteredRules = React.useMemo(() => {
     const list: IncentiveRule[] = [];
     const seen = new Set<string>();
     const targetShed = selectedShedTab;
 
-    // 1. For every count available for this shed from Count Master / rules:
-    availableCountNames.forEach(c => {
-      const trimmed = c.count.trim();
-      const lower = trimmed.toLowerCase();
-      if (seen.has(lower)) return;
-      seen.add(lower);
-
-      // Find best matching rule from existing rules
-      const exactRule = rules.find(r =>
-        (!r.department || r.department === 'Sider') &&
-        r.count.toLowerCase().trim() === lower &&
-        (normalizeShed(r.shed) === normalizeShed(c.shed) || (targetShed !== 'All Sheds' && normalizeShed(r.shed) === normalizeShed(targetShed)))
-      );
-
-      const matchingRule = exactRule || rules.find(r =>
-        (!r.department || r.department === 'Sider') &&
-        isCountNameMatching(r.count, trimmed) &&
-        (normalizeShed(r.shed) === normalizeShed(c.shed) || (targetShed !== 'All Sheds' && normalizeShed(r.shed) === normalizeShed(targetShed)))
-      ) || rules.find(r =>
-        (!r.department || r.department === 'Sider') &&
-        (r.count.toLowerCase().trim() === lower || isCountNameMatching(r.count, trimmed)) &&
-        r.shed === 'All Sheds'
-      );
-
-      if (matchingRule && matchingRule.payouts && matchingRule.payouts.length > 0) {
-        list.push({
-          ...matchingRule,
-          count: trimmed,
-          shed: c.shed || (targetShed !== 'All Sheds' ? targetShed : 'Shed 1'),
-          department: 'Sider'
-        });
-      } else {
-        // Fallback standard starter 6 slots for this registered count
-        const starterPayouts: IncentivePayout[] = [
-          { gpsThreshold: 160, amount: 100, fromGps: 160, toGps: 160, conditionText: 'for GPSS 160', ruleText: 'Rs 100 for GPSS 160' },
-          { gpsThreshold: 155, amount: 90, fromGps: 155, toGps: 160, conditionText: 'for GPS 155 to 160', ruleText: 'Rs 90 for GPS 155 to 160' },
-          { gpsThreshold: 150, amount: 80, fromGps: 150, toGps: 155, conditionText: 'for 150 to 155', ruleText: 'Rs 80 for 150 to 155' },
-          { gpsThreshold: 145, amount: 70, fromGps: 145, toGps: 150, conditionText: 'for 145 to 150', ruleText: 'Rs 70 for 145 to 150' },
-          { gpsThreshold: 140, amount: 60, fromGps: 140, toGps: 145, conditionText: 'for 140 to 145', ruleText: 'Rs 60 for 140 to 145' },
-          { gpsThreshold: 135, amount: 50, fromGps: 135, toGps: 140, conditionText: 'for 135 to 140', ruleText: 'Rs 50 for 135 to 140' }
-        ];
-        list.push({
-          count: trimmed,
-          shed: c.shed || (targetShed !== 'All Sheds' ? targetShed : 'Shed 1'),
-          department: 'Sider',
-          payouts: starterPayouts
-        });
+    rules.forEach(r => {
+      if (!r || !r.count || (r.department && r.department !== 'Sider')) return;
+      const rShed = r.shed || 'Shed 1';
+      if (targetShed !== 'All Sheds' && normalizeShed(rShed) !== normalizeShed(targetShed) && rShed !== 'All Sheds') {
+        return;
       }
+      if (!r.payouts || r.payouts.length === 0) return;
+
+      const trimmed = r.count.trim();
+      const lower = trimmed.toLowerCase();
+      const key = `${lower}__${(rShed || 'all').toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      list.push({
+        ...r,
+        count: trimmed,
+        shed: rShed,
+        department: 'Sider'
+      });
     });
 
-    // Strictly return only count cards belonging to this shed (NO support roles named "All")
     return list;
-  }, [availableCountNames, rules, selectedShedTab]);
+  }, [rules, selectedShedTab]);
 
   // Sync builderShed and selectedCount when shed tab or available counts change
   useEffect(() => {

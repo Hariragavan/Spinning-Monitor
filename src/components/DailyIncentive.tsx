@@ -64,14 +64,16 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
       const shiftEntries = report.entries.filter(e => e.shift === shift);
       if (shiftEntries.length === 0) return;
       
-      const minGpsEntry = shiftEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, shiftEntries[0]);
       const shiftGaiterIds = report.gaiters?.[shift] || [];
       
       shiftGaiterIds.forEach(gid => {
-        const worker = workers.find(w => w.id === gid);
+        const worker = workers.find(w => w.id === gid || w.tNo === gid || w.name === gid);
         if (!worker) return;
 
-        const incentive = getGaiterIncentive(report, shift, rules, workers);
+        const incentive = getGaiterIncentive(report, shift, rules, workers, gid, shed);
+        const assignedEntries = shiftEntries.filter(e => e.gaiterId === gid || (worker.name && e.gaiterName === worker.name));
+        const targetEntries = assignedEntries.length > 0 ? assignedEntries : shiftEntries;
+        const minGpsEntry = targetEntries.reduce((min, curr) => curr.gpsActual < min.gpsActual ? curr : min, targetEntries[0]);
 
         results.push({
           id: gid,
@@ -79,16 +81,21 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
           tNo: worker.tNo,
           shift,
           role: 'GAITER',
-          minGpsInShift: minGpsEntry.gpsActual,
+          mcNoDisplay: assignedEntries.length > 0 ? assignedEntries.map(e => e.frameNo).join(', ') : 'Shift Support',
+          countDisplay: assignedEntries.length > 0 ? 'Assigned Min GPS' : 'Min Shift GPS',
+          minGpsInShift: minGpsEntry ? minGpsEntry.gpsActual : 0,
           incentive
         });
       });
     });
     
     return results;
-  }, [report, workers, rules]);
+  }, [report, workers, rules, shed]);
 
   const aiConeData = useMemo(() => {
+    const isKttm = (shed || '').toLowerCase().includes('kttm') || (report.shed || '').toLowerCase().includes('kttm');
+    if (!isKttm) return [];
+
     const shifts: Shift[] = ["I", "II", "III"];
     const results: any[] = [];
 
@@ -735,13 +742,13 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
                         {data.name} <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded ml-1.5 not-italic font-black">GAITER</span>
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-amber-700 font-black text-center uppercase tracking-wider bg-amber-50/50", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
-                        Shift Support
+                        {data.mcNoDisplay || 'Shift Support'}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center font-bold text-stone-900", isTvMode ? "px-3 py-3 text-base md:text-lg font-black" : "px-2 py-1.5")}>
                         {data.shift === 'II' ? '2' : data.shift === 'III' ? '3' : '1'}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center text-stone-500 font-bold", isTvMode ? "px-4 py-3 text-sm md:text-base" : "px-3 py-1.5 text-xs")}>
-                        Min Shift GPS
+                        {data.countDisplay || 'Min Shift GPS'}
                       </td>
                       <td className={cn("border-r-2 border-stone-900 text-center font-black text-amber-700 tabular-nums", isTvMode ? "px-4 py-3 text-lg md:text-xl" : "px-3 py-1.5")}>
                         {Math.round(data.minGpsInShift)}
