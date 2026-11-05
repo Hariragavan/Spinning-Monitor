@@ -120,10 +120,6 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
 
   useEffect(() => {
     refresh(true);
-    const interval = setInterval(() => {
-      refresh(false);
-    }, 10000);
-    return () => clearInterval(interval);
   }, [employeeId, machineId, shiftName, selectedDate]);
 
   // Calculations for KPIs

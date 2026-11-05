@@ -68,8 +68,20 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   // 120 visual ticks per side representing spindle slots across the frame
   const visualTicks = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
 
-  // Fetch live overview from https://iot-machine-backend-production.up.railway.app/api/common
+  // Guard against concurrent or duplicate fetches
+  const isFetchingRef = React.useRef(false);
+
+  // Load master shifts once on mount
+  useEffect(() => {
+    iotApi.getShifts().then(sList => {
+      if (sList && sList.length > 0) setShifts(sList);
+    }).catch(() => {});
+  }, []);
+
+  // Fetch live overview from live telemetry API
   const loadOverview = useCallback(async (isInitial: boolean = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (isInitial) setLoading(true);
       setErrorMessage(null);
@@ -79,31 +91,21 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
       });
       if (data && data.frameStatus && Array.isArray(data.machines)) {
         setOverview(data);
-        if (!userChangedDate && data.shiftDate) {
-          setSelectedFromDate(data.shiftDate);
-        }
       }
       setLastRefreshedAt(new Date());
-
-      try {
-        const sList = await iotApi.getShifts();
-        if (sList && sList.length > 0) setShifts(sList);
-      } catch {}
     } catch (err: any) {
       if (isInitial) {
         setErrorMessage(err?.message || 'Failed to connect to live MAG SPinFO common telemetry API.');
       }
     } finally {
+      isFetchingRef.current = false;
       if (isInitial) setLoading(false);
     }
   }, [selectedFromDate, userChangedDate, selectedShift]);
 
+  // Trigger load on initial mount and when user filter criteria change
   useEffect(() => {
     loadOverview(true);
-    const interval = setInterval(() => {
-      loadOverview(false);
-    }, 5000);
-    return () => clearInterval(interval);
   }, [loadOverview]);
 
   // Open Machine Detail Slide Popup
