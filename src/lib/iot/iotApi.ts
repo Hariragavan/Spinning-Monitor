@@ -18,7 +18,11 @@ import {
 } from '@/types/iot';
 import {
   getSampleSpinfoOverview,
-  getSampleMachineDetail
+  getSampleMachineDetail,
+  extractCommonRecords,
+  selectAndMergeCommonRecord,
+  transformCommonToOverview,
+  buildMachineDetailFromCommon
 } from './sampleIotData';
 
 // Storage keys for persisting edits locally when backend is offline
@@ -38,7 +42,7 @@ function setStored<T>(key: string, value: T): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
-  } catch {}
+  } catch { }
 }
 
 export const IOT_REMOTE_API_BASE =
@@ -46,15 +50,20 @@ export const IOT_REMOTE_API_BASE =
   process.env.IOT_REMOTE_API ||
   'https://iot-machine-backend.onrender.com/api';
 
+export const IOT_COMMON_API_URL =
+  process.env.NEXT_PUBLIC_IOT_COMMON_API ||
+  process.env.IOT_COMMON_API ||
+  'https://iot-machine-backend-production.up.railway.app/api/common';
+
 async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: T): Promise<T> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
     const headers: Record<string, string> = {
-      'X-Company-Slug': 'scm',
+      Accept: 'application/json',
       ...((init?.headers as Record<string, string>) || {})
     };
-    const res = await fetch(url, { ...init, headers, signal: controller.signal });
+    const res = await fetch(url, { ...init, headers, signal: controller.signal, cache: 'no-store' });
     clearTimeout(timeout);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
@@ -64,16 +73,99 @@ async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: 
   }
 }
 
+async function fetchLiveCommonPayload(filter?: {
+  fromDate?: string;
+  shift?: string;
+}): Promise<any | null> {
+  const shiftNum = filter?.shift && filter.shift !== 'All' && filter.shift !== 'All shifts'
+    ? parseInt(String(filter.shift).replace(/\D/g, ''), 10) || undefined
+    : undefined;
+  const targetDate = filter?.fromDate || undefined;
+
+  const tryParseRecord = (json: any) => {
+    const records = extractCommonRecords(json);
+    if (records.length > 0) {
+      const merged = selectAndMergeCommonRecord(records, {
+        shiftDate: targetDate,
+        shift: shiftNum
+      });
+      return merged.record;
+    }
+    return null;
+  };
+
+  // 1. Direct GET from https://iot-machine-backend-production.up.railway.app/api/common
+  try {
+    const url = new URL(IOT_COMMON_API_URL);
+    url.searchParams.set('limit', '20');
+    if (shiftNum !== undefined) url.searchParams.set('shift', String(shiftNum));
+    url.searchParams.set('_t', String(Date.now()));
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const json = await res.json();
+      const rec = tryParseRecord(json);
+      if (rec) return rec;
+    }
+  } catch { }
+
+  // 2. If filtered shift returned empty on remote, fetch latest unfiltered from Railway common API
+  if (shiftNum !== undefined) {
+    try {
+      const url = new URL(IOT_COMMON_API_URL);
+      url.searchParams.set('limit', '20');
+      url.searchParams.set('_t', String(Date.now()));
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const json = await res.json();
+        const rec = tryParseRecord(json);
+        if (rec) return rec;
+      }
+    } catch { }
+  }
+
+  return null;
+}
+
 export const iotApi = {
   baseUrl: IOT_REMOTE_API_BASE,
+  commonApiUrl: IOT_COMMON_API_URL,
 
-  // 1. Spinfo Overview & Machine Details
+  // 1. MAG SPinFO Common API Overview & Machine Details (https://iot-machine-backend-production.up.railway.app/api/common)
   async getSpinfoOverview(filter?: {
     fromDate?: string;
     toDate?: string;
     shift?: string;
     operator?: string;
   }): Promise<SpinfoOverviewResponse> {
+    // 1. Try direct live fetch from https://iot-machine-backend-production.up.railway.app/api/common
+    const liveCommon = await fetchLiveCommonPayload({
+      fromDate: filter?.fromDate,
+      shift: filter?.shift
+    });
+
+    if (liveCommon && Array.isArray(liveCommon.machines)) {
+      return transformCommonToOverview(liveCommon);
+    }
+
+    // 2. Fallback to Next.js API route (which also fetches from https://iot-machine-backend-production.up.railway.app/api/common server-side)
     const params = new URLSearchParams();
     if (filter?.fromDate) params.set('fromDate', filter.fromDate);
     if (filter?.toDate) params.set('toDate', filter.toDate);
@@ -81,35 +173,13 @@ export const iotApi = {
     if (filter?.operator) params.set('operator', filter.operator);
     params.set('_t', String(Date.now()));
 
-    const emptyFallback: SpinfoOverviewResponse = {
-      success: true,
-      dataTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-      shiftDate: filter?.fromDate || new Date().toISOString().slice(0, 10),
-      shift: filter?.shift ? Number(filter.shift.replace(/\D/g, '')) || 1 : 1,
-      frameStatus: { totalMachines: 0, reporting: 0, running: 0, runningPercent: 0, stopped: 0, doffing: 0, stoppedAndDoffing: 0, offline: 0, totalEndBreaks: 0, leftBreaks: 0, rightBreaks: 0 },
-      performanceAndCare: { averageRpm: 0, totalEndBreaks: 0, outsideRpmCount: 0, productionYieldPercent: 0, productionYieldKg: 0, targetProductionKg: 0, yieldAchievedPercent: 0, completedRounds: 0, totalRoundsScheduled: 0, skippedRounds: 0, incompleteRounds: 0, totalDevices: 0, devicesInBounds: 0, sensorBoundBreaches: 0, speedBreachAlerts: 0, preventiveCleaningDue: 0, preventiveCleaningDueCount: 0, dueMachineNames: [] },
-      hourlyProduction: { shiftTotalKg: 0, totalProduction: 0, totalTarget: 0, peakHour: 'H1', avgPerHourKg: 0, chart: [] },
-      machines: []
-    };
-
-    // First try remote backend route if available
-    try {
-      const res = await fetch(`${this.baseUrl}/spinfo/overview?${params.toString()}`, {
-        headers: { 'X-Company-Slug': 'scm' }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data && json.data.frameStatus) return json.data;
-      }
-    } catch {}
-
-    // Fallback to local server endpoint which generates overview from live common stream or local DB
+    const fallback = getSampleSpinfoOverview();
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
       `/api/iot/spinfo/overview?${params.toString()}`,
       { method: 'GET' },
-      { success: true, data: emptyFallback }
+      { success: true, data: fallback }
     );
-    return res.data || emptyFallback;
+    return res.data || fallback;
   },
 
   async getMachineDetail(
@@ -121,24 +191,25 @@ export const iotApi = {
       operator?: string;
     }
   ): Promise<SpinfoMachineDetailResponse> {
+    // 1. Try direct live fetch from https://iot-machine-backend-production.up.railway.app/api/common
+    const liveCommon = await fetchLiveCommonPayload({
+      fromDate: filter?.fromDate,
+      shift: filter?.shift
+    });
+
+    if (liveCommon && Array.isArray(liveCommon.machines)) {
+      return buildMachineDetailFromCommon(machineId, liveCommon);
+    }
+
+    // 2. Fallback to Next.js API route
     const params = new URLSearchParams();
     if (filter?.fromDate) params.set('fromDate', filter.fromDate);
     if (filter?.toDate) params.set('toDate', filter.toDate);
     if (filter?.shift) params.set('shift', filter.shift);
     if (filter?.operator) params.set('operator', filter.operator);
+    params.set('_t', String(Date.now()));
 
     const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
-
-    try {
-      const res = await fetch(`${this.baseUrl}/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`, {
-        headers: { 'X-Company-Slug': 'scm' }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) return json.data;
-      }
-    } catch {}
-
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
       `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
       { method: 'GET' },
@@ -148,24 +219,28 @@ export const iotApi = {
   },
 
   async syncSpinfoData(): Promise<SpinfoOverviewResponse> {
-    const fallback = getSampleSpinfoOverview();
-    const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
-      `/api/iot/spinfo/sync`,
-      { method: 'POST' },
-      { success: true, data: fallback }
-    );
-    return res.data || fallback;
+    return this.getSpinfoOverview();
   },
 
-  // 2. Employees & Duty Tracking
+  // 2. Employees & Duty Tracking (https://iot-machine-backend.onrender.com/api)
   async getEmployees(): Promise<Employee[]> {
     const stored = getStored<Employee[]>('employees', []);
-    const res = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
-      `${this.baseUrl}/master/employees`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
+        `${this.baseUrl}/master/employees`
+      );
+      if (res?.data) {
+        setStored('employees', res.data);
+        return res.data;
+      }
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
+      `/api/iot/master/employees`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    return res.data || stored;
+    return localRes.data || stored;
   },
 
   async getEmployeePerformance(filter?: {
@@ -191,124 +266,204 @@ export const iotApi = {
       list = list.filter(m => m.machineId === filter.machineId);
     }
 
-    const res = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
-      `${this.baseUrl}/dashboard/employee?${params.toString()}`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
+        `${this.baseUrl}/dashboard/employee?${params.toString()}`
+      );
+      if (res?.data) return res.data;
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
+      `/api/iot/dashboard/employee?${params.toString()}`,
       { method: 'GET' },
       { success: true, data: list }
     );
-    return res.data || list;
+    return localRes.data || list;
   },
 
-  // 3. Machines & Mappings
+  // 3. Machines & Mappings (https://iot-machine-backend.onrender.com/api)
   async getMachines(): Promise<Machine[]> {
     const stored = getStored<Machine[]>('machines', []);
-    const res = await fetchWithFallback<{ success: boolean; data: Machine[] }>(
-      `${this.baseUrl}/master/machines`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: Machine[] }>(
+        `${this.baseUrl}/master/machines`
+      );
+      if (res?.data) {
+        setStored('machines', res.data);
+        return res.data;
+      }
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: Machine[] }>(
+      `/api/iot/master/machines`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    return res.data || stored;
+    return localRes.data || stored;
   },
 
   async getMachineMappings(): Promise<MachineMapping[]> {
     const stored = getStored<MachineMapping[]>('mappings', []);
-    const res = await fetchWithFallback<{ success: boolean; data: MachineMapping[] }>(
-      `${this.baseUrl}/master/machine-mappings`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: MachineMapping[] }>(
+        `${this.baseUrl}/master/machine-mappings`
+      );
+      if (res?.data) {
+        setStored('mappings', res.data);
+        return res.data;
+      }
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: MachineMapping[] }>(
+      `/api/iot/master/machine-mappings`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    return res.data || stored;
+    return localRes.data || stored;
   },
 
   async saveMachineMapping(mapping: MachineMappingInput, mappingId?: string): Promise<MachineMapping> {
+    try {
+      const url = mappingId
+        ? `${this.baseUrl}/master/machine-mappings/${encodeURIComponent(mappingId)}`
+        : `${this.baseUrl}/master/machine-mappings`;
+      const method = mappingId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mapping)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) {
+          const item = json.data;
+          return {
+            mappingId: item.mappingId || item._id || mappingId || `map_${Date.now()}`,
+            name: item.name || mapping.name,
+            stationIds: item.stationIds || mapping.stationIds,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt
+          };
+        }
+      }
+    } catch { }
+
     const mappings = await this.getMachineMappings();
     let updated: MachineMapping;
     if (mappingId) {
       updated = { mappingId, name: mapping.name, stationIds: mapping.stationIds, updatedAt: new Date().toISOString() };
-      const next = mappings.map(m => m.mappingId === mappingId ? updated : m);
-      setStored('mappings', next);
+      setStored('mappings', mappings.map(m => m.mappingId === mappingId ? updated : m));
     } else {
       updated = { mappingId: `map_${Date.now()}`, name: mapping.name, stationIds: mapping.stationIds, createdAt: new Date().toISOString() };
       setStored('mappings', [updated, ...mappings]);
     }
-    try {
-      if (mappingId) {
-        await fetch(`${this.baseUrl}/master/machine-mappings/${encodeURIComponent(mappingId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-          body: JSON.stringify(mapping)
-        });
-      } else {
-        await fetch(`${this.baseUrl}/master/machine-mappings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-          body: JSON.stringify(mapping)
-        });
-      }
-    } catch {}
     return updated;
   },
 
   async deleteMachineMapping(mappingId: string): Promise<boolean> {
-    const mappings = await this.getMachineMappings();
-    const next = mappings.filter(m => m.mappingId !== mappingId);
-    setStored('mappings', next);
     try {
       await fetch(`${this.baseUrl}/master/machine-mappings/${encodeURIComponent(mappingId)}`, {
-        method: 'DELETE',
-        headers: { 'X-Company-Slug': 'scm' }
+        method: 'DELETE'
       });
-    } catch {}
+    } catch { }
+    const mappings = getStored<MachineMapping[]>('mappings', []);
+    setStored('mappings', mappings.filter(m => m.mappingId !== mappingId));
     return true;
   },
 
-  async saveMachineConfig(machineId: string, config: any): Promise<any> {
+  async saveMachineConfig(machineId: string, config: {
+    name?: string;
+    expectedOutput?: number;
+    expectedRunDurationMinutes?: number;
+    expectedRoundsPerHour?: number;
+    roundDeviceSequence?: string[];
+  }): Promise<any> {
     try {
-      await fetch(`${this.baseUrl}/master/machines/${encodeURIComponent(machineId)}/config`, {
+      const res = await fetch(`${this.baseUrl}/master/machines/${encodeURIComponent(machineId)}/config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
       });
-    } catch {}
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) return json.data;
+      }
+    } catch { }
     return config;
   },
 
-  // 4. Devices
+  async updateCleaningSchedule(machineId: string, payload: {
+    cleaningIntervalDays: number;
+    lastCleanedAt?: string | null;
+    markCleanedNow?: boolean;
+  }): Promise<any> {
+    try {
+      const res = await fetch(`${this.baseUrl}/master/machines/${encodeURIComponent(machineId)}/cleaning-schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) return json.data;
+      }
+    } catch { }
+    return payload;
+  },
+
+  // 4. Devices (https://iot-machine-backend.onrender.com/api)
   async getDevices(): Promise<DeviceHealth[]> {
     const stored = getStored<DeviceHealth[]>('devices', []);
-    const res = await fetchWithFallback<{ success: boolean; data: DeviceHealth[] }>(
-      `${this.baseUrl}/master/devices`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: DeviceHealth[] }>(
+        `${this.baseUrl}/master/devices`
+      );
+      if (res?.data) {
+        setStored('devices', res.data);
+        return res.data;
+      }
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: DeviceHealth[] }>(
+      `/api/iot/master/devices`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    return res.data || stored;
+    return localRes.data || stored;
   },
 
   async updateDeviceConfig(deviceId: string, payload: Partial<DeviceHealth>): Promise<DeviceHealth> {
+    try {
+      const res = await fetch(`${this.baseUrl}/master/devices/${encodeURIComponent(deviceId)}/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) return json.data;
+      }
+    } catch { }
+
     const devices = await this.getDevices();
     const updated = devices.map(d => d.deviceId === deviceId ? { ...d, ...payload } : d);
     setStored('devices', updated);
-    try {
-      await fetch(`${this.baseUrl}/master/devices/${encodeURIComponent(deviceId)}/config`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-        body: JSON.stringify(payload)
-      });
-    } catch {}
-    return updated.find(d => d.deviceId === deviceId)!;
+    return updated.find(d => d.deviceId === deviceId) || ({ deviceId, ...payload } as DeviceHealth);
   },
 
   async assignDevicesToEmployee(employeeId: string, deviceIds: string[], employeeName?: string): Promise<boolean> {
-    const employees = await this.getEmployees();
-    const updated = employees.map(e => e.employeeId === employeeId ? { ...e, assignedDeviceIds: deviceIds } : e);
-    setStored('employees', updated);
     try {
-      await fetch(`${this.baseUrl}/master/employees/${encodeURIComponent(employeeId)}/assign-devices`, {
+      const res = await fetch(`${this.baseUrl}/master/employees/${encodeURIComponent(employeeId)}/assign-devices`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ deviceIds, employeeName })
       });
-    } catch {}
+      if (res.ok) return true;
+    } catch { }
+
+    const employees = getStored<Employee[]>('employees', []);
+    const updated = employees.map(e => e.employeeId === employeeId ? { ...e, assignedDeviceIds: deviceIds } : e);
+    setStored('employees', updated);
     return true;
   },
 
@@ -316,15 +471,34 @@ export const iotApi = {
     return this.assignDevicesToEmployee(payload.employeeId, payload.deviceIds, payload.employeeName);
   },
 
-  // 5. Shifts
+  // 5. Shifts (https://iot-machine-backend.onrender.com/api)
   async getShifts(): Promise<Shift[]> {
     const stored = getStored<Shift[]>('shifts', []);
-    const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
-      `${this.baseUrl}/master/shifts`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
+        `${this.baseUrl}/master/shifts`
+      );
+      if (res?.data) {
+        const mapped = res.data.map((s: any) => ({
+          shiftId: s.shiftId || s._id || '',
+          name: s.name || s.shiftName || '',
+          shiftName: s.name || s.shiftName || '',
+          startTime: s.startTime || '00:00',
+          endTime: s.endTime || '00:00',
+          overnight: Boolean(s.overnight),
+          active: s.active !== false
+        }));
+        setStored('shifts', mapped);
+        return mapped;
+      }
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: any[] }>(
+      `/api/iot/master/shifts`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    const list = res.data || stored || [];
+    const list = localRes.data || stored || [];
     return list.map((s: any) => ({
       shiftId: s.shiftId || s._id || '',
       name: s.name || s.shiftName || '',
@@ -337,31 +511,47 @@ export const iotApi = {
   },
 
   async saveShift(shift: Omit<Shift, 'shiftId'>, shiftId?: string): Promise<Shift> {
-    const shifts = await this.getShifts();
-    let updated: Shift;
-    if (shiftId) {
-      updated = { shiftId, ...shift };
-      const next = shifts.map(s => s.shiftId === shiftId ? updated : s);
-      setStored('shifts', next);
-    } else {
-      updated = { shiftId: `shift_${Date.now()}`, ...shift };
-      setStored('shifts', [...shifts, updated]);
-    }
+    const payload = {
+      name: shift.name || shift.shiftName,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      overnight: Boolean(shift.overnight),
+      active: shift.active !== false
+    };
+
     try {
-      if (shiftId) {
-        await fetch(`${this.baseUrl}/master/shifts/${encodeURIComponent(shiftId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-          body: JSON.stringify(shift)
-        });
-      } else {
-        await fetch(`${this.baseUrl}/master/shifts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-          body: JSON.stringify(shift)
-        });
+      const url = shiftId
+        ? `${this.baseUrl}/master/shifts/${encodeURIComponent(shiftId)}`
+        : `${this.baseUrl}/master/shifts`;
+      const method = shiftId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) {
+          const s = json.data;
+          return {
+            shiftId: s.shiftId || s._id || shiftId || `shift_${Date.now()}`,
+            name: s.name || payload.name || '',
+            shiftName: s.name || payload.name || '',
+            startTime: s.startTime || payload.startTime,
+            endTime: s.endTime || payload.endTime,
+            overnight: Boolean(s.overnight),
+            active: s.active !== false
+          };
+        }
       }
-    } catch {}
+    } catch { }
+
+    const shifts = getStored<Shift[]>('shifts', []);
+    const updated: Shift = {
+      shiftId: shiftId || `shift_${Date.now()}`,
+      ...shift
+    };
+    setStored('shifts', shiftId ? shifts.map(s => s.shiftId === shiftId ? updated : s) : [...shifts, updated]);
     return updated;
   },
 
@@ -374,27 +564,47 @@ export const iotApi = {
   },
 
   async deleteShift(shiftId: string): Promise<boolean> {
-    const shifts = await this.getShifts();
-    const next = shifts.filter(s => s.shiftId !== shiftId);
-    setStored('shifts', next);
     try {
       await fetch(`${this.baseUrl}/master/shifts/${encodeURIComponent(shiftId)}`, {
-        method: 'DELETE',
-        headers: { 'X-Company-Slug': 'scm' }
+        method: 'DELETE'
       });
-    } catch {}
+    } catch { }
+    const shifts = getStored<Shift[]>('shifts', []);
+    setStored('shifts', shifts.filter(s => s.shiftId !== shiftId));
     return true;
   },
 
-  // 6. Maintenance
+  // 6. Maintenance (https://iot-machine-backend.onrender.com/api)
   async getMaintenance(): Promise<MaintenanceEntry[]> {
     const stored = getStored<MaintenanceEntry[]>('maintenance', []);
-    const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
-      `${this.baseUrl}/master/maintenance`,
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
+        `${this.baseUrl}/master/maintenance`
+      );
+      if (res?.data) {
+        const mapped = res.data.map((entry: any) => ({
+          maintenanceId: entry.maintenanceId || entry._id || '',
+          type: String(entry.type || 'preventive').toLowerCase() as any,
+          machineId: entry.machineId || '',
+          deviceId: entry.deviceId || undefined,
+          title: entry.title || undefined,
+          scheduledDate: entry.scheduledDate || entry.scheduledAt || '',
+          assignedPerson: entry.assignedPerson || entry.assigneeName || '',
+          status: String(entry.status || 'planned').toLowerCase() as any,
+          completionDate: entry.completionDate || entry.completedAt || undefined,
+          notes: entry.notes || undefined
+        }));
+        setStored('maintenance', mapped);
+        return mapped;
+      }
+    } catch { }
+
+    const localRes = await fetchWithFallback<{ success: boolean; data: any[] }>(
+      `/api/iot/master/maintenance`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    const list = res.data || stored || [];
+    const list = localRes.data || stored || [];
     return list.map((entry: any) => ({
       maintenanceId: entry.maintenanceId || entry._id || '',
       type: String(entry.type || 'preventive').toLowerCase() as any,
@@ -410,42 +620,54 @@ export const iotApi = {
   },
 
   async saveMaintenance(entry: Omit<MaintenanceEntry, 'maintenanceId'>, maintenanceId?: string): Promise<MaintenanceEntry> {
-    const list = await this.getMaintenance();
-    let updated: MaintenanceEntry;
-    if (maintenanceId) {
-      updated = { maintenanceId, ...entry };
-      const next = list.map(m => m.maintenanceId === maintenanceId ? updated : m);
-      setStored('maintenance', next);
-    } else {
-      updated = { maintenanceId: `mnt_${Date.now()}`, ...entry };
-      setStored('maintenance', [updated, ...list]);
-    }
     const payload = {
       type: String(entry.type || 'preventive').toUpperCase(),
       machineId: entry.machineId,
       deviceId: entry.deviceId || null,
-      title: `${String(entry.type || 'preventive').toUpperCase()} maintenance`,
+      title: entry.title || `${String(entry.type || 'preventive').toUpperCase()} maintenance`,
       scheduledAt: entry.scheduledDate,
       assigneeName: entry.assignedPerson,
       status: String(entry.status || 'planned').toUpperCase(),
       completedAt: entry.completionDate || null,
       notes: entry.notes || null
     };
+
     try {
-      if (maintenanceId) {
-        await fetch(`${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-          body: JSON.stringify(payload)
-        });
-      } else {
-        await fetch(`${this.baseUrl}/master/maintenance`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-          body: JSON.stringify(payload)
-        });
+      const url = maintenanceId
+        ? `${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`
+        : `${this.baseUrl}/master/maintenance`;
+      const method = maintenanceId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data) {
+          const item = json.data;
+          return {
+            maintenanceId: item.maintenanceId || item._id || maintenanceId || `mnt_${Date.now()}`,
+            type: String(item.type || entry.type).toLowerCase() as any,
+            machineId: item.machineId || entry.machineId,
+            deviceId: item.deviceId || entry.deviceId,
+            title: item.title || entry.title,
+            scheduledDate: item.scheduledAt || entry.scheduledDate,
+            assignedPerson: item.assigneeName || entry.assignedPerson,
+            status: String(item.status || entry.status).toLowerCase() as any,
+            completionDate: item.completedAt || entry.completionDate,
+            notes: item.notes || entry.notes
+          };
+        }
       }
-    } catch {}
+    } catch { }
+
+    const list = getStored<MaintenanceEntry[]>('maintenance', []);
+    const updated: MaintenanceEntry = {
+      maintenanceId: maintenanceId || `mnt_${Date.now()}`,
+      ...entry
+    };
+    setStored('maintenance', maintenanceId ? list.map(m => m.maintenanceId === maintenanceId ? updated : m) : [updated, ...list]);
     return updated;
   },
 
@@ -458,102 +680,170 @@ export const iotApi = {
   },
 
   async deleteMaintenance(maintenanceId: string): Promise<boolean> {
-    const list = await this.getMaintenance();
-    const next = list.filter(m => m.maintenanceId !== maintenanceId);
-    setStored('maintenance', next);
     try {
       await fetch(`${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`, {
-        method: 'DELETE',
-        headers: { 'X-Company-Slug': 'scm' }
+        method: 'DELETE'
       });
-    } catch {}
+    } catch { }
+    const list = getStored<MaintenanceEntry[]>('maintenance', []);
+    setStored('maintenance', list.filter(m => m.maintenanceId !== maintenanceId));
     return true;
   },
 
-  // 7. Production Entries
-  async getProductionReport(filter?: ProductionReportFilter): Promise<ProductionReportRow[]> {
-    const stored = getStored<ProductionReportRow[]>('production_entries', []);
-    let list = [...stored];
-    if (filter?.date) list = list.filter(r => r.date === filter.date);
-    if (filter?.shiftId) list = list.filter(r => r.shiftId === filter.shiftId);
-    if (filter?.machineId) list = list.filter(r => r.machineId === filter.machineId);
-    if (filter?.employeeId) list = list.filter(r => r.employeeId === filter.employeeId);
+  // 7. Production Entries & Machine Sessions (https://iot-machine-backend.onrender.com/api)
+  async getMachineSessions(filter?: {
+    machineId?: string;
+    shiftId?: string;
+    from?: string;
+    to?: string;
+  }): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (filter?.machineId) params.set('machineId', filter.machineId);
+    if (filter?.shiftId) params.set('shiftId', filter.shiftId);
+    if (filter?.from) params.set('from', filter.from);
+    if (filter?.to) params.set('to', filter.to);
 
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
+        `${this.baseUrl}/production/machine-sessions?${params.toString()}`
+      );
+      return res?.data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getProductionReport(filter?: ProductionReportFilter): Promise<ProductionReportRow[]> {
     const params = new URLSearchParams();
     if (filter?.date) params.set('date', filter.date);
     if (filter?.shiftId) params.set('shiftId', filter.shiftId);
     if (filter?.machineId) params.set('machineId', filter.machineId);
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
 
-    const res = await fetchWithFallback<{ success: boolean; data: ProductionReportRow[] }>(
-      `${this.baseUrl}/production/report?${params.toString()}`,
-      { method: 'GET' },
-      { success: true, data: list }
-    );
-    return res.data || list;
+    try {
+      const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
+        `${this.baseUrl}/production/report?${params.toString()}`
+      );
+      if (res?.data) {
+        return res.data.map((r: any) => ({
+          entryId: r.entryId || r._id || '',
+          date: r.date || r.shiftDate || '',
+          shiftDate: r.shiftDate || r.date || '',
+          enteredAt: r.enteredAt || r.createdAt || '',
+          shiftId: r.shiftId || '',
+          shiftName: r.shiftName || '',
+          machineId: r.machineId || '',
+          machineName: r.machineName || r.machineId || '',
+          employeeId: r.employeeId || '',
+          employeeName: r.employeeName || '',
+          counts: r.counts ?? null,
+          speed: r.speed ?? null,
+          productionOutput: Number(r.productionOutput ?? 0),
+          wastePercent: r.wastePercent,
+          runtimeMinutes: r.runtimeMinutes,
+          targetOutput: r.targetOutput,
+          notes: r.notes ?? null
+        }));
+      }
+    } catch { }
+
+    const stored = getStored<ProductionReportRow[]>('production_entries', []);
+    let list = [...stored];
+    if (filter?.date) list = list.filter(r => r.date === filter.date || r.shiftDate === filter.date);
+    if (filter?.shiftId) list = list.filter(r => r.shiftId === filter.shiftId);
+    if (filter?.machineId) list = list.filter(r => r.machineId === filter.machineId);
+    if (filter?.employeeId) list = list.filter(r => r.employeeId === filter.employeeId);
+    return list;
   },
 
   async createProductionEntry(entry: ProductionEntryInput): Promise<ProductionReportRow> {
-    const list = await this.getProductionReport();
-    const newEntry: ProductionReportRow = {
-      entryId: `pe_${Date.now()}`,
-      date: entry.date,
-      enteredAt: new Date().toISOString(),
-      shiftId: entry.shiftId || '',
-      machineId: entry.machineId || '',
-      employeeId: entry.employeeId || '',
-      employeeName: entry.employeeName || 'Operator',
-      counts: entry.counts,
-      speed: entry.speed,
-      productionOutput: entry.productionOutput || 0,
-      wastePercent: entry.wastePercent,
-      runtimeMinutes: entry.runtimeMinutes,
-      targetOutput: entry.targetOutput,
-      notes: entry.notes
+    const payload = {
+      ...entry,
+      shiftDate: entry.shiftDate || entry.date,
+      date: entry.date || entry.shiftDate
     };
-    setStored('production_entries', [newEntry, ...list]);
     try {
       const res = await fetch(`${this.baseUrl}/production/entries`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-        body: JSON.stringify(entry)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         const json = await res.json();
-        if (json.data) return json.data;
+        if (json?.data) {
+          const d = json.data;
+          return {
+            entryId: d.entryId || d._id || `pe_${Date.now()}`,
+            date: d.shiftDate || d.date || payload.date || '',
+            shiftDate: d.shiftDate || d.date || payload.shiftDate || '',
+            enteredAt: d.enteredAt || d.createdAt || new Date().toISOString(),
+            shiftId: d.shiftId || payload.shiftId || '',
+            machineId: d.machineId || payload.machineId || '',
+            employeeId: d.employeeId || payload.employeeId || '',
+            employeeName: d.employeeName || payload.employeeName || '',
+            counts: d.counts ?? payload.counts,
+            speed: d.speed ?? payload.speed,
+            productionOutput: Number(d.productionOutput ?? payload.productionOutput ?? 0),
+            notes: d.notes ?? payload.notes
+          };
+        }
       }
-    } catch {}
+    } catch { }
+
+    const list = getStored<ProductionReportRow[]>('production_entries', []);
+    const newEntry: ProductionReportRow = {
+      entryId: `pe_${Date.now()}`,
+      date: payload.date || '',
+      shiftDate: payload.shiftDate || '',
+      enteredAt: new Date().toISOString(),
+      shiftId: payload.shiftId || '',
+      machineId: payload.machineId || '',
+      employeeId: payload.employeeId || '',
+      employeeName: payload.employeeName || 'Operator',
+      counts: payload.counts,
+      speed: payload.speed,
+      productionOutput: payload.productionOutput || 0,
+      wastePercent: payload.wastePercent,
+      runtimeMinutes: payload.runtimeMinutes,
+      targetOutput: payload.targetOutput,
+      notes: payload.notes
+    };
+    setStored('production_entries', [newEntry, ...list]);
     return newEntry;
   },
 
   async updateProductionEntry(entryId: string, entry: Partial<ProductionEntryInput>): Promise<boolean> {
-    const list = await this.getProductionReport();
+    const payload = {
+      ...entry,
+      shiftDate: entry.shiftDate || entry.date
+    };
+    try {
+      const res = await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) return true;
+    } catch { }
+
+    const list = getStored<ProductionReportRow[]>('production_entries', []);
     const next = list.map(e => e.entryId === entryId ? { ...e, ...entry } : e);
     setStored('production_entries', next);
-    try {
-      await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
-        body: JSON.stringify(entry)
-      });
-    } catch {}
     return true;
   },
 
   async deleteProductionEntry(entryId: string): Promise<boolean> {
-    const list = await this.getProductionReport();
-    const next = list.filter(e => e.entryId !== entryId);
-    setStored('production_entries', next);
     try {
       await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, {
-        method: 'DELETE',
-        headers: { 'X-Company-Slug': 'scm' }
+        method: 'DELETE'
       });
-    } catch {}
+    } catch { }
+    const list = getStored<ProductionReportRow[]>('production_entries', []);
+    setStored('production_entries', list.filter(e => e.entryId !== entryId));
     return true;
   },
 
-  // 8. Round Performance
+  // 8. Round Performance (https://iot-machine-backend.onrender.com/api)
   async getMachineRoundPerformance(filter?: {
     machineId?: string;
     employeeId?: string;
@@ -576,9 +866,7 @@ export const iotApi = {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/dashboard/machine?${params.toString()}`, {
-        headers: { 'X-Company-Slug': 'scm' }
-      });
+      const res = await fetch(`${this.baseUrl}/dashboard/machine?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
         const payload = json?.data?.roundGaps ?? json?.roundGaps ?? json?.data ?? {};
@@ -627,12 +915,12 @@ export const iotApi = {
           averageGapMinutes: Number(payload.averageGapMinutes || 0)
         };
       }
-    } catch {}
+    } catch { }
 
     return fallback;
   },
 
-  // 9. Analytical Reports
+  // 9. Analytical Reports (https://iot-machine-backend.onrender.com/api)
   async getReports(filter: ReportFilter): Promise<ReportResponse> {
     const params = new URLSearchParams();
     params.set('reportType', filter.reportType);
@@ -651,9 +939,7 @@ export const iotApi = {
     };
 
     try {
-      const res = await fetch(`${this.baseUrl}/master/reports?${params.toString()}`, {
-        headers: { 'X-Company-Slug': 'scm' }
-      });
+      const res = await fetch(`${this.baseUrl}/master/reports?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
         return {
@@ -663,7 +949,7 @@ export const iotApi = {
           data: json.data || []
         };
       }
-    } catch {}
+    } catch { }
 
     return {
       success: true,

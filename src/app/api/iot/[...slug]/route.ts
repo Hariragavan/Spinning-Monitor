@@ -18,18 +18,9 @@ import {
   saveIotMapping,
   getIotEmployeeMetrics,
   fetchLiveRenderStream,
-  IOT_COLLECTIONS
+  IOT_COLLECTIONS,
+  IOT_COMMON_API_URL
 } from '@/lib/iot/iotDb';
-import {
-  SAMPLE_OVERVIEW,
-  SAMPLE_MACHINES,
-  SAMPLE_EMPLOYEES,
-  SAMPLE_DEVICES,
-  SAMPLE_CARD_TAPS,
-  SAMPLE_EMPLOYEE_METRICS,
-  getSampleMachineDetail,
-  getSampleSpinfoOverview
-} from '@/lib/iot/sampleIotData';
 
 const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
 
@@ -39,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   const { searchParams } = new URL(req.url);
 
   try {
-    // 1. Spinfo & Dashboard Overview
+    // 1. Spinfo & Dashboard Overview (sourced from https://iot-machine-backend-production.up.railway.app/api/common)
     if (
       path === 'spinfo/overview' ||
       path === 'overview' ||
@@ -58,7 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       });
     }
 
-    // 2. Machine Detail
+    // 2. Machine Detail (sourced from https://iot-machine-backend-production.up.railway.app/api/common)
     if (
       path.startsWith('machine/') ||
       path.startsWith('machines/') ||
@@ -66,8 +57,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     ) {
       const parts = path.split('/');
       const machineId = parts[parts.length - 1] || 'RF01';
-      const data = await getIotMachineDetail(decodeURIComponent(machineId));
-      return NextResponse.json({ success: true, data });
+      const fromDate = searchParams.get('fromDate') || undefined;
+      const shift = searchParams.get('shift') || undefined;
+      const data = await getIotMachineDetail(decodeURIComponent(machineId), { fromDate, shift });
+      return NextResponse.json({ success: true, data }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+      });
     }
 
     // 3. Machines List
@@ -154,7 +149,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const employeeId = searchParams.get('employeeId');
 
       let rows = await getIotProductionEntries();
-      if (date) rows = rows.filter(r => r.date === date);
+      if (date) rows = rows.filter(r => r.date === date || r.shiftDate === date);
       if (shiftId) rows = rows.filter(r => r.shiftId === shiftId);
       if (machineId) rows = rows.filter(r => r.machineId === machineId);
       if (employeeId) rows = rows.filter(r => r.employeeId === employeeId);
@@ -178,7 +173,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
       try {
         const res = await fetch(`${REMOTE_IOT_API}/dashboard/machine?${p.toString()}`, {
-          headers: { 'X-Company-Slug': 'scm' },
           cache: 'no-store'
         });
         if (res.ok) {
@@ -225,14 +219,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       }
     }
 
-    // 10d. Raw Common Stream
+    // 10d. Raw Common Stream (from https://iot-machine-backend-production.up.railway.app/api/common)
     if (path === 'common') {
       const shift = searchParams.get('shift');
       const shiftDate = searchParams.get('shiftDate');
-      const limit = parseInt(searchParams.get('limit') || '5', 10);
+      const limit = parseInt(searchParams.get('limit') || '10', 10);
       const shiftNum = shift ? parseInt(shift.replace(/\D/g, ''), 10) || undefined : undefined;
       const doc = await fetchLiveRenderStream(limit, shiftNum, shiftDate);
-      if (doc) return NextResponse.json({ success: true, data: Array.isArray(doc) ? doc : [doc] });
+      if (doc) return NextResponse.json({ success: true, sourceApi: IOT_COMMON_API_URL, data: Array.isArray(doc) ? doc : [doc] });
       try {
         const db = await getIotDb();
         const q: any = {};
@@ -265,7 +259,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 
       try {
         const res = await fetch(`${REMOTE_IOT_API}/master/reports?${p.toString()}`, {
-          headers: { 'X-Company-Slug': 'scm' },
           cache: 'no-store'
         });
         if (res.ok) {
@@ -297,7 +290,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     // Fallback: Proxy to Render remote API if unhandled
     try {
       const remoteRes = await fetch(`${REMOTE_IOT_API}/${path}?${searchParams.toString()}`, {
-        headers: { 'X-Company-Slug': 'scm' },
         cache: 'no-store'
       });
       if (remoteRes.ok) {
@@ -398,7 +390,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ s
   const path = slug.join('/');
   const { searchParams } = new URL(req.url);
 
-  // ID can be passed in query ?id=... or at end of path (e.g. master/shifts/shift_1)
   const parts = path.split('/');
   const idFromPath = parts.length > 1 ? parts[parts.length - 1] : null;
   const id = searchParams.get('id') || idFromPath;

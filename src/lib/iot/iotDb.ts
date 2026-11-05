@@ -1,16 +1,11 @@
 import { getIotDb } from '@/lib/mongodb';
 import {
+  EMPTY_COMMON_OVERVIEW,
   SAMPLE_OVERVIEW,
-  SAMPLE_MACHINES,
-  SAMPLE_SHIFTS,
-  SAMPLE_EMPLOYEES,
-  SAMPLE_MAINTENANCE,
-  SAMPLE_MAPPINGS,
-  SAMPLE_EMPLOYEE_METRICS,
-  SAMPLE_PRODUCTION_ENTRIES,
-  SAMPLE_DEVICES,
-  getSampleMachineDetail,
-  getSampleSpinfoOverview
+  extractCommonRecords,
+  selectAndMergeCommonRecord,
+  transformCommonToOverview,
+  buildMachineDetailFromCommon
 } from './sampleIotData';
 import {
   SpinfoOverviewResponse,
@@ -26,7 +21,6 @@ import {
   DeviceHealth
 } from '@/types/iot';
 
-// The exact database collections used by Scm-iot (in iot_machine database)
 export const IOT_COLLECTIONS = {
   COMMON: 'commondatas',
   MACHINES: 'machines',
@@ -40,187 +34,20 @@ export const IOT_COLLECTIONS = {
   SPINFO_HISTORIES: 'spinfohistories'
 };
 
-const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
+export const REMOTE_IOT_API =
+  process.env.IOT_REMOTE_API ||
+  process.env.NEXT_PUBLIC_IOT_REMOTE_API ||
+  'https://iot-machine-backend.onrender.com/api';
+
+export const IOT_COMMON_API_URL =
+  process.env.IOT_COMMON_API ||
+  process.env.NEXT_PUBLIC_IOT_COMMON_API ||
+  'https://iot-machine-backend-production.up.railway.app/api/common';
 
 // Memory cache for sub-second responses keyed by shift & date
 const overviewCache = new Map<string, { data: SpinfoOverviewResponse; timestamp: number }>();
-const CACHE_TTL_MS = 2500; // 2.5 seconds for live telemetry
+const CACHE_TTL_MS = 2500;
 
-/**
- * Transforms raw MAG SPinFO record from https://iot-machine-backend.onrender.com/api/common
- * into standard SpinfoOverviewResponse structure with all 46 machines and telemetry.
- */
-function transformCommonToOverview(rawDoc: any): SpinfoOverviewResponse {
-  if (!rawDoc || !Array.isArray(rawDoc.machines) || rawDoc.machines.length === 0) {
-    return SAMPLE_OVERVIEW;
-  }
-
-  const rawMachines: any[] = rawDoc.machines;
-  const reporting = rawMachines.filter(m => m.runStatus !== 'OFFLINE').length;
-  const running = rawMachines.filter(m => m.runStatus === 'RUN').length;
-  const stopped = rawMachines.filter(m => m.runStatus === 'STOP').length;
-  const doffing = rawMachines.filter(m => m.runStatus === 'DOFF').length;
-  const totalBreaks = rawMachines.reduce((s, m) => s + (Number(m.totalEndBreakCount) || 0), 0);
-
-  let leftBreaks = 0;
-  let rightBreaks = 0;
-  rawMachines.forEach(m => {
-    (m.sides || []).forEach((s: any) => {
-      const bCount = Number(s.endBreakCount) || (Array.isArray(s.endBreaks) ? s.endBreaks.length : 0);
-      if (s.side === 'L') leftBreaks += bCount;
-      if (s.side === 'R') rightBreaks += bCount;
-    });
-  });
-
-  const runningSpeeds = rawMachines
-    .filter(m => m.runStatus === 'RUN' && Number(m.spindleSpeedCurrent) > 0)
-    .map(m => Number(m.spindleSpeedCurrent));
-
-  const averageRpm = runningSpeeds.length
-    ? Math.round(runningSpeeds.reduce((a, b) => a + b, 0) / runningSpeeds.length)
-    : 16700;
-
-  const outsideRpmCount = rawMachines.filter(m =>
-    m.runStatus === 'RUN' && (m.spindleSpeedCurrent < 15000 || m.spindleSpeedCurrent > 17500)
-  ).length;
-
-  const totalProd = Number(rawMachines.reduce((s, m) => s + (Number(m.shiftProduction) || 0), 0).toFixed(1));
-  const targetProd = Number(rawMachines.reduce((s, m) => s + (Number(m.shiftTargetProduction) || Number(m.shiftProduction) || 60), 0).toFixed(1));
-  const yieldPct = targetProd > 0 ? Math.round((totalProd / targetProd) * 100) : 98;
-
-  // Aggregate hourly production chart
-  const hourlySums: { [hour: number]: number } = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 };
-  rawMachines.forEach(m => {
-    (m.hourWiseProduction || []).forEach((h: any) => {
-      const hNum = Number(h.hour);
-      if (hourlySums[hNum] !== undefined) {
-        hourlySums[hNum] += Number(h.production || 0);
-      }
-    });
-  });
-
-  const hourlyChart = [1, 2, 3, 4, 5, 6, 7, 8].map(h => ({
-    hour: `H${h}`,
-    production: Math.round(hourlySums[h] || (totalProd / 8)),
-    target: Math.round(targetProd / 8)
-  }));
-
-  const peakHour = 'H3';
-
-  // Format all machines
-  const formattedMachines: SpinfoMachineItem[] = rawMachines.map((m, idx) => {
-    const id = String(m.machine || m.machineId || `RF${String(idx + 1).padStart(2, '0')}`);
-    const speed = Number(m.spindleSpeedCurrent || 0);
-    const mBreaks = Number(m.totalEndBreakCount || 0);
-    const runStatus = String(m.runStatus || 'STOP').toUpperCase() as any;
-
-    return {
-      machineId: id,
-      runStatus: runStatus === 'RUN' ? 'RUN' : runStatus === 'DOFF' ? 'DOFF' : 'STOP',
-      count: String(m.count || '40s Combed'),
-      spindleSpeedCurrent: speed,
-      spindleSpeedUnit: 'rpm',
-      speedStatus:
-        runStatus === 'STOP' ? 'Stopped for Maintenance' :
-        runStatus === 'DOFF' ? 'Doffing Cycle in progress' :
-        speed < 15000 ? 'Low speed warning' :
-        speed > 17500 ? 'High speed alert' :
-        'Optimal peak speed',
-      speedBounds: {
-        min: 15000,
-        max: 17200,
-        current: speed,
-        inBounds: speed >= 15000 && speed <= 17200
-      },
-      shiftWaste: Number(m.shiftWaste || 1.2),
-      wasteUnit: '%',
-      shiftProduction: Number(m.shiftProduction || 0),
-      shiftTargetProduction: Number(m.shiftTargetProduction || m.shiftProduction || 65),
-      productionUnit: 'kg',
-      totalEndBreakCount: mBreaks,
-      sides: Array.isArray(m.sides) && m.sides.length > 0 ? m.sides : [
-        { side: 'L', endBreakCount: Math.round(mBreaks * 0.5), endBreaks: [], endMendingTime: 2.1, endMendingTimeUnit: 'min' },
-        { side: 'R', endBreakCount: Math.round(mBreaks * 0.5), endBreaks: [], endMendingTime: 2.4, endMendingTimeUnit: 'min' }
-      ],
-      operator: {
-        id: `EMP${String((idx % 6) + 1).padStart(3, '0')}`,
-        name: idx === 0 ? 'Sambari(24673)' : idx === 1 ? 'Senthil Kumar' : idx === 2 ? 'Murugan R' : 'Palanisamy K',
-        badge: `B-${100 + idx}`,
-        sessionStatus: 'ACTIVE',
-        lastSeenMinutesAgo: (idx * 3) % 15
-      },
-      rounds: {
-        completed: 12,
-        total: 16,
-        skipped: 0,
-        incomplete: 1
-      },
-      sensorBounds: {
-        status: speed >= 15000 && speed <= 17200 ? 'NORMAL' : 'BREACH',
-        breachCount: speed >= 15000 && speed <= 17200 ? 0 : 1
-      },
-      cleaning: {
-        intervalDays: 2,
-        lastDate: '2026-11-02',
-        nextDate: '2026-11-04',
-        status: idx % 4 === 0 ? 'DUE' : 'NORMAL'
-      }
-    };
-  });
-
-  return {
-    success: true,
-    dataTime: String(rawDoc.dataTime || new Date().toISOString().replace('T', ' ').slice(0, 19)),
-    shiftDate: String(rawDoc.shiftDate || new Date().toISOString().slice(0, 10)),
-    shift: Number(rawDoc.shift || 1),
-    frameStatus: {
-      totalMachines: rawMachines.length,
-      reporting,
-      running,
-      runningPercent: reporting ? Math.round((running / reporting) * 100) : 0,
-      stopped,
-      doffing,
-      stoppedAndDoffing: stopped + doffing,
-      offline: rawMachines.length - reporting,
-      totalEndBreaks: totalBreaks,
-      leftBreaks,
-      rightBreaks
-    },
-    performanceAndCare: {
-      averageRpm,
-      totalEndBreaks: totalBreaks,
-      outsideRpmCount,
-      productionYieldPercent: yieldPct,
-      productionYieldKg: totalProd,
-      targetProductionKg: targetProd,
-      yieldAchievedPercent: yieldPct,
-      completedRounds: 142,
-      totalRoundsScheduled: 160,
-      skippedRounds: 4,
-      incompleteRounds: 2,
-      totalDevices: rawMachines.length * 3,
-      devicesInBounds: (rawMachines.length * 3) - outsideRpmCount,
-      sensorBoundBreaches: outsideRpmCount,
-      speedBreachAlerts: outsideRpmCount,
-      preventiveCleaningDue: 6,
-      preventiveCleaningDueCount: 6,
-      dueMachineNames: ['RF04', 'RF09', 'RF18', 'RF26', 'RF34', 'RF42']
-    },
-    hourlyProduction: {
-      shiftTotalKg: totalProd,
-      totalProduction: totalProd,
-      totalTarget: targetProd,
-      peakHour,
-      avgPerHourKg: Math.round(totalProd / 8),
-      chart: hourlyChart as any
-    },
-    machines: formattedMachines
-  };
-}
-
-/**
- * Auto-seeds or syncs initial data from REMOTE_IOT_API into local iot_machine database
- */
 export async function ensureIotSeeded(): Promise<void> {
   try {
     const db = await getIotDb();
@@ -229,10 +56,7 @@ export async function ensureIotSeeded(): Promise<void> {
     const shiftsCol = db.collection<Shift>(IOT_COLLECTIONS.SHIFTS);
     if ((await shiftsCol.countDocuments()) === 0) {
       try {
-        const res = await fetch(`${REMOTE_IOT_API}/master/shifts`, {
-          headers: { 'X-Company-Slug': 'scm' },
-          cache: 'no-store'
-        });
+        const res = await fetch(`${REMOTE_IOT_API}/master/shifts`, { cache: 'no-store' });
         if (res.ok) {
           const json = await res.json();
           if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -242,6 +66,7 @@ export async function ensureIotSeeded(): Promise<void> {
               shiftName: String(s.shiftName || s.name || 'Shift 1'),
               startTime: String(s.startTime || '06:00'),
               endTime: String(s.endTime || '14:00'),
+              overnight: Boolean(s.overnight),
               active: s.active !== false
             }));
             await shiftsCol.insertMany(mapped);
@@ -254,10 +79,7 @@ export async function ensureIotSeeded(): Promise<void> {
     const machinesCol = db.collection(IOT_COLLECTIONS.MACHINES);
     if ((await machinesCol.countDocuments()) === 0) {
       try {
-        const res = await fetch(`${REMOTE_IOT_API}/master/machines`, {
-          headers: { 'X-Company-Slug': 'scm' },
-          cache: 'no-store'
-        });
+        const res = await fetch(`${REMOTE_IOT_API}/master/machines`, { cache: 'no-store' });
         if (res.ok) {
           const json = await res.json();
           if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -276,10 +98,7 @@ export async function ensureIotSeeded(): Promise<void> {
     const mapCol = db.collection(IOT_COLLECTIONS.MAPPINGS);
     if ((await mapCol.countDocuments()) === 0) {
       try {
-        const res = await fetch(`${REMOTE_IOT_API}/master/machine-mappings`, {
-          headers: { 'X-Company-Slug': 'scm' },
-          cache: 'no-store'
-        });
+        const res = await fetch(`${REMOTE_IOT_API}/master/machine-mappings`, { cache: 'no-store' });
         if (res.ok) {
           const json = await res.json();
           if (json.success && Array.isArray(json.data) && json.data.length > 0) {
@@ -299,63 +118,54 @@ export async function ensureIotSeeded(): Promise<void> {
 }
 
 /**
- * Fetches live MAG SPinFO stream directly from https://iot-machine-backend.onrender.com/api/common
- * and saves into the local iot_machine database.
+ * Fetches live MAG SPinFO records directly from
+ * https://iot-machine-backend-production.up.railway.app/api/common
+ * (with fallback to Render /api/common) and archives into local MongoDB.
  */
-export async function fetchLiveRenderStream(limit: number = 5, shiftNum?: number, date?: string): Promise<any | null> {
-  try {
-    let url = `${REMOTE_IOT_API}/common?limit=${limit}&sort=createdAt&order=desc`;
-    if (shiftNum !== undefined && shiftNum !== null) {
-      url += `&shift=${shiftNum}`;
-    }
-    if (date) {
-      url += `&shiftDate=${encodeURIComponent(date)}`;
-    }
-    const res = await fetch(url, {
-      headers: { 'X-Company-Slug': 'scm' },
-      cache: 'no-store'
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        // Asynchronously archive into local MongoDB iot_machine.commondatas
-        try {
-          const db = await getIotDb();
-          const col = db.collection(IOT_COLLECTIONS.COMMON);
-          for (const doc of json.data) {
-            const msgId = doc.msgId || doc._id;
-            await col.updateOne({ msgId }, { $set: doc }, { upsert: true });
-          }
-        } catch (_) {}
-        return json.data[0];
+export async function fetchLiveRenderStream(
+  limit: number = 50,
+  shiftNum?: number,
+  date?: string
+): Promise<any[]> {
+  const urlsToTry = [
+    IOT_COMMON_API_URL,
+    `${REMOTE_IOT_API}/common?limit=${limit}&sort=createdAt&order=desc`
+  ];
+
+  for (const baseUrl of urlsToTry) {
+    try {
+      const res = await fetch(baseUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        const records = extractCommonRecords(json);
+        if (records.length > 0) {
+          try {
+            const db = await getIotDb();
+            const col = db.collection(IOT_COLLECTIONS.COMMON);
+            for (const doc of records) {
+              const msgId = doc.msgId || doc._id || `${doc.shiftDate}_${doc.shift}_${doc.part || 1}`;
+              await col.updateOne({ msgId }, { $set: doc }, { upsert: true });
+            }
+          } catch (_) {}
+          return records;
+        }
       }
-    }
-  } catch (e) {
-    // If remote is waking up or network unavailable, fall through
+    } catch (_) {}
   }
-  return null;
+
+  return [];
 }
 
 // -------------------------------------------------------------
-// Live Overview & Telemetry (connected to Render API & iot_machine DB)
+// Live Overview & Telemetry (from https://iot-machine-backend-production.up.railway.app/api/common)
 // -------------------------------------------------------------
-export async function getIotOverview(filter?: any, forceRefresh: boolean = false): Promise<SpinfoOverviewResponse> {
-  // 1. Extract shift number from filter
-  let shiftNum: number | undefined;
-  if (filter?.shift !== undefined && filter?.shift !== null) {
-    if (typeof filter.shift === 'number') {
-      shiftNum = filter.shift;
-    } else if (typeof filter.shift === 'string') {
-      const trimmed = filter.shift.trim();
-      if (trimmed && trimmed !== 'All Shifts' && trimmed !== 'all') {
-        const match = trimmed.match(/\d+/);
-        if (match) shiftNum = parseInt(match[0], 10);
-      }
-    }
-  }
-
+export async function getIotOverview(
+  filter?: any,
+  forceRefresh: boolean = false
+): Promise<SpinfoOverviewResponse> {
   const targetDate = filter?.fromDate || filter?.toDate || filter?.shiftDate;
-  const cacheKey = `${shiftNum ?? 'all'}_${targetDate ?? 'any'}`;
+  const shiftFilter = filter?.shift;
+  const cacheKey = `${shiftFilter ?? 'all'}_${targetDate ?? 'any'}`;
   const now = Date.now();
 
   const cached = overviewCache.get(cacheKey);
@@ -363,131 +173,61 @@ export async function getIotOverview(filter?: any, forceRefresh: boolean = false
     return cached.data;
   }
 
-  await ensureIotSeeded();
-
-  // 1. Try pulling live telemetry from https://iot-machine-backend.onrender.com with shift filter
-  const liveRemoteDoc = await fetchLiveRenderStream(3, shiftNum, targetDate);
-  if (liveRemoteDoc) {
-    const overview = transformCommonToOverview(liveRemoteDoc);
-    overviewCache.set(cacheKey, { data: overview, timestamp: now });
-    return overview;
-  }
-
-  // 2. Read from local MongoDB iot_machine.commondatas matching shift and date
-  try {
-    const db = await getIotDb();
-    const query: any = {};
-    if (shiftNum !== undefined) query.shift = shiftNum;
-    if (targetDate) query.shiftDate = targetDate;
-
-    let localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
-      .find(query)
-      .sort({ createdAt: -1, _id: -1 })
-      .limit(1)
-      .toArray();
-
-    // If no targetDate was specified (live mode), fallback to latest shift or latest doc
-    if (localDocs.length === 0 && !targetDate) {
-      if (shiftNum !== undefined) {
-        localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
-          .find({ shift: shiftNum })
-          .sort({ createdAt: -1, _id: -1 })
-          .limit(1)
-          .toArray();
-      }
-      if (localDocs.length === 0) {
-        localDocs = await db.collection(IOT_COLLECTIONS.COMMON)
-          .find({})
-          .sort({ createdAt: -1, _id: -1 })
-          .limit(1)
-          .toArray();
-      }
-    }
-
-    if (localDocs.length > 0) {
-      const overview = transformCommonToOverview(localDocs[0]);
+  // 1. Pull live telemetry from https://iot-machine-backend-production.up.railway.app/api/common
+  const liveRecords = await fetchLiveRenderStream(50);
+  if (liveRecords.length > 0) {
+    const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(liveRecords, {
+      fromDate: targetDate,
+      shift: shiftFilter
+    });
+    if (record) {
+      const overview = transformCommonToOverview(record, { availableDates, availableShifts });
       overviewCache.set(cacheKey, { data: overview, timestamp: now });
       return overview;
     }
-  } catch (e) {}
-
-  // 3. If no telemetry is available, return empty metrics structure
-  const emptyOverview: SpinfoOverviewResponse = {
-    success: true,
-    dataTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-    shiftDate: targetDate || new Date().toISOString().slice(0, 10),
-    shift: shiftNum ?? 1,
-    frameStatus: {
-      totalMachines: 0,
-      reporting: 0,
-      running: 0,
-      runningPercent: 0,
-      stopped: 0,
-      doffing: 0,
-      stoppedAndDoffing: 0,
-      offline: 0,
-      totalEndBreaks: 0,
-      leftBreaks: 0,
-      rightBreaks: 0
-    },
-    performanceAndCare: {
-      averageRpm: 0,
-      totalEndBreaks: 0,
-      outsideRpmCount: 0,
-      productionYieldPercent: 0,
-      productionYieldKg: 0,
-      targetProductionKg: 0,
-      yieldAchievedPercent: 0,
-      completedRounds: 0,
-      totalRoundsScheduled: 0,
-      skippedRounds: 0,
-      incompleteRounds: 0,
-      totalDevices: 0,
-      devicesInBounds: 0,
-      sensorBoundBreaches: 0,
-      speedBreachAlerts: 0,
-      preventiveCleaningDue: 0,
-      preventiveCleaningDueCount: 0,
-      dueMachineNames: []
-    },
-    hourlyProduction: {
-      shiftTotalKg: 0,
-      totalProduction: 0,
-      totalTarget: 0,
-      peakHour: 'H1',
-      avgPerHourKg: 0,
-      chart: []
-    },
-    machines: []
-  };
-  overviewCache.set(cacheKey, { data: emptyOverview, timestamp: now });
-  return emptyOverview;
-}
-
-// -------------------------------------------------------------
-// Machine Detail (4-Tab Diagnostics)
-// -------------------------------------------------------------
-export async function getIotMachineDetail(machineId: string): Promise<SpinfoMachineDetailResponse> {
-  const overview = await getIotOverview();
-  const machine = overview.machines.find(m => m.machineId === machineId || m.machineId === decodeURIComponent(machineId));
-
-  const baseDetail = getSampleMachineDetail(machineId);
-  if (machine) {
-    baseDetail.machine = machine;
-    baseDetail.overview.keyFigures.endBreaks.value = machine.totalEndBreakCount;
-    baseDetail.overview.keyFigures.averageRpm.value = `${machine.spindleSpeedCurrent.toLocaleString()} rpm`;
-    baseDetail.overview.keyFigures.yarnCount.value = machine.count;
-    baseDetail.overview.keyFigures.productionYield.value = `${machine.shiftProduction} kg`;
-    if (baseDetail.overview.keyFigures.shiftWaste) {
-      baseDetail.overview.keyFigures.shiftWaste.value = `${machine.shiftWaste}%`;
-    }
   }
 
-  return baseDetail;
+  // 2. Fallback to local MongoDB iot_machine.commondatas
+  try {
+    const db = await getIotDb();
+    const localDocs = await db
+      .collection(IOT_COLLECTIONS.COMMON)
+      .find({})
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(50)
+      .toArray();
+
+    const validLocal = extractCommonRecords(localDocs);
+    if (validLocal.length > 0) {
+      const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(validLocal, {
+        fromDate: targetDate,
+        shift: shiftFilter
+      });
+      if (record) {
+        const overview = transformCommonToOverview(record, { availableDates, availableShifts });
+        overviewCache.set(cacheKey, { data: overview, timestamp: now });
+        return overview;
+      }
+    }
+  } catch (_) {}
+
+  // 3. Return empty overview when no live telemetry is available
+  return EMPTY_COMMON_OVERVIEW;
 }
 
 // -------------------------------------------------------------
-// Machines Master & Telemetry List
+// Machine Detail
+// -------------------------------------------------------------
+export async function getIotMachineDetail(
+  machineId: string,
+  filter?: any
+): Promise<SpinfoMachineDetailResponse> {
+  const overview = await getIotOverview(filter);
+  return buildMachineDetailFromCommon(machineId, overview);
+}
+
+// -------------------------------------------------------------
+// Machines Master & Telemetry List (https://iot-machine-backend.onrender.com/api)
 // -------------------------------------------------------------
 export async function getIotMachinesList(): Promise<SpinfoMachineItem[]> {
   const overview = await getIotOverview();
@@ -497,20 +237,20 @@ export async function getIotMachinesList(): Promise<SpinfoMachineItem[]> {
 export async function getIotMachinesMaster(): Promise<Machine[]> {
   await ensureIotSeeded();
 
-  // 1. Fetch hardware machines directly from Render API /master/machines
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/machines`, {
-      headers: { 'X-Company-Slug': 'scm' },
-      cache: 'no-store'
-    });
+    const res = await fetch(`${REMOTE_IOT_API}/master/machines`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         const hwMachines: Machine[] = json.data.map((m: any) => ({
           machineId: String(m.machineId || m.id),
           machineName: String(m.machineName || m.name || m.machineId),
           millId: String(m.millId || '0'),
-          cleaningIntervalDays: Number(m.cleaningIntervalDays) || 2
+          cleaningIntervalDays: Number(m.cleaningIntervalDays) || 2,
+          expectedProductionOutput: Number(m.expectedOutput ?? m.expectedProductionOutput ?? 0),
+          expectedRuntimeMinutes: Number(m.expectedRunDurationMinutes ?? m.expectedRuntimeMinutes ?? 0),
+          expectedRoundsPerHour: Number(m.expectedRoundsPerHour ?? 0),
+          roundDeviceSequence: Array.isArray(m.roundDeviceSequence) ? m.roundDeviceSequence : []
         }));
 
         try {
@@ -529,33 +269,29 @@ export async function getIotMachinesMaster(): Promise<Machine[]> {
     }
   } catch (_) {}
 
-  // 2. Read from local iot_machine database (hardware machines only)
   try {
     const db = await getIotDb();
-    const list = await db.collection<Machine>(IOT_COLLECTIONS.MACHINES)
+    const list = await db
+      .collection<Machine>(IOT_COLLECTIONS.MACHINES)
       .find({ machineId: { $not: { $regex: /^RF/i } } }, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
-  } catch (e) {}
+  } catch (_) {}
 
   return [];
 }
 
 // -------------------------------------------------------------
-// Employees Master (Stored in iot_machine.employees)
+// Employees Master (https://iot-machine-backend.onrender.com/api/master/employees)
 // -------------------------------------------------------------
 export async function getIotEmployeesMaster(): Promise<Employee[]> {
   await ensureIotSeeded();
 
-  // 1. Try pulling live employees from Render API
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/employees`, {
-      headers: { 'X-Company-Slug': 'scm' },
-      cache: 'no-store'
-    });
+    const res = await fetch(`${REMOTE_IOT_API}/master/employees`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         const mapped: Employee[] = json.data.map((e: any) => ({
           employeeId: String(e.employeeId || e.id),
           employeeName: String(e.employeeName || e.name || e.employeeId),
@@ -578,40 +314,42 @@ export async function getIotEmployeesMaster(): Promise<Employee[]> {
     }
   } catch (_) {}
 
-  // 2. Read from local iot_machine database
   try {
     const db = await getIotDb();
-    const list = await db.collection<Employee>(IOT_COLLECTIONS.EMPLOYEES)
+    const list = await db
+      .collection<Employee>(IOT_COLLECTIONS.EMPLOYEES)
       .find({}, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
-  } catch (e) {}
+  } catch (_) {}
 
   return [];
 }
 
 // -------------------------------------------------------------
-// Devices Master (Stored in iot_machine.devices)
+// Devices Master (https://iot-machine-backend.onrender.com/api/master/devices)
 // -------------------------------------------------------------
 export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
   await ensureIotSeeded();
 
-  // 1. Try pulling live devices from Render API
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/devices`, {
-      headers: { 'X-Company-Slug': 'scm' },
-      cache: 'no-store'
-    });
+    const res = await fetch(`${REMOTE_IOT_API}/master/devices`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         const mapped: DeviceHealth[] = json.data.map((d: any) => ({
           deviceId: String(d.deviceId || d.id),
           machineId: d.machineId ? String(d.machineId) : undefined,
           machineName: d.machineName ? String(d.machineName) : undefined,
-          position: d.position || 1,
+          position: d.position ?? 1,
           side: d.side || 'LEFT',
-          employeeId: d.employeeId ? String(d.employeeId) : undefined,
+          minRPM: Number(d.minRPM ?? d.minRpm ?? 700),
+          maxRPM: Number(d.maxRPM ?? d.maxRpm ?? 1000),
+          minRpm: Number(d.minRPM ?? d.minRpm ?? 700),
+          maxRpm: Number(d.maxRPM ?? d.maxRpm ?? 1000),
+          expectedRPM: Number(d.expectedRPM ?? 850),
+          assignedEmployeeId: d.assignedEmployeeId ? String(d.assignedEmployeeId) : undefined,
+          assignedEmployeeName: d.assignedEmployeeName ? String(d.assignedEmployeeName) : undefined,
           lastSeen: d.lastSeen || new Date().toISOString()
         }));
 
@@ -630,20 +368,20 @@ export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
     }
   } catch (_) {}
 
-  // 2. Read from local database
   try {
     const db = await getIotDb();
-    const list = await db.collection<DeviceHealth>(IOT_COLLECTIONS.DEVICES)
+    const list = await db
+      .collection<DeviceHealth>(IOT_COLLECTIONS.DEVICES)
       .find({}, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
-  } catch (e) {}
+  } catch (_) {}
 
   return [];
 }
 
 // -------------------------------------------------------------
-// Employee Telemetry & Patrol Metrics
+// Employee Telemetry & Patrol Metrics (https://iot-machine-backend.onrender.com/api/dashboard/employee)
 // -------------------------------------------------------------
 export async function getIotEmployeeMetrics(filter?: {
   employeeId?: string;
@@ -652,7 +390,6 @@ export async function getIotEmployeeMetrics(filter?: {
   shiftName?: string;
   shiftId?: string;
 }): Promise<EmployeeMetric[]> {
-  // 1. Try pulling live employee metrics from Render /api/dashboard/employee
   try {
     const params = new URLSearchParams();
     if (filter?.date) params.set('date', filter.date);
@@ -662,112 +399,58 @@ export async function getIotEmployeeMetrics(filter?: {
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
     params.set('_t', String(Date.now()));
 
-    let res = await fetch(`${REMOTE_IOT_API}/dashboard/employee?${params.toString()}`, {
-      headers: { 'X-Company-Slug': 'scm' },
+    const res = await fetch(`${REMOTE_IOT_API}/dashboard/employee?${params.toString()}`, {
       cache: 'no-store'
     });
 
-    let rawList: any[] = [];
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        rawList = json.data;
+      if (json.success && Array.isArray(json.data)) {
+        return json.data.map((emp: any, idx: number) => ({
+          employeeId: String(emp.employeeId || `EMP${idx + 1}`),
+          employeeName: emp.employeeName || null,
+          machineId: String(emp.machineId || ''),
+          roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+          rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+          expectedRounds: Number(emp.expectedRounds || 8),
+          avgGapMinutes: Number(emp.avgGapMinutes || 0),
+          longestGapMinutes: Number(emp.longestGapMinutes || 0),
+          activeStatus: 'ACTIVE',
+          idleMinutes: Number(emp.idleMinutes || 0),
+          performancePercent: Number(emp.performancePercent || 0),
+          lastActiveTime: 'Just now',
+          taps: Array.isArray(emp.taps) ? emp.taps : [],
+          hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+          date: emp.date || filter?.date,
+          shift: emp.shift || filter?.shiftName
+        }));
       }
-    }
-
-    // Fallback: If no records for given date (e.g. today before taps), query the latest active shift date (2026-11-03)
-    if (rawList.length === 0 && (!filter?.date || filter.date === new Date().toISOString().slice(0, 10))) {
-      try {
-        const fallbackRes = await fetch(`${REMOTE_IOT_API}/dashboard/employee?date=2026-11-03&_t=${Date.now()}`, {
-          headers: { 'X-Company-Slug': 'scm' },
-          cache: 'no-store'
-        });
-        if (fallbackRes.ok) {
-          const fbJson = await fallbackRes.json();
-          if (fbJson.success && Array.isArray(fbJson.data) && fbJson.data.length > 0) {
-            rawList = fbJson.data;
-          }
-        }
-      } catch (_) {}
-    }
-
-    if (rawList.length > 0) {
-      const mapped: EmployeeMetric[] = rawList.map((emp: any, idx: number) => ({
-        employeeId: String(emp.employeeId || `EMP${idx + 1}`),
-        employeeName: String(emp.employeeName || `Operator ${idx + 1}`),
-        machineId: String(emp.machineId || 'IOT_D1'),
-        roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
-        rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
-        expectedRounds: Number(emp.expectedRounds || 8),
-        avgGapMinutes: Number(emp.avgGapMinutes || 0),
-        longestGapMinutes: Number(emp.longestGapMinutes || 0),
-        activeStatus: 'ACTIVE',
-        idleMinutes: Number(emp.idleMinutes || 0),
-        performancePercent: Number(emp.performancePercent || 0),
-        lastActiveTime: 'Just now',
-        taps: Array.isArray(emp.taps) ? emp.taps : [],
-        hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
-        date: emp.date || filter?.date || '2026-11-03',
-        shift: emp.shift || filter?.shiftName || 'Shift 1',
-        recentTaps: Array.isArray(emp.taps) ? emp.taps.map((t: any) => ({
-          time: t.time || '10:30',
-          stationId: t.deviceId || 'DEV_01',
-          status: 'ON_TIME',
-          gapMinutes: Number(t.gapMinutes || 0)
-        })) : []
-      }));
-
-      // Persist in local iot_machine database
-      try {
-        const db = await getIotDb();
-        for (const m of mapped) {
-          await db.collection(IOT_COLLECTIONS.EMPLOYEES).updateOne(
-            { employeeId: m.employeeId, machineId: m.machineId },
-            { $set: m },
-            { upsert: true }
-          );
-        }
-      } catch (_) {}
-
-      return mapped;
     }
   } catch (err) {
     console.warn('[IoT DB] getIotEmployeeMetrics fetch error:', err);
   }
 
-  // 2. Read from local iot_machine database
-  try {
-    const db = await getIotDb();
-    const stored = await db.collection<EmployeeMetric>(IOT_COLLECTIONS.EMPLOYEES)
-      .find({}, { projection: { _id: 0 } })
-      .toArray();
-    if (stored.length > 0) return stored;
-  } catch (_) {}
-
   return [];
 }
 
 // -------------------------------------------------------------
-// Shifts Table CRUD (Stored in iot_machine.shifts)
+// Shifts Table CRUD (https://iot-machine-backend.onrender.com/api/master/shifts)
 // -------------------------------------------------------------
 export async function getIotShifts(): Promise<Shift[]> {
   await ensureIotSeeded();
 
-  // 1. Try pulling live shifts from Render API
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/shifts`, {
-      headers: { 'X-Company-Slug': 'scm' },
-      cache: 'no-store'
-    });
+    const res = await fetch(`${REMOTE_IOT_API}/master/shifts`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         const mapped: Shift[] = json.data.map((s: any) => ({
           shiftId: String(s._id || s.shiftId || s.name || s.shiftName),
           name: String(s.name || s.shiftName || 'Shift 1'),
           shiftName: String(s.shiftName || s.name || 'Shift 1'),
           startTime: String(s.startTime || '06:00'),
           endTime: String(s.endTime || '14:00'),
+          overnight: Boolean(s.overnight),
           active: s.active !== false
         }));
 
@@ -786,10 +469,10 @@ export async function getIotShifts(): Promise<Shift[]> {
     }
   } catch (_) {}
 
-  // 2. Read from local iot_machine database
   try {
     const db = await getIotDb();
-    const list = await db.collection<Shift>(IOT_COLLECTIONS.SHIFTS)
+    const list = await db
+      .collection<Shift>(IOT_COLLECTIONS.SHIFTS)
       .find({}, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) {
@@ -799,10 +482,11 @@ export async function getIotShifts(): Promise<Shift[]> {
         shiftName: String(s.shiftName || s.name || 'Shift 1'),
         startTime: String(s.startTime || '06:00'),
         endTime: String(s.endTime || '14:00'),
+        overnight: Boolean(s.overnight),
         active: s.active !== false
       }));
     }
-  } catch (e) {}
+  } catch (_) {}
 
   return [];
 }
@@ -816,7 +500,7 @@ export async function saveIotShift(shift: Shift): Promise<Shift> {
       { $set: shift },
       { upsert: true }
     );
-  } catch (e) {}
+  } catch (_) {}
   return shift;
 }
 
@@ -826,28 +510,49 @@ export async function deleteIotShift(shiftId: string): Promise<boolean> {
     const db = await getIotDb();
     const res = await db.collection(IOT_COLLECTIONS.SHIFTS).deleteOne({ shiftId });
     return res.deletedCount > 0;
-  } catch (e) {
+  } catch (_) {
     return false;
   }
 }
 
 // -------------------------------------------------------------
-// Production Entries CRUD (Stored in iot_machine.productionentries)
+// Production Entries CRUD (https://iot-machine-backend.onrender.com/api/production)
 // -------------------------------------------------------------
-export async function getIotProductionEntries(): Promise<ProductionReportRow[]> {
-  await ensureIotSeeded();
+export async function getIotProductionEntries(filter?: {
+  date?: string | null;
+  shiftId?: string | null;
+  machineId?: string | null;
+  employeeId?: string | null;
+}): Promise<ProductionReportRow[]> {
+  try {
+    const params = new URLSearchParams();
+    if (filter?.date) params.set('date', filter.date);
+    if (filter?.shiftId) params.set('shiftId', filter.shiftId);
+    if (filter?.machineId) params.set('machineId', filter.machineId);
+    if (filter?.employeeId) params.set('employeeId', filter.employeeId);
+    const res = await fetch(`${REMOTE_IOT_API}/production/report?${params.toString()}`, {
+      cache: 'no-store'
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (_) {}
+
   try {
     const db = await getIotDb();
-    const list = await db.collection<ProductionReportRow>(IOT_COLLECTIONS.PRODUCTION_ENTRIES)
+    const list = await db
+      .collection<ProductionReportRow>(IOT_COLLECTIONS.PRODUCTION_ENTRIES)
       .find({}, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
-  } catch (e) {}
+  } catch (_) {}
   return [];
 }
 
 export async function saveIotProductionEntry(entry: ProductionReportRow): Promise<ProductionReportRow> {
-  await ensureIotSeeded();
   try {
     const db = await getIotDb();
     await db.collection<ProductionReportRow>(IOT_COLLECTIONS.PRODUCTION_ENTRIES).updateOne(
@@ -855,38 +560,57 @@ export async function saveIotProductionEntry(entry: ProductionReportRow): Promis
       { $set: entry },
       { upsert: true }
     );
-  } catch (e) {}
+  } catch (_) {}
   return entry;
 }
 
 export async function deleteIotProductionEntry(entryId: string): Promise<boolean> {
-  await ensureIotSeeded();
   try {
     const db = await getIotDb();
     const res = await db.collection(IOT_COLLECTIONS.PRODUCTION_ENTRIES).deleteOne({ entryId });
     return res.deletedCount > 0;
-  } catch (e) {
+  } catch (_) {
     return false;
   }
 }
 
 // -------------------------------------------------------------
-// Maintenance CRUD (Stored in iot_machine.maintenanceschedules)
+// Maintenance CRUD (https://iot-machine-backend.onrender.com/api/master/maintenance)
 // -------------------------------------------------------------
 export async function getIotMaintenance(): Promise<MaintenanceEntry[]> {
-  await ensureIotSeeded();
+  try {
+    const res = await fetch(`${REMOTE_IOT_API}/master/maintenance`, { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data.map((entry: any) => ({
+          maintenanceId: entry.maintenanceId || entry._id || '',
+          type: String(entry.type || 'PREVENTIVE').toLowerCase(),
+          machineId: entry.machineId || '',
+          deviceId: entry.deviceId || null,
+          title: entry.title || null,
+          scheduledDate: entry.scheduledDate || entry.scheduledAt || '',
+          assignedPerson: entry.assignedPerson || entry.assigneeName || '',
+          status: String(entry.status || 'PLANNED').toLowerCase(),
+          completionDate: entry.completionDate || entry.completedAt || null,
+          notes: entry.notes || null
+        }));
+      }
+    }
+  } catch (_) {}
+
   try {
     const db = await getIotDb();
-    const list = await db.collection<MaintenanceEntry>(IOT_COLLECTIONS.MAINTENANCE)
+    const list = await db
+      .collection<MaintenanceEntry>(IOT_COLLECTIONS.MAINTENANCE)
       .find({}, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
-  } catch (e) {}
+  } catch (_) {}
   return [];
 }
 
 export async function saveIotMaintenance(entry: MaintenanceEntry): Promise<MaintenanceEntry> {
-  await ensureIotSeeded();
   try {
     const db = await getIotDb();
     await db.collection<MaintenanceEntry>(IOT_COLLECTIONS.MAINTENANCE).updateOne(
@@ -894,25 +618,21 @@ export async function saveIotMaintenance(entry: MaintenanceEntry): Promise<Maint
       { $set: entry },
       { upsert: true }
     );
-  } catch (e) {}
+  } catch (_) {}
   return entry;
 }
 
 // -------------------------------------------------------------
-// Configuration & Mappings (Stored in iot_machine.machinemappings)
+// Configuration & Mappings (https://iot-machine-backend.onrender.com/api/master/machine-mappings)
 // -------------------------------------------------------------
 export async function getIotMappings(): Promise<MachineMapping[]> {
   await ensureIotSeeded();
 
-  // 1. Try pulling live mappings from Render API
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/machine-mappings`, {
-      headers: { 'X-Company-Slug': 'scm' },
-      cache: 'no-store'
-    });
+    const res = await fetch(`${REMOTE_IOT_API}/master/machine-mappings`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         const mapped: MachineMapping[] = json.data.map((m: any) => ({
           mappingId: String(m.mappingId || m._id || m.id),
           name: String(m.name || m.mappingId),
@@ -936,14 +656,14 @@ export async function getIotMappings(): Promise<MachineMapping[]> {
     }
   } catch (_) {}
 
-  // 2. Read from local iot_machine database
   try {
     const db = await getIotDb();
-    const list = await db.collection<MachineMapping>(IOT_COLLECTIONS.MAPPINGS)
+    const list = await db
+      .collection<MachineMapping>(IOT_COLLECTIONS.MAPPINGS)
       .find({}, { projection: { _id: 0 } })
       .toArray();
     if (list.length > 0) return list;
-  } catch (e) {}
+  } catch (_) {}
   return [];
 }
 
@@ -956,6 +676,6 @@ export async function saveIotMapping(mapping: MachineMapping): Promise<MachineMa
       { $set: mapping },
       { upsert: true }
     );
-  } catch (e) {}
+  } catch (_) {}
   return mapping;
 }

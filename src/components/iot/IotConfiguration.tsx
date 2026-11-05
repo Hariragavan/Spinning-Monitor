@@ -64,7 +64,16 @@ export const IotConfiguration: React.FC = () => {
         setSelectedDeviceIds(e[0].assignedDeviceIds || []);
       }
       if (m && m.length > 0 && !selectedMachineId) {
-        setSelectedMachineId(m[0].machineId);
+        const first = m[0];
+        setSelectedMachineId(first.machineId);
+        setMachineConfig({
+          expectedProductionOutput: first.expectedOutput ?? first.expectedProductionOutput ?? 98,
+          expectedRuntimeMinutes: first.expectedRunDurationMinutes ?? first.expectedRuntimeMinutes ?? 460,
+          expectedRoundsPerHour: first.expectedRoundsPerHour ?? 10,
+          roundDeviceSequence: first.roundDeviceSequence || ['IOT_D1', 'IOT_D2'],
+          cleaningInterval: first.cleaningIntervalDays ?? 2
+        });
+        setSequenceText((first.roundDeviceSequence || ['IOT_D1', 'IOT_D2']).join(' -> '));
       }
     } catch (err) {
       console.error('Failed to load configuration:', err);
@@ -100,9 +109,11 @@ export const IotConfiguration: React.FC = () => {
     if (!selectedEmployeeId) return;
     setSaving(true);
     try {
+      const emp = employees.find(e => e.employeeId === selectedEmployeeId);
       await iotApi.saveEmployeeDeviceMapping({
         employeeId: selectedEmployeeId,
-        deviceIds: selectedDeviceIds
+        deviceIds: selectedDeviceIds,
+        employeeName: emp?.employeeName
       }).catch(() => null);
       setEmployees(prev => prev.map(e => e.employeeId === selectedEmployeeId ? { ...e, assignedDeviceIds: selectedDeviceIds } : e));
       showMsg('Device assignment saved successfully.');
@@ -118,8 +129,11 @@ export const IotConfiguration: React.FC = () => {
     setSaving(true);
     try {
       await iotApi.updateDeviceConfig(dev.deviceId, {
-        minRpm: dev.minRPM,
-        maxRpm: dev.maxRPM,
+        minRPM: dev.minRPM ?? dev.minRpm ?? 16000,
+        maxRPM: dev.maxRPM ?? dev.maxRpm ?? 18000,
+        expectedRPM: dev.expectedRPM ?? 17200,
+        minRpm: dev.minRPM ?? dev.minRpm ?? 16000,
+        maxRpm: dev.maxRPM ?? dev.maxRpm ?? 18000,
         position: dev.position
       }).catch(() => null);
       showMsg(`Bounds for ${dev.deviceId} saved.`);
@@ -136,8 +150,8 @@ export const IotConfiguration: React.FC = () => {
     const m = machines.find(item => item.machineId === mId);
     if (m) {
       setMachineConfig({
-        expectedProductionOutput: m.expectedProductionOutput || 98,
-        expectedRuntimeMinutes: m.expectedRuntimeMinutes || 460,
+        expectedProductionOutput: m.expectedOutput ?? m.expectedProductionOutput ?? 98,
+        expectedRuntimeMinutes: m.expectedRunDurationMinutes ?? m.expectedRuntimeMinutes ?? 460,
         expectedRoundsPerHour: m.expectedRoundsPerHour || 10,
         roundDeviceSequence: m.roundDeviceSequence || ['IOT_D1', 'IOT_D2'],
         cleaningInterval: m.cleaningIntervalDays || 2
@@ -150,13 +164,19 @@ export const IotConfiguration: React.FC = () => {
     setSaving(true);
     try {
       const parsedSeq = sequenceText.split(/->|,|→/).map(s => s.trim()).filter(Boolean);
-      await iotApi.saveMachineConfig(selectedMachineId, {
-        expectedProductionOutput: machineConfig.expectedProductionOutput,
-        expectedRuntimeMinutes: machineConfig.expectedRuntimeMinutes,
-        expectedRoundsPerHour: machineConfig.expectedRoundsPerHour,
-        roundDeviceSequence: parsedSeq,
-        cleaningInterval: machineConfig.cleaningInterval
-      }).catch(() => null);
+      const selectedMachine = machines.find(m => m.machineId === selectedMachineId);
+      await Promise.all([
+        iotApi.saveMachineConfig(selectedMachineId, {
+          name: selectedMachine?.machineName || selectedMachineId,
+          expectedOutput: Number(machineConfig.expectedProductionOutput) || 0,
+          expectedRunDurationMinutes: Number(machineConfig.expectedRuntimeMinutes) || 0,
+          expectedRoundsPerHour: Number(machineConfig.expectedRoundsPerHour) || 0,
+          roundDeviceSequence: parsedSeq
+        }),
+        iotApi.updateCleaningSchedule(selectedMachineId, {
+          cleaningIntervalDays: Math.max(1, Number(machineConfig.cleaningInterval) || 2)
+        })
+      ]);
       showMsg(`Configuration for ${selectedMachineId} saved.`);
     } catch {
       showMsg('Failed to save machine config.', 'error');

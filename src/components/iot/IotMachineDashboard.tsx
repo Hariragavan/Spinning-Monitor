@@ -7,65 +7,56 @@ import {
   SpinfoMachineDetailResponse,
   Shift
 } from '@/types/iot';
-import { iotApi } from '@/lib/iot/iotApi';
+import { iotApi, IOT_COMMON_API_URL } from '@/lib/iot/iotApi';
+import { getSampleSpinfoOverview } from '@/lib/iot/sampleIotData';
 
-const EMPTY_OVERVIEW: SpinfoOverviewResponse = {
-  success: true,
-  dataTime: new Date().toISOString().replace('T', ' ').slice(0, 19),
-  shiftDate: new Date().toISOString().slice(0, 10),
-  shift: 1,
-  frameStatus: { totalMachines: 0, reporting: 0, running: 0, runningPercent: 0, stopped: 0, doffing: 0, stoppedAndDoffing: 0, offline: 0, totalEndBreaks: 0, leftBreaks: 0, rightBreaks: 0 },
-  performanceAndCare: { averageRpm: 0, totalEndBreaks: 0, outsideRpmCount: 0, productionYieldPercent: 0, productionYieldKg: 0, targetProductionKg: 0, yieldAchievedPercent: 0, completedRounds: 0, totalRoundsScheduled: 0, skippedRounds: 0, incompleteRounds: 0, totalDevices: 0, devicesInBounds: 0, sensorBoundBreaches: 0, speedBreachAlerts: 0, preventiveCleaningDue: 0, preventiveCleaningDueCount: 0, dueMachineNames: [] },
-  hourlyProduction: { shiftTotalKg: 0, totalProduction: 0, totalTarget: 0, peakHour: 'H1', avgPerHourKg: 0, chart: [] },
-  machines: []
-};
+const INITIAL_OVERVIEW: SpinfoOverviewResponse = getSampleSpinfoOverview();
 
 export type ActiveKpiType =
   | 'TOTAL_MACHINES'
-  | 'REPORTING'
   | 'RUNNING'
+  | 'DOFFING'
   | 'STOPPED_DOFFING'
   | 'END_BREAKS'
   | 'AVERAGE_RPM'
   | 'PRODUCTION_YIELD'
-  | 'COMPLETED_ROUNDS'
-  | 'SENSOR_BOUNDS'
-  | 'PREVENTIVE_CLEANING';
+  | 'SHIFT_WASTE'
+  | 'END_MENDING_TIME'
+  | 'HOURLY_PRODUCTION';
 
 export type ViewModeType = 'cards' | 'spindle_map' | 'table';
 
 export type ModalTabType =
   | 'overview'
   | 'end_breaks'
-  | 'speed_production'
-  | 'rounds_cleaning';
+  | 'speed_production';
 
 export interface IotMachineDashboardProps {
   selectedDate?: string;
 }
 
 export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ selectedDate }) => {
-  const [overview, setOverview] = useState<SpinfoOverviewResponse>(EMPTY_OVERVIEW);
+  const [overview, setOverview] = useState<SpinfoOverviewResponse>(INITIAL_OVERVIEW);
   const [selectedMachineDetail, setSelectedMachineDetail] = useState<SpinfoMachineDetailResponse | null>(null);
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
 
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [selectedShift, setSelectedShift] = useState<string>('All Shifts');
-  const [selectedFromDate, setSelectedFromDate] = useState<string>(() => selectedDate || new Date().toISOString().slice(0, 10));
-  const [selectedToDate, setSelectedToDate] = useState<string>(() => selectedDate || new Date().toISOString().slice(0, 10));
+  const [selectedRunStatus, setSelectedRunStatus] = useState<string>('All');
+  const [selectedCount, setSelectedCount] = useState<string>('All');
+  const [selectedFromDate, setSelectedFromDate] = useState<string>(() => selectedDate || '');
+  const [userChangedDate, setUserChangedDate] = useState<boolean>(Boolean(selectedDate));
 
   useEffect(() => {
     if (selectedDate) {
       setSelectedFromDate(selectedDate);
-      setSelectedToDate(selectedDate);
+      setUserChangedDate(true);
     }
   }, [selectedDate]);
-  const [selectedOperator, setSelectedOperator] = useState<string>('');
 
   const [activeKpi, setActiveKpi] = useState<ActiveKpiType>('TOTAL_MACHINES');
   const [viewMode, setViewMode] = useState<ViewModeType>('cards');
   const [endBreaksSort, setEndBreaksSort] = useState<'highest' | 'machine_no'>('highest');
-  const [speedPeriod, setSpeedPeriod] = useState<'hourly' | 'daily' | 'weekly'>('hourly');
 
   const [loading, setLoading] = useState<boolean>(true);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
@@ -74,39 +65,38 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   const [activeModalTab, setActiveModalTab] = useState<ModalTabType>('overview');
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
-  // Spindle arrays 1 to 120
-  const spindleRangeLeft = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
-  const spindleRangeRight = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
+  // 120 visual ticks per side representing spindle slots across the frame
+  const visualTicks = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
 
-  // Fetch live overview
+  // Fetch live overview from https://iot-machine-backend-production.up.railway.app/api/common
   const loadOverview = useCallback(async (isInitial: boolean = false) => {
     try {
       if (isInitial) setLoading(true);
       setErrorMessage(null);
       const data = await iotApi.getSpinfoOverview({
-        fromDate: selectedFromDate,
-        toDate: selectedToDate,
-        shift: selectedShift === 'All Shifts' ? undefined : selectedShift,
-        operator: selectedOperator || undefined
+        fromDate: userChangedDate && selectedFromDate ? selectedFromDate : undefined,
+        shift: selectedShift === 'All Shifts' ? undefined : selectedShift
       });
-      if (data && data.frameStatus && data.machines) {
+      if (data && data.frameStatus && Array.isArray(data.machines)) {
         setOverview(data);
+        if (!userChangedDate && data.shiftDate) {
+          setSelectedFromDate(data.shiftDate);
+        }
       }
       setLastRefreshedAt(new Date());
 
-      // Also fetch shifts
       try {
         const sList = await iotApi.getShifts();
         if (sList && sList.length > 0) setShifts(sList);
       } catch {}
     } catch (err: any) {
       if (isInitial) {
-        setErrorMessage(err?.message || 'Failed to connect to IoT Telemetry stream.');
+        setErrorMessage(err?.message || 'Failed to connect to live MAG SPinFO common telemetry API.');
       }
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [selectedFromDate, selectedToDate, selectedShift, selectedOperator]);
+  }, [selectedFromDate, userChangedDate, selectedShift]);
 
   useEffect(() => {
     loadOverview(true);
@@ -116,20 +106,23 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     return () => clearInterval(interval);
   }, [loadOverview]);
 
-  // Open Machine Diagnostics Modal
+  // Open Machine Detail Slide Popup
   const openMachineModal = useCallback(async (machineId: string) => {
     setActiveMachineId(machineId);
     setModalOpen(true);
     setDetailLoading(true);
     try {
-      const detail = await iotApi.getMachineDetail(machineId);
+      const detail = await iotApi.getMachineDetail(machineId, {
+        fromDate: userChangedDate && selectedFromDate ? selectedFromDate : undefined,
+        shift: selectedShift === 'All Shifts' ? undefined : selectedShift
+      });
       setSelectedMachineDetail(detail);
     } catch {
       // Handled by fallback inside API
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [userChangedDate, selectedFromDate, selectedShift]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
@@ -147,29 +140,34 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [modalOpen, closeModal]);
 
-  // Available Operators list
-  const availableOperators = useMemo(() => {
+  // Available counts from live JSON machines[]
+  const availableCounts = useMemo(() => {
     if (!overview?.machines) return [];
-    const ops = new Set<string>();
+    const set = new Set<string>();
     overview.machines.forEach(m => {
-      if (m.operator?.name) ops.add(m.operator.name);
+      if (m.count) set.add(m.count);
     });
-    return Array.from(ops);
+    return Array.from(set);
   }, [overview]);
 
-  // Machine list with sorting and filtering
+  // Machine list with sorting and filtering based strictly on JSON fields
   const displayedMachines = useMemo(() => {
     if (!overview?.machines) return [];
     let list = [...overview.machines];
 
-    if (selectedOperator) {
-      list = list.filter(m => m.operator?.name === selectedOperator);
+    if (selectedRunStatus !== 'All') {
+      list = list.filter(m => m.runStatus === selectedRunStatus);
+    }
+    if (selectedCount !== 'All') {
+      list = list.filter(m => m.count === selectedCount);
     }
 
     if (activeKpi === 'RUNNING') {
-      list = list.filter(m => m.runStatus === 'RUN' || m.statusBadge === 'Running');
+      list = list.filter(m => m.runStatus === 'RUN');
+    } else if (activeKpi === 'DOFFING') {
+      list = list.filter(m => m.runStatus === 'DOFF');
     } else if (activeKpi === 'STOPPED_DOFFING') {
-      list = list.filter(m => m.runStatus === 'STOP' || m.runStatus === 'DOFF' || m.statusBadge === 'Stopped' || m.statusBadge === 'Doffing');
+      list = list.filter(m => m.runStatus === 'STOP' || m.runStatus === 'DOFF');
     } else if (activeKpi === 'END_BREAKS') {
       if (endBreaksSort === 'highest') {
         list.sort((a, b) => (b.totalEndBreakCount || 0) - (a.totalEndBreakCount || 0));
@@ -177,35 +175,49 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
         list.sort((a, b) => a.machineId.localeCompare(b.machineId, undefined, { numeric: true }));
       }
     } else if (activeKpi === 'AVERAGE_RPM') {
-      list.sort((a, b) => {
-        const aBreach = a.speedStatus?.includes('limit') ? 1 : 0;
-        const bBreach = b.speedStatus?.includes('limit') ? 1 : 0;
-        return bBreach - aBreach;
-      });
-    } else if (activeKpi === 'PRODUCTION_YIELD') {
+      list.sort((a, b) => (b.spindleSpeedCurrent || 0) - (a.spindleSpeedCurrent || 0));
+    } else if (activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION') {
       list.sort((a, b) => (b.shiftProduction || 0) - (a.shiftProduction || 0));
-    } else if (activeKpi === 'COMPLETED_ROUNDS') {
-      list.sort((a, b) => (a.rounds?.completed ?? 0) - (b.rounds?.completed ?? 0));
-    } else if (activeKpi === 'SENSOR_BOUNDS') {
-      list.sort((a, b) => (b.sensorBounds?.breaches ?? 0) - (a.sensorBounds?.breaches ?? 0));
-    } else if (activeKpi === 'PREVENTIVE_CLEANING') {
+    } else if (activeKpi === 'SHIFT_WASTE') {
+      list.sort((a, b) => (b.shiftWaste || 0) - (a.shiftWaste || 0));
+    } else if (activeKpi === 'END_MENDING_TIME') {
       list.sort((a, b) => {
-        const aOver = a.cleaning?.status === 'Overdue' ? 2 : a.cleaning?.status === 'Due today' ? 1 : 0;
-        const bOver = b.cleaning?.status === 'Overdue' ? 2 : b.cleaning?.status === 'Due today' ? 1 : 0;
-        return bOver - aOver;
+        const aAvg = ((a.sides?.[0]?.endMendingTime || 0) + (a.sides?.[1]?.endMendingTime || 0)) / 2;
+        const bAvg = ((b.sides?.[0]?.endMendingTime || 0) + (b.sides?.[1]?.endMendingTime || 0)) / 2;
+        return bAvg - aAvg;
       });
     }
 
     return list;
-  }, [overview, selectedOperator, activeKpi, endBreaksSort]);
+  }, [overview, selectedRunStatus, selectedCount, activeKpi, endBreaksSort]);
 
-  // Spindle break helper
-  const hasBreakAtSpindle = useCallback((m: SpinfoMachineItem, side: 'L' | 'R', spindleNo: number): boolean => {
-    if (!m.sides || !Array.isArray(m.sides)) return false;
-    const sideIdx = side === 'L' ? 0 : 1;
-    const s = m.sides[sideIdx];
-    if (!s || !Array.isArray(s.endBreaks)) return false;
-    return s.endBreaks.some(b => b.spindleNo === spindleNo);
+  // Max spindle number across machines (e.g. 706 in RF01 R side) so high spindle numbers map accurately to the 120 visual ticks
+  const getMaxSpindleForMachine = useCallback((breaksLeft: Array<{ spindleNo: number }>, breaksRight: Array<{ spindleNo: number }>): number => {
+    const allNos = [...breaksLeft.map(b => b.spindleNo), ...breaksRight.map(b => b.spindleNo)];
+    const maxFound = allNos.length > 0 ? Math.max(...allNos) : 120;
+    return Math.max(120, Math.ceil(maxFound / 120) * 120);
+  }, []);
+
+  const getTickBreakInfo = useCallback((
+    breaks: Array<{ spindleNo: number; createdTime?: string; timestamp?: string }>,
+    tickIndex1Based: number,
+    maxSpindle: number
+  ): { broken: boolean; label: string } => {
+    if (!breaks || breaks.length === 0) {
+      return { broken: false, label: `Slot #${tickIndex1Based}` };
+    }
+    const match = breaks.find(b => {
+      const mappedSlot = Math.min(120, Math.max(1, Math.ceil((b.spindleNo / maxSpindle) * 120)));
+      return mappedSlot === tickIndex1Based;
+    });
+    if (match) {
+      const timeStr = match.createdTime || match.timestamp || '';
+      return {
+        broken: true,
+        label: `Spindle #${match.spindleNo}${timeStr ? ` · Break at ${timeStr}` : ' (End Break)'}`
+      };
+    }
+    return { broken: false, label: `Spindle slot ${tickIndex1Based}` };
   }, []);
 
   // Machine navigation in modal
@@ -221,8 +233,8 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   };
 
   const maxHourlyProduction = useMemo(() => {
-    if (!overview?.hourlyProduction?.chart) return 20;
-    return Math.max(...overview.hourlyProduction.chart.map(c => c.production), 15);
+    if (!overview?.hourlyProduction?.chart?.length) return 20;
+    return Math.max(...overview.hourlyProduction.chart.map(c => c.production), 10);
   }, [overview]);
 
   // Donut chart gradient
@@ -239,318 +251,377 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     return `conic-gradient(${parts.join(', ')})`;
   };
 
+  const stdMendingTime = overview?.stdEndMendingTime ?? 1.5;
+  const stdMendingUnit = overview?.stdEndMendingTimeUnit || 'min';
+
   return (
     <div className="dashboard-page w-full">
       {/* TOP LOADING PROGRESS BAR */}
-        {loading && (
-          <div className="top-loading-bar" aria-live="polite">
-            <div className="top-loading-bar-inner"></div>
-          </div>
-        )}
+      {loading && (
+        <div className="top-loading-bar" aria-live="polite">
+          <div className="top-loading-bar-inner"></div>
+        </div>
+      )}
 
-        {/* ERROR BANNER */}
-        {errorMessage && (
-          <div className="state-banner error-banner">
-            <span>{errorMessage}</span>
-            <button className="btn-retry" onClick={() => loadOverview(true)}>Retry</button>
-          </div>
-        )}
+      {/* ERROR BANNER */}
+      {errorMessage && (
+        <div className="state-banner error-banner">
+          <span>{errorMessage}</span>
+          <button className="btn-retry" onClick={() => loadOverview(true)}>Retry</button>
+        </div>
+      )}
 
-        {/* TOP BAR / EXECUTIVE CONTROL HEADER */}
-        <header className="topbar">
-          <div className="topbar-brand">
-            <div className="brand-eyebrow">
-              <span className="live-pulse-dot"></span>
-              <span className="eyebrow-text">LIVE TELEMETRY STREAM</span>
-              <span className="eyebrow-divider">/</span>
-              <span className="eyebrow-sub">CONTROL CENTER</span>
-              {overview?.shift && (
-                <span className="ml-2.5 px-2.5 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-xs">
-                  Shift {overview.shift} · {overview.shiftDate}
-                </span>
-              )}
-            </div>
-            <h1 className="title">Machine Telemetry Intelligence</h1>
-            <p className="subtitle">Real-time sensor telemetry, rotational speed curve diagnostics, operating mode allocation & shift audit</p>
-          </div>
-
-          {/* Filter Toolbar */}
-          <div className="filters-card">
-            <div className="field">
-              <label>
-                <span className="field-icon">⏱️</span>
-                <span>Shift</span>
-              </label>
-              <div className="select-wrapper">
-                <select value={selectedShift} onChange={e => setSelectedShift(e.target.value)}>
-                  <option value="All Shifts">All Shifts</option>
-                  {shifts.map(s => {
-                    const sName = s.name || s.shiftName || 'Shift';
-                    return (
-                      <option key={s.shiftId || sName} value={sName}>
-                        {sName} {s.startTime && s.endTime ? `(${s.startTime} - ${s.endTime})` : ''}
-                      </option>
-                    );
-                  })}
-                  {shifts.length === 0 && (
-                    <>
-                      <option value="Shift 1">Shift 1 (06:00 - 14:00)</option>
-                      <option value="Shift 2">Shift 2 (14:01 - 22:00)</option>
-                      <option value="Shift 3">Shift 3 (22:01 - 06:00)</option>
-                    </>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div className="field">
-              <label>
-                <span className="field-icon">👤</span>
-                <span>Operator</span>
-              </label>
-              <div className="select-wrapper">
-                <select value={selectedOperator} onChange={e => setSelectedOperator(e.target.value)}>
-                  <option value="">All operators</option>
-                  {availableOperators.map(op => (
-                    <option key={op} value={op}>{op}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="field">
-              <label>
-                <span className="field-icon">📅</span>
-                <span>From Date</span>
-              </label>
-              <input
-                type="date"
-                value={selectedFromDate}
-                onChange={e => {
-                  const val = e.target.value;
-                  setSelectedFromDate(val);
-                  setSelectedToDate(val);
-                }}
-                className="date-input"
-              />
-            </div>
-
-            <div className="field">
-              <label>
-                <span className="field-icon">📅</span>
-                <span>To Date</span>
-              </label>
-              <input
-                type="date"
-                value={selectedToDate}
-                onChange={e => setSelectedToDate(e.target.value)}
-                className="date-input"
-              />
-            </div>
-
-            <button
-              className="btn btn-primary"
-              onClick={() => loadOverview(true)}
-              disabled={loading}
-              title="Click to instantly refresh live telemetry"
-            >
-              <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
-              <span>Quick Refresh</span>
-            </button>
-
-            {lastRefreshedAt && (
-              <div className="sync-indicator" title="Live stream synced">
-                <span className="pulse-dot"></span>
-                <span className="sync-text">Live: {lastRefreshedAt.toLocaleTimeString()}</span>
-              </div>
+      {/* TOP BAR / EXECUTIVE CONTROL HEADER */}
+      <header className="topbar">
+        <div className="topbar-brand">
+          <div className="brand-eyebrow" style={{ flexWrap: 'wrap', gap: '0.35rem' }}>
+            <span className="live-pulse-dot"></span>
+            <span className="eyebrow-text">{overview.source || 'MAG SPinFO'}</span>
+            <span className="eyebrow-divider">/</span>
+            <span className="eyebrow-sub">{overview.customer || 'SPACE TEXTILES PRIVATE LIMITED'}</span>
+            {overview.city && (
+              <>
+                <span className="eyebrow-divider">·</span>
+                <span className="eyebrow-sub">{overview.city}</span>
+              </>
             )}
+            <span className="ml-2 px-2.5 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-xs">
+              Shift {overview.shift} · {overview.shiftDate} ({overview.totalShiftHours ?? 8}h)
+            </span>
+            {overview.msgId && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                msgId: {overview.msgId}
+              </span>
+            )}
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Part {overview.part ?? 1}/{overview.parts ?? 1} · Std EM: {stdMendingTime} {stdMendingUnit}
+            </span>
           </div>
-        </header>
+          <h1 className="title">Machine Telemetry Intelligence</h1>
+          <p className="subtitle">
+            Live telemetry bound from <code style={{ fontSize: '0.75rem', color: '#2563eb' }}>{IOT_COMMON_API_URL}</code> · Data Time: <strong>{overview.dataTime}</strong>
+          </p>
+        </div>
 
-        {/* TOP KPI HEADER */}
-        {overview && (
-          <div className="kpi-header">
-            {/* ROW 1: FRAME STATUS */}
-            <div className="section-title">FRAME STATUS</div>
-            <div className="kpi-row">
-              {/* 1. Total Machines */}
-              <div
-                className={`kpi-card ${activeKpi === 'TOTAL_MACHINES' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('TOTAL_MACHINES')}
-              >
-                <div className="kpi-bar blue"></div>
-                <div className="kpi-label">TOTAL MACHINES</div>
-                <div className="kpi-value">{overview.frameStatus.totalMachines ?? 0}</div>
-                <div className="kpi-subtext">
-                  {overview.frameStatus.reporting ?? 0} reporting · {overview.frameStatus.offline ?? 0} offline
-                </div>
-              </div>
+        {/* Filter Toolbar */}
+        <div className="filters-card">
+          <div className="field">
+            <label>
+              <span className="field-icon">⏱️</span>
+              <span>Shift</span>
+            </label>
+            <div className="select-wrapper">
+              <select value={selectedShift} onChange={e => setSelectedShift(e.target.value)}>
+                <option value="All Shifts">All Shifts</option>
+                {shifts.map(s => {
+                  const sName = s.name || s.shiftName || 'Shift';
+                  return (
+                    <option key={s.shiftId || sName} value={sName}>
+                      {sName} {s.startTime && s.endTime ? `(${s.startTime} - ${s.endTime})` : ''}
+                    </option>
+                  );
+                })}
+                {shifts.length === 0 && (
+                  <>
+                    <option value="Shift 1">Shift 1</option>
+                    <option value="Shift 2">Shift 2</option>
+                    <option value="Shift 3">Shift 3</option>
+                  </>
+                )}
+              </select>
+            </div>
+          </div>
 
-              {/* 2. Reporting */}
-              <div
-                className={`kpi-card ${activeKpi === 'REPORTING' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('REPORTING')}
-              >
-                <div className="kpi-bar teal"></div>
-                <div className="kpi-label">REPORTING (ACTUAL)</div>
-                <div className="kpi-value">{overview.frameStatus.reporting ?? 0}</div>
-                <div className="kpi-subtext">of {overview.frameStatus.totalMachines ?? 0} configured</div>
-              </div>
+          <div className="field">
+            <label>
+              <span className="field-icon">⚙️</span>
+              <span>Run Status</span>
+            </label>
+            <div className="select-wrapper">
+              <select value={selectedRunStatus} onChange={e => setSelectedRunStatus(e.target.value)}>
+                <option value="All">All Statuses</option>
+                <option value="RUN">RUN (Running)</option>
+                <option value="DOFF">DOFF (Doffing)</option>
+                <option value="STOP">STOP (Stopped)</option>
+              </select>
+            </div>
+          </div>
 
-              {/* 3. Running */}
-              <div
-                className={`kpi-card ${activeKpi === 'RUNNING' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('RUNNING')}
-              >
-                <div className="kpi-bar green"></div>
-                <div className="kpi-label">RUNNING</div>
-                <div className="kpi-value">{overview.frameStatus.running ?? 0}</div>
-                <div className="kpi-subtext">{overview.frameStatus.runningPercent ?? 0}% of reporting</div>
-              </div>
+          <div className="field">
+            <label>
+              <span className="field-icon">🧶</span>
+              <span>Count</span>
+            </label>
+            <div className="select-wrapper">
+              <select value={selectedCount} onChange={e => setSelectedCount(e.target.value)}>
+                <option value="All">All Counts</option>
+                {availableCounts.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-              {/* 4. Stopped / Doffing */}
-              <div
-                className={`kpi-card ${activeKpi === 'STOPPED_DOFFING' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('STOPPED_DOFFING')}
-              >
-                <div className="kpi-bar orange"></div>
-                <div className="kpi-label">STOPPED / DOFFING</div>
-                <div className="kpi-value">{overview.frameStatus.stoppedAndDoffing ?? 0}</div>
-                <div className="kpi-subtext">
-                  {overview.frameStatus.stopped ?? 0} stopped · {overview.frameStatus.doffing ?? 0} doffing
-                </div>
-              </div>
+          <div className="field">
+            <label>
+              <span className="field-icon">📅</span>
+              <span>Shift Date</span>
+            </label>
+            <input
+              type="date"
+              value={selectedFromDate || overview.shiftDate || ''}
+              onChange={e => {
+                const val = e.target.value;
+                setSelectedFromDate(val);
+                setUserChangedDate(Boolean(val));
+              }}
+              className="date-input"
+            />
+          </div>
 
-              {/* 5. Total End Breaks */}
-              <div
-                className={`kpi-card ${activeKpi === 'END_BREAKS' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('END_BREAKS')}
-              >
-                <div className="kpi-bar red"></div>
-                <div className="kpi-label">TOTAL END BREAKS</div>
-                <div className="kpi-value">{overview.frameStatus.totalEndBreaks ?? 0}</div>
-                <div className="kpi-subtext">
-                  Left {overview.frameStatus.leftBreaks ?? 0} · Right {overview.frameStatus.rightBreaks ?? 0}
-                </div>
+          {userChangedDate && (
+            <button
+              className="btn"
+              style={{ height: '36px', fontSize: '0.75rem', padding: '0 0.75rem' }}
+              onClick={() => {
+                setUserChangedDate(false);
+                setSelectedFromDate(overview.shiftDate || '');
+              }}
+              title="Reset date filter to latest live stream"
+            >
+              Latest Stream
+            </button>
+          )}
+
+          <button
+            className="btn btn-primary"
+            onClick={() => loadOverview(true)}
+            disabled={loading}
+            title="Click to instantly refresh live telemetry from /api/common"
+          >
+            <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
+            <span>Quick Refresh</span>
+          </button>
+
+          {lastRefreshedAt && (
+            <div className="sync-indicator" title={`Synced with ${IOT_COMMON_API_URL}`}>
+              <span className="pulse-dot"></span>
+              <span className="sync-text">Live: {lastRefreshedAt.toLocaleTimeString()}</span>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* TOP KPI HEADER — STRICTLY BOUND TO /api/common JSON FIELDS */}
+      {overview && (
+        <div className="kpi-header">
+          {/* ROW 1: FRAME STATUS */}
+          <div className="section-title">FRAME STATUS · {overview.customer || 'SPACE TEXTILES PRIVATE LIMITED'}</div>
+          <div className="kpi-row">
+            {/* 1. Total Machines (machineCount) */}
+            <div
+              className={`kpi-card ${activeKpi === 'TOTAL_MACHINES' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('TOTAL_MACHINES')}
+            >
+              <div className="kpi-bar blue"></div>
+              <div className="kpi-label">TOTAL MACHINES</div>
+              <div className="kpi-value">{overview.machineCount ?? overview.frameStatus.totalMachines ?? 0}</div>
+              <div className="kpi-subtext">
+                Part {overview.part ?? 1} of {overview.parts ?? 1} · {overview.source || 'MAG SPinFO'}
               </div>
             </div>
 
-            {/* ROW 2: PERFORMANCE AND CARE */}
-            <div className="section-title" style={{ marginTop: '1.25rem' }}>PERFORMANCE AND CARE</div>
-            <div className="kpi-row">
-              {/* 6. Average RPM */}
-              <div
-                className={`kpi-card ${activeKpi === 'AVERAGE_RPM' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('AVERAGE_RPM')}
-              >
-                <div className="kpi-bar blue"></div>
-                <div className="kpi-label">AVERAGE RPM</div>
-                <div className="kpi-value">
-                  {(overview.performanceAndCare.averageRpm ?? 16700).toLocaleString()} <span className="unit">rpm</span>
-                </div>
-                <div className="kpi-subtext">
-                  {overview.performanceAndCare.outsideRpmCount ?? 0} machine(s) outside 15,000 to 17,000
-                </div>
+            {/* 2. Running (runStatus === 'RUN') */}
+            <div
+              className={`kpi-card ${activeKpi === 'RUNNING' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('RUNNING')}
+            >
+              <div className="kpi-bar green"></div>
+              <div className="kpi-label">RUNNING (RUN)</div>
+              <div className="kpi-value">{overview.frameStatus.running ?? 0}</div>
+              <div className="kpi-subtext">
+                {overview.frameStatus.runningPercent ?? 0}% of {overview.frameStatus.totalMachines ?? 0} machines
               </div>
+            </div>
 
-              {/* 7. Production Yield */}
-              <div
-                className={`kpi-card ${activeKpi === 'PRODUCTION_YIELD' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('PRODUCTION_YIELD')}
-              >
-                <div className="kpi-bar purple"></div>
-                <div className="kpi-label">PRODUCTION YIELD</div>
-                <div className="kpi-value">
-                  {(overview.performanceAndCare.productionYieldKg ?? 0).toLocaleString()} <span className="unit">kg</span>
-                </div>
-                <div className="kpi-subtext">
-                  {overview.performanceAndCare.yieldAchievedPercent ?? 0}% of {(overview.performanceAndCare.targetProductionKg ?? 0).toLocaleString()} kg target
-                </div>
+            {/* 3. Doffing (runStatus === 'DOFF') */}
+            <div
+              className={`kpi-card ${activeKpi === 'DOFFING' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('DOFFING')}
+            >
+              <div className="kpi-bar teal"></div>
+              <div className="kpi-label">DOFFING (DOFF)</div>
+              <div className="kpi-value">{overview.frameStatus.doffing ?? 0}</div>
+              <div className="kpi-subtext">
+                of {overview.frameStatus.totalMachines ?? 0} machines in doff cycle
               </div>
+            </div>
 
-              {/* 8. Completed Rounds */}
-              <div
-                className={`kpi-card ${activeKpi === 'COMPLETED_ROUNDS' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('COMPLETED_ROUNDS')}
-              >
-                <div className="kpi-bar teal"></div>
-                <div className="kpi-label">COMPLETED ROUNDS</div>
-                <div className="kpi-value">
-                  {overview.performanceAndCare.completedRounds ?? 0} / {overview.performanceAndCare.totalRoundsScheduled ?? 0}
-                </div>
-                <div className="kpi-subtext">
-                  {overview.performanceAndCare.skippedRounds ?? 0} skipped · {overview.performanceAndCare.incompleteRounds ?? 0} incomplete
-                </div>
+            {/* 4. Stopped / Doffing (runStatus === 'STOP' | 'DOFF') */}
+            <div
+              className={`kpi-card ${activeKpi === 'STOPPED_DOFFING' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('STOPPED_DOFFING')}
+            >
+              <div className="kpi-bar orange"></div>
+              <div className="kpi-label">STOPPED (STOP)</div>
+              <div className="kpi-value">{overview.frameStatus.stopped ?? 0}</div>
+              <div className="kpi-subtext">
+                {overview.frameStatus.stopped ?? 0} stopped · {overview.frameStatus.doffing ?? 0} doffing
               </div>
+            </div>
 
-              {/* 9. Sensor Bounds */}
-              <div
-                className={`kpi-card ${activeKpi === 'SENSOR_BOUNDS' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('SENSOR_BOUNDS')}
-              >
-                <div className="kpi-bar orange"></div>
-                <div className="kpi-label">SENSOR BOUNDS</div>
-                <div className="kpi-value">
-                  {overview.performanceAndCare.devicesInBounds ?? 0} / {overview.performanceAndCare.totalDevices ?? 0} <span className="unit">devices</span>
-                </div>
-                <div className="kpi-subtext">
-                  {overview.performanceAndCare.speedBreachAlerts ?? 0} speed breach alert(s)
-                </div>
-              </div>
-
-              {/* 10. Preventive Cleaning */}
-              <div
-                className={`kpi-card ${activeKpi === 'PREVENTIVE_CLEANING' ? 'active' : ''}`}
-                onClick={() => setActiveKpi('PREVENTIVE_CLEANING')}
-              >
-                <div className="kpi-bar green"></div>
-                <div className="kpi-label">PREVENTIVE CLEANING</div>
-                <div className="kpi-value">
-                  {overview.performanceAndCare.preventiveCleaningDueCount ?? 0} <span className="unit">due</span>
-                </div>
-                <div className="kpi-subtext">
-                  {overview.performanceAndCare.dueMachineNames?.length
-                    ? overview.performanceAndCare.dueMachineNames.join(', ')
-                    : 'All up to date'}
-                </div>
+            {/* 5. Total End Breaks (totalEndBreakCount & sides L/R) */}
+            <div
+              className={`kpi-card ${activeKpi === 'END_BREAKS' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('END_BREAKS')}
+            >
+              <div className="kpi-bar red"></div>
+              <div className="kpi-label">TOTAL END BREAKS</div>
+              <div className="kpi-value">{overview.frameStatus.totalEndBreaks ?? 0}</div>
+              <div className="kpi-subtext">
+                Left (L): {overview.frameStatus.leftBreaks ?? 0} · Right (R): {overview.frameStatus.rightBreaks ?? 0}
               </div>
             </div>
           </div>
-        )}
 
-        {/* HOURLY PRODUCTION BAR CHART (Displayed when Production Yield is active) */}
-        {activeKpi === 'PRODUCTION_YIELD' && overview?.hourlyProduction && (
+          {/* ROW 2: PRODUCTION, SPEED, WASTE & MENDING TELEMETRY */}
+          <div className="section-title" style={{ marginTop: '1.25rem' }}>PRODUCTION, SPEED, WASTE & END MENDING</div>
+          <div className="kpi-row">
+            {/* 6. Average RPM (spindleSpeedCurrent, spindleSpeedUnit) */}
+            <div
+              className={`kpi-card ${activeKpi === 'AVERAGE_RPM' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('AVERAGE_RPM')}
+            >
+              <div className="kpi-bar blue"></div>
+              <div className="kpi-label">AVERAGE RPM</div>
+              <div className="kpi-value">
+                {(overview.performanceAndCare.averageRpm ?? 0).toLocaleString()}{' '}
+                <span className="unit">{overview.machines[0]?.spindleSpeedUnit || 'rpm'}</span>
+              </div>
+              <div className="kpi-subtext">
+                {overview.frameStatus.running ?? 0} running · {overview.frameStatus.stoppedAndDoffing ?? 0} at 0 rpm
+              </div>
+            </div>
+
+            {/* 7. Shift Production (shiftProduction, shiftTargetProduction, productionUnit) */}
+            <div
+              className={`kpi-card ${activeKpi === 'PRODUCTION_YIELD' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('PRODUCTION_YIELD')}
+            >
+              <div className="kpi-bar purple"></div>
+              <div className="kpi-label">SHIFT PRODUCTION</div>
+              <div className="kpi-value">
+                {(overview.performanceAndCare.productionYieldKg ?? 0).toLocaleString()}{' '}
+                <span className="unit">{overview.machines[0]?.productionUnit || 'kg'}</span>
+              </div>
+              <div className="kpi-subtext">
+                {overview.performanceAndCare.yieldAchievedPercent ?? 0}% of{' '}
+                {(overview.performanceAndCare.targetProductionKg ?? 0).toLocaleString()}{' '}
+                {overview.machines[0]?.productionUnit || 'kg'} target
+              </div>
+            </div>
+
+            {/* 8. Shift Waste (shiftWaste, wasteUnit) */}
+            <div
+              className={`kpi-card ${activeKpi === 'SHIFT_WASTE' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('SHIFT_WASTE')}
+            >
+              <div className="kpi-bar orange"></div>
+              <div className="kpi-label">AVG SHIFT WASTE</div>
+              <div className="kpi-value">
+                {(overview.performanceAndCare.avgShiftWaste ?? 0).toFixed(2)}{' '}
+                <span className="unit">{overview.machines[0]?.wasteUnit || '%'}</span>
+              </div>
+              <div className="kpi-subtext">
+                Min {(overview.performanceAndCare.minShiftWaste ?? 0).toFixed(2)}% · Max{' '}
+                {(overview.performanceAndCare.maxShiftWaste ?? 0).toFixed(2)}%
+              </div>
+            </div>
+
+            {/* 9. End Mending Time (sides[].endMendingTime, stdEndMendingTime) */}
+            <div
+              className={`kpi-card ${activeKpi === 'END_MENDING_TIME' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('END_MENDING_TIME')}
+            >
+              <div className="kpi-bar teal"></div>
+              <div className="kpi-label">END MENDING TIME</div>
+              <div className="kpi-value">
+                {(overview.performanceAndCare.avgEndMendingTime ?? 0).toFixed(2)}{' '}
+                <span className="unit">{stdMendingUnit}</span>
+              </div>
+              <div className="kpi-subtext">
+                Std {stdMendingTime} {stdMendingUnit} · L: {overview.performanceAndCare.avgLeftMendingTime ?? 0} / R:{' '}
+                {overview.performanceAndCare.avgRightMendingTime ?? 0} {stdMendingUnit}
+              </div>
+            </div>
+
+            {/* 10. Hour-Wise Production (hourWiseProduction, totalShiftHours) */}
+            <div
+              className={`kpi-card ${activeKpi === 'HOURLY_PRODUCTION' ? 'active' : ''}`}
+              onClick={() => setActiveKpi('HOURLY_PRODUCTION')}
+            >
+              <div className="kpi-bar green"></div>
+              <div className="kpi-label">HOUR-WISE PRODUCTION</div>
+              <div className="kpi-value">
+                {overview.hourlyProduction.loggedHoursCount ?? overview.hourlyProduction.chart.length ?? 0} /{' '}
+                {overview.totalShiftHours ?? 8} <span className="unit">hrs</span>
+              </div>
+              <div className="kpi-subtext">
+                Peak {overview.hourlyProduction.peakHour ?? 'H1'} · Avg{' '}
+                {(overview.hourlyProduction.avgPerHourKg ?? 0).toFixed(2)} kg/hr
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HOURLY PRODUCTION BAR CHART (From hourWiseProduction in /api/common) */}
+      {(activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION' || activeKpi === 'TOTAL_MACHINES') &&
+        overview?.hourlyProduction &&
+        overview.hourlyProduction.chart.length > 0 && (
           <div className="hourly-chart-card">
             <div className="hourly-chart-header">
               <div>
-                <h3 className="chart-title">Hourly production · all frames</h3>
-                <p className="chart-subtitle">Kilograms per hour this shift. The last bar is a partial hour.</p>
+                <h3 className="chart-title">Hour-wise production · all frames ({overview.machines.length} machines)</h3>
+                <p className="chart-subtitle">
+                  Aggregated <code style={{ fontSize: '0.75rem' }}>hourWiseProduction</code> ({overview.machines[0]?.productionUnit || 'kg'}) per hour for Shift {overview.shift} ({overview.shiftDate}).
+                </p>
               </div>
               <div className="chart-stats-group">
                 <div className="stat-item">
                   <span className="stat-label">SHIFT TOTAL</span>
-                  <span className="stat-value">{(overview.hourlyProduction.shiftTotalKg ?? 0).toLocaleString()} kg</span>
+                  <span className="stat-value">
+                    {(overview.hourlyProduction.shiftTotalKg ?? 0).toLocaleString()} {overview.machines[0]?.productionUnit || 'kg'}
+                  </span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">SHIFT TARGET</span>
+                  <span className="stat-value">
+                    {(overview.hourlyProduction.totalTarget ?? 0).toLocaleString()} {overview.machines[0]?.productionUnit || 'kg'}
+                  </span>
                 </div>
                 <div className="stat-item">
                   <span className="stat-label">PEAK HOUR</span>
-                  <span className="stat-value">{overview.hourlyProduction.peakHour ?? 'N/A'}</span>
+                  <span className="stat-value">{overview.hourlyProduction.peakHour ?? 'H1'}</span>
                 </div>
                 <div className="stat-item">
-                  <span className="stat-label">AVG PER FULL HOUR</span>
-                  <span className="stat-value">{(overview.hourlyProduction.avgPerHourKg ?? 0).toLocaleString()} kg</span>
+                  <span className="stat-label">AVG PER HOUR</span>
+                  <span className="stat-value">
+                    {(overview.hourlyProduction.avgPerHourKg ?? 0).toLocaleString()} {overview.machines[0]?.productionUnit || 'kg'}
+                  </span>
                 </div>
               </div>
             </div>
 
             {/* Bars visualization */}
             <div className="chart-bars-container">
-              {overview.hourlyProduction.chart?.map(item => (
+              {overview.hourlyProduction.chart.map(item => (
                 <div key={item.hour} className="chart-bar-col">
-                  <div className="bar-value">{(item.production ?? 0).toFixed(1)}</div>
+                  <div className="bar-value">{(item.production ?? 0).toFixed(2)}</div>
                   <div className="bar-track">
                     <div
                       className={`bar-fill ${item.hour === overview.hourlyProduction.peakHour ? 'peak' : ''}`}
-                      style={{ height: `${((item.production ?? 0) / maxHourlyProduction) * 100}%` }}
+                      style={{ height: `${Math.min(100, ((item.production ?? 0) / maxHourlyProduction) * 100)}%` }}
                     ></div>
                   </div>
                   <div className="bar-label">{item.hour}</div>
@@ -560,193 +631,223 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
           </div>
         )}
 
-        {/* MACHINE DETAILS MAIN SECTION */}
-        {overview && (
-          <div className="machine-details-container">
-            {/* Header row with dynamic title and view toggles */}
-            <div className="details-header-bar">
-              <div>
-                <div className="section-label">MACHINE DETAILS</div>
-                <h2 className="dynamic-heading">
-                  {activeKpi === 'END_BREAKS'
-                    ? 'End breaks by machine'
-                    : activeKpi === 'AVERAGE_RPM'
-                    ? 'Spindle speed by machine'
-                    : activeKpi === 'PRODUCTION_YIELD'
-                    ? 'Production yield by machine'
-                    : activeKpi === 'COMPLETED_ROUNDS'
-                    ? 'Rounds by machine'
-                    : activeKpi === 'SENSOR_BOUNDS'
-                    ? 'Sensor bounds by machine'
-                    : activeKpi === 'PREVENTIVE_CLEANING'
-                    ? 'Preventive cleaning by machine'
-                    : 'All machines'}
-                </h2>
+      {/* MACHINE DETAILS MAIN SECTION */}
+      {overview && (
+        <div className="machine-details-container">
+          {/* Header row with dynamic title and view toggles */}
+          <div className="details-header-bar">
+            <div>
+              <div className="section-label">MACHINE DETAILS · {overview.source || 'MAG SPinFO'}</div>
+              <h2 className="dynamic-heading">
+                {activeKpi === 'END_BREAKS'
+                  ? 'End breaks by machine'
+                  : activeKpi === 'AVERAGE_RPM'
+                  ? 'Spindle speed by machine'
+                  : activeKpi === 'PRODUCTION_YIELD'
+                  ? 'Shift production by machine'
+                  : activeKpi === 'SHIFT_WASTE'
+                  ? 'Shift waste (%) by machine'
+                  : activeKpi === 'END_MENDING_TIME'
+                  ? 'End mending time (L & R) by machine'
+                  : activeKpi === 'HOURLY_PRODUCTION'
+                  ? 'Hour-wise production by machine'
+                  : activeKpi === 'RUNNING'
+                  ? 'Running machines (RUN)'
+                  : activeKpi === 'DOFFING'
+                  ? 'Doffing machines (DOFF)'
+                  : activeKpi === 'STOPPED_DOFFING'
+                  ? 'Stopped & Doffing machines'
+                  : 'All machines'}
+              </h2>
 
-                <p className="details-subtext">
-                  {activeKpi === 'END_BREAKS'
-                    ? `Highest first · ${overview.frameStatus.totalEndBreaks} in total`
-                    : activeKpi === 'AVERAGE_RPM'
-                    ? 'Limit breaches first · allowed 15,000 to 17,000 rpm'
-                    : activeKpi === 'PRODUCTION_YIELD'
-                    ? `Highest yield first · target ${displayedMachines[0]?.shiftTargetProduction || 98.4} kg each`
-                    : activeKpi === 'COMPLETED_ROUNDS'
-                    ? 'Fewest completed rounds first · 8 scheduled per shift'
-                    : activeKpi === 'SENSOR_BOUNDS'
-                    ? 'Machines with speed breach alerts first'
-                    : activeKpi === 'PREVENTIVE_CLEANING'
-                    ? 'Overdue and due machines first · every 2 days'
-                    : `${displayedMachines.length} configured · select one for its details`}
-                </p>
-              </div>
-
-              {/* View Toggle Buttons */}
-              <div className="controls-right">
-                <div className="view-toggle-pills">
-                  <button
-                    className={`pill-btn ${viewMode === 'cards' ? 'active' : ''}`}
-                    onClick={() => setViewMode('cards')}
-                    title="Grid of Machine Cards"
-                  >
-                    Cards
-                  </button>
-                  <button
-                    className={`pill-btn ${viewMode === 'spindle_map' ? 'active' : ''}`}
-                    onClick={() => setViewMode('spindle_map')}
-                    title="Interactive Spindle Map 120L + 120R"
-                  >
-                    Spindle Map
-                  </button>
-                  <button
-                    className={`pill-btn ${viewMode === 'table' ? 'active' : ''}`}
-                    onClick={() => setViewMode('table')}
-                    title="Telemetry Table View"
-                  >
-                    Table View
-                  </button>
-                </div>
-              </div>
+              <p className="details-subtext">
+                {activeKpi === 'END_BREAKS'
+                  ? `Highest first · ${overview.frameStatus.totalEndBreaks} total end breaks (L: ${overview.frameStatus.leftBreaks}, R: ${overview.frameStatus.rightBreaks})`
+                  : activeKpi === 'AVERAGE_RPM'
+                  ? `Highest RPM first · Avg running speed ${(overview.performanceAndCare.averageRpm ?? 0).toLocaleString()} rpm`
+                  : activeKpi === 'PRODUCTION_YIELD'
+                  ? `Highest production first · Total ${(overview.performanceAndCare.productionYieldKg ?? 0).toFixed(2)} / ${(overview.performanceAndCare.targetProductionKg ?? 0).toFixed(1)} kg`
+                  : activeKpi === 'SHIFT_WASTE'
+                  ? `Highest waste first · Average shift waste ${(overview.performanceAndCare.avgShiftWaste ?? 0).toFixed(2)}%`
+                  : activeKpi === 'END_MENDING_TIME'
+                  ? `Standard end mending time: ${stdMendingTime} ${stdMendingUnit}`
+                  : `${displayedMachines.length} of ${overview.machineCount ?? overview.machines.length} machines shown · click any machine for full telemetry`}
+              </p>
             </div>
 
-            {/* Special Stats Sub-Banner for End Breaks Mode */}
-            {activeKpi === 'END_BREAKS' && (
-              <div className="end-breaks-stats-bar">
-                <div className="stat-pill-item">
-                  <span className="sub-label">TOTAL END BREAKS</span>
-                  <span className="sub-val">{overview.frameStatus.totalEndBreaks ?? 0}</span>
-                </div>
-                <div className="stat-pill-item">
-                  <span className="sub-label">AVERAGE PER MACHINE</span>
-                  <span className="sub-val">
-                    {((overview.frameStatus.totalEndBreaks ?? 0) / (displayedMachines.length || 1)).toFixed(1)}
-                  </span>
-                </div>
-                <div className="stat-pill-item">
-                  <span className="sub-label">HIGHEST</span>
-                  <span className="sub-val">
-                    {displayedMachines[0]?.machineId || 'RF01'} · {displayedMachines[0]?.totalEndBreakCount || 0}
-                  </span>
-                </div>
-                <div className="stat-pill-item">
-                  <span className="sub-label">MACHINES AT 14 OR MORE</span>
-                  <span className="sub-val">0</span>
-                </div>
-
-                <div className="sort-toggles">
-                  <button
-                    className={`btn-sort ${endBreaksSort === 'highest' ? 'active' : ''}`}
-                    onClick={() => setEndBreaksSort('highest')}
-                  >
-                    Highest breaks first
-                  </button>
-                  <button
-                    className={`btn-sort ${endBreaksSort === 'machine_no' ? 'active' : ''}`}
-                    onClick={() => setEndBreaksSort('machine_no')}
-                  >
-                    By machine no.
-                  </button>
-                </div>
+            {/* View Toggle Buttons */}
+            <div className="controls-right">
+              <div className="view-toggle-pills">
+                <button
+                  className={`pill-btn ${viewMode === 'cards' ? 'active' : ''}`}
+                  onClick={() => setViewMode('cards')}
+                  title="Grid of Machine Cards"
+                >
+                  Cards
+                </button>
+                <button
+                  className={`pill-btn ${viewMode === 'spindle_map' ? 'active' : ''}`}
+                  onClick={() => setViewMode('spindle_map')}
+                  title="Interactive Left (L) & Right (R) Spindle Break Map"
+                >
+                  Spindle Map
+                </button>
+                <button
+                  className={`pill-btn ${viewMode === 'table' ? 'active' : ''}`}
+                  onClick={() => setViewMode('table')}
+                  title="Telemetry Table View"
+                >
+                  Table View
+                </button>
               </div>
-            )}
+            </div>
+          </div>
 
-            {/* VIEW 1: MACHINE CARDS GRID */}
-            {viewMode === 'cards' && (
-              <div className="machine-cards-grid">
-                {displayedMachines.map(m => (
+          {/* Special Stats Sub-Banner for End Breaks Mode */}
+          {activeKpi === 'END_BREAKS' && (
+            <div className="end-breaks-stats-bar">
+              <div className="stat-pill-item">
+                <span className="sub-label">TOTAL END BREAKS</span>
+                <span className="sub-val">{overview.frameStatus.totalEndBreaks ?? 0}</span>
+              </div>
+              <div className="stat-pill-item">
+                <span className="sub-label">LEFT (L) / RIGHT (R)</span>
+                <span className="sub-val">
+                  {overview.frameStatus.leftBreaks ?? 0} L · {overview.frameStatus.rightBreaks ?? 0} R
+                </span>
+              </div>
+              <div className="stat-pill-item">
+                <span className="sub-label">HIGHEST</span>
+                <span className="sub-val">
+                  {displayedMachines[0]?.machineId || '-'} · {displayedMachines[0]?.totalEndBreakCount ?? 0}
+                </span>
+              </div>
+              <div className="stat-pill-item">
+                <span className="sub-label">STD MENDING TIME</span>
+                <span className="sub-val">
+                  {stdMendingTime} {stdMendingUnit}
+                </span>
+              </div>
+
+              <div className="sort-toggles">
+                <button
+                  className={`btn-sort ${endBreaksSort === 'highest' ? 'active' : ''}`}
+                  onClick={() => setEndBreaksSort('highest')}
+                >
+                  Highest breaks first
+                </button>
+                <button
+                  className={`btn-sort ${endBreaksSort === 'machine_no' ? 'active' : ''}`}
+                  onClick={() => setEndBreaksSort('machine_no')}
+                >
+                  By machine no.
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* VIEW 1: MACHINE CARDS GRID */}
+          {viewMode === 'cards' && (
+            <div className="machine-cards-grid">
+              {displayedMachines.map(m => {
+                const leftSide = m.sides?.find(s => s.side === 'L') || m.sides?.[0];
+                const rightSide = m.sides?.find(s => s.side === 'R') || m.sides?.[1];
+                const avgMachineMending = Number(
+                  (((leftSide?.endMendingTime || 0) + (rightSide?.endMendingTime || 0)) / 2).toFixed(2)
+                );
+
+                return (
                   <div
                     key={m.machineId}
                     className={`machine-card ${
-                      m.runStatus === 'RUN' || m.statusBadge === 'Running'
+                      m.runStatus === 'RUN'
                         ? 'status-running'
-                        : m.runStatus === 'STOP' || m.statusBadge === 'Stopped'
+                        : m.runStatus === 'STOP'
                         ? 'status-stopped'
-                        : m.runStatus === 'DOFF' || m.statusBadge === 'Doffing'
+                        : m.runStatus === 'DOFF'
                         ? 'status-doffing'
                         : 'status-offline'
                     }`}
                     onClick={() => openMachineModal(m.machineId)}
                   >
                     <div className="card-top">
-                      <span className="machine-code">{m.machineId}</span>
+                      <div>
+                        <span className="machine-code">{m.machineId}</span>
+                        <span
+                          style={{
+                            marginLeft: '0.4rem',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '0.1rem 0.4rem',
+                            borderRadius: '4px',
+                            background: '#f1f5f9',
+                            color: '#334155'
+                          }}
+                        >
+                          Count {m.count}
+                        </span>
+                      </div>
                       <span
                         className={`status-pill ${
-                          m.statusBadge === 'Running'
+                          m.runStatus === 'RUN'
                             ? 'running'
-                            : m.statusBadge === 'Doffing'
+                            : m.runStatus === 'DOFF'
                             ? 'doffing'
-                            : m.statusBadge === 'Stopped'
-                            ? 'stopped'
-                            : 'not-reporting'
+                            : 'stopped'
                         }`}
                       >
-                        {m.statusBadge}
+                        {m.runStatus} · {m.statusBadge}
                       </span>
                     </div>
 
-                    {/* Default / End Breaks Card Face */}
+                    {/* Default / Frame Status / End Breaks Card Face */}
                     {(activeKpi === 'TOTAL_MACHINES' ||
-                      activeKpi === 'REPORTING' ||
                       activeKpi === 'RUNNING' ||
+                      activeKpi === 'DOFFING' ||
                       activeKpi === 'STOPPED_DOFFING' ||
                       activeKpi === 'END_BREAKS') && (
                       <>
-                        <div className="card-mid-label">END BREAKS</div>
+                        <div className="card-mid-label">TOTAL END BREAKS</div>
                         <div className="card-large-number">{m.totalEndBreakCount}</div>
                         <div className="card-progress-bar">
                           <div
                             className="progress-fill blue"
-                            style={{ width: `${Math.min(100, (m.totalEndBreakCount || 0) * 15)}%` }}
+                            style={{ width: `${Math.min(100, (m.totalEndBreakCount || 0) * 20)}%` }}
                           ></div>
                         </div>
-                        <div className="card-footer-sub">{m.breakSidesDisplay}</div>
+                        <div className="card-footer-sub">
+                          {m.breakSidesDisplay} · EM: L({leftSide?.endMendingTime ?? 0}{leftSide?.endMendingTimeUnit || 'm'}) / R({rightSide?.endMendingTime ?? 0}{rightSide?.endMendingTimeUnit || 'm'})
+                        </div>
                       </>
                     )}
 
                     {/* Average RPM Card Face */}
                     {activeKpi === 'AVERAGE_RPM' && (
                       <>
-                        <div className="card-mid-label">SPINDLE SPEED</div>
+                        <div className="card-mid-label">SPINDLE SPEED CURRENT</div>
                         <div className="card-large-number">
-                          {(m.spindleSpeedCurrent || 0).toLocaleString()} <span className="unit-sm">rpm</span>
+                          {(m.spindleSpeedCurrent || 0).toLocaleString()}{' '}
+                          <span className="unit-sm">{m.spindleSpeedUnit || 'rpm'}</span>
                         </div>
                         <div className="card-progress-bar">
                           <div
-                            className={`progress-fill ${m.speedStatus?.includes('limit') ? 'red' : 'blue'}`}
-                            style={{ width: `${Math.min(100, ((m.spindleSpeedCurrent || 0) / 18000) * 100)}%` }}
+                            className="progress-fill blue"
+                            style={{ width: `${Math.min(100, ((m.spindleSpeedCurrent || 0) / 18500) * 100)}%` }}
                           ></div>
                         </div>
-                        <div className={`card-footer-sub ${m.speedStatus?.includes('limit') ? 'text-red' : ''}`}>
-                          {m.speedStatus}
+                        <div className="card-footer-sub">
+                          Status: {m.runStatus} · Count: {m.count}
                         </div>
                       </>
                     )}
 
-                    {/* Production Yield Card Face */}
-                    {activeKpi === 'PRODUCTION_YIELD' && (
+                    {/* Production Yield / Hourly Production Card Face */}
+                    {(activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION') && (
                       <>
-                        <div className="card-mid-label">YIELD</div>
+                        <div className="card-mid-label">SHIFT PRODUCTION</div>
                         <div className="card-large-number">
-                          {(m.shiftProduction || 0).toFixed(1)} <span className="unit-sm">kg</span>
+                          {(m.shiftProduction || 0).toFixed(2)}{' '}
+                          <span className="unit-sm">{m.productionUnit || 'kg'}</span>
                         </div>
                         <div className="card-progress-bar">
                           <div
@@ -754,88 +855,107 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             style={{ width: `${Math.min(100, m.yieldPercent || 0)}%` }}
                           ></div>
                         </div>
-                        <div className="card-footer-sub">{m.yieldPercent}% of target</div>
+                        <div className="card-footer-sub">
+                          {m.yieldPercent}% of {m.shiftTargetProduction} {m.productionUnit || 'kg'} target · {m.hourWiseProduction?.length || 0} hrs logged
+                        </div>
                       </>
                     )}
 
-                    {/* Completed Rounds Card Face */}
-                    {activeKpi === 'COMPLETED_ROUNDS' && (
+                    {/* Shift Waste Card Face */}
+                    {activeKpi === 'SHIFT_WASTE' && (
                       <>
-                        <div className="card-mid-label">ROUNDS</div>
+                        <div className="card-mid-label">SHIFT WASTE</div>
                         <div className="card-large-number">
-                          {m.rounds?.completed ?? 0} / {m.rounds?.total ?? 8}
+                          {(m.shiftWaste || 0).toFixed(2)} <span className="unit-sm">{m.wasteUnit || '%'}</span>
                         </div>
                         <div className="card-progress-bar">
                           <div
-                            className="progress-fill blue"
-                            style={{ width: `${Math.min(100, (((m.rounds?.completed ?? 0) / (m.rounds?.total ?? 8)) * 100))}%` }}
+                            className={`progress-fill ${(m.shiftWaste || 0) > 2.0 ? 'red' : 'blue'}`}
+                            style={{ width: `${Math.min(100, ((m.shiftWaste || 0) / 3) * 100)}%` }}
                           ></div>
                         </div>
                         <div className="card-footer-sub">
-                          {m.rounds?.skipped ?? 0} skipped · {m.rounds?.incomplete ?? 0} incomplete
+                          Count {m.count} · Prod {(m.shiftProduction || 0).toFixed(2)} {m.productionUnit || 'kg'}
                         </div>
                       </>
                     )}
 
-                    {/* Sensor Bounds Card Face */}
-                    {activeKpi === 'SENSOR_BOUNDS' && (
+                    {/* End Mending Time Card Face */}
+                    {activeKpi === 'END_MENDING_TIME' && (
                       <>
-                        <div className="card-mid-label">SENSOR BOUNDS</div>
+                        <div className="card-mid-label">END MENDING TIME (L / R)</div>
                         <div className="card-large-number">
-                          {m.sensorBounds?.inBounds ?? 2} / {m.sensorBounds?.total ?? 2}
+                          {avgMachineMending.toFixed(2)}{' '}
+                          <span className="unit-sm">{leftSide?.endMendingTimeUnit || stdMendingUnit}</span>
                         </div>
                         <div className="card-progress-bar">
                           <div
-                            className={`progress-fill ${m.sensorBounds?.breaches ? 'red' : 'green'}`}
-                            style={{ width: '100%' }}
+                            className={`progress-fill ${avgMachineMending > stdMendingTime ? 'red' : 'green'}`}
+                            style={{ width: `${Math.min(100, (avgMachineMending / (stdMendingTime * 1.5)) * 100)}%` }}
                           ></div>
                         </div>
-                        <div className={`card-footer-sub ${m.sensorBounds?.breaches ? 'text-red' : ''}`}>
-                          {m.sensorBounds?.breaches ? `${m.sensorBounds.breaches} speed breach` : 'All within bounds'}
+                        <div className="card-footer-sub">
+                          L: {leftSide?.endMendingTime ?? 0} {leftSide?.endMendingTimeUnit || 'min'} · R: {rightSide?.endMendingTime ?? 0} {rightSide?.endMendingTimeUnit || 'min'} (Std {stdMendingTime})
                         </div>
                       </>
                     )}
 
-                    {/* Preventive Cleaning Card Face */}
-                    {activeKpi === 'PREVENTIVE_CLEANING' && (
-                      <>
-                        <div className="card-mid-label">NEXT CLEANING</div>
-                        <div className="card-large-number">{m.cleaning?.nextDate || '-'}</div>
-                        <div
-                          className={`card-footer-sub ${
-                            m.cleaning?.status === 'Overdue'
-                              ? 'text-red'
-                              : m.cleaning?.status === 'Due today'
-                              ? 'text-orange'
-                              : ''
-                          }`}
-                        >
-                          {m.cleaning?.status || 'Scheduled'}
-                        </div>
-                      </>
-                    )}
+                    {/* Compact Bottom Telemetry Strip showing key JSON metrics */}
+                    <div
+                      style={{
+                        marginTop: '0.65rem',
+                        paddingTop: '0.55rem',
+                        borderTop: '1px solid #f1f5f9',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '0.35rem',
+                        fontSize: '0.7rem',
+                        color: '#475569'
+                      }}
+                    >
+                      <div>
+                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>SPEED</span>
+                        <strong>{(m.spindleSpeedCurrent || 0).toLocaleString()} {m.spindleSpeedUnit || 'rpm'}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>PROD / TARGET</span>
+                        <strong>{m.shiftProduction}/{m.shiftTargetProduction} {m.productionUnit || 'kg'}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>WASTE</span>
+                        <strong>{m.shiftWaste}{m.wasteUnit || '%'}</strong>
+                      </div>
+                    </div>
                   </div>
-                ))}
+                );
+              })}
+            </div>
+          )}
+
+          {/* VIEW 2: SPINDLE MAP TABLE (Supports any spindleNo from sides[].endBreaks[]) */}
+          {viewMode === 'spindle_map' && (
+            <div className="spindle-map-container">
+              <div className="spindle-map-table-header">
+                <div className="col-machine">MACHINE</div>
+                <div className="col-side">LEFT SIDE (L) · SPINDLES & END BREAKS</div>
+                <div className="col-side">RIGHT SIDE (R) · SPINDLES & END BREAKS</div>
+                <div className="col-breaks">BREAKS & EM</div>
               </div>
-            )}
 
-            {/* VIEW 2: SPINDLE MAP TABLE */}
-            {viewMode === 'spindle_map' && (
-              <div className="spindle-map-container">
-                <div className="spindle-map-table-header">
-                  <div className="col-machine">MACHINE</div>
-                  <div className="col-side">LEFT SIDE · SPINDLES 1 TO 120</div>
-                  <div className="col-side">RIGHT SIDE · SPINDLES 1 TO 120</div>
-                  <div className="col-breaks">BREAKS</div>
-                </div>
+              {displayedMachines.map(m => {
+                const leftSide = m.sides?.find(s => s.side === 'L') || m.sides?.[0];
+                const rightSide = m.sides?.find(s => s.side === 'R') || m.sides?.[1];
+                const leftBreaks = leftSide?.endBreaks || [];
+                const rightBreaks = rightSide?.endBreaks || [];
+                const maxSpindle = getMaxSpindleForMachine(leftBreaks, rightBreaks);
 
-                {displayedMachines.map(m => (
+                return (
                   <div
                     key={m.machineId}
                     className={`spindle-map-row ${
-                      m.runStatus === 'RUN' || m.statusBadge === 'Running'
+                      m.runStatus === 'RUN'
                         ? 'status-running'
-                        : m.runStatus === 'STOP' || m.statusBadge === 'Stopped'
+                        : m.runStatus === 'STOP'
                         ? 'status-stopped'
                         : 'status-doffing'
                     }`}
@@ -848,29 +968,77 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         }`}
                       ></span>
                       <strong>{m.machineId}</strong>
-                      <span className="badge-mini">{m.statusBadge}</span>
+                      <span className="badge-mini">{m.runStatus} · {m.count}</span>
                     </div>
 
-                    {/* Left Spindle Ticks */}
-                    <div className="col-side spindle-ticks">
-                      {spindleRangeLeft.map(s => (
-                        <div
-                          key={`L-${s}`}
-                          className={`spindle-tick ${hasBreakAtSpindle(m, 'L', s) ? 'broken' : ''}`}
-                          title={`Left Spindle #${s}${hasBreakAtSpindle(m, 'L', s) ? ' (End Break)' : ''}`}
-                        ></div>
-                      ))}
+                    {/* Left Spindle Ticks & Broken Spindle Badges */}
+                    <div className="col-side">
+                      <div className="spindle-ticks">
+                        {visualTicks.map(tick => {
+                          const info = getTickBreakInfo(leftBreaks, tick, maxSpindle);
+                          return (
+                            <div
+                              key={`L-${tick}`}
+                              className={`spindle-tick ${info.broken ? 'broken' : ''}`}
+                              title={`Left (L) · ${info.label}`}
+                            ></div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.68rem' }}>
+                        <span style={{ color: '#64748b' }}>
+                          EM: <strong>{leftSide?.endMendingTime ?? 0} {leftSide?.endMendingTimeUnit || 'min'}</strong>
+                        </span>
+                        {leftBreaks.map(b => (
+                          <span
+                            key={`lb-badge-${b.spindleNo}-${b.createdTime}`}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#b91c1c',
+                              fontWeight: 700,
+                              padding: '0.05rem 0.35rem',
+                              borderRadius: '4px'
+                            }}
+                          >
+                            Spindle #{b.spindleNo} ({b.createdTime.split(' ')[1] || b.createdTime})
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Right Spindle Ticks */}
-                    <div className="col-side spindle-ticks">
-                      {spindleRangeRight.map(s => (
-                        <div
-                          key={`R-${s}`}
-                          className={`spindle-tick ${hasBreakAtSpindle(m, 'R', s) ? 'broken' : ''}`}
-                          title={`Right Spindle #${s}${hasBreakAtSpindle(m, 'R', s) ? ' (End Break)' : ''}`}
-                        ></div>
-                      ))}
+                    {/* Right Spindle Ticks & Broken Spindle Badges */}
+                    <div className="col-side">
+                      <div className="spindle-ticks">
+                        {visualTicks.map(tick => {
+                          const info = getTickBreakInfo(rightBreaks, tick, maxSpindle);
+                          return (
+                            <div
+                              key={`R-${tick}`}
+                              className={`spindle-tick ${info.broken ? 'broken' : ''}`}
+                              title={`Right (R) · ${info.label}`}
+                            ></div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.68rem' }}>
+                        <span style={{ color: '#64748b' }}>
+                          EM: <strong>{rightSide?.endMendingTime ?? 0} {rightSide?.endMendingTimeUnit || 'min'}</strong>
+                        </span>
+                        {rightBreaks.map(b => (
+                          <span
+                            key={`rb-badge-${b.spindleNo}-${b.createdTime}`}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#b91c1c',
+                              fontWeight: 700,
+                              padding: '0.05rem 0.35rem',
+                              borderRadius: '4px'
+                            }}
+                          >
+                            Spindle #{b.spindleNo} ({b.createdTime.split(' ')[1] || b.createdTime})
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     <div className="col-breaks">
@@ -878,48 +1046,52 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       <span className="breaks-detail">{m.breakSidesDisplay}</span>
                     </div>
                   </div>
-                ))}
+                );
+              })}
 
-                <div className="spindle-legend">
-                  <span className="legend-item"><span className="dot red"></span> End break</span>
-                  <span className="legend-item"><span className="dot gray"></span> Active Spindle</span>
-                  <span className="legend-item"><span className="dot green"></span> Running</span>
-                  <span className="legend-item"><span className="dot orange"></span> Stopped / Doffing</span>
-                </div>
+              <div className="spindle-legend">
+                <span className="legend-item"><span className="dot red"></span> End break spindle</span>
+                <span className="legend-item"><span className="dot gray"></span> Active spindle</span>
+                <span className="legend-item"><span className="dot green"></span> RUN</span>
+                <span className="legend-item"><span className="dot orange"></span> DOFF / STOP</span>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* VIEW 3: SEPARATE TELEMETRY DATA TABLE */}
-            {viewMode === 'table' && (
-              <div className="breaks-table-card" style={{ marginTop: '0.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                  <h4 className="table-card-title" style={{ margin: 0 }}>
-                    Ring Frames Live Telemetry Table · {displayedMachines.length} Units Active
-                  </h4>
-                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                    Click any machine row to open full sensor diagnostics
-                  </span>
-                </div>
+          {/* VIEW 3: TELEMETRY DATA TABLE (Strictly JSON fields) */}
+          {viewMode === 'table' && (
+            <div className="breaks-table-card" style={{ marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h4 className="table-card-title" style={{ margin: 0 }}>
+                  {overview.source || 'MAG SPinFO'} Live Telemetry Table · {displayedMachines.length} Machines ({overview.customer})
+                </h4>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  Click any machine row to inspect hour-wise production & spindle breaks
+                </span>
+              </div>
 
-                <div className="table-scroll-container" style={{ maxHeight: '520px' }}>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>MACHINE</th>
-                        <th>STATUS</th>
-                        <th>SPINDLE SPEED</th>
-                        <th>BREAKS (L / R)</th>
-                        <th>TOTAL BREAKS</th>
-                        <th>YIELD (KG)</th>
-                        <th>TARGET %</th>
-                        <th>ROUNDS</th>
-                        <th>CLEANING</th>
-                        <th>OPERATOR</th>
-                        <th style={{ textAlign: 'right' }}>ACTION</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {displayedMachines.map(m => (
+              <div className="table-scroll-container" style={{ maxHeight: '520px' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>MACHINE</th>
+                      <th>RUN STATUS</th>
+                      <th>COUNT</th>
+                      <th>SPINDLE SPEED</th>
+                      <th>SHIFT PRODUCTION</th>
+                      <th>TARGET %</th>
+                      <th>SHIFT WASTE</th>
+                      <th>LEFT SIDE (L)</th>
+                      <th>RIGHT SIDE (R)</th>
+                      <th>TOTAL BREAKS</th>
+                      <th style={{ textAlign: 'right' }}>ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedMachines.map(m => {
+                      const leftSide = m.sides?.find(s => s.side === 'L') || m.sides?.[0];
+                      const rightSide = m.sides?.find(s => s.side === 'R') || m.sides?.[1];
+                      return (
                         <tr
                           key={m.machineId}
                           onClick={() => openMachineModal(m.machineId)}
@@ -927,71 +1099,65 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         >
                           <td>
                             <strong style={{ color: '#0f172a', fontSize: '0.9rem' }}>{m.machineId}</strong>
-                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>{m.machineName}</div>
                           </td>
                           <td>
                             <span
                               className={`status-pill ${
-                                m.statusBadge === 'Running'
+                                m.runStatus === 'RUN'
                                   ? 'running'
-                                  : m.statusBadge === 'Doffing'
+                                  : m.runStatus === 'DOFF'
                                   ? 'doffing'
-                                  : m.statusBadge === 'Stopped'
-                                  ? 'stopped'
-                                  : 'not-reporting'
+                                  : 'stopped'
                               }`}
                             >
-                              {m.statusBadge}
+                              {m.runStatus}
                             </span>
                           </td>
                           <td>
-                            <strong style={{ color: m.speedStatus?.includes('limit') ? '#dc2626' : '#0f172a' }}>
-                              {(m.spindleSpeedCurrent || 0).toLocaleString()} rpm
-                            </strong>
-                            <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{m.speedStatus}</div>
+                            <strong>{m.count}</strong>
                           </td>
-                          <td>{m.breakSidesDisplay}</td>
                           <td>
-                            <strong style={{ fontSize: '0.95rem', color: (m.totalEndBreakCount || 0) > 4 ? '#dc2626' : '#0f172a' }}>
-                              {m.totalEndBreakCount}
+                            <strong style={{ color: '#0f172a' }}>
+                              {(m.spindleSpeedCurrent || 0).toLocaleString()} {m.spindleSpeedUnit || 'rpm'}
                             </strong>
                           </td>
                           <td>
-                            <strong>{(m.shiftProduction || 0).toFixed(1)}</strong>
-                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}> / {m.shiftTargetProduction || 98.4} kg</span>
+                            <strong>{(m.shiftProduction || 0).toFixed(2)}</strong>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                              {' '}
+                              / {m.shiftTargetProduction} {m.productionUnit || 'kg'}
+                            </span>
                           </td>
                           <td>
-                            <span style={{ fontWeight: 700, color: (m.yieldPercent || 0) >= 90 ? '#15803d' : '#b45309' }}>
+                            <span style={{ fontWeight: 700, color: (m.yieldPercent || 0) >= 45 ? '#15803d' : '#b45309' }}>
                               {m.yieldPercent}%
                             </span>
                           </td>
                           <td>
-                            {m.rounds?.completed ?? 0} / {m.rounds?.total ?? 8}
+                            <strong>{(m.shiftWaste || 0).toFixed(2)}{m.wasteUnit || '%'}</strong>
                           </td>
                           <td>
-                            <span
-                              style={{
-                                color:
-                                  m.cleaning?.status === 'Overdue'
-                                    ? '#dc2626'
-                                    : m.cleaning?.status === 'Due today'
-                                    ? '#ea580c'
-                                    : '#15803d',
-                                fontWeight: 600
-                              }}
-                            >
-                              {m.cleaning?.status || 'Scheduled'}
-                            </span>
+                            <div><strong>{leftSide?.endBreakCount ?? 0}</strong> breaks</div>
+                            <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                              EM: {leftSide?.endMendingTime ?? 0} {leftSide?.endMendingTimeUnit || 'min'}
+                            </div>
                           </td>
                           <td>
-                            <div>{m.operator?.name || 'Assigned'}</div>
-                            <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Last tap: {m.operator?.lastCardTap || '-'}</div>
+                            <div><strong>{rightSide?.endBreakCount ?? 0}</strong> breaks</div>
+                            <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+                              EM: {rightSide?.endMendingTime ?? 0} {rightSide?.endMendingTimeUnit || 'min'}
+                            </div>
+                          </td>
+                          <td>
+                            <strong style={{ fontSize: '0.95rem', color: (m.totalEndBreakCount || 0) > 0 ? '#dc2626' : '#0f172a' }}>
+                              {m.totalEndBreakCount}
+                            </strong>
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <button
                               className="btn btn-primary"
                               style={{ height: '30px', padding: '0 0.6rem', fontSize: '0.75rem' }}
-                              onClick={(e) => {
+                              onClick={e => {
                                 e.stopPropagation();
                                 openMachineModal(m.machineId);
                               }}
@@ -1000,591 +1166,612 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             </button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* MACHINE DETAIL SLIDE POPUP (RIGHT SIDE) */}
-        {modalOpen && (
-          <div className="slide-popup-backdrop" onClick={closeModal}>
-            <div className="slide-popup-panel" onClick={e => e.stopPropagation()}>
-              {/* SLIDE POPUP STICKY HEADER */}
-              <div className="slide-popup-header">
-                <div className="slide-popup-top-bar">
-                  <div className="modal-title-wrap">
-                    <span className="modal-eyebrow">MACHINE DETAIL</span>
-                    <div className="modal-heading-row">
-                      <h1 className="modal-machine-title">
-                        {selectedMachineDetail?.machine?.machineId || activeMachineId}
-                      </h1>
-                      <span className="modal-shift-badge">
-                        <span className="shift-icon">⏱</span>
-                        {selectedShift === 'All Shifts' ? 'Shift 1 · 07:00 - 15:30' : selectedShift}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="slide-header-controls">
-                    <span
-                      className={`status-pill ${
-                        selectedMachineDetail?.machine?.statusBadge === 'Running'
-                          ? 'running'
-                          : selectedMachineDetail?.machine?.statusBadge === 'Doffing'
-                          ? 'doffing'
-                          : selectedMachineDetail?.machine?.statusBadge === 'Stopped'
-                          ? 'stopped'
-                          : 'not-reporting'
-                      }`}
-                    >
-                      {selectedMachineDetail?.machine?.statusBadge || 'Running'}
-                    </span>
-
-                    {/* Machine Quick Nav Switchers */}
-                    <div className="machine-nav-pills">
-                      <button
-                        type="button"
-                        className="btn-nav-machine"
-                        disabled={!hasPrevMachine}
-                        onClick={() => navigateMachine(-1)}
-                        title="Previous machine"
-                      >
-                        ‹ {prevMachineId || 'Prev'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-nav-machine"
-                        disabled={!hasNextMachine}
-                        onClick={() => navigateMachine(1)}
-                        title="Next machine"
-                      >
-                        {nextMachineId || 'Next'} ›
-                      </button>
-                    </div>
-
-                    <button className="slide-close-btn" onClick={closeModal} title="Close slide popup (Esc)">
-                      ✕
-                    </button>
-                  </div>
-                </div>
-
-                {/* Operator session meta bar */}
-                <div className="operator-meta-bar">
-                  <div className="meta-item">
-                    <span className="meta-label">ACTIVE OPERATOR</span>
-                    <span className="meta-val">
-                      {selectedMachineDetail?.machine?.operator?.name || 'Senthil Kumar'}
-                    </span>
-                    <span className="meta-sub">
-                      Badge {selectedMachineDetail?.machine?.operator?.badge || 'OP-104'}
-                    </span>
-                  </div>
-
-                  <div className="meta-item">
-                    <span className="meta-label">SESSION STATUS</span>
-                    <span className="badge-active">
-                      {selectedMachineDetail?.machine?.operator?.session || 'Session active'}
-                    </span>
-                  </div>
-
-                  <div className="meta-item">
-                    <span className="meta-label">LAST CARD TAP</span>
-                    <span className="meta-val">
-                      {selectedMachineDetail?.machine?.operator?.lastTap || selectedMachineDetail?.machine?.operator?.lastCardTap || '12:28:44'}
-                    </span>
-                  </div>
-
-                  <div className="meta-item">
-                    <span className="meta-label">AUTO LOGOUT</span>
-                    <span className="meta-val">5m idle cutoff</span>
-                  </div>
-                </div>
-
-                {/* 4 Sub-Tabs Navigation */}
-                <div className="modal-tabs-nav">
-                  <button
-                    className={`tab-btn ${activeModalTab === 'overview' ? 'active' : ''}`}
-                    onClick={() => setActiveModalTab('overview')}
-                  >
-                    Overview
-                  </button>
-                  <button
-                    className={`tab-btn ${activeModalTab === 'end_breaks' ? 'active' : ''}`}
-                    onClick={() => setActiveModalTab('end_breaks')}
-                  >
-                    End breaks
-                  </button>
-                  <button
-                    className={`tab-btn ${activeModalTab === 'speed_production' ? 'active' : ''}`}
-                    onClick={() => setActiveModalTab('speed_production')}
-                  >
-                    Speed and production
-                  </button>
-                  <button
-                    className={`tab-btn ${activeModalTab === 'rounds_cleaning' ? 'active' : ''}`}
-                    onClick={() => setActiveModalTab('rounds_cleaning')}
-                  >
-                    Rounds and cleaning
-                  </button>
-                </div>
-              </div>
-
-              {/* SLIDE POPUP BODY (SCROLLABLE) */}
-              <div className="slide-popup-body">
-                {detailLoading && !selectedMachineDetail && (
-                  <div className="modal-loading-placeholder">
-                    <div className="spinner-sm"></div>
-                    <span>Loading machine data for {activeMachineId}...</span>
-                  </div>
-                )}
-
-                {selectedMachineDetail && (
-                  <>
-                    {/* TAB 1: OVERVIEW */}
-                    {activeModalTab === 'overview' && (
-                      <div className="tab-pane">
-                        {/* Needs attention banner */}
-                        <div className={`attention-banner ${selectedMachineDetail.overview?.hasAttention ? 'alert' : ''}`}>
-                          <div className="attention-title">Needs attention</div>
-                          <div className="attention-desc">{selectedMachineDetail.overview?.needsAttention || 'None · All metrics within bounds'}</div>
-                        </div>
-
-                        <div className="overview-grid">
-                          {/* Left: Key Figures (9 clean live tiles) */}
-                          <div className="key-figures-card">
-                            <h3 className="card-heading">Key figures</h3>
-                            <div className="key-tiles-grid">
-                              {/* 1: End breaks */}
-                              <div className="key-tile">
-                                <div className="tile-label">END BREAKS</div>
-                                <div className="tile-number">{selectedMachineDetail.overview?.keyFigures?.endBreaks?.value ?? 3}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.endBreaks?.sub ?? '2 Left · 1 Right'}</div>
-                              </div>
-
-                              {/* 2: Average RPM */}
-                              <div className="key-tile">
-                                <div className="tile-label">AVERAGE RPM</div>
-                                <div className="tile-number">{selectedMachineDetail.overview?.keyFigures?.averageRpm?.value ?? '16,650'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.averageRpm?.sub ?? 'Allowed 15,000-17,000'}</div>
-                              </div>
-
-                              {/* 3: Yarn Count */}
-                              <div className="key-tile">
-                                <div className="tile-label">YARN COUNT</div>
-                                <div className="tile-number">{selectedMachineDetail.overview?.keyFigures?.yarnCount?.value ?? '40s CW'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.yarnCount?.sub ?? 'Combed Warp'}</div>
-                              </div>
-
-                              {/* 4: Production Yield */}
-                              <div className="key-tile">
-                                <div className="tile-label">PRODUCTION YIELD</div>
-                                <div className="tile-number">{selectedMachineDetail.overview?.keyFigures?.productionYield?.value ?? '98.4 kg'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.productionYield?.sub ?? '100% of shift target'}</div>
-                              </div>
-
-                              {/* 5: Completed Rounds */}
-                              <div className="key-tile">
-                                <div className="tile-label">COMPLETED ROUNDS</div>
-                                <div className="tile-number">{selectedMachineDetail.overview?.keyFigures?.completedRounds?.value ?? '8 / 8'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.completedRounds?.sub ?? '0 skipped'}</div>
-                              </div>
-
-                              {/* 6: End Mending (EM) */}
-                              <div className="key-tile">
-                                <div className="tile-label">END MENDING (EM)</div>
-                                <div className="tile-number text-primary">{selectedMachineDetail.overview?.keyFigures?.endMending?.value ?? 'L(2.1), R(1.4)'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.endMending?.sub ?? 'Left & right mending (min)'}</div>
-                              </div>
-
-                              {/* 7: Sensor Bounds */}
-                              <div className="key-tile">
-                                <div className="tile-label">SENSOR BOUNDS</div>
-                                <div className="tile-number">{selectedMachineDetail.overview?.keyFigures?.sensorBounds?.value ?? '2 / 2'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.sensorBounds?.sub ?? 'All within bounds'}</div>
-                              </div>
-
-                              {/* 8: Operating Mode */}
-                              <div className="key-tile">
-                                <div className="tile-label">OPERATING MODE</div>
-                                <div className="tile-number text-primary">{selectedMachineDetail.overview?.keyFigures?.operatingMode?.value ?? 'Production'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.operatingMode?.sub ?? '92% runtime'}</div>
-                              </div>
-
-                              {/* 9: Next Cleaning */}
-                              <div className="key-tile">
-                                <div className="tile-label">NEXT CLEANING</div>
-                                <div className="tile-number text-success">{selectedMachineDetail.overview?.keyFigures?.nextCleaning?.value ?? 'Tomorrow'}</div>
-                                <div className="tile-sub">{selectedMachineDetail.overview?.keyFigures?.nextCleaning?.sub ?? 'Every 2 days'}</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Right: Operating mode breakdown donut */}
-                          <div className="donut-card">
-                            <h3 className="card-heading">Operating mode breakdown</h3>
-                            <p className="card-subhead">Minutes spent in each mode this shift</p>
-
-                            <div className="donut-display-area">
-                              <div
-                                className="donut-chart"
-                                style={{ background: getDonutConicGradient(selectedMachineDetail.overview?.operatingModeBreakdown?.modes) }}
-                              >
-                                <div className="donut-hole">
-                                  <span className="donut-total-val">{selectedMachineDetail.overview?.operatingModeBreakdown?.totalMinutes ?? 480}</span>
-                                  <span className="donut-total-lbl">TOTAL MINS</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Modes list */}
-                            <div className="mode-legend-list">
-                              {(selectedMachineDetail.overview?.operatingModeBreakdown?.modes || []).map(m => (
-                                <div key={m.name} className="mode-legend-row">
-                                  <div className="mode-label-group">
-                                    <span className="mode-square" style={{ background: m.color }}></span>
-                                    <span>{m.name}</span>
-                                  </div>
-                                  <span className="mode-mins">{m.minutes} min</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Interactive Spindle Map preview inside Overview */}
-                        <div className="spindle-map-container" style={{ marginTop: '1.25rem' }}>
-                          <div className="spindle-map-table-header">
-                            <div className="col-machine">FRAME SPINDLES</div>
-                            <div className="col-side">LEFT SIDE (1-120)</div>
-                            <div className="col-side">RIGHT SIDE (1-120)</div>
-                            <div className="col-breaks">STATUS</div>
-                          </div>
-                          <div className="spindle-map-row status-running">
-                            <div className="col-machine">
-                              <span className="status-dot running"></span>
-                              <strong>{selectedMachineDetail.machine?.machineId}</strong>
-                            </div>
-                            <div className="col-side spindle-ticks">
-                              {spindleRangeLeft.map(s => (
-                                <div
-                                  key={`m-L-${s}`}
-                                  className={`spindle-tick ${(selectedMachineDetail.endBreaks?.leftSide || []).some(b => b.spindleNo === s) ? 'broken' : ''}`}
-                                  title={`Left Spindle #${s}`}
-                                ></div>
-                              ))}
-                            </div>
-                            <div className="col-side spindle-ticks">
-                              {spindleRangeRight.map(s => (
-                                <div
-                                  key={`m-R-${s}`}
-                                  className={`spindle-tick ${(selectedMachineDetail.endBreaks?.rightSide || []).some(b => b.spindleNo === s) ? 'broken' : ''}`}
-                                  title={`Right Spindle #${s}`}
-                                ></div>
-                              ))}
-                            </div>
-                            <div className="col-breaks">
-                              <span className="breaks-num">{selectedMachineDetail.machine?.totalEndBreakCount ?? 0}</span>
-                              <span className="breaks-detail">Breaks</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* TAB 2: END BREAKS */}
-                    {activeModalTab === 'end_breaks' && (
-                      <div className="tab-pane">
-                        <div className="end-breaks-tables-grid">
-                          {/* Left Side Table */}
-                          <div className="breaks-table-card">
-                            <h4 className="table-card-title">
-                              Left Side Spindles ({selectedMachineDetail.endBreaks?.leftSide?.length || 0})
-                            </h4>
-                            <div className="table-scroll-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>SPINDLE NO</th>
-                                    <th>BREAKS</th>
-                                    <th>DURATION</th>
-                                    <th>TIME</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(selectedMachineDetail.endBreaks?.leftSide || []).map(b => (
-                                    <tr key={`lb-${b.spindleNo}`}>
-                                      <td><strong>Spindle #{b.spindleNo}</strong></td>
-                                      <td><span style={{ color: '#dc2626', fontWeight: 700 }}>{b.breakCount}</span></td>
-                                      <td>{b.durationMinutes} min</td>
-                                      <td>{b.timestamp}</td>
-                                    </tr>
-                                  ))}
-                                  {(!selectedMachineDetail.endBreaks?.leftSide || selectedMachineDetail.endBreaks.leftSide.length === 0) && (
-                                    <tr>
-                                      <td colSpan={4} className="empty-cell">No active end breaks on left side.</td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-
-                          {/* Right Side Table */}
-                          <div className="breaks-table-card">
-                            <h4 className="table-card-title">
-                              Right Side Spindles ({selectedMachineDetail.endBreaks?.rightSide?.length || 0})
-                            </h4>
-                            <div className="table-scroll-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>SPINDLE NO</th>
-                                    <th>BREAKS</th>
-                                    <th>DURATION</th>
-                                    <th>TIME</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(selectedMachineDetail.endBreaks?.rightSide || []).map(b => (
-                                    <tr key={`rb-${b.spindleNo}`}>
-                                      <td><strong>Spindle #{b.spindleNo}</strong></td>
-                                      <td><span style={{ color: '#dc2626', fontWeight: 700 }}>{b.breakCount}</span></td>
-                                      <td>{b.durationMinutes} min</td>
-                                      <td>{b.timestamp}</td>
-                                    </tr>
-                                  ))}
-                                  {(!selectedMachineDetail.endBreaks?.rightSide || selectedMachineDetail.endBreaks.rightSide.length === 0) && (
-                                    <tr>
-                                      <td colSpan={4} className="empty-cell">No active end breaks on right side.</td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* TAB 3: SPEED & PRODUCTION */}
-                    {activeModalTab === 'speed_production' && (
-                      <div className="tab-pane">
-                        <div className="speed-sensors-grid">
-                          {/* Speed Curve Card */}
-                          <div className="curve-card">
-                            <div className="curve-header">
-                              <div>
-                                <h4 className="card-heading">Rotational Speed Curve</h4>
-                                <p className="card-subhead">Spindle RPM telemetry across shift timeline</p>
-                              </div>
-                              <div className="period-pills">
-                                <button
-                                  className={`pill-btn ${speedPeriod === 'hourly' ? 'active' : ''}`}
-                                  onClick={() => setSpeedPeriod('hourly')}
-                                >
-                                  Hourly
-                                </button>
-                                <button
-                                  className={`pill-btn ${speedPeriod === 'daily' ? 'active' : ''}`}
-                                  onClick={() => setSpeedPeriod('daily')}
-                                >
-                                  Daily
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="svg-curve-wrapper">
-                              <svg className="curve-svg" viewBox="0 0 600 140" preserveAspectRatio="none">
-                                <defs>
-                                  <linearGradient id="rpmGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                                    <stop offset="0%" stopColor="#2563eb" stopOpacity="0.3" />
-                                    <stop offset="100%" stopColor="#2563eb" stopOpacity="0.0" />
-                                  </linearGradient>
-                                </defs>
-                                {/* Safe Band (15000 to 17000) */}
-                                <rect x="0" y="25" width="600" height="85" fill="#dcfce7" fillOpacity="0.6" />
-                                <line x1="0" y1="25" x2="600" y2="25" stroke="#86efac" strokeDasharray="3 3" />
-                                <line x1="0" y1="110" x2="600" y2="110" stroke="#86efac" strokeDasharray="3 3" />
-
-                                {/* RPM Area */}
-                                <polygon
-                                  points="0,140 0,60 100,55 200,50 300,52 400,48 500,51 600,54 600,140"
-                                  fill="url(#rpmGrad)"
-                                />
-                                {/* RPM Stroke */}
-                                <polyline
-                                  points="0,60 100,55 200,50 300,52 400,48 500,51 600,54"
-                                  fill="none"
-                                  stroke="#2563eb"
-                                  strokeWidth="2.5"
-                                  strokeLinecap="round"
-                                />
-                              </svg>
-
-                              <div className="chart-time-labels">
-                                <span>07:00</span>
-                                <span>09:00</span>
-                                <span>11:00</span>
-                                <span>13:00</span>
-                                <span>15:00</span>
-                              </div>
-                            </div>
-
-                            <div className="curve-stats-footer">
-                              <div className="cstat-item">
-                                <span className="cstat-lbl">CURRENT RPM</span>
-                                <span className="cstat-val">
-                                  {(selectedMachineDetail.machine?.spindleSpeedCurrent || 16650).toLocaleString()}
-                                </span>
-                              </div>
-                              <div className="cstat-item">
-                                <span className="cstat-lbl">MIN / MAX</span>
-                                <span className="cstat-val">15,000 / 17,200</span>
-                              </div>
-                              <div className="cstat-legend">
-                                <span className="band-box"></span>
-                                <span>Target Band</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Sensor Devices Status Table */}
-                          <div className="devices-bounds-card">
-                            <h4 className="card-heading">Sensor Devices</h4>
-                            <p className="card-subhead">Headstock, Middle & Endstock telemetry nodes</p>
-
-                            <div className="table-scroll-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>DEVICE</th>
-                                    <th>RPM</th>
-                                    <th>STATUS</th>
-                                    <th>BATTERY</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(selectedMachineDetail.speedAndSensors?.devices || []).map(d => (
-                                    <tr key={d.deviceId}>
-                                      <td>
-                                        <strong>{d.deviceId}</strong>
-                                        <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{d.position}</div>
-                                      </td>
-                                      <td><strong>{d.rpm?.toLocaleString()}</strong></td>
-                                      <td>
-                                        <span className={`status-pill ${d.status === 'HEALTHY' || d.status === 'NORMAL' ? 'running' : 'stopped'}`}>
-                                          {d.status}
-                                        </span>
-                                      </td>
-                                      <td>{(d as any).batteryLevel ?? 96}%</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* TAB 4: ROUNDS & CLEANING */}
-                    {activeModalTab === 'rounds_cleaning' && (
-                      <div className="tab-pane">
-                        <div className="rounds-cleaning-grid">
-                          {/* Shift Rounds Timeline Card */}
-                          <div className="shift-rounds-card">
-                            <h4 className="card-heading">Shift Patrol Rounds</h4>
-                            <p className="card-subhead">Operator inspection sequence and timing compliance</p>
-
-                            <div className="table-scroll-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>ROUND</th>
-                                    <th>SCHEDULED</th>
-                                    <th>PATROL DETAIL</th>
-                                    <th>STATUS</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(selectedMachineDetail.roundsAndCleaning?.shiftRounds || []).map((r: any, idx: number) => (
-                                    <tr key={`rd-${r.round || idx}`}>
-                                      <td><strong>Round #{r.round || idx + 1}</strong></td>
-                                      <td>{r.window || r.scheduledTime || `Round ${idx + 1}`}</td>
-                                      <td>{r.detail || r.completedTime || 'Completed on schedule'}</td>
-                                      <td>
-                                        <span
-                                          className={`status-pill ${
-                                            r.status === 'COMPLETED' || r.status === 'Completed'
-                                              ? 'completed'
-                                              : r.status === 'INCOMPLETE'
-                                              ? 'incomplete'
-                                              : 'not-reporting'
-                                          }`}
-                                        >
-                                          {r.status}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-
-                          {/* Preventive Cleaning Card */}
-                          <div className="cleaning-card">
-                            <div className="cleaning-card-header">
-                              <h4 className="card-heading" style={{ margin: 0 }}>Preventive Cleaning</h4>
-                              <span
-                                className={`status-pill ${
-                                  selectedMachineDetail.roundsAndCleaning?.preventiveCleaning?.status === 'Overdue'
-                                    ? 'stopped'
-                                    : 'running'
-                                }`}
-                              >
-                                {selectedMachineDetail.roundsAndCleaning?.preventiveCleaning?.status || 'Scheduled'}
-                              </span>
-                            </div>
-
-                            <div className="cleaning-2x2-grid">
-                              <div className="cleaning-quad">
-                                <span className="quad-label">NEXT DUE</span>
-                                <span className="quad-val">
-                                  {selectedMachineDetail.roundsAndCleaning?.preventiveCleaning?.nextCleaning || 'Tomorrow'}
-                                </span>
-                              </div>
-                              <div className="cleaning-quad">
-                                <span className="quad-label">INTERVAL</span>
-                                <span className="quad-val">
-                                  {selectedMachineDetail.roundsAndCleaning?.preventiveCleaning?.interval || 'Every 2 days'}
-                                </span>
-                              </div>
-                              <div className="cleaning-quad">
-                                <span className="quad-label">LAST CLEANED</span>
-                                <span className="quad-val">
-                                  {selectedMachineDetail.roundsAndCleaning?.preventiveCleaning?.lastCleaning || 'Yesterday'}
-                                </span>
-                              </div>
-                              <div className="cleaning-quad">
-                                <span className="quad-label">TECHNICIAN</span>
-                                <span className="quad-val">Assigned</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* MACHINE DETAIL SLIDE POPUP (RIGHT SIDE) — STRICTLY BOUND TO /api/common JSON */}
+      {modalOpen && (
+        <div className="slide-popup-backdrop" onClick={closeModal}>
+          <div className="slide-popup-panel" onClick={e => e.stopPropagation()}>
+            {/* SLIDE POPUP STICKY HEADER */}
+            <div className="slide-popup-header">
+              <div className="slide-popup-top-bar">
+                <div className="modal-title-wrap">
+                  <span className="modal-eyebrow">
+                    {overview.source || 'MAG SPinFO'} · MACHINE TELEMETRY DETAIL
+                  </span>
+                  <div className="modal-heading-row">
+                    <h1 className="modal-machine-title">
+                      {selectedMachineDetail?.machine?.machineId || activeMachineId}
+                    </h1>
+                    {selectedMachineDetail?.machine?.count && (
+                      <span className="modal-shift-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>
+                        Count {selectedMachineDetail.machine.count}
+                      </span>
+                    )}
+                    <span className="modal-shift-badge">
+                      <span className="shift-icon">⏱</span>
+                      Shift {overview.shift} · {overview.shiftDate} ({overview.totalShiftHours ?? 8}h)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="slide-header-controls">
+                  <span
+                    className={`status-pill ${
+                      selectedMachineDetail?.machine?.runStatus === 'RUN'
+                        ? 'running'
+                        : selectedMachineDetail?.machine?.runStatus === 'DOFF'
+                        ? 'doffing'
+                        : 'stopped'
+                    }`}
+                  >
+                    {selectedMachineDetail?.machine?.runStatus || 'RUN'} ·{' '}
+                    {selectedMachineDetail?.machine?.statusBadge || 'Running'}
+                  </span>
+
+                  {/* Machine Quick Nav Switchers */}
+                  <div className="machine-nav-pills">
+                    <button
+                      type="button"
+                      className="btn-nav-machine"
+                      disabled={!hasPrevMachine}
+                      onClick={() => navigateMachine(-1)}
+                      title="Previous machine"
+                    >
+                      ‹ {prevMachineId || 'Prev'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-nav-machine"
+                      disabled={!hasNextMachine}
+                      onClick={() => navigateMachine(1)}
+                      title="Next machine"
+                    >
+                      {nextMachineId || 'Next'} ›
+                    </button>
+                  </div>
+
+                  <button className="slide-close-btn" onClick={closeModal} title="Close slide popup (Esc)">
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              {/* Telemetry packet metadata bar (Strictly from /api/common JSON root fields) */}
+              <div className="operator-meta-bar">
+                <div className="meta-item">
+                  <span className="meta-label">CUSTOMER</span>
+                  <span className="meta-val">{overview.customer || 'SPACE TEXTILES PRIVATE LIMITED'}</span>
+                  <span className="meta-sub">{overview.city || 'COIMBATORE'}</span>
+                </div>
+
+                <div className="meta-item">
+                  <span className="meta-label">MESSAGE ID</span>
+                  <span className="badge-active">{overview.msgId || '-'}</span>
+                </div>
+
+                <div className="meta-item">
+                  <span className="meta-label">DATA TIME</span>
+                  <span className="meta-val">{overview.dataTime || '-'}</span>
+                </div>
+
+                <div className="meta-item">
+                  <span className="meta-label">STD END MENDING</span>
+                  <span className="meta-val">
+                    {stdMendingTime} {stdMendingUnit} (Part {overview.part ?? 1}/{overview.parts ?? 1})
+                  </span>
+                </div>
+              </div>
+
+              {/* 3 Sub-Tabs Navigation strictly matching JSON payload */}
+              <div className="modal-tabs-nav">
+                <button
+                  className={`tab-btn ${activeModalTab === 'overview' ? 'active' : ''}`}
+                  onClick={() => setActiveModalTab('overview')}
+                >
+                  Overview
+                </button>
+                <button
+                  className={`tab-btn ${activeModalTab === 'end_breaks' ? 'active' : ''}`}
+                  onClick={() => setActiveModalTab('end_breaks')}
+                >
+                  End breaks ({selectedMachineDetail?.machine?.totalEndBreakCount ?? 0})
+                </button>
+                <button
+                  className={`tab-btn ${activeModalTab === 'speed_production' ? 'active' : ''}`}
+                  onClick={() => setActiveModalTab('speed_production')}
+                >
+                  Hour-wise production & speed
+                </button>
+              </div>
+            </div>
+
+            {/* SLIDE POPUP BODY (SCROLLABLE) */}
+            <div className="slide-popup-body">
+              {detailLoading && !selectedMachineDetail && (
+                <div className="modal-loading-placeholder">
+                  <div className="spinner-sm"></div>
+                  <span>Loading live telemetry for {activeMachineId}...</span>
+                </div>
+              )}
+
+              {selectedMachineDetail && (
+                <>
+                  {/* TAB 1: OVERVIEW */}
+                  {activeModalTab === 'overview' && (
+                    <div className="tab-pane">
+                      {/* Telemetry status banner */}
+                      <div className={`attention-banner ${selectedMachineDetail.overview?.hasAttention ? 'alert' : ''}`}>
+                        <div className="attention-title">Telemetry status</div>
+                        <div className="attention-desc">
+                          {selectedMachineDetail.overview?.needsAttention || 'RUN · Normal operation'}
+                        </div>
+                      </div>
+
+                      <div className="overview-grid">
+                        {/* Left: Key Figures (9 clean live tiles strictly from JSON) */}
+                        <div className="key-figures-card">
+                          <h3 className="card-heading">Key figures ({selectedMachineDetail.machine.machineId})</h3>
+                          <div className="key-tiles-grid">
+                            {/* 1: End breaks */}
+                            <div className="key-tile">
+                              <div className="tile-label">TOTAL END BREAKS</div>
+                              <div className="tile-number">
+                                {selectedMachineDetail.overview?.keyFigures?.endBreaks?.value ??
+                                  selectedMachineDetail.machine.totalEndBreakCount}
+                              </div>
+                              <div className="tile-sub">
+                                {selectedMachineDetail.overview?.keyFigures?.endBreaks?.sub ??
+                                  selectedMachineDetail.machine.breakSidesDisplay}
+                              </div>
+                            </div>
+
+                            {/* 2: Spindle Speed Current */}
+                            <div className="key-tile">
+                              <div className="tile-label">SPINDLE SPEED</div>
+                              <div className="tile-number">
+                                {selectedMachineDetail.overview?.keyFigures?.averageRpm?.value ??
+                                  `${(selectedMachineDetail.machine.spindleSpeedCurrent || 0).toLocaleString()} ${selectedMachineDetail.machine.spindleSpeedUnit || 'rpm'}`}
+                              </div>
+                              <div className="tile-sub">
+                                {selectedMachineDetail.overview?.keyFigures?.averageRpm?.sub ??
+                                  `runStatus: ${selectedMachineDetail.machine.runStatus}`}
+                              </div>
+                            </div>
+
+                            {/* 3: Yarn Count */}
+                            <div className="key-tile">
+                              <div className="tile-label">YARN COUNT</div>
+                              <div className="tile-number">
+                                {selectedMachineDetail.overview?.keyFigures?.yarnCount?.value ??
+                                  selectedMachineDetail.machine.count}
+                              </div>
+                              <div className="tile-sub">
+                                {selectedMachineDetail.overview?.keyFigures?.yarnCount?.sub ??
+                                  `Shift ${overview.shift} · ${overview.shiftDate}`}
+                              </div>
+                            </div>
+
+                            {/* 4: Shift Production */}
+                            <div className="key-tile">
+                              <div className="tile-label">SHIFT PRODUCTION</div>
+                              <div className="tile-number">
+                                {selectedMachineDetail.overview?.keyFigures?.productionYield?.value ??
+                                  `${selectedMachineDetail.machine.shiftProduction} ${selectedMachineDetail.machine.productionUnit || 'kg'}`}
+                              </div>
+                              <div className="tile-sub">
+                                {selectedMachineDetail.overview?.keyFigures?.productionYield?.sub ??
+                                  `Target: ${selectedMachineDetail.machine.shiftTargetProduction} ${selectedMachineDetail.machine.productionUnit || 'kg'}`}
+                              </div>
+                            </div>
+
+                            {/* 5: Shift Waste */}
+                            <div className="key-tile">
+                              <div className="tile-label">SHIFT WASTE</div>
+                              <div className="tile-number">
+                                {selectedMachineDetail.machine.shiftWaste}
+                                {selectedMachineDetail.machine.wasteUnit || '%'}
+                              </div>
+                              <div className="tile-sub">Waste percentage this shift</div>
+                            </div>
+
+                            {/* 6: End Mending (L & R) */}
+                            <div className="key-tile">
+                              <div className="tile-label">END MENDING (L / R)</div>
+                              <div className="tile-number text-primary">
+                                {selectedMachineDetail.overview?.keyFigures?.endMending?.value ?? '-'}
+                              </div>
+                              <div className="tile-sub">
+                                {selectedMachineDetail.overview?.keyFigures?.endMending?.sub ??
+                                  `Std: ${stdMendingTime} ${stdMendingUnit}`}
+                              </div>
+                            </div>
+
+                            {/* 7: Run Status */}
+                            <div className="key-tile">
+                              <div className="tile-label">RUN STATUS</div>
+                              <div className="tile-number text-primary">
+                                {selectedMachineDetail.machine.runStatus}
+                              </div>
+                              <div className="tile-sub">{selectedMachineDetail.machine.statusBadge}</div>
+                            </div>
+
+                            {/* 8: Hour-Wise Logged */}
+                            <div className="key-tile">
+                              <div className="tile-label">HOURS LOGGED</div>
+                              <div className="tile-number">
+                                {selectedMachineDetail.machine.hourWiseProduction?.length || 0} /{' '}
+                                {overview.totalShiftHours ?? 8} hrs
+                              </div>
+                              <div className="tile-sub">hourWiseProduction entries</div>
+                            </div>
+
+                            {/* 9: Target Achievement */}
+                            <div className="key-tile">
+                              <div className="tile-label">TARGET ACHIEVED</div>
+                              <div className="tile-number text-success">
+                                {selectedMachineDetail.machine.yieldPercent ?? 0}%
+                              </div>
+                              <div className="tile-sub">
+                                of {selectedMachineDetail.machine.shiftTargetProduction}{' '}
+                                {selectedMachineDetail.machine.productionUnit || 'kg'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Right: Hour-wise production breakdown donut */}
+                        <div className="donut-card">
+                          <h3 className="card-heading">Hour-wise production breakdown</h3>
+                          <p className="card-subhead">
+                            Production ({selectedMachineDetail.machine.productionUnit || 'kg'}) per hour this shift
+                          </p>
+
+                          <div className="donut-display-area">
+                            <div
+                              className="donut-chart"
+                              style={{
+                                background: getDonutConicGradient(
+                                  selectedMachineDetail.overview?.operatingModeBreakdown?.modes
+                                )
+                              }}
+                            >
+                              <div className="donut-hole">
+                                <span className="donut-total-val">
+                                  {selectedMachineDetail.machine.shiftProduction}
+                                </span>
+                                <span className="donut-total-lbl">
+                                  TOTAL {(selectedMachineDetail.machine.productionUnit || 'KG').toUpperCase()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Hours list */}
+                          <div className="mode-legend-list">
+                            {(selectedMachineDetail.machine.hourWiseProduction || []).map((h, idx) => {
+                              const colors = ['#2563eb', '#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1'];
+                              return (
+                                <div key={h.hour} className="mode-legend-row">
+                                  <div className="mode-label-group">
+                                    <span
+                                      className="mode-square"
+                                      style={{ background: colors[idx % colors.length] }}
+                                    ></span>
+                                    <span>Hour {h.hour}</span>
+                                  </div>
+                                  <span className="mode-mins">
+                                    {h.production} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Interactive Spindle Map preview inside Overview */}
+                      {(() => {
+                        const leftBreaks = selectedMachineDetail.endBreaks?.leftSide || [];
+                        const rightBreaks = selectedMachineDetail.endBreaks?.rightSide || [];
+                        const maxSpindle = getMaxSpindleForMachine(leftBreaks, rightBreaks);
+                        return (
+                          <div className="spindle-map-container" style={{ marginTop: '1.25rem' }}>
+                            <div className="spindle-map-table-header">
+                              <div className="col-machine">FRAME SPINDLES</div>
+                              <div className="col-side">LEFT SIDE (L)</div>
+                              <div className="col-side">RIGHT SIDE (R)</div>
+                              <div className="col-breaks">BREAKS</div>
+                            </div>
+                            <div
+                              className={`spindle-map-row ${
+                                selectedMachineDetail.machine.runStatus === 'RUN'
+                                  ? 'status-running'
+                                  : selectedMachineDetail.machine.runStatus === 'STOP'
+                                  ? 'status-stopped'
+                                  : 'status-doffing'
+                              }`}
+                            >
+                              <div className="col-machine">
+                                <span
+                                  className={`status-dot ${
+                                    selectedMachineDetail.machine.runStatus === 'RUN'
+                                      ? 'running'
+                                      : selectedMachineDetail.machine.runStatus === 'DOFF'
+                                      ? 'doffing'
+                                      : 'stopped'
+                                  }`}
+                                ></span>
+                                <strong>{selectedMachineDetail.machine?.machineId}</strong>
+                              </div>
+                              <div className="col-side spindle-ticks">
+                                {visualTicks.map(tick => {
+                                  const info = getTickBreakInfo(leftBreaks, tick, maxSpindle);
+                                  return (
+                                    <div
+                                      key={`m-L-${tick}`}
+                                      className={`spindle-tick ${info.broken ? 'broken' : ''}`}
+                                      title={`Left (L) · ${info.label}`}
+                                    ></div>
+                                  );
+                                })}
+                              </div>
+                              <div className="col-side spindle-ticks">
+                                {visualTicks.map(tick => {
+                                  const info = getTickBreakInfo(rightBreaks, tick, maxSpindle);
+                                  return (
+                                    <div
+                                      key={`m-R-${tick}`}
+                                      className={`spindle-tick ${info.broken ? 'broken' : ''}`}
+                                      title={`Right (R) · ${info.label}`}
+                                    ></div>
+                                  );
+                                })}
+                              </div>
+                              <div className="col-breaks">
+                                <span className="breaks-num">
+                                  {selectedMachineDetail.machine?.totalEndBreakCount ?? 0}
+                                </span>
+                                <span className="breaks-detail">
+                                  {selectedMachineDetail.machine?.breakSidesDisplay}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* TAB 2: END BREAKS (Left Side L & Right Side R from sides[]) */}
+                  {activeModalTab === 'end_breaks' && (
+                    <div className="tab-pane">
+                      <div className="end-breaks-tables-grid">
+                        {/* Left Side Table */}
+                        <div className="breaks-table-card">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                            <h4 className="table-card-title" style={{ margin: 0 }}>
+                              Left Side (L) End Breaks ({selectedMachineDetail.endBreaks?.leftSide?.length || 0})
+                            </h4>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                              endMendingTime: {selectedMachineDetail.machine.sides?.find(s => s.side === 'L')?.endMendingTime ?? 0}{' '}
+                              {selectedMachineDetail.machine.sides?.find(s => s.side === 'L')?.endMendingTimeUnit || 'min'}
+                            </span>
+                          </div>
+                          <div className="table-scroll-container">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>SIDE</th>
+                                  <th>SPINDLE NO</th>
+                                  <th>END MENDING TIME</th>
+                                  <th>CREATED TIME</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(selectedMachineDetail.endBreaks?.leftSide || []).map((b, i) => (
+                                  <tr key={`lb-${b.spindleNo}-${i}`}>
+                                    <td><strong>L</strong></td>
+                                    <td><strong>Spindle #{b.spindleNo}</strong></td>
+                                    <td>
+                                      <span style={{ color: '#0369a1', fontWeight: 700 }}>
+                                        {b.durationMinutes} {stdMendingUnit}
+                                      </span>
+                                    </td>
+                                    <td>{b.timestamp}</td>
+                                  </tr>
+                                ))}
+                                {(!selectedMachineDetail.endBreaks?.leftSide ||
+                                  selectedMachineDetail.endBreaks.leftSide.length === 0) && (
+                                  <tr>
+                                    <td colSpan={4} className="empty-cell">
+                                      No end breaks recorded on Left Side (L).
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Right Side Table */}
+                        <div className="breaks-table-card">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                            <h4 className="table-card-title" style={{ margin: 0 }}>
+                              Right Side (R) End Breaks ({selectedMachineDetail.endBreaks?.rightSide?.length || 0})
+                            </h4>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                              endMendingTime: {selectedMachineDetail.machine.sides?.find(s => s.side === 'R')?.endMendingTime ?? 0}{' '}
+                              {selectedMachineDetail.machine.sides?.find(s => s.side === 'R')?.endMendingTimeUnit || 'min'}
+                            </span>
+                          </div>
+                          <div className="table-scroll-container">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>SIDE</th>
+                                  <th>SPINDLE NO</th>
+                                  <th>END MENDING TIME</th>
+                                  <th>CREATED TIME</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(selectedMachineDetail.endBreaks?.rightSide || []).map((b, i) => (
+                                  <tr key={`rb-${b.spindleNo}-${i}`}>
+                                    <td><strong>R</strong></td>
+                                    <td><strong>Spindle #{b.spindleNo}</strong></td>
+                                    <td>
+                                      <span style={{ color: '#0369a1', fontWeight: 700 }}>
+                                        {b.durationMinutes} {stdMendingUnit}
+                                      </span>
+                                    </td>
+                                    <td>{b.timestamp}</td>
+                                  </tr>
+                                ))}
+                                {(!selectedMachineDetail.endBreaks?.rightSide ||
+                                  selectedMachineDetail.endBreaks.rightSide.length === 0) && (
+                                  <tr>
+                                    <td colSpan={4} className="empty-cell">
+                                      No end breaks recorded on Right Side (R).
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 3: HOUR-WISE PRODUCTION & SPEED (Strictly from hourWiseProduction & machine telemetry) */}
+                  {activeModalTab === 'speed_production' && (
+                    <div className="tab-pane">
+                      <div className="speed-sensors-grid">
+                        {/* Hour-Wise Production Bar Chart Card */}
+                        <div className="curve-card">
+                          <div className="curve-header">
+                            <div>
+                              <h4 className="card-heading">
+                                Hour-Wise Production ({selectedMachineDetail.machine.machineId})
+                              </h4>
+                              <p className="card-subhead">
+                                Live <code style={{ fontSize: '0.75rem' }}>hourWiseProduction</code> values ({selectedMachineDetail.machine.productionUnit || 'kg'}) across Shift {overview.shift}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="chart-bars-container" style={{ marginTop: '1.25rem', height: '180px' }}>
+                            {(selectedMachineDetail.machine.hourWiseProduction || []).map(item => {
+                              const maxMachHr = Math.max(
+                                ...(selectedMachineDetail.machine.hourWiseProduction || []).map(h => h.production),
+                                10
+                              );
+                              return (
+                                <div key={item.hour} className="chart-bar-col">
+                                  <div className="bar-value">
+                                    {(item.production ?? 0).toFixed(2)} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                  </div>
+                                  <div className="bar-track">
+                                    <div
+                                      className={`bar-fill ${item.production === maxMachHr && item.production > 0 ? 'peak' : ''}`}
+                                      style={{ height: `${Math.min(100, ((item.production ?? 0) / maxMachHr) * 100)}%` }}
+                                    ></div>
+                                  </div>
+                                  <div className="bar-label">Hour {item.hour}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="curve-stats-footer" style={{ marginTop: '1rem' }}>
+                            <div className="cstat-item">
+                              <span className="cstat-lbl">CURRENT RPM</span>
+                              <span className="cstat-val">
+                                {(selectedMachineDetail.machine?.spindleSpeedCurrent || 0).toLocaleString()}{' '}
+                                {selectedMachineDetail.machine?.spindleSpeedUnit || 'rpm'}
+                              </span>
+                            </div>
+                            <div className="cstat-item">
+                              <span className="cstat-lbl">SHIFT PRODUCTION</span>
+                              <span className="cstat-val">
+                                {selectedMachineDetail.machine?.shiftProduction} /{' '}
+                                {selectedMachineDetail.machine?.shiftTargetProduction}{' '}
+                                {selectedMachineDetail.machine?.productionUnit || 'kg'}
+                              </span>
+                            </div>
+                            <div className="cstat-item">
+                              <span className="cstat-lbl">SHIFT WASTE</span>
+                              <span className="cstat-val">
+                                {selectedMachineDetail.machine?.shiftWaste}
+                                {selectedMachineDetail.machine?.wasteUnit || '%'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Hour-Wise Production Table */}
+                        <div className="devices-bounds-card">
+                          <h4 className="card-heading">Hour-Wise Production Log</h4>
+                          <p className="card-subhead">
+                            Breakdown of {selectedMachineDetail.machine.hourWiseProduction?.length || 0} logged hours out of {overview.totalShiftHours ?? 8} total shift hours
+                          </p>
+
+                          <div className="table-scroll-container">
+                            <table className="data-table">
+                              <thead>
+                                <tr>
+                                  <th>HOUR</th>
+                                  <th>PRODUCTION</th>
+                                  <th>CUMULATIVE</th>
+                                  <th>% OF SHIFT PROD</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  let cumulative = 0;
+                                  const totalShiftProd = selectedMachineDetail.machine.shiftProduction || 1;
+                                  return (selectedMachineDetail.machine.hourWiseProduction || []).map(h => {
+                                    cumulative = Number((cumulative + (h.production || 0)).toFixed(2));
+                                    const pct = Math.round(((h.production || 0) / totalShiftProd) * 100);
+                                    return (
+                                      <tr key={h.hour}>
+                                        <td><strong>Hour {h.hour}</strong></td>
+                                        <td>
+                                          <strong>
+                                            {h.production} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                          </strong>
+                                        </td>
+                                        <td>
+                                          {cumulative} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                        </td>
+                                        <td>{pct}%</td>
+                                      </tr>
+                                    );
+                                  });
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
   );
 };
+export default IotMachineDashboard;

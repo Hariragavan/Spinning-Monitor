@@ -12,6 +12,8 @@ export interface Machine {
   cleaningIntervalDays?: number;
   expectedProductionOutput?: number;
   expectedRuntimeMinutes?: number;
+  expectedOutput?: number;
+  expectedRunDurationMinutes?: number;
   expectedRoundsPerHour?: number;
   roundDeviceSequence?: string[];
 }
@@ -72,6 +74,7 @@ export interface Shift {
   startTime: string;
   endTime: string;
   overnight?: boolean;
+  active?: boolean;
 }
 
 export interface MaintenanceEntry {
@@ -97,9 +100,10 @@ export interface MachineConfiguration {
 
 export interface DeviceHealth {
   deviceId: string;
-  machineId: string;
+  machineId?: string;
+  machineName?: string;
   lastSeen: string;
-  status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
+  status?: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
   rpm?: number;
   minRpm?: number;
   maxRpm?: number;
@@ -108,8 +112,9 @@ export interface DeviceHealth {
   expectedRPM?: number;
   batteryLevel?: number;
   signalStrength?: number;
-  position?: string;
+  position?: string | number;
   side?: string;
+  employeeId?: string;
   assignedEmployeeId?: string;
   assignedEmployeeName?: string;
 }
@@ -140,12 +145,22 @@ export interface EmployeeMetric {
   totalRounds?: number;
   expectedRounds?: number;
   avgGapMinutes: number;
+  longestGapMinutes?: number;
   performancePercent?: number;
   idleMinutes?: number;
   lastTapTime?: string | null;
+  lastActiveTime?: string;
   activeStatus?: 'ACTIVE' | 'IDLE' | 'ABSENT';
   taps?: EmployeeTapDetail[];
   hourly?: EmployeeHourlyMetric[];
+  date?: string;
+  shift?: string;
+  recentTaps?: Array<{
+    time: string;
+    stationId: string;
+    status: string;
+    gapMinutes: number;
+  }>;
 }
 
 export interface MachineMetric {
@@ -217,7 +232,8 @@ export interface ReportResponse {
 }
 
 export interface ProductionEntryInput {
-  date: string;
+  date?: string;
+  shiftDate?: string;
   shiftId?: string;
   machineId?: string;
   employeeId?: string;
@@ -235,8 +251,9 @@ export interface ProductionEntryInput {
 export interface ProductionReportRow {
   entryId: string;
   date: string;
+  shiftDate?: string;
   enteredAt: string;
-  shiftId: string;
+  shiftId?: string;
   shiftName?: string;
   machineId: string;
   machineName?: string;
@@ -294,6 +311,14 @@ export interface SpinfoPerformanceAndCare {
   productionYieldKg?: number;
   yieldAchievedPercent?: number;
   targetProductionKg?: number;
+  avgShiftWaste?: number;
+  minShiftWaste?: number;
+  maxShiftWaste?: number;
+  avgEndMendingTime?: number;
+  avgLeftMendingTime?: number;
+  avgRightMendingTime?: number;
+  stdEndMendingTime?: number;
+  stdEndMendingTimeUnit?: string;
   totalRoundsScheduled?: number;
   skippedRounds?: number;
   incompleteRounds?: number;
@@ -306,6 +331,7 @@ export interface SpinfoPerformanceAndCare {
 
 export interface SpinfoHourlyProductionItem {
   hour: any;
+  hourNum?: number;
   timeLabel?: string;
   production: number;
   target?: number;
@@ -319,6 +345,8 @@ export interface SpinfoHourlyProduction {
   shiftTotalKg?: number;
   peakHour?: string;
   avgPerHourKg?: number;
+  loggedHoursCount?: number;
+  totalShiftHours?: number;
 }
 
 export interface SpinfoEndBreakItem {
@@ -354,8 +382,14 @@ export interface SpinfoMachineSession {
   taps: SpinfoMachineSessionTap[];
 }
 
+export interface SpinfoHourWiseProductionItem {
+  hour: number;
+  production: number;
+}
+
 export interface SpinfoMachineItem {
   machineId: string;
+  machine?: string;
   machineName?: string;
   statusBadge?: string;
   runStatus: 'RUN' | 'STOP' | 'DOFF' | 'OFFLINE';
@@ -363,25 +397,31 @@ export interface SpinfoMachineItem {
   spindleSpeedCurrent: number;
   spindleSpeedUnit: string;
   speedStatus: string;
-  speedBounds: { min: number; max: number };
+  speedBounds: { min: number; max: number; current?: number; inBounds?: boolean };
   shiftWaste: number;
   wasteUnit: string;
   shiftProduction: number;
   shiftTargetProduction: number;
   productionUnit: string;
+  hourWiseProduction?: SpinfoHourWiseProductionItem[];
   totalEndBreakCount: number;
   yieldPercent?: number;
   breakSidesDisplay?: string;
+  mendingSidesDisplay?: string;
+  avgEndMendingTime?: number;
   sides: SpinfoMachineSide[];
-  operator: {
+  operator?: {
+    id?: string;
     name: string;
     badge: string;
     status?: string;
     session?: string;
+    sessionStatus?: string;
+    lastSeenMinutesAgo?: number;
     lastTap?: string;
     lastCardTap?: string;
   };
-  rounds: {
+  rounds?: {
     completed: number;
     expected?: number;
     total?: number;
@@ -389,15 +429,17 @@ export interface SpinfoMachineItem {
     skipped?: number;
     incomplete?: number;
   };
-  sensorBounds: {
+  sensorBounds?: {
     status?: string;
     breaches?: number;
+    breachCount?: number;
     inBounds?: number;
     total?: number;
   };
-  cleaning: {
+  cleaning?: {
     status: string;
     nextDue?: string;
+    lastDate?: string;
     nextDate?: string;
     intervalDays?: number;
   };
@@ -502,9 +544,21 @@ export interface SpinfoMachineDetailResponse {
 
 export interface SpinfoOverviewResponse {
   success: boolean;
+  source?: string;
+  customer?: string;
+  city?: string;
+  msgId?: string;
   dataTime: string;
   shiftDate: string;
   shift: number;
+  totalShiftHours?: number;
+  stdEndMendingTime?: number;
+  stdEndMendingTimeUnit?: string;
+  part?: number;
+  parts?: number;
+  machineCount?: number;
+  availableDates?: string[];
+  availableShifts?: number[];
   frameStatus: SpinfoFrameStatus;
   performanceAndCare: SpinfoPerformanceAndCare;
   hourlyProduction: SpinfoHourlyProduction;
