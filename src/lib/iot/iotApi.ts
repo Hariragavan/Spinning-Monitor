@@ -17,14 +17,6 @@ import {
   MachineRoundPerformance
 } from '@/types/iot';
 import {
-  SAMPLE_EMPLOYEES,
-  SAMPLE_MACHINES,
-  SAMPLE_MAPPINGS,
-  SAMPLE_DEVICES,
-  SAMPLE_SHIFTS,
-  SAMPLE_MAINTENANCE,
-  SAMPLE_PRODUCTION_ENTRIES,
-  SAMPLE_EMPLOYEE_METRICS,
   getSampleSpinfoOverview,
   getSampleMachineDetail
 } from './sampleIotData';
@@ -49,11 +41,20 @@ function setStored<T>(key: string, value: T): void {
   } catch {}
 }
 
+export const IOT_REMOTE_API_BASE =
+  process.env.NEXT_PUBLIC_IOT_REMOTE_API ||
+  process.env.IOT_REMOTE_API ||
+  'https://iot-machine-backend.onrender.com/api';
+
 async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: T): Promise<T> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch(url, { ...init, signal: controller.signal });
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const headers: Record<string, string> = {
+      'X-Company-Slug': 'scm',
+      ...((init?.headers as Record<string, string>) || {})
+    };
+    const res = await fetch(url, { ...init, headers, signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
@@ -64,7 +65,7 @@ async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: 
 }
 
 export const iotApi = {
-  baseUrl: '/api/iot',
+  baseUrl: IOT_REMOTE_API_BASE,
 
   // 1. Spinfo Overview & Machine Details
   async getSpinfoOverview(filter?: {
@@ -91,8 +92,20 @@ export const iotApi = {
       machines: []
     };
 
+    // First try remote backend route if available
+    try {
+      const res = await fetch(`${this.baseUrl}/spinfo/overview?${params.toString()}`, {
+        headers: { 'X-Company-Slug': 'scm' }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data && json.data.frameStatus) return json.data;
+      }
+    } catch {}
+
+    // Fallback to local server endpoint which generates overview from live common stream or local DB
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
-      `${this.baseUrl}/spinfo/overview?${params.toString()}`,
+      `/api/iot/spinfo/overview?${params.toString()}`,
       { method: 'GET' },
       { success: true, data: emptyFallback }
     );
@@ -115,8 +128,19 @@ export const iotApi = {
     if (filter?.operator) params.set('operator', filter.operator);
 
     const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
+
+    try {
+      const res = await fetch(`${this.baseUrl}/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`, {
+        headers: { 'X-Company-Slug': 'scm' }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) return json.data;
+      }
+    } catch {}
+
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
-      `${this.baseUrl}/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
+      `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
       { method: 'GET' },
       { success: true, data: fallback }
     );
@@ -126,7 +150,7 @@ export const iotApi = {
   async syncSpinfoData(): Promise<SpinfoOverviewResponse> {
     const fallback = getSampleSpinfoOverview();
     const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
-      `${this.baseUrl}/spinfo/sync`,
+      `/api/iot/spinfo/sync`,
       { method: 'POST' },
       { success: true, data: fallback }
     );
@@ -155,8 +179,8 @@ export const iotApi = {
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
     if (filter?.machineId) params.set('machineId', filter.machineId);
     if (filter?.date) params.set('date', filter.date);
-    if (filter?.shiftName) params.set('shiftName', filter.shiftName);
-    if (filter?.shiftId) params.set('shiftId', filter.shiftId);
+    if (filter?.shiftName && filter.shiftName !== 'All shifts') params.set('shiftName', filter.shiftName);
+    if (filter?.shiftId && filter.shiftId.length === 24) params.set('shiftId', filter.shiftId);
     params.set('_t', String(Date.now()));
 
     let list = getStored<EmployeeMetric[]>('employee_metrics', []);
@@ -211,13 +235,13 @@ export const iotApi = {
       if (mappingId) {
         await fetch(`${this.baseUrl}/master/machine-mappings/${encodeURIComponent(mappingId)}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
           body: JSON.stringify(mapping)
         });
       } else {
         await fetch(`${this.baseUrl}/master/machine-mappings`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
           body: JSON.stringify(mapping)
         });
       }
@@ -230,7 +254,10 @@ export const iotApi = {
     const next = mappings.filter(m => m.mappingId !== mappingId);
     setStored('mappings', next);
     try {
-      await fetch(`${this.baseUrl}/master/machine-mappings/${encodeURIComponent(mappingId)}`, { method: 'DELETE' });
+      await fetch(`${this.baseUrl}/master/machine-mappings/${encodeURIComponent(mappingId)}`, {
+        method: 'DELETE',
+        headers: { 'X-Company-Slug': 'scm' }
+      });
     } catch {}
     return true;
   },
@@ -239,7 +266,7 @@ export const iotApi = {
     try {
       await fetch(`${this.baseUrl}/master/machines/${encodeURIComponent(machineId)}/config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
         body: JSON.stringify(config)
       });
     } catch {}
@@ -264,7 +291,7 @@ export const iotApi = {
     try {
       await fetch(`${this.baseUrl}/master/devices/${encodeURIComponent(deviceId)}/config`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
         body: JSON.stringify(payload)
       });
     } catch {}
@@ -278,7 +305,7 @@ export const iotApi = {
     try {
       await fetch(`${this.baseUrl}/master/employees/${encodeURIComponent(employeeId)}/assign-devices`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
         body: JSON.stringify({ deviceIds, employeeName })
       });
     } catch {}
@@ -292,12 +319,21 @@ export const iotApi = {
   // 5. Shifts
   async getShifts(): Promise<Shift[]> {
     const stored = getStored<Shift[]>('shifts', []);
-    const res = await fetchWithFallback<{ success: boolean; data: Shift[] }>(
+    const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
       `${this.baseUrl}/master/shifts`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    return res.data || stored;
+    const list = res.data || stored || [];
+    return list.map((s: any) => ({
+      shiftId: s.shiftId || s._id || '',
+      name: s.name || s.shiftName || '',
+      shiftName: s.name || s.shiftName || '',
+      startTime: s.startTime || '00:00',
+      endTime: s.endTime || '00:00',
+      overnight: Boolean(s.overnight),
+      active: s.active !== false
+    }));
   },
 
   async saveShift(shift: Omit<Shift, 'shiftId'>, shiftId?: string): Promise<Shift> {
@@ -315,13 +351,13 @@ export const iotApi = {
       if (shiftId) {
         await fetch(`${this.baseUrl}/master/shifts/${encodeURIComponent(shiftId)}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
           body: JSON.stringify(shift)
         });
       } else {
         await fetch(`${this.baseUrl}/master/shifts`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
           body: JSON.stringify(shift)
         });
       }
@@ -342,7 +378,10 @@ export const iotApi = {
     const next = shifts.filter(s => s.shiftId !== shiftId);
     setStored('shifts', next);
     try {
-      await fetch(`${this.baseUrl}/master/shifts/${encodeURIComponent(shiftId)}`, { method: 'DELETE' });
+      await fetch(`${this.baseUrl}/master/shifts/${encodeURIComponent(shiftId)}`, {
+        method: 'DELETE',
+        headers: { 'X-Company-Slug': 'scm' }
+      });
     } catch {}
     return true;
   },
@@ -350,12 +389,24 @@ export const iotApi = {
   // 6. Maintenance
   async getMaintenance(): Promise<MaintenanceEntry[]> {
     const stored = getStored<MaintenanceEntry[]>('maintenance', []);
-    const res = await fetchWithFallback<{ success: boolean; data: MaintenanceEntry[] }>(
+    const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
       `${this.baseUrl}/master/maintenance`,
       { method: 'GET' },
       { success: true, data: stored }
     );
-    return res.data || stored;
+    const list = res.data || stored || [];
+    return list.map((entry: any) => ({
+      maintenanceId: entry.maintenanceId || entry._id || '',
+      type: String(entry.type || 'preventive').toLowerCase() as any,
+      machineId: entry.machineId || '',
+      deviceId: entry.deviceId || undefined,
+      title: entry.title || undefined,
+      scheduledDate: entry.scheduledDate || entry.scheduledAt || '',
+      assignedPerson: entry.assignedPerson || entry.assigneeName || '',
+      status: String(entry.status || 'planned').toLowerCase() as any,
+      completionDate: entry.completionDate || entry.completedAt || undefined,
+      notes: entry.notes || undefined
+    }));
   },
 
   async saveMaintenance(entry: Omit<MaintenanceEntry, 'maintenanceId'>, maintenanceId?: string): Promise<MaintenanceEntry> {
@@ -369,18 +420,29 @@ export const iotApi = {
       updated = { maintenanceId: `mnt_${Date.now()}`, ...entry };
       setStored('maintenance', [updated, ...list]);
     }
+    const payload = {
+      type: String(entry.type || 'preventive').toUpperCase(),
+      machineId: entry.machineId,
+      deviceId: entry.deviceId || null,
+      title: `${String(entry.type || 'preventive').toUpperCase()} maintenance`,
+      scheduledAt: entry.scheduledDate,
+      assigneeName: entry.assignedPerson,
+      status: String(entry.status || 'planned').toUpperCase(),
+      completedAt: entry.completionDate || null,
+      notes: entry.notes || null
+    };
     try {
       if (maintenanceId) {
         await fetch(`${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(entry)
+          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
+          body: JSON.stringify(payload)
         });
       } else {
         await fetch(`${this.baseUrl}/master/maintenance`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(entry)
+          headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
+          body: JSON.stringify(payload)
         });
       }
     } catch {}
@@ -400,7 +462,10 @@ export const iotApi = {
     const next = list.filter(m => m.maintenanceId !== maintenanceId);
     setStored('maintenance', next);
     try {
-      await fetch(`${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`, { method: 'DELETE' });
+      await fetch(`${this.baseUrl}/master/maintenance/${encodeURIComponent(maintenanceId)}`, {
+        method: 'DELETE',
+        headers: { 'X-Company-Slug': 'scm' }
+      });
     } catch {}
     return true;
   },
@@ -421,7 +486,7 @@ export const iotApi = {
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
 
     const res = await fetchWithFallback<{ success: boolean; data: ProductionReportRow[] }>(
-      `${this.baseUrl}/production?${params.toString()}`,
+      `${this.baseUrl}/production/report?${params.toString()}`,
       { method: 'GET' },
       { success: true, data: list }
     );
@@ -448,11 +513,15 @@ export const iotApi = {
     };
     setStored('production_entries', [newEntry, ...list]);
     try {
-      await fetch(`${this.baseUrl}/production`, {
+      const res = await fetch(`${this.baseUrl}/production/entries`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
         body: JSON.stringify(entry)
       });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) return json.data;
+      }
     } catch {}
     return newEntry;
   },
@@ -462,9 +531,9 @@ export const iotApi = {
     const next = list.map(e => e.entryId === entryId ? { ...e, ...entry } : e);
     setStored('production_entries', next);
     try {
-      await fetch(`${this.baseUrl}/production/${encodeURIComponent(entryId)}`, {
+      await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Company-Slug': 'scm' },
         body: JSON.stringify(entry)
       });
     } catch {}
@@ -476,7 +545,10 @@ export const iotApi = {
     const next = list.filter(e => e.entryId !== entryId);
     setStored('production_entries', next);
     try {
-      await fetch(`${this.baseUrl}/production/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+      await fetch(`${this.baseUrl}/production/entries/${encodeURIComponent(entryId)}`, {
+        method: 'DELETE',
+        headers: { 'X-Company-Slug': 'scm' }
+      });
     } catch {}
     return true;
   },
@@ -491,8 +563,8 @@ export const iotApi = {
     const params = new URLSearchParams();
     if (filter?.machineId) params.set('machineId', filter.machineId);
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
-    if (filter?.fromDate) params.set('fromDate', filter.fromDate);
-    if (filter?.toDate) params.set('toDate', filter.toDate);
+    if (filter?.fromDate) params.set('from', filter.fromDate);
+    if (filter?.toDate) params.set('to', filter.toDate);
 
     const fallback: MachineRoundPerformance = {
       rounds: [],
@@ -503,12 +575,61 @@ export const iotApi = {
       averageGapMinutes: 0
     };
 
-    const res = await fetchWithFallback<{ success: boolean; data: MachineRoundPerformance }>(
-      `${this.baseUrl}/reports/round-performance?${params.toString()}`,
-      { method: 'GET' },
-      { success: true, data: fallback }
-    );
-    return res.data || fallback;
+    try {
+      const res = await fetch(`${this.baseUrl}/dashboard/machine?${params.toString()}`, {
+        headers: { 'X-Company-Slug': 'scm' }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const payload = json?.data?.roundGaps ?? json?.roundGaps ?? json?.data ?? {};
+        const rawRounds = Array.isArray(payload.rounds) ? payload.rounds : [];
+        const rawDeviceGaps = Array.isArray(payload.deviceGaps) ? payload.deviceGaps : [];
+        const rawEmployees = Array.isArray(payload.employees) ? payload.employees : [];
+
+        return {
+          rounds: rawRounds.map((r: any, idx: number) => ({
+            roundNumber: Number(r.roundNumber || r.roundNo || idx + 1),
+            employeeId: r.employeeId || null,
+            employeeName: r.employeeName || null,
+            startedAt: r.startedAt || null,
+            completedAt: r.completedAt || null,
+            durationMinutes: Number(r.durationMinutes || 0),
+            transitions: Array.isArray(r.transitions) ? r.transitions.map((t: any) => ({
+              fromDeviceId: t.fromDeviceId || null,
+              toDeviceId: t.toDeviceId || null,
+              gapMinutes: Number(t.gapMinutes || 0),
+              roundNumber: Number(t.roundNumber || idx + 1),
+              occurredAt: t.occurredAt || null,
+              employeeId: t.employeeId || null,
+              employeeName: t.employeeName || null,
+              label: [t.fromDeviceId, t.toDeviceId].filter(Boolean).join(' -> ') || 'Transition'
+            })) : []
+          })),
+          deviceGaps: rawDeviceGaps.map((g: any, idx: number) => ({
+            fromDeviceId: g.fromDeviceId || null,
+            toDeviceId: g.toDeviceId || null,
+            gapMinutes: Number(g.gapMinutes || 0),
+            roundNumber: Number(g.roundNumber || idx + 1),
+            occurredAt: g.occurredAt || null,
+            employeeId: g.employeeId || null,
+            employeeName: g.employeeName || null,
+            label: [g.fromDeviceId, g.toDeviceId].filter(Boolean).join(' -> ') || `Transition ${idx + 1}`
+          })),
+          employees: rawEmployees.map((e: any) => ({
+            employeeId: e.employeeId || null,
+            employeeName: e.employeeName || null,
+            completedRounds: Number(e.completedRounds || 0),
+            totalGapMinutes: Number(e.totalGapMinutes || 0),
+            averageGapMinutes: Number(e.averageGapMinutes || 0)
+          })),
+          totalCompletedRounds: Number(payload.totalCompletedRounds || payload.completedRounds || rawRounds.length),
+          totalGapMinutes: Number(payload.totalGapMinutes || 0),
+          averageGapMinutes: Number(payload.averageGapMinutes || 0)
+        };
+      }
+    } catch {}
+
+    return fallback;
   },
 
   // 9. Analytical Reports
@@ -521,20 +642,28 @@ export const iotApi = {
     if (filter.from) params.set('from', filter.from);
     if (filter.to) params.set('to', filter.to);
 
-    try {
-      const res = await fetch(`${this.baseUrl}/reports?${params.toString()}`);
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {}
-
     const defaultTitles: Record<string, string> = {
-      rpm_efficiency: 'RPM & Machine Efficiency Report',
+      rpm_efficiency: 'Spinning & Machine Efficiency Report',
       employee_productivity: 'Employee Productivity & Round Gap Report',
       downtime_modes: 'Machine Downtime & Mode Analysis Report',
       duty_coverage: 'Device & Employee Duty Coverage Report',
       cleaning_maintenance: 'Machine Cleaning & Maintenance Schedule Report'
     };
+
+    try {
+      const res = await fetch(`${this.baseUrl}/master/reports?${params.toString()}`, {
+        headers: { 'X-Company-Slug': 'scm' }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return {
+          success: json.success ?? true,
+          reportType: json.reportType || filter.reportType,
+          title: json.title || defaultTitles[filter.reportType] || 'Database Analytical Reports',
+          data: json.data || []
+        };
+      }
+    } catch {}
 
     return {
       success: true,

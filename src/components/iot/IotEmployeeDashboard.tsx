@@ -78,14 +78,6 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
       setMachines(machs || []);
       setShifts(shfs || []);
       setMappings(maps || []);
-
-      if (machs && machs.length > 0 && !machineId) {
-        setMachineId(machs[0].machineId);
-      }
-      if (shfs && shfs.length > 0 && !shiftName) {
-        setShiftName(shfs[0].name || shfs[0].shiftName || 'Shift 1');
-        setShiftId(shfs[0].shiftId);
-      }
     } catch (err) {
       console.error('Failed to load masters:', err);
     }
