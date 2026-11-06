@@ -1223,7 +1223,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto mt-4 space-y-5 relative">
+    <div className="w-full mt-2 space-y-5 relative">
       {/* Top-Right Notification Message Toast */}
       {toast && (
         <div className="fixed top-5 right-5 z-[99999] max-w-sm w-full animate-in slide-in-from-top-3 fade-in duration-300">

@@ -281,7 +281,7 @@ export const CountMaster: React.FC<CountMasterProps> = ({
   const quick40sResult = (testGpsNum * factorForCalc).toFixed(2);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 w-full animate-in fade-in duration-300">
       {/* HEADER SECTION (Without Date Picker) */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
         <div>

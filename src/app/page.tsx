@@ -2559,7 +2559,7 @@ export default function Home() {
 
       case 'counts':
         return (
-          <div className="space-y-4">
+          <div className="space-y-4 w-full">
             <CountMaster
               conversions={countConversions}
               onSave={saveCountConversion}
@@ -2576,7 +2576,7 @@ export default function Home() {
 
       case 'incentive-master':
         return (
-          <div className="space-y-4">
+          <div className="space-y-4 w-full">
             <IncentiveMaster
               rules={incentiveRules}
               onUpdate={updateIncentiveRulesOnline}
@@ -2591,7 +2591,7 @@ export default function Home() {
 
       case 'workers':
         return (
-          <div className="space-y-4">
+          <div className="space-y-4 w-full">
             <WorkerMaster
               workers={workers}
               currentShed={selectedShed}
@@ -2606,7 +2606,7 @@ export default function Home() {
 
       case 'machine-master':
         return (
-          <div className="space-y-4">
+          <div className="space-y-4 w-full">
             <MachineMaster
               machines={machines}
               currentShed={selectedShed}
@@ -2684,7 +2684,7 @@ export default function Home() {
 
       case 'settings':
         return (
-          <div className="bg-white p-6 sm:p-10 rounded-[3rem] border border-stone-200 shadow-sm max-w-5xl mx-auto space-y-10">
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-sm w-full space-y-8">
             {/* System Settings Header & Save Action */}
             <div className="bg-stone-50/70 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

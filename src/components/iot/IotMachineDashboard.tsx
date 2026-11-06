@@ -512,50 +512,43 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               <span className="field-icon">📅</span>
               <span>To Date</span>
             </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <input
-                type="date"
-                value={selectedToDate || overview.shiftDate || ''}
-                onChange={e => {
-                  const val = e.target.value;
-                  setSelectedToDate(val);
-                  setUserChangedDate(Boolean(val));
-                }}
-                className="date-input"
-                suppressHydrationWarning
-              />
-              <button
-                type="button"
-                className="btn-small-refresh"
-                onClick={() => loadOverview(true)}
-                disabled={loading}
-                title="Refresh live IoT telemetry"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '8px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  color: '#2563eb',
-                  cursor: 'pointer',
-                  fontSize: '1.15rem',
-                  fontWeight: 'bold',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                  flexShrink: 0
-                }}
-              >
-                <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
-              </button>
-            </div>
+            <input
+              type="date"
+              value={selectedToDate || overview.shiftDate || ''}
+              onChange={e => {
+                const val = e.target.value;
+                setSelectedToDate(val);
+                setUserChangedDate(Boolean(val));
+              }}
+              className="date-input"
+              suppressHydrationWarning
+            />
           </div>
+
+          <button
+            className="btn btn-primary"
+            style={{
+              height: '36px',
+              fontSize: '0.78rem',
+              padding: '0 0.85rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              fontWeight: 700,
+              borderRadius: '8px'
+            }}
+            onClick={() => loadOverview(true)}
+            disabled={loading}
+            title="Click to instantly refresh live telemetry from /api/common"
+          >
+            <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
+            <span>Quick Refresh</span>
+          </button>
 
           {userChangedDate && (
             <button
               className="btn"
-              style={{ height: '38px', fontSize: '0.75rem', padding: '0 0.75rem' }}
+              style={{ height: '36px', fontSize: '0.75rem', padding: '0 0.75rem' }}
               onClick={() => {
                 setUserChangedDate(false);
                 setSelectedFromDate(overview.shiftDate || '');
@@ -566,16 +559,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               Latest Stream
             </button>
           )}
-
-          <button
-            className="btn btn-primary"
-            onClick={() => loadOverview(true)}
-            disabled={loading}
-            title="Click to instantly refresh live telemetry from /api/common"
-          >
-            <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
-            <span>Quick Refresh</span>
-          </button>
 
           <button
             className="btn"
