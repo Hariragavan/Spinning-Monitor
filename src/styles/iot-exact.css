@@ -3789,7 +3789,7 @@
   cursor: pointer;
 }
 
-.btn-primary {
+.form-actions .btn-primary {
   width: 100%;
   background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   color: #ffffff;
@@ -5297,4 +5297,11 @@
   width: 100% !important;
   min-width: 100% !important;
   border-collapse: collapse !important;
+}
+
+.filters-card .btn,
+.filters-card .btn-primary {
+  width: auto !important;
+  max-width: none !important;
+  flex: 0 0 auto !important;
 }

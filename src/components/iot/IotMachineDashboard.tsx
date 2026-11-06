@@ -512,38 +512,46 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               <span className="field-icon">📅</span>
               <span>To Date</span>
             </label>
-            <input
-              type="date"
-              value={selectedToDate || overview.shiftDate || ''}
-              onChange={e => {
-                const val = e.target.value;
-                setSelectedToDate(val);
-                setUserChangedDate(Boolean(val));
-              }}
-              className="date-input"
-              suppressHydrationWarning
-            />
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
+              <input
+                type="date"
+                value={selectedToDate || overview.shiftDate || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedToDate(val);
+                  setUserChangedDate(Boolean(val));
+                }}
+                className="date-input"
+                suppressHydrationWarning
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{
+                  height: '38px',
+                  width: 'auto',
+                  minWidth: 'auto',
+                  maxWidth: 'none',
+                  flexShrink: 0,
+                  fontSize: '0.78rem',
+                  padding: '0 0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontWeight: 700,
+                  borderRadius: '8px',
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer'
+                }}
+                onClick={() => loadOverview(true)}
+                disabled={loading}
+                title="Click to instantly refresh live telemetry from /api/common"
+              >
+                <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
+                <span>Quick Refresh</span>
+              </button>
+            </div>
           </div>
-
-          <button
-            className="btn btn-primary"
-            style={{
-              height: '36px',
-              fontSize: '0.78rem',
-              padding: '0 0.85rem',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              fontWeight: 700,
-              borderRadius: '8px'
-            }}
-            onClick={() => loadOverview(true)}
-            disabled={loading}
-            title="Click to instantly refresh live telemetry from /api/common"
-          >
-            <span className={`btn-icon ${loading ? 'spin' : ''}`}>↻</span>
-            <span>Quick Refresh</span>
-          </button>
 
           {userChangedDate && (
             <button
