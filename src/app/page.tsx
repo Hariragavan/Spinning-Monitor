@@ -2439,8 +2439,13 @@ export default function Home() {
         const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
         return (
           <OperatorEmFormat
+            machines={machines}
+            currentShed={selectedShed}
+            onSelectShed={setSelectedShed}
             history={currentShedHistory}
+            allHistory={reportHistory}
             workers={currentShedWorkers}
+            allWorkers={workers}
             rules={currentShedRules}
             machineEm={machineEm}
             onUpdateMachineEm={async (newData, sheetUrl) => {
@@ -3387,6 +3392,7 @@ export default function Home() {
       <ErrorBoundary>
         <TvDashboard
           dailyReport={activeDailyReport}
+          machines={machines}
           history={currentShedHistory}
           allShedsHistory={reportHistory}
           workers={currentShedWorkers}

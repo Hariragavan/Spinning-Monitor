@@ -10,7 +10,7 @@ import {
   Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown, Scan,
   FileSpreadsheet
 } from 'lucide-react';
-import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed } from '../types';
+import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed, MachineMasterItem } from '../types';
 import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate, isCountNameMatching } from '../lib/utils';
 import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
 
@@ -350,6 +350,7 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
 
 export interface TvDashboardProps {
   dailyReport: DailyReport;
+  machines?: MachineMasterItem[];
   history: DailyReport[];
   allShedsHistory?: DailyReport[];
   workers: Sider[];
@@ -371,6 +372,7 @@ export interface TvDashboardProps {
 
 export const TvDashboard: React.FC<TvDashboardProps> = ({
   dailyReport,
+  machines,
   history,
   allShedsHistory,
   workers,
@@ -1552,7 +1554,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
               case 'operator-em-format':
                 return (
                   <OperatorEmFormat
+                    machines={machines}
+                    currentShed={selectedShed}
                     history={history}
+                    allHistory={allShedsHistory}
                     workers={workers}
                     rules={rules}
                     machineEm={machineEm}
