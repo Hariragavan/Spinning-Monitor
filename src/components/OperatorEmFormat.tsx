@@ -21,8 +21,77 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
+
+/**
+ * Universal lookup for Machine EM values.
+ * Resolves regardless of date format (DD/MM/YYYY vs YYYY-MM-DD),
+ * frame variants (SP021 vs 21 vs RF21), or shift format (I vs 1 vs "1").
+ */
+export function getMachineEmValue(
+  machineEmData: MachineEmData | undefined,
+  date: string,
+  frameNo: string,
+  shift: Shift | string | number
+): number | undefined {
+  if (!machineEmData || !date || !frameNo) return undefined;
+
+  // 1. Normalize shift to '1', '2', '3'
+  let sKey = '1';
+  const shiftStr = String(shift).trim().toUpperCase();
+  if (shiftStr === 'I' || shiftStr === '1' || shiftStr.includes('1')) sKey = '1';
+  else if (shiftStr === 'II' || shiftStr === '2' || shiftStr.includes('2')) sKey = '2';
+  else if (shiftStr === 'III' || shiftStr === '3' || shiftStr.includes('3')) sKey = '3';
+
+  // 2. Date candidates: exact, canonical (DD/MM/YYYY), ISO (YYYY-MM-DD)
+  const canonical = normalizeToCanonicalDate(date);
+  const parts = parseUniversalDateParts(date);
+  const iso = parts
+    ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+    : date;
+  const dateCandidates = Array.from(new Set([date, canonical, iso])).filter(Boolean);
+
+  // 3. Frame candidates: exact, trimmed, digits, padded
+  const cleanFrame = frameNo.trim();
+  const upperFrame = cleanFrame.toUpperCase();
+  const digits = upperFrame.match(/\d+/);
+  const frameCandidates = new Set<string>([frameNo, cleanFrame, upperFrame]);
+
+  if (digits) {
+    const raw = digits[0];
+    const num = String(parseInt(raw, 10));
+    const p2 = raw.padStart(2, '0');
+    const p3 = raw.padStart(3, '0');
+    frameCandidates.add(raw);
+    frameCandidates.add(num);
+    frameCandidates.add(p2);
+    frameCandidates.add(p3);
+    frameCandidates.add(`RF${p2}`);
+    frameCandidates.add(`RF${num}`);
+    frameCandidates.add(`SP${p3}`);
+    frameCandidates.add(`SP${p2}`);
+    frameCandidates.add(`K${p2}`);
+    frameCandidates.add(`K${num}`);
+  }
+
+  for (const d of dateCandidates) {
+    const dateObj = machineEmData[d];
+    if (!dateObj) continue;
+    for (const f of frameCandidates) {
+      const fObj = dateObj[f];
+      if (fObj) {
+        const val = fObj[sKey] ?? (fObj as any)[Number(sKey)];
+        if (val !== undefined && val !== null) {
+          const numVal = Number(val);
+          if (!isNaN(numVal)) return numVal;
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
 
 interface OperatorEmFormatProps {
   history: DailyReport[];
@@ -149,19 +218,38 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   ];
 
   const yearsList = [2025, 2026, 2027];
+
+  // Calendar dates for the selected month and year (01/07/2026, etc)
+  const calendarDates = useMemo(() => {
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    const dates: string[] = [];
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    for (let d = 1; d <= daysInMonth; d++) {
+      dates.push(`${pad(d)}/${pad(selectedMonth)}/${selectedYear}`);
+    }
+    return dates;
+  }, [selectedMonth, selectedYear]);
+
   const machines = useMemo(() => {
     const fromHistory = (history || []).flatMap(r => (r.entries || []).map(e => e.frameNo)).filter(Boolean);
     const fromEm = Object.values(machineEm || {}).flatMap(dateObj => Object.keys(dateObj));
-    const unique = Array.from(new Set([...fromHistory, ...fromEm])).sort();
-    return unique;
-  }, [history, machineEm]);
+    const fromMappings = Object.keys(settings.iotMachineMapping || {});
+    const unique = Array.from(new Set([...fromHistory, ...fromEm, ...fromMappings]))
+      .filter(m => {
+        const lower = m.toLowerCase();
+        return !lower.includes('grand') && !lower.includes('total') && !lower.includes('rf no');
+      })
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return unique.length > 0 ? unique : ['SP021', 'SP022', 'SP023'];
+  }, [history, machineEm, settings.iotMachineMapping]);
   const shifts: ('1' | '2' | '3')[] = ['1', '2', '3'];
 
   // Helper mapping Shift I, II, III <-> 1, 2, 3
-  const mapShiftToNum = (shift: Shift): string => {
-    if (shift === 'I') return '1';
-    if (shift === 'II') return '2';
-    if (shift === 'III') return '3';
+  const mapShiftToNum = (shift: Shift | string | number): string => {
+    const s = String(shift).trim().toUpperCase();
+    if (s === 'I' || s === '1' || s.includes('1')) return '1';
+    if (s === 'II' || s === '2' || s.includes('2')) return '2';
+    if (s === 'III' || s === '3' || s.includes('3')) return '3';
     return '1';
   };
 
@@ -190,17 +278,57 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
   // Get active dates list for the selected Month & Year
   const selectedMonthDates = useMemo(() => {
-    // Scan our machineEm keys
-    const dates = Object.keys(machineEm).filter(dStr => {
-      const parts = parseUniversalDateParts(dStr);
-      return parts && parts.month === selectedMonth && parts.year === selectedYear;
+    const datesSet = new Set<string>();
+
+    // 1. From history reports
+    (history || []).forEach(r => {
+      if (!r || !r.date) return;
+      const parts = parseUniversalDateParts(r.date);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        datesSet.add(normalizeToCanonicalDate(r.date));
+      }
     });
 
-    // Sort dates chronologically
-    return dates.sort((a, b) => {
+    // 2. From machineEm keys
+    Object.keys(machineEm || {}).forEach(dStr => {
+      const parts = parseUniversalDateParts(dStr);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        datesSet.add(normalizeToCanonicalDate(dStr));
+      }
+    });
+
+    // 3. Fallback to full calendar dates of the month if no data yet
+    if (datesSet.size === 0) {
+      calendarDates.forEach(d => datesSet.add(d));
+    }
+
+    return Array.from(datesSet).sort((a, b) => {
       return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
     });
-  }, [machineEm, selectedMonth, selectedYear]);
+  }, [machineEm, history, selectedMonth, selectedYear, calendarDates]);
+
+  // Live EM background refresh from MongoDB
+  const [isRefreshingEm, setIsRefreshingEm] = useState(false);
+  const handleRefreshLiveEm = async () => {
+    setIsRefreshingEm(true);
+    try {
+      const res = await fetch(`/api/machine-em?_t=${Date.now()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          await onUpdateMachineEm(json.data);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to refresh EM:', e);
+    } finally {
+      setIsRefreshingEm(false);
+    }
+  };
+
+  React.useEffect(() => {
+    handleRefreshLiveEm();
+  }, []);
 
   // Sync Google Sheet handler
   const handleSync = async () => {
@@ -267,7 +395,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     let sum = 0;
     let count = 0;
     machines.forEach(m => {
-      const val = machineEm[date]?.[m]?.[shift];
+      const val = getMachineEmValue(machineEm, date, m, shift);
       if (val !== undefined) {
         sum += val;
         count++;
@@ -308,10 +436,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                            entry.siderId === selectedWorkerId;
         
         if (isAssigned) {
-          const shiftNum = mapShiftToNum(entry.shift);
-          // Look up EM from Google link / grid
-          let emValue = machineEm[report.date]?.[entry.frameNo]?.[shiftNum];
-          // Fallback to entry Doff EM
+          let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
           if (emValue === undefined) {
             emValue = entry.doffEmt || 0;
           }
@@ -403,8 +528,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
           record.shifts += 1;
           record.totalGps += entry.gpsActual;
 
-          const shiftNum = mapShiftToNum(entry.shift);
-          let emValue = machineEm[report.date]?.[entry.frameNo]?.[shiftNum];
+          let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
           if (emValue === undefined) {
             emValue = entry.doffEmt || 0;
           }
@@ -427,17 +551,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [history, workers, machineEm, selectedMonth, selectedYear]);
-
-  // Calendar dates for the selected month and year (01/07/2026, etc)
-  const calendarDates = useMemo(() => {
-    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-    const dates: string[] = [];
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    for (let d = 1; d <= daysInMonth; d++) {
-      dates.push(`${pad(d)}/${pad(selectedMonth)}/${selectedYear}`);
-    }
-    return dates;
-  }, [selectedMonth, selectedYear]);
 
   // Operator Monthly EM grid data
   const operatorEmGridData = useMemo(() => {
@@ -468,8 +581,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
             }
           }
 
-          const shiftNum = mapShiftToNum(entry.shift);
-          let emValue = machineEm[dateStr]?.[entry.frameNo]?.[shiftNum];
+          let emValue = getMachineEmValue(machineEm, dateStr, entry.frameNo, entry.shift);
           if (emValue === undefined) {
             emValue = entry.doffEmt || 0;
           }
@@ -583,8 +695,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         }
       }
 
-      const shiftNum = mapShiftToNum(entry.shift);
-      let emValue = machineEm[report.date]?.[entry.frameNo]?.[shiftNum];
+      let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
       if (emValue === undefined) {
         emValue = entry.doffEmt || 0;
       }
@@ -808,7 +919,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       const row: any[] = [machine];
       selectedMonthDates.forEach(date => {
         shifts.forEach(shift => {
-          const val = machineEm[date]?.[machine]?.[shift];
+          const val = getMachineEmValue(machineEm, date, machine, shift);
           row.push(val !== undefined ? val : '');
         });
       });
@@ -1090,6 +1201,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                 />
 
                 <button
+                  onClick={handleRefreshLiveEm}
+                  disabled={isRefreshingEm}
+                  className="flex items-center gap-2 bg-blue-600 text-white font-black text-xs uppercase tracking-wider px-5 py-3 rounded-2xl hover:bg-blue-700 active:scale-95 transition-all cursor-pointer shadow-sm md:mt-4 disabled:opacity-50"
+                  title="Refresh live EM data from IoT telemetry"
+                >
+                  <RefreshCw size={14} className={isRefreshingEm ? "animate-spin" : ""} />
+                  <span>{isRefreshingEm ? "Syncing..." : "Sync Live EM"}</span>
+                </button>
+
+                <button
                   onClick={exportGridToExcel}
                   className="flex items-center gap-2 bg-stone-950 text-white font-black text-xs uppercase tracking-wider px-5 py-3 rounded-2xl hover:bg-stone-850 active:scale-95 transition-all cursor-pointer shadow-sm md:mt-4"
                 >
@@ -1147,7 +1268,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                           {selectedMonthDates.map(date => (
                             <React.Fragment key={`val-${machine}-${date}`}>
                               {shifts.map(shift => {
-                                const val = machineEm[date]?.[machine]?.[shift];
+                                const val = getMachineEmValue(machineEm, date, machine, shift);
                                 return (
                                   <td 
                                     key={`cell-${machine}-${date}-${shift}`}

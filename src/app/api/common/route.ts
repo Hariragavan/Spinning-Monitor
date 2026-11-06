@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { DailyReport, Sider, CountConversion, IncentiveRule, MachineMasterItem, ProductionEntry } from '@/types';
 import { getTodayUniversalDate, createDefaultReportForShed } from '@/lib/parser';
+import { syncIotEmToSpinningMonitor } from '@/lib/iot/iotEmService';
 
 // Mill standard counts per shed
 const SHED_REAL_COUNTS: Record<string, string[]> = {
@@ -85,6 +86,18 @@ export async function GET(req: Request) {
       });
       settings = setDoc ? (({ _id, ...rest }) => rest)(setDoc) : {};
       machineEm = emDoc?.data || {};
+
+      // If mapped IoT machines exist, ensure fresh EM sync into machineEm
+      if (settings?.iotMachineMapping && Object.keys(settings.iotMachineMapping).length > 0) {
+        try {
+          const syncRes = await syncIotEmToSpinningMonitor(settings.iotMachineMapping);
+          if (syncRes.success && syncRes.machineEm && Object.keys(syncRes.machineEm).length > 0) {
+            machineEm = syncRes.machineEm;
+          }
+        } catch (syncErr) {
+          console.warn('[API /common] IoT EM sync warning:', syncErr);
+        }
+      }
     } catch (dbErr) {
       console.warn('MongoDB query warning (fallback serverless mode):', dbErr);
     }

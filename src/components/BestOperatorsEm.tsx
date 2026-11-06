@@ -4,6 +4,7 @@ import { Trophy, Calendar, Coins, Star, Award, Zap, ChevronDown } from 'lucide-r
 import { motion } from 'motion/react';
 import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
+import { getMachineEmValue } from './OperatorEmFormat';
 
 interface BestOperatorsEmProps {
   history: DailyReport[];
@@ -99,8 +100,7 @@ export const BestOperatorsEm: React.FC<BestOperatorsEmProps> = ({
       if (!report || !report.entries) return;
       
       report.entries.forEach(entry => {
-        const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
-        let emVal = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
+        let emVal = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
         if (emVal === undefined) {
           emVal = entry.doffEmt || 0;
         }

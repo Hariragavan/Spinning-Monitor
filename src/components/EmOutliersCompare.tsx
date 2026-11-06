@@ -4,6 +4,7 @@ import { Trophy, ArrowDown, ArrowUp, AlertTriangle, HelpCircle, Users, ChevronDo
 import { motion } from 'motion/react';
 import { cn, resolveWorker, parseUniversalDateParts } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
+import { getMachineEmValue } from './OperatorEmFormat';
 
 interface EmOutliersCompareProps {
   history: DailyReport[];
@@ -110,8 +111,7 @@ export const EmOutliersCompare: React.FC<EmOutliersCompareProps> = ({
           if (fallbackTNo) assignedIds.add(fallbackTNo);
         }
 
-        const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
-        let emVal = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
+        let emVal = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
         if (emVal === undefined) {
           emVal = entry.doffEmt || 0;
         }

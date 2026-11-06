@@ -1,5 +1,6 @@
 import { getIotDb } from '@/lib/mongodb';
 import { IOT_COLLECTIONS, REMOTE_IOT_API, IOT_COMMON_API_URL } from '@/lib/iot/iotDb';
+import { normalizeToCanonicalDate, parseUniversalDateParts } from '@/lib/utils';
 
 export interface IotEmRecord {
   machineNo: string;
@@ -382,6 +383,13 @@ export async function syncIotEmAndManageShiftHistory(latestPayload?: any): Promi
     // Check and prune completed older shifts in iot_spinfo_histories
     const prunedCount = await pruneCompletedShiftHistories(db, shiftDate, shift);
 
+    // Auto-sync mapped IoT EM to Spinning Monitor machine_em so it is ALWAYS current
+    try {
+      await syncIotEmToSpinningMonitor();
+    } catch (syncErr) {
+      console.warn('[IoT EM Service] Auto-sync to spinning monitor error:', syncErr);
+    }
+
     return {
       success: true,
       syncedMachines: syncedCount,
@@ -493,33 +501,90 @@ export async function getLatestEmForAllIotMachines(): Promise<Record<string, {
   }
 }
 
+function getFrameVariants(frame: string): string[] {
+  if (!frame) return [];
+  const clean = frame.trim();
+  const upper = clean.toUpperCase();
+  const variants = new Set<string>([clean, upper]);
+
+  const digits = upper.match(/\d+/);
+  if (digits) {
+    const rawNum = digits[0];
+    const intVal = parseInt(rawNum, 10);
+    const unpadded = String(intVal);
+    const p2 = rawNum.padStart(2, '0');
+    const p3 = rawNum.padStart(3, '0');
+
+    variants.add(rawNum);
+    variants.add(unpadded);
+    variants.add(p2);
+    variants.add(p3);
+    variants.add(`RF${p2}`);
+    variants.add(`RF${unpadded}`);
+    variants.add(`SP${p3}`);
+    variants.add(`SP${p2}`);
+    variants.add(`K${p2}`);
+    variants.add(`K${unpadded}`);
+  }
+
+  return Array.from(variants);
+}
+
+function getDateVariants(dateStr: string): string[] {
+  if (!dateStr) return [];
+  const clean = dateStr.trim();
+  const canonical = normalizeToCanonicalDate(clean);
+  const parts = parseUniversalDateParts(clean);
+  const variants = new Set<string>([clean, canonical]);
+
+  if (parts) {
+    const iso = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+    const ddmmyyyy = `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}/${parts.year}`;
+    const dmmyyyy = `${parts.day}/${parts.month}/${parts.year}`;
+    variants.add(iso);
+    variants.add(ddmmyyyy);
+    variants.add(dmmyyyy);
+  }
+
+  return Array.from(variants).filter(Boolean);
+}
+
 /**
  * 5. Sync Mapped IoT EM to Spinning Monitor machine_em Collection
  * - Copies EM data from iot_em into spinning_monitor's machine_em table
+ * - Stores EM under both ISO (YYYY-MM-DD) and Canonical (DD/MM/YYYY) formats
+ * - Automatically registers under all frame number variants for seamless lookups
  * - Saves mapping configuration into settings
  */
 export async function syncIotEmToSpinningMonitor(
-  mappings: Record<string, string>,
+  mappings?: Record<string, string>,
   targetDate?: string
 ): Promise<{
   success: boolean;
   updatedCount: number;
-  machineEm: Record<string, Record<string, Record<number, number>>>;
+  machineEm: Record<string, Record<string, Record<number | string, number>>>;
 }> {
   try {
     const db = await getIotDb();
     const emCol = db.collection<IotEmRecord>(IOT_COLLECTIONS.EM);
 
+    // If mappings not explicitly passed, load active mappings from system settings
+    let activeMappings = mappings;
+    if (!activeMappings || Object.keys(activeMappings).length === 0) {
+      const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
+      activeMappings = setDoc?.iotMachineMapping || {};
+    }
+
     // Load existing spinning machine_em data
     const emDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
-    const merged: Record<string, Record<string, Record<number, number>>> = { ...(emDoc?.data || {}) };
+    const merged: Record<string, Record<string, Record<string, number>>> = { ...(emDoc?.data || {}) };
 
     let updatedCount = 0;
 
     // Invert mapping: iotNo -> spinningFrameNo(s)
     const iotToSpinningMap = new Map<string, string[]>();
-    for (const [spinningFrame, iotMachine] of Object.entries(mappings)) {
-      if (iotMachine && iotMachine !== 'None' && iotMachine !== 'unassigned') {
+    for (const [spinningFrame, iotMachine] of Object.entries(activeMappings || {})) {
+      if (iotMachine && iotMachine !== 'None' && iotMachine !== 'NONE' && iotMachine !== 'unassigned') {
         const cleanIot = iotMachine.trim().toUpperCase();
         const current = iotToSpinningMap.get(cleanIot) || [];
         current.push(spinningFrame);
@@ -530,46 +595,58 @@ export async function syncIotEmToSpinningMonitor(
     const trackedIotMachines = Array.from(iotToSpinningMap.keys());
     if (trackedIotMachines.length > 0) {
       const query: any = { machineNo: { $in: trackedIotMachines } };
-      if (targetDate) query.date = targetDate;
+      if (targetDate) {
+        const dVariants = getDateVariants(targetDate);
+        query.date = { $in: dVariants };
+      }
 
-      // Find all relevant iot_em records
+      // Find all relevant iot_em records (all dates if targetDate not specified)
       const iotRecords = await emCol.find(query).sort({ date: 1, shift: 1, hour: 1 }).toArray();
 
       for (const rec of iotRecords) {
         const spinningFrames = iotToSpinningMap.get(rec.machineNo.toUpperCase()) || [];
-        const dateStr = rec.date;
         const shiftNum = Number(rec.shift || 1);
         const emVal = Number(rec.emTotal ?? ((rec.emLeft || 0) + (rec.emRight || 0)));
 
-        if (!merged[dateStr]) merged[dateStr] = {};
+        const dateKeys = getDateVariants(rec.date);
 
-        for (const frame of spinningFrames) {
-          if (!merged[dateStr][frame]) merged[dateStr][frame] = {};
-          merged[dateStr][frame][shiftNum] = emVal;
-          updatedCount++;
+        for (const dKey of dateKeys) {
+          if (!merged[dKey]) merged[dKey] = {};
+
+          for (const frame of spinningFrames) {
+            const frameKeys = getFrameVariants(frame);
+            for (const fKey of frameKeys) {
+              if (!merged[dKey][fKey]) merged[dKey][fKey] = {};
+              merged[dKey][fKey][shiftNum] = emVal;
+              merged[dKey][fKey][String(shiftNum)] = emVal;
+              updatedCount++;
+            }
+          }
         }
       }
 
       // Save updated machine_em to MongoDB
       await db.collection('machine_em').updateOne(
         { _id: 'machine_em_data' as any },
-        { $set: { data: merged } },
+        { $set: { data: merged, updatedAt: new Date() } },
         { upsert: true }
       );
     }
 
-    // Persist mappings into settings collection (both active and date-wise)
-    const effectiveDate = targetDate || new Date().toISOString().slice(0, 10);
-    const updateFields: any = {
-      iotMachineMapping: mappings,
-      [`iotMachineMappingByDate.${effectiveDate}`]: mappings
-    };
+    // Persist mappings into settings collection if explicitly provided
+    if (mappings && Object.keys(mappings).length > 0) {
+      const effectiveDate = targetDate || new Date().toISOString().slice(0, 10);
+      const updateFields: any = {
+        iotMachineMapping: mappings,
+        [`iotMachineMappingByDate.${effectiveDate}`]: mappings
+      };
 
-    await db.collection('settings').updateOne(
-      { _id: 'system_settings' as any },
-      { $set: updateFields },
-      { upsert: true }
-    );
+      await db.collection('settings').updateOne(
+        { _id: 'system_settings' as any },
+        { $set: updateFields },
+        { upsert: true }
+      );
+    }
 
     return {
       success: true,
