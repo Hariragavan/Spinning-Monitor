@@ -165,16 +165,16 @@ export async function getLightweightMachineStatuses(): Promise<{
 
   let rawItem: any = null;
 
-  // 1. Try to fetch live payload from remote API (prioritize Railway first, then Render)
+  // 1. Try to fetch live payload from remote API
   const endpoints = [
-    IOT_COMMON_API_URL ? `${IOT_COMMON_API_URL}?limit=1` : null,
-    `${REMOTE_IOT_API}/common?limit=1`
+    `${REMOTE_IOT_API}/common?limit=1`,
+    IOT_COMMON_API_URL ? `${IOT_COMMON_API_URL}?limit=1` : null
   ].filter(Boolean) as string[];
 
   for (const url of endpoints) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), 6000);
       const res = await fetch(url, {
         headers: { Accept: 'application/json', 'X-Company-Slug': 'scm' },
         cache: 'no-store',
@@ -291,31 +291,19 @@ export async function syncIotEmAndManageShiftHistory(latestPayload?: any): Promi
   try {
     const db = await getIotDb();
 
-    // 1. Get latest payload if not provided (try Railway first, then Render)
+    // 1. Get latest payload if not provided
     let item = latestPayload;
     if (!item) {
-      const urls = [
-        IOT_COMMON_API_URL ? `${IOT_COMMON_API_URL}?limit=1&sort=createdAt&order=desc` : null,
-        `${REMOTE_IOT_API}/common?limit=1&sort=createdAt&order=desc`
-      ].filter(Boolean) as string[];
-
-      for (const u of urls) {
-        try {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 5000);
-          const res = await fetch(u, {
-            headers: { Accept: 'application/json', 'X-Company-Slug': 'scm' },
-            cache: 'no-store',
-            signal: controller.signal
-          });
-          clearTimeout(timeout);
-          if (res.ok) {
-            const json = await res.json();
-            item = Array.isArray(json) ? json[0] : (json.data?.[0] || json.data || json);
-            if (item && Array.isArray(item.machines)) break;
-          }
-        } catch (_) {}
-      }
+      try {
+        const res = await fetch(`${REMOTE_IOT_API}/common?limit=1&sort=createdAt&order=desc`, {
+          headers: { Accept: 'application/json', 'X-Company-Slug': 'scm' },
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          const json = await res.json();
+          item = Array.isArray(json) ? json[0] : (json.data?.[0] || json.data || json);
+        }
+      } catch (_) {}
     }
 
     if (!item || !Array.isArray(item.machines)) {
