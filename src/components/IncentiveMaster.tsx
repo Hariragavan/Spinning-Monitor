@@ -484,9 +484,9 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       </div>
 
       {/* TWO COLUMN GRID LAYOUT */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
         {/* LEFT COLUMN: COUNT GPS SLOT BUILDER */}
-        <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-stone-200 shadow-2xs">
+        <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-stone-200 shadow-2xs">
           {/* BUILDER HEADER */}
           <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
             <div className="flex items-center gap-2">
@@ -724,7 +724,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
         </div>
 
         {/* RIGHT COLUMN: COUNT RULES CARDS LIST */}
-        <div className="lg:col-span-7 space-y-5">
+        <div className="lg:col-span-8 space-y-5">
           {filteredRules.length === 0 ? (
             <div className="bg-white rounded-2xl p-10 border border-stone-200 text-center text-stone-400">
               <p className="text-sm font-bold text-stone-700">No incentive rules configured for {selectedShedTab}.</p>

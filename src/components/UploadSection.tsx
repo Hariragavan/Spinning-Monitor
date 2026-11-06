@@ -1277,7 +1277,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       </div>
 
       {/* Upload Cards Grid with properly aligned buttons */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4 w-full">
         {uploadCategories.map((cat) => (
           <div
             key={cat.id}

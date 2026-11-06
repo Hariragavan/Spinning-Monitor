@@ -338,9 +338,9 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       </div>
 
       {/* TWO COLUMN GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
         {/* LEFT COLUMN: MACHINE ADD/EDIT FORM */}
-        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs sticky top-28">
+        <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs sticky top-28">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-sm font-black text-emerald-700 uppercase tracking-wider flex items-center gap-2">
               {editingId ? (
@@ -479,7 +479,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
         </div>
 
         {/* RIGHT COLUMN: ACTIVE RING FRAME MACHINES LIST */}
-        <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
+        <div className="lg:col-span-8 bg-white p-6 rounded-2xl border border-stone-200 shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-stone-100 mb-3 gap-2">
             <div>
               <h2 className="text-xs font-black uppercase tracking-wider text-stone-800">

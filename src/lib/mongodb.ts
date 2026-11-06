@@ -1,6 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/spinning_monitor';
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/scm-spinning';
 const options = {};
 
 let client: MongoClient;
@@ -24,28 +24,40 @@ if (process.env.NODE_ENV === 'development') {
 
 /**
  * Returns the canonical database name.
- * Prevents split databases between "test" and "spinning_monitor" on MongoDB Atlas.
+ * Strictly resolves to the primary cluster database (scm-spinning)
+ * and prevents split databases between "test", "spinning_monitor", and "scm-spinning" on MongoDB Atlas.
  */
 export function getTargetDbName(): string {
+  // 1. Explicit DB_NAME override
   if (process.env.DB_NAME && process.env.DB_NAME.trim()) {
     return process.env.DB_NAME.trim();
   }
 
+  // 2. Extract database name from connection URI
   try {
-    const raw = (process.env.MONGODB_URI || '').trim();
+    const raw = (process.env.MONGODB_URI || process.env.IOT_MONGODB_URI || '').trim();
     if (raw) {
       const match = raw.match(/^mongodb(?:\+srv)?:\/\/[^\/]+\/([^?]+)/);
-      if (match && match[1] && match[1] !== 'test') {
+      if (match && match[1] && match[1].trim() && match[1].trim() !== 'test') {
         return decodeURIComponent(match[1].trim());
+      }
+      // If URI host contains scm-spinning or scm, use 'scm-spinning'
+      if (raw.toLowerCase().includes('scm-spinning') || raw.toLowerCase().includes('scm')) {
+        return 'scm-spinning';
       }
     }
   } catch {}
 
+  // 3. Explicit IOT_DB_NAME if set and not generic test or spinning_monitor
   if (process.env.IOT_DB_NAME && process.env.IOT_DB_NAME.trim()) {
-    return process.env.IOT_DB_NAME.trim();
+    const iotDb = process.env.IOT_DB_NAME.trim();
+    if (iotDb !== 'test' && iotDb !== 'spinning_monitor') {
+      return iotDb;
+    }
   }
 
-  return 'spinning_monitor';
+  // 4. Default to canonical Atlas database 'scm-spinning'
+  return 'scm-spinning';
 }
 
 /**
@@ -175,6 +187,26 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
           data: {},
           updatedAt: new Date()
         });
+      }
+
+      // 5. Unify split databases: If old 'spinning_monitor' database exists on this Atlas cluster,
+      // copy any IoT documents into this canonical database (scm-spinning) so no data is stranded
+      if (db.databaseName !== 'spinning_monitor') {
+        try {
+          const connectedClient = await clientPromise;
+          const oldDb = connectedClient.db('spinning_monitor');
+          const oldCollections = ['iot_commondatas', 'iot_spinfo_lives', 'iot_spinfo_histories', 'iot_em', 'machine_em', 'settings'];
+          for (const cName of oldCollections) {
+            const currentCount = await db.collection(cName).countDocuments();
+            if (currentCount === 0) {
+              const oldDocs = await oldDb.collection(cName).find({}).toArray();
+              if (oldDocs.length > 0) {
+                console.log(`[MongoDB Migration] Migrating ${oldDocs.length} documents from spinning_monitor.${cName} to ${db.databaseName}.${cName}`);
+                await db.collection(cName).insertMany(oldDocs, { ordered: false }).catch(() => {});
+              }
+            }
+          }
+        } catch (_) {}
       }
 
       isInitialized = true;

@@ -297,19 +297,19 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
 
   // Only show counts that have available data in this month (hide empty count rows)
   const availableCountList = useMemo(() => {
-    const daysToCheck = displayedDays.length > 0 ? displayedDays : Array.from({ length: totalDaysInMonth }, (_, i) => i + 1);
+    const allDaysInMonth = Array.from({ length: totalDaysInMonth }, (_, i) => i + 1);
 
     return countList.filter(count => {
       // If user explicitly manually added this count row, keep it visible
       if (customCounts.includes(count)) return true;
 
       // Check if this count has ANY valid data (> 0) on at least one day in this month
-      return daysToCheck.some(day => {
+      return allDaysInMonth.some(day => {
         const val = getCountGpssForDay(count, day);
         return val !== null && val > 0;
       });
     });
-  }, [countList, displayedDays, totalDaysInMonth, customCounts, reportsByDay, cellOverrides, selectedMonth, selectedYear]);
+  }, [countList, totalDaysInMonth, customCounts, reportsByDay, cellOverrides, selectedMonth, selectedYear]);
 
   // Handle saving inline cell edit
   const handleSaveCellEdit = () => {

@@ -3530,11 +3530,15 @@ export default function Home() {
                         </button>
                       </div>
 
-                      <CalendarDatePicker
-                        value={activeDailyReport.date}
-                        onChange={(newDate) => handleTopDateChange(newDate)}
-                        className="shrink-0"
-                      />
+                      {mounted ? (
+                        <CalendarDatePicker
+                          value={activeDailyReport.date}
+                          onChange={(newDate) => handleTopDateChange(newDate)}
+                          className="shrink-0"
+                        />
+                      ) : (
+                        <div className="h-8 w-28 bg-stone-100 rounded-xl" />
+                      )}
                       {mounted && activeDailyReport.date !== getYesterdayUniversalDate() && (
                         <button
                           type="button"

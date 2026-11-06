@@ -141,9 +141,129 @@ function appendQueryParams(baseUrl: string, params: Record<string, string | numb
   }
 }
 
+function calculateShiftHour(shift: number | string, dataTime?: string): number {
+  const sNum = Number(shift) || 1;
+  const d = dataTime ? new Date(dataTime.replace(' ', 'T')) : new Date();
+  const currentHour = isNaN(d.getHours()) ? new Date().getHours() : d.getHours();
+
+  if (sNum === 1) {
+    return Math.min(8, Math.max(1, currentHour - 6 + 1));
+  } else if (sNum === 2) {
+    return Math.min(8, Math.max(1, currentHour - 14 + 1));
+  } else if (sNum === 3) {
+    const h = currentHour >= 22 ? (currentHour - 22 + 1) : (currentHour + 2 + 1);
+    return Math.min(8, Math.max(1, h));
+  }
+  return 1;
+}
+
+/**
+ * Centrally persists incoming live IoT payload into MongoDB Atlas:
+ * 1. Writes all records to iot_commondatas
+ * 2. Writes the latest singleton snapshot to iot_spinfo_lives under fixed _id: 'spinfo_live_snapshot'
+ * 3. Writes live telemetry ticks into iot_spinfo_histories
+ * 4. Extracts and saves hourly EM to iot_em for all 46 machines
+ * 5. Auto-syncs mapped IoT EM into machine_em so Spinning Monitor screens update immediately
+ */
+export async function persistLiveIotPayload(payload: any): Promise<void> {
+  const records = extractCommonRecords(payload);
+  if (!records || records.length === 0) return;
+
+  try {
+    const db = await getIotDb();
+
+    // 1. Save all incoming packets into iot_commondatas
+    const commonCol = db.collection(IOT_COLLECTIONS.COMMON);
+    for (const doc of records) {
+      const { _id, ...cleanDoc } = doc;
+      const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
+      await commonCol.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
+    }
+
+    // 2. Identify the newest record to update live snapshot, histories, and EM
+    const latest = records[0];
+    if (latest && Array.isArray(latest.machines) && latest.machines.length > 0) {
+      const { _id: _ignoredId, ...cleanLatest } = latest;
+      const shiftDate = String(cleanLatest.shiftDate || (cleanLatest.dataTime ? cleanLatest.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+      const month = shiftDate.slice(0, 7);
+      const shift = Number(cleanLatest.shift || 1);
+
+      // 2a. Update singleton live snapshot with clean fixed _id
+      await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).updateOne(
+        { _id: 'spinfo_live_snapshot' as any },
+        { $set: { ...cleanLatest, shiftDate, shift, updatedAt: new Date() } },
+        { upsert: true }
+      );
+
+      // 2b. Append telemetry tick to iot_spinfo_histories
+      const histCol = db.collection(IOT_COLLECTIONS.SPINFO_HISTORIES);
+      await histCol.insertOne({
+        ...cleanLatest,
+        shiftDate,
+        month,
+        shift,
+        isShiftFinal: false,
+        recordedAt: new Date()
+      });
+
+      // 2c. Save hourly EM for each machine to iot_em
+      const hour = calculateShiftHour(shift, cleanLatest.dataTime);
+      const emCol = db.collection(IOT_COLLECTIONS.EM);
+
+      for (const m of cleanLatest.machines) {
+        const mNo = String(m.machine || m.machineId || 'RF01');
+        const sideL = (m.sides || []).find((s: any) => s.side === 'L');
+        const sideR = (m.sides || []).find((s: any) => s.side === 'R');
+        const emLeft = Number(sideL?.endMendingTime || 0);
+        const emRight = Number(sideR?.endMendingTime || 0);
+        const emTotal = Number((emLeft + emRight).toFixed(2));
+        const unit = String(sideL?.endMendingTimeUnit || sideR?.endMendingTimeUnit || 'min');
+        const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+        const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+        const totalEndBreaks = Number(m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
+        await emCol.updateOne(
+          { machineNo: mNo, date: shiftDate, shift: shift, hour: hour },
+          {
+            $set: {
+              machineNo: mNo,
+              date: shiftDate,
+              month,
+              shift,
+              hour,
+              hourLabel: `Hour ${hour}`,
+              emLeft,
+              emRight,
+              emTotal,
+              unit,
+              endBreakCountLeft,
+              endBreakCountRight,
+              totalEndBreaks,
+              isFinalized: false,
+              updatedAt: new Date()
+            },
+            $setOnInsert: { recordedAt: new Date() }
+          },
+          { upsert: true }
+        );
+      }
+
+      // 2d. Auto-sync mapped IoT EM to Spinning Monitor machine_em
+      try {
+        const { syncIotEmToSpinningMonitor } = await import('./iotEmService');
+        await syncIotEmToSpinningMonitor(undefined, shiftDate);
+      } catch (syncErr) {
+        console.warn('[persistLiveIotPayload] Error syncing EM to spinning monitor:', syncErr);
+      }
+    }
+  } catch (err) {
+    console.error('[persistLiveIotPayload] Error persisting live IoT payload:', err);
+  }
+}
+
 /**
  * Fetches live MAG SPinFO records directly from remote endpoints
- * with strict 5-second timeout and non-blocking background MongoDB archive.
+ * with strict 5-second timeout and guaranteed MongoDB persistence.
  */
 export async function fetchLiveRenderStream(
   limit: number = 5,
@@ -177,19 +297,8 @@ export async function fetchLiveRenderStream(
         const json = await res.json();
         const records = extractCommonRecords(json);
         if (records.length > 0) {
-          // Asynchronously archive into local MongoDB without blocking the response
-          (async () => {
-            try {
-              const db = await getIotDb();
-              const col = db.collection(IOT_COLLECTIONS.COMMON);
-              for (const doc of records) {
-                const { _id, ...cleanDoc } = doc;
-                const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
-                await col.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
-              }
-            } catch (_) {}
-          })().catch(() => {});
-
+          // Strictly await MongoDB persistence so Vercel does not terminate early
+          await persistLiveIotPayload(records);
           return records;
         }
       }

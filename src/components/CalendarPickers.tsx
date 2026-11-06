@@ -89,7 +89,7 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
           <Calendar size={14} className="stroke-[2.5]" />
         </span>
         <span className="font-mono tracking-tight font-black text-stone-900 text-xs" suppressHydrationWarning>
-          {displayDate || 'Select Date'}
+          {mounted ? (displayDate || 'Select Date') : 'Select Date'}
         </span>
         <ChevronDown size={13} className="text-stone-400 group-hover:text-emerald-600 transition-colors" />
       </button>
@@ -186,7 +186,7 @@ export const CalendarMonthPicker: React.FC<CalendarMonthPickerProps> = ({
           <Calendar size={14} className="stroke-[2.5]" />
         </span>
         <span className="font-semibold text-stone-900 text-xs tracking-tight" suppressHydrationWarning>
-          {monthName}
+          {mounted ? monthName : 'Select Month'}
         </span>
         <ChevronDown size={13} className="text-stone-400 group-hover:text-indigo-600 transition-colors" />
       </button>
