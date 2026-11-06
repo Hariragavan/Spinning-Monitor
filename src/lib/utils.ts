@@ -902,7 +902,8 @@ export function getMachineEmValue(
   machineEmData: MachineEmData | undefined,
   date: string,
   frameNo: string,
-  shift: Shift | string | number
+  shift: Shift | string | number,
+  mapping?: Record<string, string>
 ): number | undefined {
   if (!machineEmData || !date || !frameNo) return undefined;
 
@@ -921,7 +922,7 @@ export function getMachineEmValue(
     : date;
   const dateCandidates = Array.from(new Set([date, canonical, iso])).filter(Boolean);
 
-  // 3. Frame candidates: exact, trimmed, digits, padded
+  // 3. Frame candidates: exact, trimmed, digits, padded, and registered device mappings
   const cleanFrame = frameNo.trim();
   const upperFrame = cleanFrame.toUpperCase();
   const digits = upperFrame.match(/\d+/);
@@ -942,6 +943,31 @@ export function getMachineEmValue(
     frameCandidates.add(`SP${p2}`);
     frameCandidates.add(`K${p2}`);
     frameCandidates.add(`K${num}`);
+  }
+
+  // If a mapping is provided, also check the registered device or mapped spinning frame
+  if (mapping && Object.keys(mapping).length > 0) {
+    // 3a. Forward mapping: frame -> device (e.g. SP021 -> RF01, 1 -> RF01)
+    const mappedDevice = mapping[frameNo] || mapping[cleanFrame] || mapping[upperFrame] || (digits ? mapping[digits[0]] : undefined);
+    if (mappedDevice && mappedDevice !== 'NONE' && mappedDevice !== 'None' && mappedDevice !== 'unassigned') {
+      const devClean = mappedDevice.trim();
+      const devUpper = devClean.toUpperCase();
+      frameCandidates.add(devClean);
+      frameCandidates.add(devUpper);
+      const devDigits = devUpper.match(/\d+/);
+      if (devDigits) {
+        frameCandidates.add(`RF${devDigits[0].padStart(2, '0')}`);
+        frameCandidates.add(String(parseInt(devDigits[0], 10)));
+      }
+    }
+
+    // 3b. Inverse mapping: device -> frame (e.g. RF01 -> SP021)
+    for (const [f, dev] of Object.entries(mapping)) {
+      if (dev && dev.trim().toUpperCase() === upperFrame) {
+        frameCandidates.add(f);
+        frameCandidates.add(f.trim().toUpperCase());
+      }
+    }
   }
 
   for (const d of dateCandidates) {
@@ -990,7 +1016,8 @@ export function computeOperatorShiftEm(
   targetWorker: Sider | string,
   report: DailyReport,
   machineEmData: MachineEmData | undefined,
-  workers: Sider[] = []
+  workers: Sider[] = [],
+  mapping?: Record<string, string>
 ): OperatorShiftEmResult | null {
   if (!report || !report.entries || report.entries.length === 0) return null;
 
@@ -1067,7 +1094,7 @@ export function computeOperatorShiftEm(
 
     const frame = entry.frameNo || (entry as any).machineId || '';
     const shift = entry.shift || (report as any).shift || 'I';
-    let machineEm = getMachineEmValue(machineEmData, report.date, frame, shift);
+    let machineEm = getMachineEmValue(machineEmData, report.date, frame, shift, mapping);
     if (machineEm === undefined) {
       machineEm = entry.doffEmt ?? 0;
     }

@@ -61,25 +61,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     appIsTvMode ? 'operator-monthly-em' : 'grid'
   );
 
-  // Find latest available date in history for daily report
-  const latestHistoryDate = useMemo(() => {
-    if (!history || history.length === 0) return '';
-    const sorted = [...history].sort((a, b) => {
-      return parseUniversalDate(b.date).getTime() - parseUniversalDate(a.date).getTime();
-    });
-    return sorted[0].date;
-  }, [history]);
-
-  const [selectedDailyEmDate, setSelectedDailyEmDate] = useState<string>('');
-  const dailyReportRef = useRef<HTMLDivElement>(null);
-  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
-
-  React.useEffect(() => {
-    if (latestHistoryDate && !selectedDailyEmDate) {
-      setSelectedDailyEmDate(latestHistoryDate);
-    }
-  }, [latestHistoryDate, selectedDailyEmDate]);
-  
   // Grid / Monthly select state
   const [selectedMonth, setSelectedMonth] = useState<number>(month || new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(year || new Date().getFullYear());
@@ -97,25 +78,136 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
   }, [year]);
 
+  // Calendar dates for the selected month and year (01/11/2026, etc)
+  const calendarDates = useMemo(() => {
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    const dates: string[] = [];
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    for (let d = 1; d <= daysInMonth; d++) {
+      dates.push(`${pad(d)}/${pad(selectedMonth)}/${selectedYear}`);
+    }
+    return dates;
+  }, [selectedMonth, selectedYear]);
+
+  // Available dates in history and machineEm belonging strictly to the selected month and year
+  const selectedMonthHistoryDates = useMemo(() => {
+    const datesSet = new Set<string>();
+
+    (history || []).forEach(r => {
+      if (!r || !r.date) return;
+      const parts = parseUniversalDateParts(r.date);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        datesSet.add(normalizeToCanonicalDate(r.date));
+      }
+    });
+
+    Object.keys(machineEm || {}).forEach(dStr => {
+      const parts = parseUniversalDateParts(dStr);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        datesSet.add(normalizeToCanonicalDate(dStr));
+      }
+    });
+
+    return Array.from(datesSet).sort((a, b) => {
+      return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
+    });
+  }, [history, machineEm, selectedMonth, selectedYear]);
+
+  // Selected date for daily EM report (clamped strictly to selected month)
+  const [selectedDailyEmDate, setSelectedDailyEmDate] = useState<string>('');
+  const dailyReportRef = useRef<HTMLDivElement>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+
+  // Automatically sync selectedDailyEmDate to latest available date in selected month
+  React.useEffect(() => {
+    if (selectedMonthHistoryDates.length > 0) {
+      setSelectedDailyEmDate(selectedMonthHistoryDates[selectedMonthHistoryDates.length - 1]);
+    } else {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setSelectedDailyEmDate(`01/${pad(selectedMonth)}/${selectedYear}`);
+    }
+  }, [selectedMonth, selectedYear, selectedMonthHistoryDates]);
+
   // Individual ledger state
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
   
-  // Date range for individual view
-  const { defaultFrom, defaultTo } = useMemo(() => {
-    const today = new Date();
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  // Date range for individual view (synced automatically to the selected month)
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+  const [fromDate, setFromDate] = useState<string>(`${selectedYear}-${pad(selectedMonth)}-01`);
+  const [toDate, setToDate] = useState<string>(`${selectedYear}-${pad(selectedMonth)}-${pad(daysInMonth)}`);
 
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    
+  React.useEffect(() => {
+    const p = (n: number) => n.toString().padStart(2, '0');
+    const dCount = new Date(selectedYear, selectedMonth, 0).getDate();
+    setFromDate(`${selectedYear}-${p(selectedMonth)}-01`);
+    setToDate(`${selectedYear}-${p(selectedMonth)}-${p(dCount)}`);
+  }, [selectedMonth, selectedYear]);
+
+  // Registered IoT devices & spinning frame mappings for the selected month
+  const registeredInfoForMonth = useMemo(() => {
+    const days = new Date(selectedYear, selectedMonth, 0).getDate();
+    const p = (n: number) => n.toString().padStart(2, '0');
+    const endOfMonthIso = `${selectedYear}-${p(selectedMonth)}-${p(days)}`;
+
+    const frameToDevice: Record<string, string> = {};
+    const deviceToFrame: Record<string, string> = {};
+
+    // 1. From iotMachineMappingByDate for any date in this month
+    const mappingsByDate = settings.iotMachineMappingByDate || {};
+    for (const [dKey, map] of Object.entries(mappingsByDate)) {
+      const parts = parseUniversalDateParts(dKey);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear && map) {
+        for (const [frame, device] of Object.entries(map)) {
+          if (device && device !== 'NONE' && device !== 'None' && device !== 'unassigned') {
+            const cleanDev = device.trim().toUpperCase();
+            frameToDevice[frame] = cleanDev;
+            deviceToFrame[cleanDev] = frame;
+          }
+        }
+      }
+    }
+
+    // 2. Carry-forward from most recent mapping on or before end of this month
+    if (Object.keys(mappingsByDate).length > 0) {
+      const priorDates = Object.keys(mappingsByDate)
+        .filter(d => {
+          const dParts = parseUniversalDateParts(d);
+          if (!dParts) return false;
+          const dIso = `${dParts.year}-${p(dParts.month)}-${p(dParts.day)}`;
+          return dIso <= endOfMonthIso;
+        })
+        .sort()
+        .reverse();
+
+      if (priorDates.length > 0 && mappingsByDate[priorDates[0]]) {
+        for (const [frame, device] of Object.entries(mappingsByDate[priorDates[0]])) {
+          if (device && device !== 'NONE' && device !== 'None' && device !== 'unassigned') {
+            const cleanDev = device.trim().toUpperCase();
+            if (!frameToDevice[frame]) frameToDevice[frame] = cleanDev;
+            if (!deviceToFrame[cleanDev]) deviceToFrame[cleanDev] = frame;
+          }
+        }
+      }
+    }
+
+    // 3. Fallback to settings.iotMachineMapping
+    const activeMap = settings.iotMachineMapping || {};
+    for (const [frame, device] of Object.entries(activeMap)) {
+      if (device && device !== 'NONE' && device !== 'None' && device !== 'unassigned') {
+        const cleanDev = device.trim().toUpperCase();
+        if (!frameToDevice[frame]) frameToDevice[frame] = cleanDev;
+        if (!deviceToFrame[cleanDev]) deviceToFrame[cleanDev] = frame;
+      }
+    }
+
     return {
-      defaultFrom: `${firstDay.getFullYear()}-${pad(firstDay.getMonth() + 1)}-${pad(firstDay.getDate())}`,
-      defaultTo: `${lastDay.getFullYear()}-${pad(lastDay.getMonth() + 1)}-${pad(lastDay.getDate())}`
+      frameToDevice,
+      deviceToFrame,
+      registeredFrames: Object.keys(frameToDevice),
+      registeredDevices: Object.keys(deviceToFrame)
     };
-  }, []);
-
-  const [fromDate, setFromDate] = useState<string>(defaultFrom);
-  const [toDate, setToDate] = useState<string>(defaultTo);
+  }, [settings.iotMachineMapping, settings.iotMachineMappingByDate, selectedMonth, selectedYear]);
 
   // Sync state
   const [sheetUrl, setSheetUrl] = useState<string>(
@@ -153,29 +245,50 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
   const yearsList = [2025, 2026, 2027];
 
-  // Calendar dates for the selected month and year (01/07/2026, etc)
-  const calendarDates = useMemo(() => {
-    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-    const dates: string[] = [];
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    for (let d = 1; d <= daysInMonth; d++) {
-      dates.push(`${pad(d)}/${pad(selectedMonth)}/${selectedYear}`);
-    }
-    return dates;
-  }, [selectedMonth, selectedYear]);
-
+  // Machines list for the selected month:
+  // Shows ONLY available devices registered for that month and machines active in that month
   const machines = useMemo(() => {
-    const fromHistory = (history || []).flatMap(r => (r.entries || []).map(e => e.frameNo)).filter(Boolean);
-    const fromEm = Object.values(machineEm || {}).flatMap(dateObj => Object.keys(dateObj));
-    const fromMappings = Object.keys(settings.iotMachineMapping || {});
-    const unique = Array.from(new Set([...fromHistory, ...fromEm, ...fromMappings]))
-      .filter(m => {
-        const lower = m.toLowerCase();
-        return !lower.includes('grand') && !lower.includes('total') && !lower.includes('rf no');
-      })
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    return unique.length > 0 ? unique : ['SP021', 'SP022', 'SP023'];
-  }, [history, machineEm, settings.iotMachineMapping]);
+    const list: string[] = [];
+    const seen = new Set<string>();
+
+    const addMachine = (m: string) => {
+      if (!m) return;
+      const clean = m.trim();
+      const lower = clean.toLowerCase();
+      if (lower.includes('grand') || lower.includes('total') || lower.includes('rf no') || lower === '-' || lower === '0') return;
+      if (!seen.has(clean.toUpperCase())) {
+        seen.add(clean.toUpperCase());
+        list.push(clean);
+      }
+    };
+
+    // 1. Available devices registered for this month (both frame numbers and registered device names)
+    registeredInfoForMonth.registeredFrames.forEach(f => addMachine(f));
+    registeredInfoForMonth.registeredDevices.forEach(d => addMachine(d));
+
+    // 2. Machines with recorded EM in this month
+    Object.entries(machineEm || {}).forEach(([dStr, mObj]) => {
+      const parts = parseUniversalDateParts(dStr);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear && mObj) {
+        Object.keys(mObj).forEach(m => addMachine(m));
+      }
+    });
+
+    // 3. Machines that ran in history for this month
+    (history || []).forEach(report => {
+      if (!report || !report.date || !report.entries) return;
+      const parts = parseUniversalDateParts(report.date);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        report.entries.forEach(e => {
+          if (e.frameNo) addMachine(e.frameNo);
+        });
+      }
+    });
+
+    list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return list.length > 0 ? list : ['SP021', 'SP022', 'SP023'];
+  }, [registeredInfoForMonth, machineEm, history, selectedMonth, selectedYear]);
+
   const shifts: ('1' | '2' | '3')[] = ['1', '2', '3'];
 
   // Helper mapping Shift I, II, III <-> 1, 2, 3
@@ -210,36 +323,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return `${parseInt(parts[2])}/${parseInt(parts[1]).toString().padStart(2, '0')}/${parts[0]}`;
   };
 
-  // Get active dates list for the selected Month & Year
+  // Active dates for the selected Month & Year (strictly for selectedMonth and selectedYear)
   const selectedMonthDates = useMemo(() => {
-    const datesSet = new Set<string>();
-
-    // 1. From history reports
-    (history || []).forEach(r => {
-      if (!r || !r.date) return;
-      const parts = parseUniversalDateParts(r.date);
-      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
-        datesSet.add(normalizeToCanonicalDate(r.date));
-      }
-    });
-
-    // 2. From machineEm keys
-    Object.keys(machineEm || {}).forEach(dStr => {
-      const parts = parseUniversalDateParts(dStr);
-      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
-        datesSet.add(normalizeToCanonicalDate(dStr));
-      }
-    });
-
-    // 3. Fallback to full calendar dates of the month if no data yet
-    if (datesSet.size === 0) {
-      calendarDates.forEach(d => datesSet.add(d));
+    if (selectedMonthHistoryDates.length > 0) {
+      return selectedMonthHistoryDates;
     }
-
-    return Array.from(datesSet).sort((a, b) => {
-      return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
-    });
-  }, [machineEm, history, selectedMonth, selectedYear, calendarDates]);
+    return calendarDates;
+  }, [selectedMonthHistoryDates, calendarDates]);
 
   // Live EM background refresh from MongoDB
   const [isRefreshingEm, setIsRefreshingEm] = useState(false);
@@ -329,7 +419,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     let sum = 0;
     let count = 0;
     machines.forEach(m => {
-      const val = getMachineEmValue(machineEm, date, m, shift);
+      const val = getMachineEmValue(machineEm, date, m, shift, registeredInfoForMonth.frameToDevice);
       if (val !== undefined) {
         sum += val;
         count++;
@@ -367,13 +457,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (start && rDate < start) return;
       if (end && rDate > end) return;
 
-      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, machineEm, workers);
+      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, machineEm, workers, registeredInfoForMonth.frameToDevice);
       if (shiftRes && shiftRes.machinesDetail.length > 0) {
         shiftRes.machinesDetail.forEach(m => {
+          const devBadge = registeredInfoForMonth.frameToDevice[m.frameNo] ? ` [${registeredInfoForMonth.frameToDevice[m.frameNo]}]` : '';
           logs.push({
             date: report.date,
             shift: shiftRes.shift,
-            machine: `${m.frameNo} (${m.sides} side${m.sides > 1 ? 's' : ''})`,
+            machine: `${m.frameNo}${devBadge} (${m.sides} side${m.sides > 1 ? 's' : ''})`,
             gps: m.gps,
             count: m.count || '',
             em: m.assignedEm
@@ -386,7 +477,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return logs.sort((a, b) => {
       return parseUniversalDate(a.date).getTime() - parseUniversalDate(b.date).getTime();
     });
-  }, [history, machineEm, selectedWorkerId, fromDate, toDate, workers]);
+  }, [history, machineEm, selectedWorkerId, fromDate, toDate, workers, registeredInfoForMonth]);
 
   // Aggregate stats for individual view
   const individualStats = useMemo(() => {
@@ -434,7 +525,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (parts.month !== selectedMonth || parts.year !== selectedYear) return;
 
       workers.forEach(worker => {
-        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers, registeredInfoForMonth.frameToDevice);
         if (shiftRes && shiftRes.totalSides > 0) {
           if (!siderData[worker.id]) {
             siderData[worker.id] = {
@@ -467,21 +558,24 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         avgEm: w.emCount > 0 ? (w.totalEm / w.emCount) : 0
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [history, workers, machineEm, selectedMonth, selectedYear]);
+  }, [history, workers, machineEm, selectedMonth, selectedYear, registeredInfoForMonth]);
 
   // Operator Monthly EM grid data
   const operatorEmGridData = useMemo(() => {
     const lookup: Record<string, Record<string, number>> = {};
 
     history.forEach(report => {
-      const dateStr = report.date;
-      if (!report || !report.entries) return;
+      if (!report || !report.date || !report.entries) return;
+      const parts = parseUniversalDateParts(report.date);
+      if (!parts || parts.month !== selectedMonth || parts.year !== selectedYear) return;
+      const dateStr = normalizeToCanonicalDate(report.date);
+
       if (!lookup[dateStr]) {
         lookup[dateStr] = {};
       }
 
       workers.forEach(worker => {
-        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers, registeredInfoForMonth.frameToDevice);
         if (shiftRes && shiftRes.totalSides > 0 && shiftRes.totalEm > 0) {
           const prev = lookup[dateStr][worker.id] || 0;
           lookup[dateStr][worker.id] = Number((prev + shiftRes.totalEm).toFixed(3));
@@ -524,7 +618,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         const bTNo = parseInt(b.worker.tNo) || 0;
         return aTNo - bTNo;
       });
-  }, [history, workers, machineEm, calendarDates]);
+  }, [history, workers, machineEm, calendarDates, selectedMonth, selectedYear, registeredInfoForMonth]);
 
   // Excel Export: Operator Monthly EM
   const exportOperatorMonthlyToExcel = () => {
@@ -550,7 +644,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const dailyEmRows = useMemo(() => {
     if (!selectedDailyEmDate) return [];
     
-    const report = history.find(r => r.date === selectedDailyEmDate);
+    const canonicalSelected = normalizeToCanonicalDate(selectedDailyEmDate);
+    const report = history.find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonicalSelected);
     if (!report) return [];
 
     const list: {
@@ -564,10 +659,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }[] = [];
 
     workers.forEach(worker => {
-      const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+      const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers, registeredInfoForMonth.frameToDevice);
       if (shiftRes && shiftRes.totalSides > 0) {
         const mcLabel = shiftRes.machinesDetail
-          .map(m => `${m.frameNo} (${m.sides}s)`)
+          .map(m => {
+            const devBadge = registeredInfoForMonth.frameToDevice[m.frameNo] ? ` [${registeredInfoForMonth.frameToDevice[m.frameNo]}]` : '';
+            return `${m.frameNo}${devBadge} (${m.sides}s)`;
+          })
           .join(', ');
         const countLabel = shiftRes.machinesDetail
           .map(m => m.count)
@@ -591,7 +689,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       const bTNo = parseInt(b.tNo || '0') || 0;
       return aTNo - bTNo;
     });
-  }, [history, selectedDailyEmDate, machineEm, workers]);
+  }, [history, selectedDailyEmDate, machineEm, workers, registeredInfoForMonth]);
 
   const exportDailyEmToExcel = () => {
     if (dailyEmRows.length === 0) return;
@@ -767,10 +865,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
     // Rows 3-8: Machines
     machines.forEach(machine => {
-      const row: any[] = [machine];
+      const registeredDev = registeredInfoForMonth.frameToDevice[machine];
+      const row: any[] = [registeredDev ? `${machine} (${registeredDev})` : machine];
       selectedMonthDates.forEach(date => {
         shifts.forEach(shift => {
-          const val = getMachineEmValue(machineEm, date, machine, shift);
+          const val = getMachineEmValue(machineEm, date, machine, shift, registeredInfoForMonth.frameToDevice);
           row.push(val !== undefined ? val : '');
         });
       });
@@ -1111,32 +1210,42 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {machines.map(machine => (
-                        <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
-                          <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
-                            {machine}
-                          </td>
-                          {selectedMonthDates.map(date => (
-                            <React.Fragment key={`val-${machine}-${date}`}>
-                              {shifts.map(shift => {
-                                const val = getMachineEmValue(machineEm, date, machine, shift);
-                                return (
-                                  <td 
-                                    key={`cell-${machine}-${date}-${shift}`}
-                                    onClick={() => setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' })}
-                                    className="p-2.5 text-center font-mono border-r border-stone-100 hover:bg-emerald-50 hover:text-emerald-800 transition-all cursor-pointer relative group"
-                                  >
-                                    {val !== undefined ? val : '-'}
-                                    <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
-                                      <Edit size={8} />
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                            </React.Fragment>
-                          ))}
-                        </tr>
-                      ))}
+                      {machines.map(machine => {
+                        const registeredDev = registeredInfoForMonth.frameToDevice[machine];
+                        return (
+                          <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
+                            <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
+                              <div className="flex items-center gap-1.5">
+                                <span>{machine}</span>
+                                {registeredDev && (
+                                  <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title={`Registered IoT Device: ${registeredDev}`}>
+                                    {registeredDev}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            {selectedMonthDates.map(date => (
+                              <React.Fragment key={`val-${machine}-${date}`}>
+                                {shifts.map(shift => {
+                                  const val = getMachineEmValue(machineEm, date, machine, shift, registeredInfoForMonth.frameToDevice);
+                                  return (
+                                    <td 
+                                      key={`cell-${machine}-${date}-${shift}`}
+                                      onClick={() => setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' })}
+                                      className="p-2.5 text-center font-mono border-r border-stone-100 hover:bg-emerald-50 hover:text-emerald-800 transition-all cursor-pointer relative group"
+                                    >
+                                      {val !== undefined ? val : '-'}
+                                      <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
+                                        <Edit size={8} />
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                              </React.Fragment>
+                            ))}
+                          </tr>
+                        );
+                      })}
 
                       {/* Grand Total Row */}
                       <tr className="bg-stone-100/50 font-bold border-t-2 border-stone-200 text-stone-900">
@@ -1201,6 +1310,15 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
               {/* Date Filters */}
               <div className="flex flex-wrap items-center gap-4">
+                <CalendarMonthPicker
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onChange={(m, y) => {
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
+                  }}
+                />
+
                 <CalendarDatePicker
                   label="From Date"
                   value={fromDate}
@@ -1492,26 +1610,30 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
               {/* Controls */}
               <div className="flex flex-wrap items-center gap-4">
+                <CalendarMonthPicker
+                  month={selectedMonth}
+                  year={selectedYear}
+                  onChange={(m, y) => {
+                    setSelectedMonth(m);
+                    setSelectedYear(y);
+                  }}
+                />
+
                 <div className="flex flex-col gap-1">
                   <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">Select Date</label>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => {
-                        // Go to previous available date in history
-                        const sortedDates = [...history]
-                          .map(r => r.date)
-                          .filter(Boolean)
-                          .sort((a, b) => {
-                            return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
-                          });
-                        const currentIdx = sortedDates.indexOf(selectedDailyEmDate);
+                        const availableList = selectedMonthHistoryDates.length > 0 ? selectedMonthHistoryDates : calendarDates;
+                        const currentCanonical = normalizeToCanonicalDate(selectedDailyEmDate);
+                        const currentIdx = availableList.indexOf(currentCanonical);
                         if (currentIdx > 0) {
-                          setSelectedDailyEmDate(sortedDates[currentIdx - 1]);
+                          setSelectedDailyEmDate(availableList[currentIdx - 1]);
                         }
                       }}
-                      disabled={history.length <= 1}
+                      disabled={(selectedMonthHistoryDates.length || calendarDates.length) <= 1}
                       className="p-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-750 hover:bg-stone-100 transition-colors cursor-pointer disabled:opacity-50"
-                      title="Previous available date"
+                      title="Previous available date in selected month"
                     >
                       <ChevronLeft size={16} />
                     </button>
@@ -1526,21 +1648,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                     />
                     <button
                       onClick={() => {
-                        // Go to next available date in history
-                        const sortedDates = [...history]
-                          .map(r => r.date)
-                          .filter(Boolean)
-                          .sort((a, b) => {
-                            return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
-                          });
-                        const currentIdx = sortedDates.indexOf(selectedDailyEmDate);
-                        if (currentIdx !== -1 && currentIdx < sortedDates.length - 1) {
-                          setSelectedDailyEmDate(sortedDates[currentIdx + 1]);
+                        const availableList = selectedMonthHistoryDates.length > 0 ? selectedMonthHistoryDates : calendarDates;
+                        const currentCanonical = normalizeToCanonicalDate(selectedDailyEmDate);
+                        const currentIdx = availableList.indexOf(currentCanonical);
+                        if (currentIdx !== -1 && currentIdx < availableList.length - 1) {
+                          setSelectedDailyEmDate(availableList[currentIdx + 1]);
                         }
                       }}
-                      disabled={history.length <= 1}
+                      disabled={(selectedMonthHistoryDates.length || calendarDates.length) <= 1}
                       className="p-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-750 hover:bg-stone-100 transition-colors cursor-pointer disabled:opacity-50"
-                      title="Next available date"
+                      title="Next available date in selected month"
                     >
                       <ChevronRight size={16} />
                     </button>

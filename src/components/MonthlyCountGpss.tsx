@@ -284,8 +284,8 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
       }
     }
 
-    // 3. Fallback to image baseline data when viewing Oct 2026
-    if (selectedMonth === 10 && selectedYear === 2026) {
+    // 3. Fallback to image baseline data ONLY when no reports exist in history for Oct 2026
+    if (monthReports.length === 0 && selectedMonth === 10 && selectedYear === 2026) {
       const baselineVal = OCT_2026_IMAGE_DATA[count]?.[day];
       if (baselineVal !== undefined) {
         return baselineVal;
