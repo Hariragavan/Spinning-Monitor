@@ -17,7 +17,12 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
   label,
   disabled = false,
 }) => {
+  const [mounted, setMounted] = React.useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Convert DD/MM/YYYY to YYYY-MM-DD for native input[type="date"]
   let isoDate = '';
@@ -68,12 +73,13 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
   };
 
   return (
-    <div className={cn('relative inline-flex items-center', className)}>
+    <div className={cn('relative inline-flex items-center', className)} suppressHydrationWarning>
       {label && <span className="text-xs font-bold text-stone-500 mr-2 uppercase tracking-wider">{label}</span>}
       <button
         type="button"
         onClick={openPicker}
         disabled={disabled}
+        suppressHydrationWarning
         className={cn(
           "group inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-stone-200/90 bg-white shadow-sm hover:border-emerald-500 hover:bg-emerald-50/20 active:scale-[0.98] transition-all duration-150 cursor-pointer text-stone-800 text-xs font-bold",
           disabled && "opacity-50 cursor-not-allowed"
@@ -82,7 +88,7 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
         <span className="p-1 rounded-lg bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
           <Calendar size={14} className="stroke-[2.5]" />
         </span>
-        <span className="font-mono tracking-tight font-black text-stone-900 text-xs">
+        <span className="font-mono tracking-tight font-black text-stone-900 text-xs" suppressHydrationWarning>
           {displayDate || 'Select Date'}
         </span>
         <ChevronDown size={13} className="text-stone-400 group-hover:text-emerald-600 transition-colors" />
@@ -98,6 +104,7 @@ export const CalendarDatePicker: React.FC<CalendarDatePickerProps> = ({
         className="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10"
         tabIndex={-1}
         aria-hidden="true"
+        suppressHydrationWarning
       />
     </div>
   );
@@ -120,13 +127,18 @@ export const CalendarMonthPicker: React.FC<CalendarMonthPickerProps> = ({
   label,
   disabled = false,
 }) => {
+  const [mounted, setMounted] = React.useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const safeMonth = Math.max(1, Math.min(12, month || 1));
-  const safeYear = year || new Date().getFullYear();
+  const safeYear = year || 2026;
   const isoMonth = `${safeYear}-${String(safeMonth).padStart(2, '0')}`;
 
-  const monthName = new Date(safeYear, safeMonth - 1, 1).toLocaleString('default', {
+  const monthName = new Date(safeYear, safeMonth - 1, 1).toLocaleString('en-US', {
     month: 'long',
     year: 'numeric',
   });
@@ -158,12 +170,13 @@ export const CalendarMonthPicker: React.FC<CalendarMonthPickerProps> = ({
   };
 
   return (
-    <div className={cn('relative inline-flex items-center', className)}>
+    <div className={cn('relative inline-flex items-center', className)} suppressHydrationWarning>
       {label && <span className="text-xs font-bold text-stone-500 mr-2 uppercase tracking-wider">{label}</span>}
       <button
         type="button"
         onClick={openPicker}
         disabled={disabled}
+        suppressHydrationWarning
         className={cn(
           "group inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl border border-stone-200/90 bg-white shadow-sm hover:border-indigo-500 hover:bg-indigo-50/20 active:scale-[0.98] transition-all duration-150 cursor-pointer text-stone-800 text-xs font-bold",
           disabled && "opacity-50 cursor-not-allowed"
@@ -172,7 +185,7 @@ export const CalendarMonthPicker: React.FC<CalendarMonthPickerProps> = ({
         <span className="p-1 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
           <Calendar size={14} className="stroke-[2.5]" />
         </span>
-        <span className="font-semibold text-stone-900 text-xs tracking-tight">
+        <span className="font-semibold text-stone-900 text-xs tracking-tight" suppressHydrationWarning>
           {monthName}
         </span>
         <ChevronDown size={13} className="text-stone-400 group-hover:text-indigo-600 transition-colors" />
@@ -188,6 +201,7 @@ export const CalendarMonthPicker: React.FC<CalendarMonthPickerProps> = ({
         className="absolute inset-0 w-full h-full opacity-0 pointer-events-none -z-10"
         tabIndex={-1}
         aria-hidden="true"
+        suppressHydrationWarning
       />
     </div>
   );

@@ -290,6 +290,11 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
 const DEFAULT_WORKERS: Sider[] = [];
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [activeTab, setActiveTabState] = useState<string>("dashboard");
 
   const setActiveTab = useCallback((newTab: string) => {
@@ -3526,7 +3531,7 @@ export default function Home() {
                         onChange={(newDate) => handleTopDateChange(newDate)}
                         className="shrink-0"
                       />
-                      {activeDailyReport.date !== getYesterdayUniversalDate() && (
+                      {mounted && activeDailyReport.date !== getYesterdayUniversalDate() && (
                         <button
                           type="button"
                           onClick={() => handleTopDateChange(getYesterdayUniversalDate())}

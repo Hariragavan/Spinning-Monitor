@@ -37,6 +37,10 @@ export interface IotMachineDashboardProps {
 
 export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ selectedDate }) => {
   const [overview, setOverview] = useState<SpinfoOverviewResponse>(INITIAL_OVERVIEW);
+  const [mounted, setMounted] = useState<boolean>(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [selectedMachineDetail, setSelectedMachineDetail] = useState<SpinfoMachineDetailResponse | null>(null);
   const [activeMachineId, setActiveMachineId] = useState<string | null>(null);
 
@@ -408,21 +412,21 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 <span className="eyebrow-sub">{overview.city}</span>
               </>
             )}
-            <span className="ml-2 px-2.5 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-xs">
+            <span className="ml-2 px-2.5 py-0.5 rounded-full text-[10.5px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-xs" suppressHydrationWarning>
               Shift {overview.shift} · {overview.shiftDate} ({overview.totalShiftHours ?? 8}h)
             </span>
             {overview.msgId && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200" suppressHydrationWarning>
                 msgId: {overview.msgId}
               </span>
             )}
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200" suppressHydrationWarning>
               Part {overview.part ?? 1}/{overview.parts ?? 1} · Std EM: {stdMendingTime} {stdMendingUnit}
             </span>
           </div>
           <h1 className="title">Machine Telemetry Intelligence</h1>
           <p className="subtitle">
-            Live telemetry bound from <code style={{ fontSize: '0.75rem', color: '#2563eb' }}>{IOT_COMMON_API_URL}</code> · Data Time: <strong>{overview.dataTime}</strong>
+            Live telemetry bound from <code style={{ fontSize: '0.75rem', color: '#2563eb' }}>{IOT_COMMON_API_URL}</code> · Data Time: <strong suppressHydrationWarning>{overview.dataTime}</strong>
           </p>
         </div>
 
@@ -499,6 +503,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 setUserChangedDate(Boolean(val));
               }}
               className="date-input"
+              suppressHydrationWarning
             />
           </div>
 
@@ -517,6 +522,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   setUserChangedDate(Boolean(val));
                 }}
                 className="date-input"
+                suppressHydrationWarning
               />
               <button
                 type="button"
@@ -604,17 +610,17 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             )}
           </button>
 
-          {lastRefreshedAt && (
+          {mounted && lastRefreshedAt && (
             <div className="sync-indicator" title={`Synced with ${IOT_COMMON_API_URL} (5-min telemetry)`}>
               <span className="pulse-dot"></span>
-              <span className="sync-text">Live: {lastRefreshedAt.toLocaleTimeString()}</span>
+              <span className="sync-text" suppressHydrationWarning>Live: {lastRefreshedAt.toLocaleTimeString()}</span>
             </div>
           )}
 
-          {lastStatusTime && (
+          {mounted && lastStatusTime && (
             <div className="sync-indicator" title="Live 45-second machine running status check active">
               <span className="pulse-dot" style={{ background: '#10b981' }}></span>
-              <span className="sync-text">Status: {lastStatusTime.toLocaleTimeString()} (45s)</span>
+              <span className="sync-text" suppressHydrationWarning>Status: {lastStatusTime.toLocaleTimeString()} (45s)</span>
             </div>
           )}
         </div>
