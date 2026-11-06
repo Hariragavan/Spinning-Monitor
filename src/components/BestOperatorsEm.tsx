@@ -2,9 +2,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, MachineEmData } from '../types';
 import { Trophy, Calendar, Coins, Star, Award, Zap, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts, parseUniversalDate, computeOperatorShiftEm, getMachineEmValue } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
-import { getMachineEmValue } from './OperatorEmFormat';
 
 interface BestOperatorsEmProps {
   history: DailyReport[];
@@ -98,63 +97,68 @@ export const BestOperatorsEm: React.FC<BestOperatorsEmProps> = ({
 
     filteredHistory.forEach(report => {
       if (!report || !report.entries) return;
-      
-      report.entries.forEach(entry => {
-        let emVal = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
-        if (emVal === undefined) {
-          emVal = entry.doffEmt || 0;
-        }
 
-        const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
-        for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
-          const rawId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
-          if (!rawId) continue;
-          const cleanId = String(rawId).trim().toUpperCase();
-          const invalidMarkers = ['UNASSIGNED', '-', '--', 'NO SIDER', 'NONE', 'N/A', 'NULL', 'UNDEFINED', '0'];
-          if (invalidMarkers.includes(cleanId)) continue;
+      workers.forEach(worker => {
+        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+        if (!shiftRes || shiftRes.totalSides <= 0) return;
 
-          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
-            (w.id && (w.id.toUpperCase() === cleanId)) ||
-            (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
-            (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
-          );
-          if (!isBelongingToCurrentShed) continue;
+        const tNo = worker.tNo || worker.id;
+        if (!tNo) return;
 
-          const worker = resolveWorker(rawId, entry.siderName, workers);
-          const tNo = worker.tNo || worker.id;
-          if (!tNo) continue;
-
-          const amount = calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, report.shed);
-
-          const duty: OperatorDuty = {
-            date: report.date,
-            shift: entry.shift,
-            machineId: entry.frameNo,
-            count: entry.count,
-            gps: entry.gpsActual || 0,
-            em: emVal || 0,
-            incentive: amount
-          };
-
-          if (totals.has(tNo)) {
-            const current = totals.get(tNo)!;
-            current.amount += amount;
-            current.dutiesCount += 1;
-            current.duties.push(duty);
-            if ((current.name === tNo || current.name === 'Unknown Worker' || current.name === 'Unregistered') && worker.name) {
-              current.name = worker.name;
+        // Calculate incentive earned across assigned machine slots in this report
+        let totalShiftIncentive = 0;
+        report.entries.forEach(entry => {
+          const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
+          for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+            const rawId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
+            if (!rawId) continue;
+            const cleanId = String(rawId).trim().toUpperCase();
+            if (
+              cleanId === (worker.id || '').toUpperCase() ||
+              cleanId === (worker.tNo || '').toUpperCase() ||
+              (entry.siderName && entry.siderName.trim().toLowerCase() === worker.name.trim().toLowerCase())
+            ) {
+              totalShiftIncentive += calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, report.shed);
             }
-          } else {
-            totals.set(tNo, {
-              id: worker.id,
-              name: worker.name,
-              tNo: tNo,
-              amount: amount,
-              dutiesCount: 1,
-              photoUrl: worker.photoUrl,
-              duties: [duty]
-            });
           }
+        });
+
+        const mcLabel = shiftRes.machinesDetail
+          .map(m => `${m.frameNo} (${m.sides}s)`)
+          .join(', ');
+        const countLabel = shiftRes.machinesDetail
+          .map(m => m.count)
+          .filter(Boolean)
+          .join(', ') || '-';
+
+        const duty: OperatorDuty = {
+          date: report.date,
+          shift: shiftRes.shift,
+          machineId: mcLabel,
+          count: countLabel,
+          gps: shiftRes.totalGps,
+          em: shiftRes.totalEm,
+          incentive: totalShiftIncentive
+        };
+
+        if (totals.has(tNo)) {
+          const current = totals.get(tNo)!;
+          current.amount += totalShiftIncentive;
+          current.dutiesCount += 1;
+          current.duties.push(duty);
+          if ((current.name === tNo || current.name === 'Unknown Worker' || current.name === 'Unregistered') && worker.name) {
+            current.name = worker.name;
+          }
+        } else {
+          totals.set(tNo, {
+            id: worker.id,
+            name: worker.name,
+            tNo: tNo,
+            amount: totalShiftIncentive,
+            dutiesCount: 1,
+            photoUrl: worker.photoUrl,
+            duties: [duty]
+          });
         }
       });
     });

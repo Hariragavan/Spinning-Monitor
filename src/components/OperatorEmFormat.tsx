@@ -21,77 +21,11 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate } from '../lib/utils';
+import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, computeOperatorShiftEm } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 
-/**
- * Universal lookup for Machine EM values.
- * Resolves regardless of date format (DD/MM/YYYY vs YYYY-MM-DD),
- * frame variants (SP021 vs 21 vs RF21), or shift format (I vs 1 vs "1").
- */
-export function getMachineEmValue(
-  machineEmData: MachineEmData | undefined,
-  date: string,
-  frameNo: string,
-  shift: Shift | string | number
-): number | undefined {
-  if (!machineEmData || !date || !frameNo) return undefined;
-
-  // 1. Normalize shift to '1', '2', '3'
-  let sKey = '1';
-  const shiftStr = String(shift).trim().toUpperCase();
-  if (shiftStr === 'I' || shiftStr === '1' || shiftStr.includes('1')) sKey = '1';
-  else if (shiftStr === 'II' || shiftStr === '2' || shiftStr.includes('2')) sKey = '2';
-  else if (shiftStr === 'III' || shiftStr === '3' || shiftStr.includes('3')) sKey = '3';
-
-  // 2. Date candidates: exact, canonical (DD/MM/YYYY), ISO (YYYY-MM-DD)
-  const canonical = normalizeToCanonicalDate(date);
-  const parts = parseUniversalDateParts(date);
-  const iso = parts
-    ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
-    : date;
-  const dateCandidates = Array.from(new Set([date, canonical, iso])).filter(Boolean);
-
-  // 3. Frame candidates: exact, trimmed, digits, padded
-  const cleanFrame = frameNo.trim();
-  const upperFrame = cleanFrame.toUpperCase();
-  const digits = upperFrame.match(/\d+/);
-  const frameCandidates = new Set<string>([frameNo, cleanFrame, upperFrame]);
-
-  if (digits) {
-    const raw = digits[0];
-    const num = String(parseInt(raw, 10));
-    const p2 = raw.padStart(2, '0');
-    const p3 = raw.padStart(3, '0');
-    frameCandidates.add(raw);
-    frameCandidates.add(num);
-    frameCandidates.add(p2);
-    frameCandidates.add(p3);
-    frameCandidates.add(`RF${p2}`);
-    frameCandidates.add(`RF${num}`);
-    frameCandidates.add(`SP${p3}`);
-    frameCandidates.add(`SP${p2}`);
-    frameCandidates.add(`K${p2}`);
-    frameCandidates.add(`K${num}`);
-  }
-
-  for (const d of dateCandidates) {
-    const dateObj = machineEmData[d];
-    if (!dateObj) continue;
-    for (const f of frameCandidates) {
-      const fObj = dateObj[f];
-      if (fObj) {
-        const val = fObj[sKey] ?? (fObj as any)[Number(sKey)];
-        if (val !== undefined && val !== null) {
-          const numVal = Number(val);
-          if (!isNaN(numVal)) return numVal;
-        }
-      }
-    }
-  }
-
-  return undefined;
-}
+// Re-export for any existing external consumers
+export { getMachineEmValue };
 
 interface OperatorEmFormatProps {
   history: DailyReport[];
@@ -422,6 +356,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       em: number;
     }[] = [];
 
+    const selectedWorker = workers.find(w => w.id === selectedWorkerId || w.tNo === selectedWorkerId);
+
     // Search active daily reports
     history.forEach(report => {
       // Filter by date range
@@ -431,33 +367,26 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (start && rDate < start) return;
       if (end && rDate > end) return;
 
-      report.entries.forEach(entry => {
-        const isAssigned = entry.siderIds?.includes(selectedWorkerId) || 
-                           entry.siderId === selectedWorkerId;
-        
-        if (isAssigned) {
-          let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
-          if (emValue === undefined) {
-            emValue = entry.doffEmt || 0;
-          }
-
+      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, machineEm, workers);
+      if (shiftRes && shiftRes.machinesDetail.length > 0) {
+        shiftRes.machinesDetail.forEach(m => {
           logs.push({
             date: report.date,
-            shift: entry.shift,
-            machine: entry.frameNo,
-            gps: entry.gpsActual,
-            count: entry.count,
-            em: emValue
+            shift: shiftRes.shift,
+            machine: `${m.frameNo} (${m.sides} side${m.sides > 1 ? 's' : ''})`,
+            gps: m.gps,
+            count: m.count || '',
+            em: m.assignedEm
           });
-        }
-      });
+        });
+      }
     });
 
     // Sort chronological
     return logs.sort((a, b) => {
       return parseUniversalDate(a.date).getTime() - parseUniversalDate(b.date).getTime();
     });
-  }, [history, machineEm, selectedWorkerId, fromDate, toDate]);
+  }, [history, machineEm, selectedWorkerId, fromDate, toDate, workers]);
 
   // Aggregate stats for individual view
   const individualStats = useMemo(() => {
@@ -474,9 +403,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
   // 3. Consolidated Monthly Operator EM Abstract
   const monthlyAbstract = useMemo(() => {
-    const targetMonthStr = String(selectedMonth).padStart(2, '0');
-    const targetYearStr = String(selectedYear);
-
     const siderData: Record<string, {
       id: string;
       name: string;
@@ -507,37 +433,28 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (!parts) return;
       if (parts.month !== selectedMonth || parts.year !== selectedYear) return;
 
-      report.entries.forEach(entry => {
-        const entryWorkers = entry.siderIds || (entry.siderId ? [entry.siderId] : []);
-        entryWorkers.forEach(wId => {
-          if (!siderData[wId]) {
-            // Sider not in worker master, create on-the-fly
-            const resolved = workers.find(work => work.id === wId || work.tNo === wId);
-            siderData[wId] = {
-              id: wId,
-              name: resolved?.name || entry.siderName || `Ticket ${wId}`,
-              tNo: resolved?.tNo || wId,
+      workers.forEach(worker => {
+        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+        if (shiftRes && shiftRes.totalSides > 0) {
+          if (!siderData[worker.id]) {
+            siderData[worker.id] = {
+              id: worker.id,
+              name: worker.name,
+              tNo: worker.tNo,
               shifts: 0,
               totalGps: 0,
               totalEm: 0,
               emCount: 0
             };
           }
-
-          const record = siderData[wId];
-          record.shifts += 1;
-          record.totalGps += entry.gpsActual;
-
-          let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
-          if (emValue === undefined) {
-            emValue = entry.doffEmt || 0;
+          const rec = siderData[worker.id];
+          rec.shifts += 1;
+          rec.totalGps += shiftRes.totalGps;
+          if (shiftRes.totalEm > 0) {
+            rec.totalEm += shiftRes.totalEm;
+            rec.emCount += 1;
           }
-
-          if (emValue > 0) {
-            record.totalEm += emValue;
-            record.emCount += 1;
-          }
-        });
+        }
       });
     });
 
@@ -554,46 +471,23 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
   // Operator Monthly EM grid data
   const operatorEmGridData = useMemo(() => {
-    const lookup: Record<string, Record<string, number[]>> = {};
+    const lookup: Record<string, Record<string, number>> = {};
 
     history.forEach(report => {
       const dateStr = report.date;
+      if (!report || !report.entries) return;
       if (!lookup[dateStr]) {
         lookup[dateStr] = {};
       }
 
-      if (report.entries) {
-        report.entries.forEach(entry => {
-          const assignedIds = new Set<string>();
-          if (entry.siderId) assignedIds.add(entry.siderId);
-          if (entry.siderIds) {
-            entry.siderIds.forEach(id => { if (id) assignedIds.add(id); });
-          }
-
-          // Resolve name match as fallback
-          if (entry.siderName) {
-            const nameMatchWorker = workers.find(w => 
-              w.name.toLowerCase().trim() === entry.siderName!.toLowerCase().trim()
-            );
-            if (nameMatchWorker) {
-              assignedIds.add(nameMatchWorker.id);
-              assignedIds.add(nameMatchWorker.tNo);
-            }
-          }
-
-          let emValue = getMachineEmValue(machineEm, dateStr, entry.frameNo, entry.shift);
-          if (emValue === undefined) {
-            emValue = entry.doffEmt || 0;
-          }
-
-          assignedIds.forEach(workerId => {
-            if (!lookup[dateStr][workerId]) {
-              lookup[dateStr][workerId] = [];
-            }
-            lookup[dateStr][workerId].push(emValue);
-          });
-        });
-      }
+      workers.forEach(worker => {
+        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+        if (shiftRes && shiftRes.totalSides > 0 && shiftRes.totalEm > 0) {
+          const prev = lookup[dateStr][worker.id] || 0;
+          lookup[dateStr][worker.id] = Number((prev + shiftRes.totalEm).toFixed(3));
+          lookup[dateStr][worker.tNo] = lookup[dateStr][worker.id];
+        }
+      });
     });
 
     const rows = workers.map(worker => {
@@ -602,22 +496,17 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       let totalEmCount = 0;
 
       calendarDates.forEach(dateStr => {
-        const ems1 = lookup[dateStr]?.[worker.id] || [];
-        const ems2 = lookup[dateStr]?.[worker.tNo] || [];
-        const allEms = [...ems1, ...ems2];
-
-        if (allEms.length > 0) {
-          const avgEm = allEms.reduce((sum, val) => sum + val, 0) / allEms.length;
-          const roundedEm = Math.round(avgEm * 1000) / 1000;
-          dateValues[dateStr] = roundedEm;
-          totalEmSum += roundedEm;
+        const val = lookup[dateStr]?.[worker.id] ?? lookup[dateStr]?.[worker.tNo];
+        if (val !== undefined && val !== null) {
+          dateValues[dateStr] = val;
+          totalEmSum += val;
           totalEmCount++;
         } else {
           dateValues[dateStr] = null;
         }
       });
 
-      const averageEm = totalEmCount > 0 ? (totalEmSum / totalEmCount) : null;
+      const averageEm = totalEmCount > 0 ? Number((totalEmSum / totalEmCount).toFixed(3)) : null;
 
       return {
         worker,
@@ -674,73 +563,35 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       em: number;
     }[] = [];
 
-    report.entries.forEach(entry => {
-      // Resolve all siders assigned
-      const assignedIds: string[] = [];
-      if (entry.siderIds && entry.siderIds.length > 0) {
-        entry.siderIds.forEach(id => {
-          if (id) assignedIds.push(id);
-        });
-      } else if (entry.siderId) {
-        assignedIds.push(entry.siderId);
-      }
+    workers.forEach(worker => {
+      const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+      if (shiftRes && shiftRes.totalSides > 0) {
+        const mcLabel = shiftRes.machinesDetail
+          .map(m => `${m.frameNo} (${m.sides}s)`)
+          .join(', ');
+        const countLabel = shiftRes.machinesDetail
+          .map(m => m.count)
+          .filter(Boolean)
+          .join(', ');
 
-      // Check name match as fallback if no IDs are linked
-      if (assignedIds.length === 0 && entry.siderName) {
-        const nameMatchWorker = workers.find(w => 
-          w.name.toLowerCase().trim() === entry.siderName!.toLowerCase().trim()
-        );
-        if (nameMatchWorker) {
-          assignedIds.push(nameMatchWorker.id);
-        }
-      }
-
-      let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
-      if (emValue === undefined) {
-        emValue = entry.doffEmt || 0;
-      }
-
-      if (assignedIds.length > 0) {
-        assignedIds.forEach(id => {
-          const worker = workers.find(w => w.id === id);
-          const name = worker ? worker.name : (entry.siderName || 'Unassigned');
-          if (name.toLowerCase().trim() !== 'unassigned') {
-            list.push({
-              siderName: name,
-              tNo: worker?.tNo,
-              shift: entry.shift,
-              mcNo: entry.frameNo,
-              count: entry.count || '',
-              gps: entry.gpsActual || 0,
-              em: emValue
-            });
-          }
-        });
-      } else if (entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned') {
         list.push({
-          siderName: entry.siderName,
-          shift: entry.shift,
-          mcNo: entry.frameNo,
-          count: entry.count || '',
-          gps: entry.gpsActual || 0,
-          em: emValue
+          siderName: worker.name,
+          tNo: worker.tNo,
+          shift: shiftRes.shift,
+          mcNo: mcLabel,
+          count: countLabel || '-',
+          gps: shiftRes.totalGps,
+          em: shiftRes.totalEm
         });
       }
     });
 
-    // Sort by Shift (I, II, III), then MC NO, then Sider Name
     return list.sort((a, b) => {
-      const shiftOrder: Record<Shift, number> = { 'I': 1, 'II': 2, 'III': 3 };
-      const aOrder = shiftOrder[a.shift] || 99;
-      const bOrder = shiftOrder[b.shift] || 99;
-      if (aOrder !== bOrder) return aOrder - bOrder;
-
-      const aMc = a.mcNo.localeCompare(b.mcNo);
-      if (aMc !== 0) return aMc;
-
-      return a.siderName.localeCompare(b.siderName);
+      const aTNo = parseInt(a.tNo || '0') || 0;
+      const bTNo = parseInt(b.tNo || '0') || 0;
+      return aTNo - bTNo;
     });
-  }, [history, machineEm, selectedDailyEmDate, workers]);
+  }, [history, selectedDailyEmDate, machineEm, workers]);
 
   const exportDailyEmToExcel = () => {
     if (dailyEmRows.length === 0) return;

@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { IncentiveRule, ProductionEntry, Sider, DailyReport, Shift, Shed } from "../types";
+import { IncentiveRule, ProductionEntry, Sider, DailyReport, Shift, Shed, MachineEmData } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -891,4 +891,214 @@ export function calculateSiderSlotIncentive(
   }
 
   return 0;
+}
+
+/**
+ * Universal lookup for Machine EM values.
+ * Resolves regardless of date format (DD/MM/YYYY vs YYYY-MM-DD),
+ * frame variants (SP021 vs 21 vs RF21), or shift format (I vs 1 vs "1").
+ */
+export function getMachineEmValue(
+  machineEmData: MachineEmData | undefined,
+  date: string,
+  frameNo: string,
+  shift: Shift | string | number
+): number | undefined {
+  if (!machineEmData || !date || !frameNo) return undefined;
+
+  // 1. Normalize shift to '1', '2', '3'
+  let sKey = '1';
+  const shiftStr = String(shift).trim().toUpperCase();
+  if (shiftStr === 'I' || shiftStr === '1' || shiftStr.includes('1')) sKey = '1';
+  else if (shiftStr === 'II' || shiftStr === '2' || shiftStr.includes('2')) sKey = '2';
+  else if (shiftStr === 'III' || shiftStr === '3' || shiftStr.includes('3')) sKey = '3';
+
+  // 2. Date candidates: exact, canonical (DD/MM/YYYY), ISO (YYYY-MM-DD)
+  const canonical = normalizeToCanonicalDate(date);
+  const parts = parseUniversalDateParts(date);
+  const iso = parts
+    ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+    : date;
+  const dateCandidates = Array.from(new Set([date, canonical, iso])).filter(Boolean);
+
+  // 3. Frame candidates: exact, trimmed, digits, padded
+  const cleanFrame = frameNo.trim();
+  const upperFrame = cleanFrame.toUpperCase();
+  const digits = upperFrame.match(/\d+/);
+  const frameCandidates = new Set<string>([frameNo, cleanFrame, upperFrame]);
+
+  if (digits) {
+    const raw = digits[0];
+    const num = String(parseInt(raw, 10));
+    const p2 = raw.padStart(2, '0');
+    const p3 = raw.padStart(3, '0');
+    frameCandidates.add(raw);
+    frameCandidates.add(num);
+    frameCandidates.add(p2);
+    frameCandidates.add(p3);
+    frameCandidates.add(`RF${p2}`);
+    frameCandidates.add(`RF${num}`);
+    frameCandidates.add(`SP${p3}`);
+    frameCandidates.add(`SP${p2}`);
+    frameCandidates.add(`K${p2}`);
+    frameCandidates.add(`K${num}`);
+  }
+
+  for (const d of dateCandidates) {
+    const dateObj = machineEmData[d];
+    if (!dateObj) continue;
+    for (const f of frameCandidates) {
+      const fObj = dateObj[f];
+      if (fObj) {
+        const val = fObj[sKey] ?? (fObj as any)[Number(sKey)];
+        if (val !== undefined && val !== null) {
+          const numVal = Number(val);
+          if (!isNaN(numVal)) return numVal;
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export interface OperatorShiftEmResult {
+  shift: Shift;
+  totalSides: number;
+  totalEm: number;
+  totalGps: number;
+  machinesDetail: {
+    frameNo: string;
+    sides: number;
+    machineEm: number;
+    assignedEm: number;
+    gps: number;
+    count?: string;
+  }[];
+}
+
+/**
+ * Calculates the total End Mending (EM) and sides assigned to an operator in a given DailyReport.
+ * Supports:
+ * - 1 side (half machine): machineEm / 2
+ * - 2 sides (1 full machine): machineEm
+ * - 3 sides (1 full machine + 1 half machine): machineEm_1 + (machineEm_2 / 2)
+ * - 4 sides (2 full machines): machineEm_1 + machineEm_2
+ * - Multi-machine side sums
+ */
+export function computeOperatorShiftEm(
+  targetWorker: Sider | string,
+  report: DailyReport,
+  machineEmData: MachineEmData | undefined,
+  workers: Sider[] = []
+): OperatorShiftEmResult | null {
+  if (!report || !report.entries || report.entries.length === 0) return null;
+
+  // Resolve target worker keys (id, tNo, clean lowercase name)
+  let targetId = '';
+  let targetTNo = '';
+  let targetName = '';
+
+  if (typeof targetWorker === 'string') {
+    const clean = targetWorker.trim().toLowerCase();
+    const resolved = workers.find(w =>
+      (w.id && w.id.toLowerCase() === clean) ||
+      (w.tNo && w.tNo.toLowerCase() === clean) ||
+      (w.name && w.name.toLowerCase().trim() === clean)
+    );
+    if (resolved) {
+      targetId = resolved.id.toLowerCase();
+      targetTNo = (resolved.tNo || '').toLowerCase();
+      targetName = resolved.name.toLowerCase().trim();
+    } else {
+      targetId = clean;
+      targetTNo = clean;
+    }
+  } else if (targetWorker) {
+    targetId = (targetWorker.id || '').toLowerCase();
+    targetTNo = (targetWorker.tNo || '').toLowerCase();
+    targetName = (targetWorker.name || '').toLowerCase().trim();
+  }
+
+  const matchesWorker = (idOrName?: string | null): boolean => {
+    if (!idOrName) return false;
+    const clean = String(idOrName).trim().toLowerCase();
+    if (clean === '-' || clean === '--' || clean === 'unassigned' || clean === 'none' || clean === 'null' || clean === '0') return false;
+    if (targetId && clean === targetId) return true;
+    if (targetTNo && clean === targetTNo) return true;
+    if (targetName && clean === targetName) return true;
+    return false;
+  };
+
+  const isAssignedWorker = (val?: string | null): boolean => {
+    if (!val) return false;
+    const clean = String(val).trim().toLowerCase();
+    return clean !== '' && clean !== '-' && clean !== '--' && clean !== 'unassigned' && clean !== 'none' && clean !== 'null' && clean !== '0';
+  };
+
+  const machinesDetail: OperatorShiftEmResult['machinesDetail'] = [];
+  let totalSides = 0;
+  let totalEm = 0;
+  let totalGps = 0;
+
+  report.entries.forEach(entry => {
+    const slot0 = entry.siderIds?.[0] || entry.siderId;
+    const slot1 = entry.siderIds?.[1];
+
+    const slot0Match = matchesWorker(slot0) || (entry.siderName && matchesWorker(entry.siderName));
+    const slot1Match = matchesWorker(slot1);
+
+    if (!slot0Match && !slot1Match) return;
+
+    let sides = 0;
+    if (slot0Match && slot1Match) {
+      sides = 2;
+    } else if (slot0Match) {
+      // If slot 1 has another valid assigned worker, this worker ran 1 side only
+      const otherInSlot1 = isAssignedWorker(slot1) && !slot1Match;
+      sides = otherInSlot1 ? 1 : 2;
+    } else if (slot1Match) {
+      // If slot 0 has another valid assigned worker, this worker ran 1 side only
+      const otherInSlot0 = isAssignedWorker(slot0) && !slot0Match;
+      sides = otherInSlot0 ? 1 : 2;
+    }
+
+    if (sides <= 0) return;
+
+    const frame = entry.frameNo || (entry as any).machineId || '';
+    const shift = entry.shift || (report as any).shift || 'I';
+    let machineEm = getMachineEmValue(machineEmData, report.date, frame, shift);
+    if (machineEm === undefined) {
+      machineEm = entry.doffEmt ?? 0;
+    }
+
+    // Full machine EM represents 2 sides.
+    // 1 side = machineEm / 2
+    // 2 sides = machineEm
+    const assignedEm = sides === 2 ? machineEm : Number(((machineEm / 2) * sides).toFixed(3));
+    const gpsPart = Number(((entry.gpsActual || 0) * (sides / 2)).toFixed(3));
+
+    totalSides += sides;
+    totalEm += assignedEm;
+    totalGps += gpsPart;
+
+    machinesDetail.push({
+      frameNo: frame,
+      sides,
+      machineEm,
+      assignedEm,
+      gps: entry.gpsActual || 0,
+      count: entry.count
+    });
+  });
+
+  if (totalSides === 0) return null;
+
+  return {
+    shift: (report.entries[0]?.shift || (report as any).shift || 'I') as Shift,
+    totalSides,
+    totalEm: Number(totalEm.toFixed(3)),
+    totalGps: Number(totalGps.toFixed(3)),
+    machinesDetail
+  };
 }

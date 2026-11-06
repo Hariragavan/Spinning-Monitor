@@ -2,9 +2,8 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, MachineEmData } from '../types';
 import { Trophy, ArrowDown, ArrowUp, AlertTriangle, HelpCircle, Users, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn, resolveWorker, parseUniversalDateParts } from '../lib/utils';
+import { cn, resolveWorker, parseUniversalDateParts, computeOperatorShiftEm, getMachineEmValue } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
-import { getMachineEmValue } from './OperatorEmFormat';
 
 interface EmOutliersCompareProps {
   history: DailyReport[];
@@ -96,61 +95,35 @@ export const EmOutliersCompare: React.FC<EmOutliersCompareProps> = ({
 
     filteredHistory.forEach(report => {
       if (!report || !report.entries) return;
-      
-      report.entries.forEach(entry => {
-        const assignedIds = new Set<string>();
-        if (entry.siderId) assignedIds.add(entry.siderId);
-        if (entry.siderIds) {
-          entry.siderIds.forEach(id => {
-            if (id) assignedIds.add(id);
+
+      workers.forEach(worker => {
+        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, workers);
+        if (!shiftRes || shiftRes.totalSides <= 0) return;
+
+        const tNo = worker.tNo || worker.id;
+        if (!tNo) return;
+
+        if (totals.has(tNo)) {
+          const current = totals.get(tNo)!;
+          current.dutiesCount += 1;
+          if (shiftRes.totalEm > 0) {
+            current.emSum += shiftRes.totalEm;
+            current.emCount += 1;
+          }
+          if ((current.name === tNo || current.name === 'Unknown Worker' || current.name === 'Unregistered') && worker.name) {
+            current.name = worker.name;
+          }
+        } else {
+          totals.set(tNo, {
+            id: worker.id,
+            name: worker.name,
+            tNo: tNo,
+            dutiesCount: 1,
+            emSum: shiftRes.totalEm > 0 ? shiftRes.totalEm : 0,
+            emCount: shiftRes.totalEm > 0 ? 1 : 0,
+            photoUrl: worker.photoUrl
           });
         }
-
-        if (assignedIds.size === 0) {
-          const fallbackTNo = entry.siderName?.split(' ')[0] || (entry.siderName ? entry.siderName.substring(0, 5) : null);
-          if (fallbackTNo) assignedIds.add(fallbackTNo);
-        }
-
-        let emVal = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift);
-        if (emVal === undefined) {
-          emVal = entry.doffEmt || 0;
-        }
-
-        assignedIds.forEach(idVal => {
-          const cleanId = String(idVal || '').trim().toUpperCase();
-          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
-            (w.id && (w.id.toUpperCase() === cleanId)) ||
-            (w.tNo && (w.tNo.toUpperCase() === cleanId)) ||
-            (w.name && entry.siderName && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
-          );
-          if (!isBelongingToCurrentShed) return;
-
-          const worker = resolveWorker(idVal, entry.siderName, workers);
-          const tNo = worker.tNo || worker.id;
-          if (!tNo) return;
-
-          if (totals.has(tNo)) {
-            const current = totals.get(tNo)!;
-            current.dutiesCount += 1;
-            if (emVal && emVal > 0) {
-              current.emSum += emVal;
-              current.emCount += 1;
-            }
-            if ((current.name === tNo || current.name === 'Unknown Worker' || current.name === 'Unregistered') && worker.name) {
-              current.name = worker.name;
-            }
-          } else {
-            totals.set(tNo, {
-              id: worker.id,
-              name: worker.name,
-              tNo: tNo,
-              dutiesCount: 1,
-              emSum: (emVal && emVal > 0) ? emVal : 0,
-              emCount: (emVal && emVal > 0) ? 1 : 0,
-              photoUrl: worker.photoUrl
-            });
-          }
-        });
       });
     });
 

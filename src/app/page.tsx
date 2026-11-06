@@ -48,7 +48,11 @@ import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncent
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching, extractCountNumber } from '@/lib/utils';
-import { CalendarDatePicker, CalendarMonthPicker } from '@/components/CalendarPickers';
+import dynamic from 'next/dynamic';
+const CalendarDatePicker = dynamic(
+  () => import('@/components/CalendarPickers').then(mod => mod.CalendarDatePicker),
+  { ssr: false }
+);
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
 
 import { motion, AnimatePresence } from 'motion/react';
