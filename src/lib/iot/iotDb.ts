@@ -23,7 +23,8 @@ import {
 } from '@/types/iot';
 
 export const IOT_COLLECTIONS = {
-  COMMON: 'iot_commondatas',
+  SHIFTWISE: 'iot_shiftwise_data',
+  COMMON: 'iot_shiftwise_data', // Alias for backwards compatibility
   MACHINES: 'iot_machines',
   EMPLOYEES: 'iot_employees',
   DEVICES: 'iot_devices',
@@ -171,26 +172,10 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
 
   try {
     const db = await getIotDb();
-
-    // 1. Bulk upsert incoming packets into iot_commondatas
-    const commonCol = db.collection(IOT_COLLECTIONS.COMMON);
-    const commonBulkOps = records.map(doc => {
-      const { _id, ...cleanDoc } = doc;
-      const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
-      return {
-        updateOne: {
-          filter: { msgId },
-          update: { $set: cleanDoc },
-          upsert: true
-        }
-      };
-    });
-    if (commonBulkOps.length > 0) {
-      await commonCol.bulkWrite(commonBulkOps, { ordered: false }).catch(() => {});
-    }
-
-    // 2. Process EM for ALL shifts present in incoming records (merge multi-part if needed)
+    const shiftwiseCol = db.collection(IOT_COLLECTIONS.SHIFTWISE);
     const emCol = db.collection(IOT_COLLECTIONS.EM);
+
+    // Group records by (shiftDate, shift)
     const shiftGroups = new Map<string, any[]>();
     for (const r of records) {
       if (!r || !Array.isArray(r.machines)) continue;
@@ -200,9 +185,15 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
       shiftGroups.set(key, list);
     }
 
-    const emBulkOps: any[] = [];
     for (const [_key, recList] of shiftGroups.entries()) {
       const baseRec = recList[0];
+      const isShiftEnd = (
+        baseRec.recordType === 'SHIFT_END' ||
+        String(baseRec.msgId || '').toUpperCase().endsWith('-END') ||
+        recList.some(r => r.recordType === 'SHIFT_END' || String(r.msgId || '').toUpperCase().endsWith('-END'))
+      );
+
+      // Merge multi-part packets to accurately get all 46 machines
       const machineMap = new Map<string, any>();
       for (const r of recList) {
         for (const m of (r.machines || [])) {
@@ -216,8 +207,33 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
       const shiftDate = String(baseRec.shiftDate || (baseRec.dataTime ? baseRec.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
       const month = shiftDate.slice(0, 7);
       const shift = Number(baseRec.shift || 1);
-      const hour = calculateShiftHour(shift, baseRec.dataTime);
 
+      // 1. If SHIFT_END: Save permanent shift-wise summary to iot_shiftwise_data (NOT time-wise)
+      if (isShiftEnd) {
+        const { _id, ...cleanDoc } = baseRec;
+        const msgId = cleanDoc.msgId || `${shiftDate.replace(/-/g, '')}-S${shift}-END`;
+        await shiftwiseCol.updateOne(
+          { shiftDate, shift },
+          {
+            $set: {
+              ...cleanDoc,
+              msgId,
+              recordType: 'SHIFT_END',
+              shiftDate,
+              month,
+              shift,
+              machineCount: mergedMachines.length,
+              machines: mergedMachines,
+              updatedAt: new Date()
+            },
+            $setOnInsert: { createdAt: new Date() }
+          },
+          { upsert: true }
+        );
+      }
+
+      // 2. Machine EM update in iot_em (Machine-by-machine, shift-by-shift, date-wise)
+      const emBulkOps: any[] = [];
       for (const m of mergedMachines) {
         const mNo = String(m.machine || m.machineId || 'RF01');
         const sideL = (m.sides || []).find((s: any) => s.side === 'L');
@@ -228,19 +244,17 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
         const unit = String(sideL?.endMendingTimeUnit || sideR?.endMendingTimeUnit || 'min');
         const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
         const endBreakCountRight = Number(sideR?.endBreakCount || 0);
-        const totalEndBreaks = Number(m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+        const totalEndBreaks = Number(m.shiftEndBreaks || m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
 
         emBulkOps.push({
           updateOne: {
-            filter: { machineNo: mNo, date: shiftDate, shift, hour },
+            filter: { machineNo: mNo, date: shiftDate, shift },
             update: {
               $set: {
                 machineNo: mNo,
                 date: shiftDate,
                 month,
                 shift,
-                hour,
-                hourLabel: `Hour ${hour}`,
                 emLeft,
                 emRight,
                 emTotal,
@@ -248,7 +262,7 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
                 endBreakCountLeft,
                 endBreakCountRight,
                 totalEndBreaks,
-                isFinalized: false,
+                isShiftFinal: isShiftEnd,
                 updatedAt: new Date()
               },
               $setOnInsert: { recordedAt: new Date() }
@@ -257,45 +271,24 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
           }
         });
       }
+
+      if (emBulkOps.length > 0) {
+        await emCol.bulkWrite(emBulkOps, { ordered: false }).catch(() => {});
+      }
     }
 
-    if (emBulkOps.length > 0) {
-      await emCol.bulkWrite(emBulkOps, { ordered: false }).catch(() => {});
-    }
-
-    // 3. Update live snapshot with latest overall record
+    // 3. Update live snapshot with latest overall record (overwrites in-place)
     const latest = records[0];
     if (latest && Array.isArray(latest.machines) && latest.machines.length > 0) {
       const { _id: _ignoredId, ...cleanLatest } = latest;
       const shiftDate = String(cleanLatest.shiftDate || (cleanLatest.dataTime ? cleanLatest.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
-      const month = shiftDate.slice(0, 7);
       const shift = Number(cleanLatest.shift || 1);
 
-      // 3a. Update singleton live snapshot with clean fixed _id
       await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).updateOne(
         { _id: 'spinfo_live_snapshot' as any },
         { $set: { ...cleanLatest, shiftDate, shift, updatedAt: new Date() } },
         { upsert: true }
       );
-
-      // 3b. Append telemetry tick to iot_spinfo_histories
-      const histCol = db.collection(IOT_COLLECTIONS.SPINFO_HISTORIES);
-      await histCol.insertOne({
-        ...cleanLatest,
-        shiftDate,
-        month,
-        shift,
-        isShiftFinal: false,
-        recordedAt: new Date()
-      });
-    }
-
-    // 4. Auto-sync mapped IoT EM to Spinning Monitor machine_em
-    try {
-      const { syncIotEmToSpinningMonitor } = await import('./iotEmService');
-      await syncIotEmToSpinningMonitor();
-    } catch (syncErr) {
-      console.warn('[persistLiveIotPayload] Error syncing EM to spinning monitor:', syncErr);
     }
   } catch (err) {
     console.error('[persistLiveIotPayload] Error persisting live IoT payload:', err);
@@ -384,11 +377,37 @@ export async function getIotOverview(
     }
   }
 
-  // 2. Fallback to local MongoDB collections
+  // 2. Local MongoDB collections (iot_shiftwise_data for past shifts, iot_spinfo_lives for live)
   try {
     const db = await getIotDb();
 
-    // 2a. Check iot_spinfo_lives singleton snapshot
+    // 2a. If looking for past data (targetDate specified): query iot_shiftwise_data first
+    if (targetDate) {
+      const shiftQuery: any = { shiftDate: targetDate };
+      if (shiftFilter) shiftQuery.shift = Number(shiftFilter);
+
+      const shiftDocs = await db
+        .collection(IOT_COLLECTIONS.SHIFTWISE)
+        .find(shiftQuery)
+        .sort({ shift: -1 })
+        .toArray();
+
+      if (shiftDocs.length > 0) {
+        const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(shiftDocs, {
+          fromDate,
+          toDate,
+          shiftDate: targetDate,
+          shift: shiftFilter
+        });
+        if (record) {
+          const overview = transformCommonToOverview(record, { availableDates, availableShifts });
+          overviewCache.set(cacheKey, { data: overview, timestamp: now });
+          return overview;
+        }
+      }
+    }
+
+    // 2b. Live snapshot (current shift): Check iot_spinfo_lives singleton snapshot
     const liveDoc = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
     if (liveDoc && Array.isArray(liveDoc.machines) && liveDoc.machines.length > 0) {
       const { record, availableDates, availableShifts } = selectAndMergeCommonRecord([liveDoc], {
@@ -404,11 +423,11 @@ export async function getIotOverview(
       }
     }
 
-    // 2b. Check iot_commondatas
+    // 2c. Fallback to latest shiftwise record in iot_shiftwise_data
     const localDocs = await db
-      .collection(IOT_COLLECTIONS.COMMON)
+      .collection(IOT_COLLECTIONS.SHIFTWISE)
       .find({})
-      .sort({ createdAt: -1, _id: -1 })
+      .sort({ shiftDate: -1, shift: -1 })
       .limit(10)
       .toArray();
 
@@ -425,16 +444,6 @@ export async function getIotOverview(
         overviewCache.set(cacheKey, { data: overview, timestamp: now });
         return overview;
       }
-    }
-
-    // 2c. Check iot_spinfo_histories
-    const historyDoc = await db
-      .collection(IOT_COLLECTIONS.SPINFO_HISTORIES)
-      .findOne({}, { sort: { recordedAt: -1, createdAt: -1 } });
-    if (historyDoc && Array.isArray(historyDoc.machines) && historyDoc.machines.length > 0) {
-      const overview = transformCommonToOverview(historyDoc);
-      overviewCache.set(cacheKey, { data: overview, timestamp: now });
-      return overview;
     }
   } catch (_) {}
 
@@ -906,3 +915,44 @@ export async function saveIotMapping(mapping: MachineMapping): Promise<MachineMa
   } catch (_) {}
   return mapping;
 }
+
+/**
+ * Deletes legacy/interim telemetry ticks and drops machine_em if still present,
+ * ensuring MongoDB Atlas remains lightweight with only:
+ * - iot_shiftwise_data (permanent 8-hour shift summaries)
+ * - iot_em (final shift-wise machine EM records)
+ * - iot_spinfo_lives (current real-time live snapshot)
+ */
+export async function cleanupInterimIotHistories(): Promise<{
+  deletedCommon: number;
+  deletedHistories: number;
+  machineEmDropped: boolean;
+}> {
+  try {
+    const db = await getIotDb();
+    let deletedCommon = 0;
+    let deletedHistories = 0;
+    let machineEmDropped = false;
+
+    try {
+      const res = await db.collection('iot_commondatas').deleteMany({});
+      deletedCommon = res.deletedCount;
+    } catch (_) {}
+
+    try {
+      const res = await db.collection('iot_spinfo_histories').deleteMany({});
+      deletedHistories = res.deletedCount;
+    } catch (_) {}
+
+    try {
+      await db.collection('machine_em').drop();
+      machineEmDropped = true;
+    } catch (_) {}
+
+    return { deletedCommon, deletedHistories, machineEmDropped };
+  } catch (err) {
+    console.error('Error cleaning up interim IoT histories:', err);
+    return { deletedCommon: 0, deletedHistories: 0, machineEmDropped: false };
+  }
+}
+

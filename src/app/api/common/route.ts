@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { DailyReport, Sider, CountConversion, IncentiveRule, MachineMasterItem, ProductionEntry } from '@/types';
 import { getTodayUniversalDate, createDefaultReportForShed } from '@/lib/parser';
-import { syncIotEmToSpinningMonitor } from '@/lib/iot/iotEmService';
+import { syncIotEmToSpinningMonitor, getMappedMachineEmFromIotEm } from '@/lib/iot/iotEmService';
 
 // Mill standard counts per shed
 const SHED_REAL_COUNTS: Record<string, string[]> = {
@@ -56,14 +56,14 @@ export async function GET(req: Request) {
     // Attempt MongoDB connection
     try {
       const db = await getDb();
-      const [wDocs, rDocs, cDocs, repDocs, mDocs, setDoc, emDoc] = await Promise.all([
+      const [wDocs, rDocs, cDocs, repDocs, mDocs, setDoc, mappedEm] = await Promise.all([
         db.collection('workers').find({}, { projection: { _id: 0 } }).toArray(),
         db.collection('incentive_rules').find({}, { projection: { _id: 0 } }).toArray(),
         db.collection('count_conversions').find({}, { projection: { _id: 0 } }).toArray(),
         db.collection('reports').find({}, { projection: { _id: 0 } }).toArray(),
         db.collection('machines').find({}, { projection: { _id: 0 } }).toArray(),
         db.collection('settings').findOne({ _id: 'system_settings' as any }),
-        db.collection('machine_em').findOne({ _id: 'machine_em_data' as any }),
+        getMappedMachineEmFromIotEm(),
       ]);
 
       workers = (wDocs as unknown as Sider[]) || [];
@@ -85,19 +85,7 @@ export async function GET(req: Request) {
         };
       });
       settings = setDoc ? (({ _id, ...rest }) => rest)(setDoc) : {};
-      machineEm = emDoc?.data || {};
-
-      // If mapped IoT machines exist, ensure fresh EM sync into machineEm
-      if (settings?.iotMachineMapping && Object.keys(settings.iotMachineMapping).length > 0) {
-        try {
-          const syncRes = await syncIotEmToSpinningMonitor(settings.iotMachineMapping);
-          if (syncRes.success && syncRes.machineEm && Object.keys(syncRes.machineEm).length > 0) {
-            machineEm = syncRes.machineEm;
-          }
-        } catch (syncErr) {
-          console.warn('[API /common] IoT EM sync warning:', syncErr);
-        }
-      }
+      machineEm = mappedEm || {};
     } catch (dbErr) {
       console.warn('MongoDB query warning (fallback serverless mode):', dbErr);
     }

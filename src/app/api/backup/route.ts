@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
+import { getMappedMachineEmFromIotEm } from '@/lib/iot/iotEmService';
+import { IOT_COLLECTIONS } from '@/lib/iot/iotDb';
 
 export async function GET() {
   try {
     const db = await getDb();
     
-    const [workers, rules, counts, reports, settingsDoc, emDoc, frozen] = await Promise.all([
+    const [workers, rules, counts, reports, settingsDoc, mappedEm, frozen] = await Promise.all([
       db.collection('workers').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('incentive_rules').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('count_conversions').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('reports').find({}, { projection: { _id: 0 } }).toArray(),
       db.collection('settings').findOne({ _id: 'system_settings' as any }),
-      db.collection('machine_em').findOne({ _id: 'machine_em_data' as any }),
+      getMappedMachineEmFromIotEm(),
       db.collection('frozen_months').find({}, { projection: { _id: 0 } }).toArray(),
     ]);
 
@@ -23,7 +25,7 @@ export async function GET() {
       history: reports,
       dailyReport: reports.length > 0 ? reports[reports.length - 1] : null,
       settings: settingsDoc ? (({ _id, ...rest }) => rest)(settingsDoc) : {},
-      machineEm: emDoc?.data || {},
+      machineEm: mappedEm || {},
       frozenMonths: frozen
     };
 
@@ -74,12 +76,44 @@ export async function POST(req: Request) {
       );
     }
 
-    if (data.machineEm) {
-      await db.collection('machine_em').updateOne(
-        { _id: 'machine_em_data' as any },
-        { $set: { data: data.machineEm } },
-        { upsert: true }
-      );
+    if (data.machineEm && typeof data.machineEm === 'object') {
+      const emCol = db.collection(IOT_COLLECTIONS.EM);
+      const bulkOps: any[] = [];
+      Object.keys(data.machineEm).forEach(dateStr => {
+        const month = dateStr.slice(0, 7);
+        const machineMap = data.machineEm[dateStr] || {};
+        Object.keys(machineMap).forEach(mStr => {
+          const shiftMap = machineMap[mStr] || {};
+          Object.keys(shiftMap).forEach(sKey => {
+            const val = Number(shiftMap[sKey]);
+            if (!isNaN(val)) {
+              const shift = Number(sKey);
+              bulkOps.push({
+                updateOne: {
+                  filter: { machineNo: mStr, date: dateStr, shift },
+                  update: {
+                    $set: {
+                      machineNo: mStr,
+                      date: dateStr,
+                      month,
+                      shift,
+                      emTotal: val,
+                      isShiftFinal: true,
+                      updatedAt: new Date()
+                    },
+                    $setOnInsert: { recordedAt: new Date() }
+                  },
+                  upsert: true
+                }
+              });
+            }
+          });
+        });
+      });
+      if (bulkOps.length > 0) {
+        await emCol.bulkWrite(bulkOps, { ordered: false });
+      }
+      db.collection('machine_em').drop().catch(() => {});
     }
 
     if (Array.isArray(data.frozenMonths)) {
@@ -115,7 +149,8 @@ export async function DELETE() {
       db.collection('machineemlogs').deleteMany({}),
       db.collection('shiftallocations').deleteMany({}),
       db.collection('frozen_months').deleteMany({}),
-      db.collection('machine_em').deleteMany({}),
+      db.collection(IOT_COLLECTIONS.EM).deleteMany({}),
+      db.collection('machine_em').drop().catch(() => {}),
       db.collection('millcalendars').deleteMany({}),
     ]);
     return NextResponse.json({ success: true, message: 'All database data completely erased.' });

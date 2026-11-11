@@ -77,13 +77,12 @@ export const REQUIRED_COLLECTIONS: string[] = [
   'machineemlogs',
   'shiftallocations',
   'settings',
-  'machine_em',
   'frozen_months',
   'millcalendars',
   'users',
 
   // 2. IoT Telemetry Collections
-  'iot_commondatas',
+  'iot_shiftwise_data',
   'iot_machines',
   'iot_employees',
   'iot_devices',
@@ -138,8 +137,8 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
             db.collection('machines').createIndex({ frameNo: 1 }),
             db.collection('count_conversions').createIndex({ count: 1 }),
             db.collection('incentive_rules').createIndex({ count: 1, shed: 1, department: 1 }),
-            db.collection('iot_em').createIndex({ date: 1, machineNo: 1, shift: 1, hour: 1 }),
-            db.collection('iot_spinfo_histories').createIndex({ shiftDate: 1, shift: 1, recordedAt: -1 }),
+            db.collection('iot_em').createIndex({ date: 1, machineNo: 1, shift: 1 }),
+            db.collection('iot_shiftwise_data').createIndex({ shiftDate: 1, shift: 1 }, { unique: true }),
             db.collection('iot_machines').createIndex({ machineNo: 1 })
           ]);
         } catch (idxErr: any) {
@@ -182,17 +181,8 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
         }
       }
 
-      // 4. Ensure default machine_em document exists
-      if (!existingNames.has('machine_em') || missing.length > 0) {
-        const emDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
-        if (!emDoc) {
-          await db.collection('machine_em').insertOne({
-            _id: 'machine_em_data' as any,
-            data: {},
-            updatedAt: new Date()
-          });
-        }
-      }
+      // 4. Drop legacy redundant machine_em collection if it still exists
+      await db.collection('machine_em').drop().catch(() => {});
 
       // 5. Unify split databases: If old 'spinning_monitor' database exists on this Atlas cluster,
       // copy any IoT documents into this canonical database (scm-spinning) so no data is stranded
@@ -200,7 +190,7 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
         try {
           const connectedClient = await clientPromise;
           const oldDb = connectedClient.db('spinning_monitor');
-          const oldCollections = ['iot_commondatas', 'iot_spinfo_lives', 'iot_spinfo_histories', 'iot_em', 'machine_em', 'settings'];
+          const oldCollections = ['iot_shiftwise_data', 'iot_spinfo_lives', 'iot_em', 'settings'];
           for (const cName of oldCollections) {
             const currentCount = await db.collection(cName).countDocuments();
             if (currentCount === 0) {

@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { MachineEmData } from '@/types';
-import { syncIotEmToSpinningMonitor, fetchAndSyncAllShiftsFromRailway, syncEmFromHistory } from '@/lib/iot/iotEmService';
+import { getMappedMachineEmFromIotEm, fetchAndSyncAllShiftsFromRailway } from '@/lib/iot/iotEmService';
+import { IOT_COLLECTIONS } from '@/lib/iot/iotDb';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,7 +10,6 @@ export const fetchCache = 'force-no-store';
 export const maxDuration = 30;
 
 let lastRailwaySyncTime = 0;
-let hasSyncedHistory = false;
 
 export async function GET(req: Request) {
   try {
@@ -17,23 +17,11 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const date = searchParams.get('date') || undefined;
     const force = Boolean(searchParams.get('force') || searchParams.get('sync'));
-    const syncHistoryRequested = searchParams.get('syncHistory') === 'true';
 
-    // 1. Check if historical EM from telemetry history needs to be synchronized
-    if (syncHistoryRequested || !hasSyncedHistory) {
-      try {
-        const currentDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
-        const dateCount = Object.keys(currentDoc?.data || {}).length;
-        if (syncHistoryRequested || dateCount < 5) {
-          await syncEmFromHistory();
-          hasSyncedHistory = true;
-        }
-      } catch (histErr) {
-        console.warn('Historical EM sync warning:', histErr);
-      }
-    }
+    // Drop legacy redundant machine_em collection on Atlas if it exists
+    db.collection('machine_em').drop().catch(() => {});
 
-    // 2. Auto-sync mapped IoT EM to machine_em across all shifts (1, 2, 3) from Railway
+    // Auto-sync mapped IoT EM across all shifts (1, 2, 3) from Railway
     // Throttled to at most once every 15 seconds unless force=true is requested
     const now = Date.now();
     if (force || (now - lastRailwaySyncTime >= 15000)) {
@@ -41,21 +29,15 @@ export async function GET(req: Request) {
       try {
         await fetchAndSyncAllShiftsFromRailway(date);
       } catch (syncErr) {
-        console.warn('Auto-sync all shifts from Railway failed:', syncErr);
-        // Fallback: sync from existing iot_em documents in database
-        try {
-          const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
-          if (setDoc?.iotMachineMapping && Object.keys(setDoc.iotMachineMapping).length > 0) {
-            await syncIotEmToSpinningMonitor(setDoc.iotMachineMapping);
-          }
-        } catch (_) {}
+        console.warn('Auto-sync all shifts from Railway warning:', syncErr);
       }
     }
 
-    const doc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
+    // Direct read from single canonical table iot_em
+    const data = await getMappedMachineEmFromIotEm(undefined, date);
 
     return NextResponse.json(
-      { success: true, data: doc?.data || {} },
+      { success: true, data },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
@@ -78,33 +60,54 @@ export async function POST(req: Request) {
     const body = await req.json();
     const incomingData: MachineEmData = body.data || body;
 
-    const existingDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
-    const merged: Record<string, Record<string, Record<string, number>>> = { ...(existingDoc?.data || {}) };
+    const emCol = db.collection(IOT_COLLECTIONS.EM);
+    const bulkOps: any[] = [];
 
-    // Deep merge shift-wise: date -> machine -> shift
+    // Save cell edits directly into iot_em (machine-by-machine, shift-by-shift, date-wise)
     Object.keys(incomingData || {}).forEach(dateStr => {
-      if (!merged[dateStr]) merged[dateStr] = {};
+      const month = dateStr.slice(0, 7);
       const machineMap = incomingData[dateStr] || {};
       Object.keys(machineMap).forEach(mStr => {
-        if (!merged[dateStr][mStr]) merged[dateStr][mStr] = {};
         const shiftMap = machineMap[mStr] || {};
         Object.keys(shiftMap).forEach(sKey => {
           const val = Number(shiftMap[sKey]);
           if (!isNaN(val)) {
-            merged[dateStr][mStr][sKey] = val;
+            const shift = Number(sKey);
+            bulkOps.push({
+              updateOne: {
+                filter: { machineNo: mStr, date: dateStr, shift },
+                update: {
+                  $set: {
+                    machineNo: mStr,
+                    date: dateStr,
+                    month,
+                    shift,
+                    emTotal: val,
+                    isShiftFinal: true,
+                    updatedAt: new Date()
+                  },
+                  $setOnInsert: { recordedAt: new Date() }
+                },
+                upsert: true
+              }
+            });
           }
         });
       });
     });
 
-    await db.collection('machine_em').updateOne(
-      { _id: 'machine_em_data' as any },
-      { $set: { data: merged, updatedAt: new Date() } },
-      { upsert: true }
-    );
+    if (bulkOps.length > 0) {
+      await emCol.bulkWrite(bulkOps, { ordered: false });
+    }
+
+    // Drop legacy redundant machine_em collection if still present
+    db.collection('machine_em').drop().catch(() => {});
+
+    // Return the fresh mapped data directly from iot_em
+    const updatedData = await getMappedMachineEmFromIotEm();
 
     return NextResponse.json(
-      { success: true, data: merged },
+      { success: true, data: updatedData },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
