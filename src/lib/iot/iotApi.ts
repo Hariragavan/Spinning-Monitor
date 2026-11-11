@@ -75,17 +75,35 @@ async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: 
 
 async function fetchLiveCommonPayload(filter?: {
   fromDate?: string;
+  toDate?: string;
   shift?: string;
 }): Promise<any | null> {
-  const shiftNum = filter?.shift && filter.shift !== 'All' && filter.shift !== 'All shifts'
+  const shiftNum = filter?.shift && filter.shift !== 'All' && filter.shift !== 'All shifts' && filter.shift !== 'All Shifts'
     ? parseInt(String(filter.shift).replace(/\D/g, ''), 10) || undefined
     : undefined;
-  const targetDate = filter?.fromDate || undefined;
+  
+  // Normalize target date to YYYY-MM-DD format for Railway shiftDate query parameter
+  let targetDate = filter?.fromDate ? filter.fromDate.trim() : undefined;
+  if (targetDate) {
+    if (targetDate.includes('/')) {
+      const parts = targetDate.split('/');
+      if (parts[2]?.length === 4) {
+        targetDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    } else if (targetDate.includes('-')) {
+      const parts = targetDate.split('-');
+      if (parts[0]?.length === 2 && parts[2]?.length === 4) {
+        targetDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+  }
 
   const tryParseRecord = (json: any) => {
     const records = extractCommonRecords(json);
     if (records.length > 0) {
       const merged = selectAndMergeCommonRecord(records, {
+        fromDate: filter?.fromDate,
+        toDate: filter?.toDate,
         shiftDate: targetDate,
         shift: shiftNum
       });
@@ -94,15 +112,16 @@ async function fetchLiveCommonPayload(filter?: {
     return null;
   };
 
-  // 1. Direct GET from https://iot-machine-backend-production.up.railway.app/api/common
+  // 1. Direct GET call to https://iot-machine-backend-production.up.railway.app/api/common
   try {
     const url = new URL(IOT_COMMON_API_URL);
-    url.searchParams.set('limit', '20');
+    url.searchParams.set('limit', '50');
     if (shiftNum !== undefined) url.searchParams.set('shift', String(shiftNum));
+    if (targetDate) url.searchParams.set('shiftDate', targetDate);
     url.searchParams.set('_t', String(Date.now()));
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 9000);
     const res = await fetch(url.toString(), {
       method: 'GET',
       headers: { Accept: 'application/json' },
@@ -115,17 +134,19 @@ async function fetchLiveCommonPayload(filter?: {
       const rec = tryParseRecord(json);
       if (rec) return rec;
     }
-  } catch { }
+  } catch (err) {
+    console.warn('Direct fetch from Railway common API failed, attempting unfiltered...', err);
+  }
 
-  // 2. If filtered shift returned empty on remote, fetch latest unfiltered from Railway common API
-  if (shiftNum !== undefined) {
+  // 2. If filtered shift/date returned empty on remote, fetch latest unfiltered from Railway common API
+  if (shiftNum !== undefined || targetDate) {
     try {
       const url = new URL(IOT_COMMON_API_URL);
-      url.searchParams.set('limit', '20');
+      url.searchParams.set('limit', '50');
       url.searchParams.set('_t', String(Date.now()));
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
+      const timeout = setTimeout(() => controller.abort(), 9000);
       const res = await fetch(url.toString(), {
         method: 'GET',
         headers: { Accept: 'application/json' },
@@ -164,7 +185,23 @@ export const iotApi = {
 
     const fallback = getSampleSpinfoOverview();
 
-    // 1. Call Next.js API route first (fast, same-origin, memory-cached, server-side timeout resilient)
+    // 1. Direct browser fetch to live MAG SPinFO Common API (https://iot-machine-backend-production.up.railway.app/api/common)
+    try {
+      const liveCommon = await fetchLiveCommonPayload({
+        fromDate: filter?.fromDate,
+        toDate: filter?.toDate,
+        shift: filter?.shift
+      });
+      if (liveCommon && Array.isArray(liveCommon.machines) && liveCommon.machines.length > 0) {
+        // Sync payload to Next.js / MongoDB in the background without blocking the UI
+        this.syncLivePayloadToDb(liveCommon).catch(() => {});
+        return transformCommonToOverview(liveCommon);
+      }
+    } catch (remoteErr) {
+      console.warn('Direct live fetch from Railway common API failed, falling back to Next.js route:', remoteErr);
+    }
+
+    // 2. Next.js API route fallback (reads from MongoDB Atlas or server-side cached fallback)
     try {
       const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
         `/api/iot/spinfo/overview?${params.toString()}`,
@@ -173,17 +210,6 @@ export const iotApi = {
       );
       if (res?.data && res.data.frameStatus && Array.isArray(res.data.machines) && res.data.machines.length > 0) {
         return res.data;
-      }
-    } catch (_) {}
-
-    // 2. Direct remote fetch fallback
-    try {
-      const liveCommon = await fetchLiveCommonPayload({
-        fromDate: filter?.fromDate,
-        shift: filter?.shift
-      });
-      if (liveCommon && Array.isArray(liveCommon.machines)) {
-        return transformCommonToOverview(liveCommon);
       }
     } catch (_) {}
 
@@ -208,7 +234,19 @@ export const iotApi = {
 
     const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
 
-    // 1. Call Next.js API route first
+    // 1. Direct browser fetch to live MAG SPinFO Common API
+    try {
+      const liveCommon = await fetchLiveCommonPayload({
+        fromDate: filter?.fromDate,
+        toDate: filter?.toDate,
+        shift: filter?.shift
+      });
+      if (liveCommon && Array.isArray(liveCommon.machines)) {
+        return buildMachineDetailFromCommon(machineId, liveCommon);
+      }
+    } catch (_) {}
+
+    // 2. Next.js API route fallback
     try {
       const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
         `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
@@ -220,18 +258,18 @@ export const iotApi = {
       }
     } catch (_) {}
 
-    // 2. Direct remote fetch fallback
-    try {
-      const liveCommon = await fetchLiveCommonPayload({
-        fromDate: filter?.fromDate,
-        shift: filter?.shift
-      });
-      if (liveCommon && Array.isArray(liveCommon.machines)) {
-        return buildMachineDetailFromCommon(machineId, liveCommon);
-      }
-    } catch (_) {}
-
     return fallback;
+  },
+
+  async syncLivePayloadToDb(payload: any): Promise<void> {
+    if (!payload || typeof window === 'undefined') return;
+    try {
+      await fetch('/api/iot/spinfo/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (_) {}
   },
 
   async syncSpinfoData(): Promise<SpinfoOverviewResponse> {

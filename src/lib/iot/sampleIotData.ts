@@ -171,12 +171,13 @@ export function selectAndMergeCommonRecord(
   }
 
   // If multi-part payload exists for same shiftDate & shift, merge machines
-  if (Number(primary.parts) > 1) {
+  if (Number(primary.parts) > 1 || Number(primary.part) > 1) {
     const sameBatch = candidates.filter(
-      r => r.shiftDate === primary.shiftDate && Number(r.shift) === Number(primary.shift)
+      r => (r.msgId && primary.msgId && r.msgId === primary.msgId) ||
+           (r.shiftDate === primary.shiftDate && Number(r.shift) === Number(primary.shift) && r.dataTime === primary.dataTime)
     );
     const machineMap = new Map<string, any>();
-    for (const doc of sameBatch.reverse()) {
+    for (const doc of sameBatch) {
       for (const m of doc.machines || []) {
         const key = String(m.machine || m.machineId || '');
         if (key) machineMap.set(key, m);
@@ -185,6 +186,7 @@ export function selectAndMergeCommonRecord(
     return {
       record: {
         ...primary,
+        part: 1,
         machines: Array.from(machineMap.values()),
         machineCount: machineMap.size || primary.machineCount
       },

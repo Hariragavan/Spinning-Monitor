@@ -18,6 +18,7 @@ import {
   saveIotMapping,
   getIotEmployeeMetrics,
   fetchLiveRenderStream,
+  persistLiveIotPayload,
   IOT_COLLECTIONS,
   IOT_COMMON_API_URL
 } from '@/lib/iot/iotDb';
@@ -351,6 +352,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
 
   try {
     const body = await req.json();
+
+    // Sync live IoT payload (e.g. from Railway common API) to MongoDB Atlas
+    if (path === 'spinfo/sync' || path === 'sync' || path === 'spinfo/overview') {
+      await persistLiveIotPayload(body);
+      return NextResponse.json({ success: true, message: 'Payload synced to MongoDB' });
+    }
 
     if (
       path === 'production' ||
