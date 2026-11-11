@@ -139,7 +139,12 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
             db.collection('incentive_rules').createIndex({ count: 1, shed: 1, department: 1 }),
             db.collection('iot_em').createIndex({ date: 1, machineNo: 1, shift: 1 }),
             db.collection('iot_shiftwise_data').createIndex({ shiftDate: 1, shift: 1 }, { unique: true }),
-            db.collection('iot_machines').createIndex({ machineNo: 1 })
+            db.collection('iot_machines').createIndex({ machineNo: 1 }),
+            db.collection('iot_employees').createIndex({ employeeId: 1 }),
+            db.collection('iot_devices').createIndex({ deviceId: 1 }),
+            db.collection('iot_maintenance_schedules').createIndex({ machineId: 1, shiftDate: 1, shift: 1 }),
+            db.collection('iot_employee_performances').createIndex({ shiftDate: 1, shift: 1, employeeId: 1 }),
+            db.collection('iot_employee_activities').createIndex({ shiftDate: 1, shift: 1, employeeId: 1, tapTime: 1 })
           ]);
         } catch (idxErr: any) {
           console.warn('[MongoDB Init] Index creation warning:', idxErr.message);

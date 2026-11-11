@@ -17,6 +17,8 @@ import {
   getIotMappings,
   saveIotMapping,
   getIotEmployeeMetrics,
+  getIotCardTaps,
+  syncShiftEndNonMachineIotData,
   fetchLiveRenderStream,
   persistLiveIotPayload,
   IOT_COLLECTIONS,
@@ -83,6 +85,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       return NextResponse.json({ success: true, count: Object.keys(emMap).length, data: emMap }, {
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
       });
+    }
+
+    // 0.4 Card Taps & Activities (from iot_employee_activities)
+    if (path === 'activities' || path === 'card-taps' || path === 'employee-activities') {
+      const date = searchParams.get('date') || undefined;
+      const shift = searchParams.get('shift') || undefined;
+      const employeeId = searchParams.get('employeeId') || undefined;
+      const deviceId = searchParams.get('deviceId') || undefined;
+      const machineId = searchParams.get('machineId') || undefined;
+      const limit = Number(searchParams.get('limit') || 500);
+
+      const taps = await getIotCardTaps({ date, shift, employeeId, deviceId, machineId, limit });
+      return NextResponse.json({ success: true, count: taps.length, data: taps });
+    }
+
+    // 0.5 Shift End Non-Machine IoT Sync (cardtap, rounds, maintenance, employee, performance)
+    if (path === 'sync-shift-end' || path === 'shift-end-sync' || path === 'sync/shift-end') {
+      const date = searchParams.get('date') || new Date().toISOString().slice(0, 10);
+      const shift = Number(searchParams.get('shift') || 1);
+      const result = await syncShiftEndNonMachineIotData(date, shift);
+      return NextResponse.json(result);
     }
     // 1. Spinfo & Dashboard Overview (sourced from https://iot-machine-backend-production.up.railway.app/api/common)
     if (
@@ -400,6 +423,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     ) {
       const saved = await saveIotMapping(body);
       return NextResponse.json({ success: true, data: saved });
+    }
+
+    // Shift End Non-Machine IoT Sync (cardtap, rounds, maintenance, employee, performance)
+    if (path === 'sync-shift-end' || path === 'shift-end-sync' || path === 'sync/shift-end') {
+      const date = body.date || body.shiftDate || new Date().toISOString().slice(0, 10);
+      const shift = Number(body.shift || 1);
+      const result = await syncShiftEndNonMachineIotData(date, shift);
+      return NextResponse.json(result);
     }
 
     // EM Sync from iot_em into spinning_monitor machine_em

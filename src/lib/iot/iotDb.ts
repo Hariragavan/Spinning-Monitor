@@ -35,8 +35,11 @@ export const IOT_COLLECTIONS = {
   SPINFO_LIVES: 'iot_spinfo_lives',
   SPINFO_HISTORIES: 'iot_spinfo_histories',
   MACHINE_STATUS_EVENTS: 'iot_machine_status_events',
+  STATUS_EVENTS: 'iot_machine_status_events',
   EMPLOYEE_ACTIVITIES: 'iot_employee_activities',
+  ACTIVITIES: 'iot_employee_activities',
   EMPLOYEE_PERFORMANCES: 'iot_employee_performances',
+  PERFORMANCES: 'iot_employee_performances',
   EM: 'iot_em'
 };
 
@@ -230,6 +233,11 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
           },
           { upsert: true }
         );
+
+        // Auto-save non-machine IoT entities at shift end: cardtap, rounds, maintenance, employee, performance
+        syncShiftEndNonMachineIotData(shiftDate, shift).catch(syncErr => {
+          console.warn('[persistLiveIotPayload] syncShiftEndNonMachineIotData warning:', syncErr);
+        });
       }
 
       // 2. Machine EM update in iot_em (Machine-by-machine, shift-by-shift, date-wise)
@@ -626,6 +634,67 @@ export async function getIotEmployeeMetrics(filter?: {
   shiftName?: string;
   shiftId?: string;
 }): Promise<EmployeeMetric[]> {
+  // 1. Check local MongoDB iot_employee_performances first if date or shift filter is provided
+  try {
+    const db = await getIotDb();
+    const query: any = {};
+    if (filter?.date) query.shiftDate = filter.date;
+    if (filter?.employeeId) query.employeeId = filter.employeeId;
+    if (filter?.machineId) query.machineId = filter.machineId;
+
+    if (filter?.shiftName || filter?.shiftId) {
+      const sVal = String(filter.shiftName || filter.shiftId);
+      const digits = sVal.match(/\d+/);
+      if (digits) query.shift = Number(digits[0]);
+    }
+
+    if (Object.keys(query).length > 0) {
+      const localDocs = await db.collection(IOT_COLLECTIONS.PERFORMANCES).find(query).toArray();
+      if (localDocs.length > 0) {
+        // Also fetch taps from iot_employee_activities for these employees
+        const tapsQuery: any = { ...query };
+        const localTaps = await db
+          .collection(IOT_COLLECTIONS.ACTIVITIES)
+          .find(tapsQuery)
+          .sort({ tapTime: 1 })
+          .toArray();
+
+        const tapsByEmp = new Map<string, any[]>();
+        for (const t of localTaps) {
+          const list = tapsByEmp.get(t.employeeId) || [];
+          list.push({
+            tapNumber: t.tapNumber ?? 0,
+            time: t.tapTime,
+            deviceId: t.deviceId,
+            cardTap: t.cardTap ?? 1,
+            gapMinutes: t.gapMinutes ?? 0
+          });
+          tapsByEmp.set(t.employeeId, list);
+        }
+
+        return localDocs.map((emp: any) => ({
+          employeeId: String(emp.employeeId),
+          employeeName: emp.employeeName || null,
+          machineId: String(emp.machineId || ''),
+          roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+          rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+          expectedRounds: Number(emp.expectedRounds || 8),
+          avgGapMinutes: Number(emp.avgGapMinutes || 0),
+          longestGapMinutes: Number(emp.longestGapMinutes || 0),
+          activeStatus: 'ACTIVE',
+          idleMinutes: Number(emp.idleMinutes || 0),
+          performancePercent: Number(emp.performancePercent || 0),
+          lastActiveTime: 'Shift End',
+          taps: tapsByEmp.get(emp.employeeId) || (Array.isArray(emp.taps) ? emp.taps : []),
+          hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+          date: emp.shiftDate || filter?.date,
+          shift: `Shift ${emp.shift || 1}`
+        }));
+      }
+    }
+  } catch (_) {}
+
+  // 2. Fetch live metrics from REMOTE_IOT_API
   try {
     const params = new URLSearchParams();
     if (filter?.date) params.set('date', filter.date);
@@ -953,6 +1022,284 @@ export async function cleanupInterimIotHistories(): Promise<{
   } catch (err) {
     console.error('Error cleaning up interim IoT histories:', err);
     return { deletedCommon: 0, deletedHistories: 0, machineEmDropped: false };
+  }
+}
+
+/**
+ * Queries card tap activities from iot_employee_activities
+ */
+export async function getIotCardTaps(filter?: {
+  date?: string;
+  shift?: number | string;
+  employeeId?: string;
+  deviceId?: string;
+  machineId?: string;
+  limit?: number;
+}): Promise<any[]> {
+  try {
+    const db = await getIotDb();
+    const query: any = {};
+    if (filter?.date) query.shiftDate = filter.date;
+    if (filter?.shift) query.shift = Number(filter.shift);
+    if (filter?.employeeId) query.employeeId = filter.employeeId;
+    if (filter?.deviceId) query.deviceId = filter.deviceId;
+    if (filter?.machineId) query.machineId = filter.machineId;
+
+    return await db
+      .collection(IOT_COLLECTIONS.ACTIVITIES)
+      .find(query, { projection: { _id: 0 } })
+      .sort({ tapTime: -1 })
+      .limit(filter?.limit || 500)
+      .toArray();
+  } catch (err) {
+    console.error('Error fetching card taps:', err);
+    return [];
+  }
+}
+
+/**
+ * Saves non-machine IoT telemetry entities at the end of each shift:
+ * 1. iot_employees (RFID operator master)
+ * 2. iot_devices (hardware gateway sensors)
+ * 3. iot_maintenance_schedules (cleaning & preventive maintenance schedules)
+ * 4. iot_employee_performances (rounds completed, gap minutes, idle time, efficiency %)
+ * 5. iot_employee_activities (RFID card tap timestamps, gap between taps, station device IDs)
+ */
+export async function syncShiftEndNonMachineIotData(
+  shiftDate: string,
+  shift: number | string
+): Promise<{
+  success: boolean;
+  shiftDate: string;
+  shift: number;
+  employeesSynced: number;
+  devicesSynced: number;
+  maintenanceSynced: number;
+  performancesSynced: number;
+  cardTapsSynced: number;
+}> {
+  const sNum = Number(shift) || 1;
+  const sDate = String(shiftDate).trim();
+  let employeesSynced = 0;
+  let devicesSynced = 0;
+  let maintenanceSynced = 0;
+  let performancesSynced = 0;
+  let cardTapsSynced = 0;
+
+  try {
+    const db = await getIotDb();
+
+    // 1. Sync Employees Master from REMOTE_IOT_API
+    try {
+      const empRes = await fetch(`${REMOTE_IOT_API}/master/employees`, { cache: 'no-store' });
+      if (empRes.ok) {
+        const empJson = await empRes.json();
+        if (empJson.success && Array.isArray(empJson.data) && empJson.data.length > 0) {
+          const bulk = empJson.data.map((e: any) => ({
+            updateOne: {
+              filter: { employeeId: String(e.employeeId || e.id) },
+              update: {
+                $set: {
+                  employeeId: String(e.employeeId || e.id),
+                  employeeName: String(e.employeeName || e.name || e.employeeId),
+                  lastSeen: e.lastSeen || null,
+                  assignedDeviceIds: Array.isArray(e.assignedDeviceIds) ? e.assignedDeviceIds : [],
+                  updatedAt: new Date()
+                }
+              },
+              upsert: true
+            }
+          }));
+          await db.collection(IOT_COLLECTIONS.EMPLOYEES).bulkWrite(bulk, { ordered: false });
+          employeesSynced = bulk.length;
+        }
+      }
+    } catch (empErr) {
+      console.warn('[syncShiftEndNonMachineIotData] employees sync error:', empErr);
+    }
+
+    // 2. Sync Devices Master from REMOTE_IOT_API
+    try {
+      const devRes = await fetch(`${REMOTE_IOT_API}/master/devices`, { cache: 'no-store' });
+      if (devRes.ok) {
+        const devJson = await devRes.json();
+        if (devJson.success && Array.isArray(devJson.data) && devJson.data.length > 0) {
+          const bulk = devJson.data.map((d: any) => ({
+            updateOne: {
+              filter: { deviceId: String(d.deviceId || d.id) },
+              update: {
+                $set: {
+                  deviceId: String(d.deviceId || d.id),
+                  machineId: d.machineId ? String(d.machineId) : undefined,
+                  machineName: d.machineName ? String(d.machineName) : undefined,
+                  position: d.position ?? 1,
+                  side: d.side || 'LEFT',
+                  minRPM: Number(d.minRPM ?? 700),
+                  maxRPM: Number(d.maxRPM ?? 1000),
+                  lastSeen: d.lastSeen || new Date().toISOString(),
+                  updatedAt: new Date()
+                }
+              },
+              upsert: true
+            }
+          }));
+          await db.collection(IOT_COLLECTIONS.DEVICES).bulkWrite(bulk, { ordered: false });
+          devicesSynced = bulk.length;
+        }
+      }
+    } catch (devErr) {
+      console.warn('[syncShiftEndNonMachineIotData] devices sync error:', devErr);
+    }
+
+    // 3. Sync Maintenance & Cleaning from REMOTE_IOT_API
+    try {
+      const maintRes = await fetch(`${REMOTE_IOT_API}/master/reports?reportType=cleaning_maintenance`, { cache: 'no-store' });
+      if (maintRes.ok) {
+        const maintJson = await maintRes.json();
+        if (maintJson.success && Array.isArray(maintJson.data) && maintJson.data.length > 0) {
+          const bulk = maintJson.data.map((m: any) => ({
+            updateOne: {
+              filter: { machineId: String(m.machineId || ''), shiftDate: sDate, shift: sNum },
+              update: {
+                $set: {
+                  machineId: String(m.machineId || ''),
+                  machineName: String(m.machineName || m.machineId || ''),
+                  millId: String(m.millId || '0'),
+                  cleaningIntervalDays: Number(m.cleaningIntervalDays || 2),
+                  lastCleaningAt: m.lastCleaningAt || null,
+                  nextCleaningAt: m.nextCleaningAt || null,
+                  lastMaintenanceAt: m.lastMaintenanceAt || null,
+                  status: String(m.status || 'SCHEDULED'),
+                  shiftDate: sDate,
+                  shift: sNum,
+                  updatedAt: new Date()
+                }
+              },
+              upsert: true
+            }
+          }));
+          await db.collection(IOT_COLLECTIONS.MAINTENANCE).bulkWrite(bulk, { ordered: false });
+          maintenanceSynced = bulk.length;
+        }
+      }
+    } catch (maintErr) {
+      console.warn('[syncShiftEndNonMachineIotData] maintenance sync error:', maintErr);
+    }
+
+    // 4. Sync Employee Performance & Card Taps for this shift from REMOTE_IOT_API
+    try {
+      const pUrl = `${REMOTE_IOT_API}/dashboard/employee?date=${encodeURIComponent(sDate)}&shift=${sNum}&_t=${Date.now()}`;
+      const perfRes = await fetch(pUrl, { cache: 'no-store' });
+      if (perfRes.ok) {
+        const perfJson = await perfRes.json();
+        const empList = Array.isArray(perfJson.data) ? perfJson.data : (perfJson.data ? [perfJson.data] : []);
+
+        if (empList.length > 0) {
+          const perfBulk: any[] = [];
+          const tapBulk: any[] = [];
+
+          for (const emp of empList) {
+            const eId = String(emp.employeeId || emp.id || '');
+            if (!eId) continue;
+
+            const roundsCompleted = Number(emp.roundsCompleted ?? emp.rounds ?? 0);
+            const expectedRounds = Number(emp.expectedRounds || 8);
+            const avgGapMinutes = Number(emp.avgGapMinutes || 0);
+            const longestGapMinutes = Number(emp.longestGapMinutes || 0);
+            const idleMinutes = Number(emp.idleMinutes || 0);
+            const performancePercent = Number(emp.performancePercent || 0);
+            const hourly = Array.isArray(emp.hourly) ? emp.hourly : [];
+
+            perfBulk.push({
+              updateOne: {
+                filter: { employeeId: eId, shiftDate: sDate, shift: sNum },
+                update: {
+                  $set: {
+                    employeeId: eId,
+                    employeeName: String(emp.employeeName || eId),
+                    machineId: String(emp.machineId || ''),
+                    shiftDate: sDate,
+                    shift: sNum,
+                    roundsCompleted,
+                    rounds: roundsCompleted,
+                    expectedRounds,
+                    avgGapMinutes,
+                    longestGapMinutes,
+                    idleMinutes,
+                    performancePercent,
+                    hourly,
+                    updatedAt: new Date()
+                  },
+                  $setOnInsert: { recordedAt: new Date() }
+                },
+                upsert: true
+              }
+            });
+
+            // Extract each individual card tap
+            for (const tap of (emp.taps || [])) {
+              const tapTime = tap.time || tap.timestamp || new Date().toISOString();
+              tapBulk.push({
+                updateOne: {
+                  filter: { employeeId: eId, tapTime, shiftDate: sDate, shift: sNum },
+                  update: {
+                    $set: {
+                      employeeId: eId,
+                      employeeName: String(emp.employeeName || eId),
+                      deviceId: String(tap.deviceId || emp.machineId || ''),
+                      machineId: String(emp.machineId || tap.deviceId || ''),
+                      cardTap: tap.cardTap ?? 1,
+                      tapNumber: Number(tap.tapNumber ?? 0),
+                      gapMinutes: Number(tap.gapMinutes ?? 0),
+                      tapTime,
+                      shiftDate: sDate,
+                      shift: sNum,
+                      updatedAt: new Date()
+                    },
+                    $setOnInsert: { recordedAt: new Date() }
+                  },
+                  upsert: true
+                }
+              });
+            }
+          }
+
+          if (perfBulk.length > 0) {
+            await db.collection(IOT_COLLECTIONS.PERFORMANCES).bulkWrite(perfBulk, { ordered: false });
+            performancesSynced = perfBulk.length;
+          }
+          if (tapBulk.length > 0) {
+            await db.collection(IOT_COLLECTIONS.ACTIVITIES).bulkWrite(tapBulk, { ordered: false });
+            cardTapsSynced = tapBulk.length;
+          }
+        }
+      }
+    } catch (perfErr) {
+      console.warn('[syncShiftEndNonMachineIotData] employee performance sync error:', perfErr);
+    }
+
+    return {
+      success: true,
+      shiftDate: sDate,
+      shift: sNum,
+      employeesSynced,
+      devicesSynced,
+      maintenanceSynced,
+      performancesSynced,
+      cardTapsSynced
+    };
+  } catch (err: any) {
+    console.error('Error in syncShiftEndNonMachineIotData:', err);
+    return {
+      success: false,
+      shiftDate: sDate,
+      shift: sNum,
+      employeesSynced: 0,
+      devicesSynced: 0,
+      maintenanceSynced: 0,
+      performancesSynced: 0,
+      cardTapsSynced: 0
+    };
   }
 }
 

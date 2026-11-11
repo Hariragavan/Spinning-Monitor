@@ -921,6 +921,12 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
           },
           { upsert: true }
         );
+
+        // Auto-save non-machine IoT entities at shift end: cardtap, rounds, maintenance, employee, performance
+        try {
+          const { syncShiftEndNonMachineIotData } = await import('./iotDb');
+          syncShiftEndNonMachineIotData(sDate, shift).catch(() => {});
+        } catch (_) {}
       }
 
       // 2. Prepare machine EM bulk upsert into iot_em (machine-by-machine, shift-by-shift, date-wise)
