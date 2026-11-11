@@ -172,12 +172,21 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
   try {
     const db = await getIotDb();
 
-    // 1. Save all incoming packets into iot_commondatas
+    // 1. Bulk upsert incoming packets into iot_commondatas
     const commonCol = db.collection(IOT_COLLECTIONS.COMMON);
-    for (const doc of records) {
+    const commonBulkOps = records.map(doc => {
       const { _id, ...cleanDoc } = doc;
       const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
-      await commonCol.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
+      return {
+        updateOne: {
+          filter: { msgId },
+          update: { $set: cleanDoc },
+          upsert: true
+        }
+      };
+    });
+    if (commonBulkOps.length > 0) {
+      await commonCol.bulkWrite(commonBulkOps, { ordered: false }).catch(() => {});
     }
 
     // 2. Process EM for ALL shifts present in incoming records (merge multi-part if needed)
@@ -191,6 +200,7 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
       shiftGroups.set(key, list);
     }
 
+    const emBulkOps: any[] = [];
     for (const [_key, recList] of shiftGroups.entries()) {
       const baseRec = recList[0];
       const machineMap = new Map<string, any>();
@@ -220,31 +230,37 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
         const endBreakCountRight = Number(sideR?.endBreakCount || 0);
         const totalEndBreaks = Number(m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
 
-        await emCol.updateOne(
-          { machineNo: mNo, date: shiftDate, shift: shift, hour: hour },
-          {
-            $set: {
-              machineNo: mNo,
-              date: shiftDate,
-              month,
-              shift,
-              hour,
-              hourLabel: `Hour ${hour}`,
-              emLeft,
-              emRight,
-              emTotal,
-              unit,
-              endBreakCountLeft,
-              endBreakCountRight,
-              totalEndBreaks,
-              isFinalized: false,
-              updatedAt: new Date()
+        emBulkOps.push({
+          updateOne: {
+            filter: { machineNo: mNo, date: shiftDate, shift, hour },
+            update: {
+              $set: {
+                machineNo: mNo,
+                date: shiftDate,
+                month,
+                shift,
+                hour,
+                hourLabel: `Hour ${hour}`,
+                emLeft,
+                emRight,
+                emTotal,
+                unit,
+                endBreakCountLeft,
+                endBreakCountRight,
+                totalEndBreaks,
+                isFinalized: false,
+                updatedAt: new Date()
+              },
+              $setOnInsert: { recordedAt: new Date() }
             },
-            $setOnInsert: { recordedAt: new Date() }
-          },
-          { upsert: true }
-        );
+            upsert: true
+          }
+        });
       }
+    }
+
+    if (emBulkOps.length > 0) {
+      await emCol.bulkWrite(emBulkOps, { ordered: false }).catch(() => {});
     }
 
     // 3. Update live snapshot with latest overall record

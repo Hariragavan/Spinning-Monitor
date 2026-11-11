@@ -114,10 +114,11 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
     try {
       const existing = await db.listCollections().toArray();
       const existingNames = new Set(existing.map(c => c.name));
+      const missing = REQUIRED_COLLECTIONS.filter(c => !existingNames.has(c));
 
-      // 1. Create missing collections explicitly
-      for (const colName of REQUIRED_COLLECTIONS) {
-        if (!existingNames.has(colName)) {
+      // 1. Create missing collections explicitly (only if any are missing)
+      if (missing.length > 0) {
+        for (const colName of missing) {
           try {
             await db.createCollection(colName);
           } catch (createErr: any) {
@@ -127,71 +128,75 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
             }
           }
         }
-      }
 
-      // 2. Ensure indexes for query speed and data integrity
-      try {
-        await Promise.allSettled([
-          db.collection('reports').createIndex({ date: 1, shed: 1 }),
-          db.collection('workers').createIndex({ id: 1 }),
-          db.collection('workers').createIndex({ tNo: 1 }),
-          db.collection('machines').createIndex({ frameNo: 1 }),
-          db.collection('count_conversions').createIndex({ count: 1 }),
-          db.collection('incentive_rules').createIndex({ count: 1, shed: 1, department: 1 }),
-          db.collection('iot_em').createIndex({ date: 1, machineNo: 1, shift: 1, hour: 1 }),
-          db.collection('iot_spinfo_histories').createIndex({ shiftDate: 1, shift: 1, recordedAt: -1 }),
-          db.collection('iot_machines').createIndex({ machineNo: 1 })
-        ]);
-      } catch (idxErr: any) {
-        console.warn('[MongoDB Init] Index creation warning:', idxErr.message);
+        // 2. Ensure indexes for query speed and data integrity
+        try {
+          await Promise.allSettled([
+            db.collection('reports').createIndex({ date: 1, shed: 1 }),
+            db.collection('workers').createIndex({ id: 1 }),
+            db.collection('workers').createIndex({ tNo: 1 }),
+            db.collection('machines').createIndex({ frameNo: 1 }),
+            db.collection('count_conversions').createIndex({ count: 1 }),
+            db.collection('incentive_rules').createIndex({ count: 1, shed: 1, department: 1 }),
+            db.collection('iot_em').createIndex({ date: 1, machineNo: 1, shift: 1, hour: 1 }),
+            db.collection('iot_spinfo_histories').createIndex({ shiftDate: 1, shift: 1, recordedAt: -1 }),
+            db.collection('iot_machines').createIndex({ machineNo: 1 })
+          ]);
+        } catch (idxErr: any) {
+          console.warn('[MongoDB Init] Index creation warning:', idxErr.message);
+        }
       }
 
       // 3. Ensure default system settings document exists
-      const settingsDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
-      if (!settingsDoc) {
-        await db.collection('settings').insertOne({
-          _id: 'system_settings' as any,
-          googleSheetUrl: '',
-          autoUpdateEnabled: false,
-          lastSyncDate: null,
-          bestSiderOverrideId: null,
-          tvInterval: 15,
-          tvSubInterval: 5,
-          machineSiderCounts: {},
-          gaiterCounts: { I: 1, II: 1, III: 1 },
-          tvPageIntervals: {},
-          tvMonth: 0,
-          tvYear: 0,
-          tvShowBestSiderMonth: true,
-          machineEmGoogleSheetUrl: '',
-          lastMachineEmSyncDate: null,
-          emHighLimit: 4,
-          shed40sFormulas: {
-            'Shed 1': '40s GPS = Actual GPS × Multiplication Factor',
-            'Shed 2': '40s GPS = Actual GPS × Multiplication Factor',
-            'Shed 3': '40s GPS = Actual GPS × Multiplication Factor',
-            'KTTM': '40s GPS = (Actual GPS × Count) / 40'
-          },
-          iotMachineMapping: {},
-          iotMachineMappingByDate: {},
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+      if (!existingNames.has('settings') || missing.length > 0) {
+        const settingsDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
+        if (!settingsDoc) {
+          await db.collection('settings').insertOne({
+            _id: 'system_settings' as any,
+            googleSheetUrl: '',
+            autoUpdateEnabled: false,
+            lastSyncDate: null,
+            bestSiderOverrideId: null,
+            tvInterval: 15,
+            tvSubInterval: 5,
+            machineSiderCounts: {},
+            gaiterCounts: { I: 1, II: 1, III: 1 },
+            tvPageIntervals: {},
+            tvMonth: 0,
+            tvYear: 0,
+            tvShowBestSiderMonth: true,
+            machineEmGoogleSheetUrl: '',
+            lastMachineEmSyncDate: null,
+            emHighLimit: 4,
+            shed40sFormulas: {
+              'Shed 1': '40s GPS = Actual GPS × Multiplication Factor',
+              'Shed 2': '40s GPS = Actual GPS × Multiplication Factor',
+              'Shed 3': '40s GPS = Actual GPS × Multiplication Factor',
+              'KTTM': '40s GPS = (Actual GPS × Count) / 40'
+            },
+            iotMachineMapping: {},
+            iotMachineMappingByDate: {},
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
       }
 
       // 4. Ensure default machine_em document exists
-      const emDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
-      if (!emDoc) {
-        await db.collection('machine_em').insertOne({
-          _id: 'machine_em_data' as any,
-          data: {},
-          updatedAt: new Date()
-        });
+      if (!existingNames.has('machine_em') || missing.length > 0) {
+        const emDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
+        if (!emDoc) {
+          await db.collection('machine_em').insertOne({
+            _id: 'machine_em_data' as any,
+            data: {},
+            updatedAt: new Date()
+          });
+        }
       }
 
       // 5. Unify split databases: If old 'spinning_monitor' database exists on this Atlas cluster,
       // copy any IoT documents into this canonical database (scm-spinning) so no data is stranded
-      if (db.databaseName !== 'spinning_monitor') {
+      if (missing.length > 0 && db.databaseName !== 'spinning_monitor') {
         try {
           const connectedClient = await clientPromise;
           const oldDb = connectedClient.db('spinning_monitor');

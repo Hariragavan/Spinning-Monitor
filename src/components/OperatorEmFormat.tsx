@@ -393,7 +393,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const handleRefreshLiveEm = async () => {
     setIsRefreshingEm(true);
     try {
-      const res = await fetch(`/api/machine-em?_t=${Date.now()}`);
+      const res = await fetch(`/api/machine-em?force=true&_t=${Date.now()}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
@@ -463,9 +463,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
 
     const updated = JSON.parse(JSON.stringify(machineEm)) as MachineEmData;
-    if (!updated[date]) updated[date] = {};
-    if (!updated[date][machine]) updated[date][machine] = {};
-    updated[date][machine][shift] = parsedVal;
+    
+    // Register under all date variants so whichever lookup format is used, it resolves properly
+    const dateKeys = Array.from(new Set([
+      date,
+      normalizeToCanonicalDate(date)
+    ]));
+    const dParts = parseUniversalDateParts(date);
+    if (dParts) {
+      dateKeys.push(`${dParts.year}-${String(dParts.month).padStart(2, '0')}-${String(dParts.day).padStart(2, '0')}`);
+    }
+
+    const targetMachines = new Set<string>([machine]);
+    const registeredDev = registeredInfoForMonth.frameToDevice[machine];
+    if (registeredDev) targetMachines.add(registeredDev);
+
+    for (const d of dateKeys) {
+      if (!updated[d]) updated[d] = {};
+      for (const m of targetMachines) {
+        if (!updated[d][m]) updated[d][m] = {};
+        updated[d][m][shift] = parsedVal;
+        (updated[d][m] as any)[Number(shift)] = parsedVal;
+      }
+    }
 
     await onUpdateMachineEm(updated);
     setEditingCell(null);
