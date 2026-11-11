@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Machine, DeviceHealth, MaintenanceEntry } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
+import { getTodayDateString } from '@/lib/utils';
 
 export const IotMaintenance: React.FC = () => {
   const [machines, setMachines] = useState<Machine[]>([]);
@@ -15,7 +16,7 @@ export const IotMaintenance: React.FC = () => {
     type: 'preventive',
     machineId: '',
     deviceId: '',
-    scheduledDate: new Date().toISOString().slice(0, 10),
+    scheduledDate: getTodayDateString(),
     assignedPerson: '',
     status: 'planned',
     completionDate: '',
@@ -135,7 +136,7 @@ export const IotMaintenance: React.FC = () => {
       type: 'preventive',
       machineId: machines.length ? machines[0].machineId : '',
       deviceId: '',
-      scheduledDate: new Date().toISOString().slice(0, 10),
+      scheduledDate: getTodayDateString(),
       assignedPerson: '',
       status: 'planned',
       completionDate: '',

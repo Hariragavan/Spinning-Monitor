@@ -16,6 +16,7 @@ import {
   employeeLabel,
   employeeInitials
 } from '@/lib/iot/employeeDisplay';
+import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
 
 export interface TapModalState {
   employeeId: string;
@@ -44,13 +45,26 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
   const [machineId, setMachineId] = useState('');
   const [shiftName, setShiftName] = useState('');
   const [shiftId, setShiftId] = useState('');
-  const [selectedDate, setSelectedDate] = useState(() => propDate || '2026-11-03');
+
+  // Default to today's local date (YYYY-MM-DD)
+  const todayStr = useMemo(() => getTodayDateString(), []);
+
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (propDate) {
+      const parts = parseUniversalDateParts(propDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      return propDate;
+    }
+    return todayStr;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (propDate) {
-      setSelectedDate(propDate);
+      const parts = parseUniversalDateParts(propDate);
+      const formatted = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : propDate;
+      setSelectedDate(formatted);
     }
   }, [propDate]);
 
@@ -59,7 +73,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
 
   // Production Report Dialog
   const [productionReportOpen, setProductionReportOpen] = useState(false);
-  const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [reportDate, setReportDate] = useState(() => todayStr);
   const [reportShiftId, setReportShiftId] = useState('');
   const [reportEmployeeId, setReportEmployeeId] = useState('');
   const [reportMachineId, setReportMachineId] = useState('');

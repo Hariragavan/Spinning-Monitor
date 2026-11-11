@@ -9,6 +9,7 @@ import {
 } from '@/types/iot';
 import { iotApi, IOT_COMMON_API_URL } from '@/lib/iot/iotApi';
 import { getSampleSpinfoOverview, buildMachineDetailFromCommon } from '@/lib/iot/sampleIotData';
+import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
 
 const INITIAL_OVERVIEW: SpinfoOverviewResponse = getSampleSpinfoOverview();
 
@@ -48,14 +49,34 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   const [selectedShift, setSelectedShift] = useState<string>('All Shifts');
   const [selectedRunStatus, setSelectedRunStatus] = useState<string>('All');
   const [selectedCount, setSelectedCount] = useState<string>('All');
-  const [selectedFromDate, setSelectedFromDate] = useState<string>(() => selectedDate || '');
-  const [selectedToDate, setSelectedToDate] = useState<string>(() => selectedDate || '');
-  const [userChangedDate, setUserChangedDate] = useState<boolean>(Boolean(selectedDate));
+
+  // Default to today's local date (YYYY-MM-DD) across all IoT telemetry views
+  const todayStr = useMemo(() => getTodayDateString(), []);
+
+  const [selectedFromDate, setSelectedFromDate] = useState<string>(() => {
+    if (selectedDate) {
+      const parts = parseUniversalDateParts(selectedDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      return selectedDate;
+    }
+    return todayStr;
+  });
+  const [selectedToDate, setSelectedToDate] = useState<string>(() => {
+    if (selectedDate) {
+      const parts = parseUniversalDateParts(selectedDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      return selectedDate;
+    }
+    return todayStr;
+  });
+  const [userChangedDate, setUserChangedDate] = useState<boolean>(true);
 
   useEffect(() => {
     if (selectedDate) {
-      setSelectedFromDate(selectedDate);
-      setSelectedToDate(selectedDate);
+      const parts = parseUniversalDateParts(selectedDate);
+      const formatted = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : selectedDate;
+      setSelectedFromDate(formatted);
+      setSelectedToDate(formatted);
       setUserChangedDate(true);
     }
   }, [selectedDate]);
@@ -100,8 +121,8 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
       if (isInitial) setLoading(true);
       setErrorMessage(null);
       const data = await iotApi.getSpinfoOverview({
-        fromDate: userChangedDate && selectedFromDate ? selectedFromDate : undefined,
-        toDate: userChangedDate && selectedToDate ? selectedToDate : undefined,
+        fromDate: selectedFromDate || todayStr,
+        toDate: selectedToDate || todayStr,
         shift: selectedShift === 'All Shifts' ? undefined : selectedShift
       });
       if (data && data.frameStatus && Array.isArray(data.machines)) {
@@ -496,7 +517,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             </label>
             <input
               type="date"
-              value={selectedFromDate || overview.shiftDate || ''}
+              value={selectedFromDate || todayStr}
               onChange={e => {
                 const val = e.target.value;
                 setSelectedFromDate(val);
@@ -515,7 +536,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem' }}>
               <input
                 type="date"
-                value={selectedToDate || overview.shiftDate || ''}
+                value={selectedToDate || todayStr}
                 onChange={e => {
                   const val = e.target.value;
                   setSelectedToDate(val);
@@ -553,18 +574,18 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             </div>
           </div>
 
-          {userChangedDate && (
+          {userChangedDate && (selectedFromDate !== todayStr || selectedToDate !== todayStr) && (
             <button
               className="btn"
               style={{ height: '36px', fontSize: '0.75rem', padding: '0 0.75rem' }}
               onClick={() => {
                 setUserChangedDate(false);
-                setSelectedFromDate(overview.shiftDate || '');
-                setSelectedToDate(overview.shiftDate || '');
+                setSelectedFromDate(todayStr);
+                setSelectedToDate(todayStr);
               }}
-              title="Reset date filter to latest live stream"
+              title="Reset date filter to today's live stream"
             >
-              Latest Stream
+              Today
             </button>
           )}
 

@@ -9,6 +9,7 @@ import {
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
 import { employeeDisplayName } from '@/lib/iot/employeeDisplay';
+import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
 
 const MIN_OUTPUT = 140;
 
@@ -23,7 +24,15 @@ export const IotProductionEntry: React.FC<IotProductionEntryProps> = ({ selected
   const [todayEntries, setTodayEntries] = useState<ProductionReportRow[]>([]);
 
   // Form fields
-  const [shiftDate, setShiftDate] = useState(() => propDate || new Date().toISOString().slice(0, 10));
+  const todayStr = useMemo(() => getTodayDateString(), []);
+  const [shiftDate, setShiftDate] = useState(() => {
+    if (propDate) {
+      const parts = parseUniversalDateParts(propDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      return propDate;
+    }
+    return todayStr;
+  });
   const [shiftId, setShiftId] = useState('');
   const [machineId, setMachineId] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -33,7 +42,9 @@ export const IotProductionEntry: React.FC<IotProductionEntryProps> = ({ selected
 
   useEffect(() => {
     if (propDate) {
-      setShiftDate(propDate);
+      const parts = parseUniversalDateParts(propDate);
+      const formatted = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : propDate;
+      setShiftDate(formatted);
     }
   }, [propDate]);
 

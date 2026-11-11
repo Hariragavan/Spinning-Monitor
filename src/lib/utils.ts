@@ -75,6 +75,14 @@ export function getYesterdayUniversalDate(): string {
   return `${day}/${month}/${year}`;
 }
 
+export function getTodayDateString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function shiftUniversalDate(dateStr: string, deltaDays: number): string {
   if (!dateStr) return getYesterdayUniversalDate();
   const parts = parseUniversalDateParts(dateStr);

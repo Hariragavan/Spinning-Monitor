@@ -10,6 +10,7 @@ import {
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
 import { employeeLabel, employeeDisplayName } from '@/lib/iot/employeeDisplay';
+import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
 
 export interface IotReportsProps {
   selectedDate?: string;
@@ -24,13 +25,30 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
   const [machineId, setMachineId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [shiftId, setShiftId] = useState('');
-  const [fromDate, setFromDate] = useState(() => propDate || '');
-  const [toDate, setToDate] = useState(() => propDate || '');
+  const todayStr = useMemo(() => getTodayDateString(), []);
+  const [fromDate, setFromDate] = useState(() => {
+    if (propDate) {
+      const parts = parseUniversalDateParts(propDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      return propDate;
+    }
+    return todayStr;
+  });
+  const [toDate, setToDate] = useState(() => {
+    if (propDate) {
+      const parts = parseUniversalDateParts(propDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+      return propDate;
+    }
+    return todayStr;
+  });
 
   useEffect(() => {
     if (propDate) {
-      setFromDate(propDate);
-      setToDate(propDate);
+      const parts = parseUniversalDateParts(propDate);
+      const formatted = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : propDate;
+      setFromDate(formatted);
+      setToDate(formatted);
     }
   }, [propDate]);
 
