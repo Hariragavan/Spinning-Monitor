@@ -180,37 +180,35 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
       await commonCol.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
     }
 
-    // 2. Identify the newest record to update live snapshot, histories, and EM
-    const latest = records[0];
-    if (latest && Array.isArray(latest.machines) && latest.machines.length > 0) {
-      const { _id: _ignoredId, ...cleanLatest } = latest;
-      const shiftDate = String(cleanLatest.shiftDate || (cleanLatest.dataTime ? cleanLatest.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+    // 2. Process EM for ALL shifts present in incoming records (merge multi-part if needed)
+    const emCol = db.collection(IOT_COLLECTIONS.EM);
+    const shiftGroups = new Map<string, any[]>();
+    for (const r of records) {
+      if (!r || !Array.isArray(r.machines)) continue;
+      const key = `${r.shiftDate || ''}_${r.shift || 1}`;
+      const list = shiftGroups.get(key) || [];
+      list.push(r);
+      shiftGroups.set(key, list);
+    }
+
+    for (const [_key, recList] of shiftGroups.entries()) {
+      const baseRec = recList[0];
+      const machineMap = new Map<string, any>();
+      for (const r of recList) {
+        for (const m of (r.machines || [])) {
+          const mNo = String(m.machine || m.machineId || '');
+          if (mNo) machineMap.set(mNo, m);
+        }
+      }
+      const mergedMachines = Array.from(machineMap.values());
+      if (mergedMachines.length === 0) continue;
+
+      const shiftDate = String(baseRec.shiftDate || (baseRec.dataTime ? baseRec.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
       const month = shiftDate.slice(0, 7);
-      const shift = Number(cleanLatest.shift || 1);
+      const shift = Number(baseRec.shift || 1);
+      const hour = calculateShiftHour(shift, baseRec.dataTime);
 
-      // 2a. Update singleton live snapshot with clean fixed _id
-      await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).updateOne(
-        { _id: 'spinfo_live_snapshot' as any },
-        { $set: { ...cleanLatest, shiftDate, shift, updatedAt: new Date() } },
-        { upsert: true }
-      );
-
-      // 2b. Append telemetry tick to iot_spinfo_histories
-      const histCol = db.collection(IOT_COLLECTIONS.SPINFO_HISTORIES);
-      await histCol.insertOne({
-        ...cleanLatest,
-        shiftDate,
-        month,
-        shift,
-        isShiftFinal: false,
-        recordedAt: new Date()
-      });
-
-      // 2c. Save hourly EM for each machine to iot_em
-      const hour = calculateShiftHour(shift, cleanLatest.dataTime);
-      const emCol = db.collection(IOT_COLLECTIONS.EM);
-
-      for (const m of cleanLatest.machines) {
+      for (const m of mergedMachines) {
         const mNo = String(m.machine || m.machineId || 'RF01');
         const sideL = (m.sides || []).find((s: any) => s.side === 'L');
         const sideR = (m.sides || []).find((s: any) => s.side === 'R');
@@ -247,14 +245,41 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
           { upsert: true }
         );
       }
+    }
 
-      // 2d. Auto-sync mapped IoT EM to Spinning Monitor machine_em
-      try {
-        const { syncIotEmToSpinningMonitor } = await import('./iotEmService');
-        await syncIotEmToSpinningMonitor(undefined, shiftDate);
-      } catch (syncErr) {
-        console.warn('[persistLiveIotPayload] Error syncing EM to spinning monitor:', syncErr);
-      }
+    // 3. Update live snapshot with latest overall record
+    const latest = records[0];
+    if (latest && Array.isArray(latest.machines) && latest.machines.length > 0) {
+      const { _id: _ignoredId, ...cleanLatest } = latest;
+      const shiftDate = String(cleanLatest.shiftDate || (cleanLatest.dataTime ? cleanLatest.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+      const month = shiftDate.slice(0, 7);
+      const shift = Number(cleanLatest.shift || 1);
+
+      // 3a. Update singleton live snapshot with clean fixed _id
+      await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).updateOne(
+        { _id: 'spinfo_live_snapshot' as any },
+        { $set: { ...cleanLatest, shiftDate, shift, updatedAt: new Date() } },
+        { upsert: true }
+      );
+
+      // 3b. Append telemetry tick to iot_spinfo_histories
+      const histCol = db.collection(IOT_COLLECTIONS.SPINFO_HISTORIES);
+      await histCol.insertOne({
+        ...cleanLatest,
+        shiftDate,
+        month,
+        shift,
+        isShiftFinal: false,
+        recordedAt: new Date()
+      });
+    }
+
+    // 4. Auto-sync mapped IoT EM to Spinning Monitor machine_em
+    try {
+      const { syncIotEmToSpinningMonitor } = await import('./iotEmService');
+      await syncIotEmToSpinningMonitor();
+    } catch (syncErr) {
+      console.warn('[persistLiveIotPayload] Error syncing EM to spinning monitor:', syncErr);
     }
   } catch (err) {
     console.error('[persistLiveIotPayload] Error persisting live IoT payload:', err);

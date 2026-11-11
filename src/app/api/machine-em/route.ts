@@ -1,19 +1,27 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { MachineEmData } from '@/types';
-import { syncIotEmToSpinningMonitor } from '@/lib/iot/iotEmService';
+import { syncIotEmToSpinningMonitor, fetchAndSyncAllShiftsFromRailway } from '@/lib/iot/iotEmService';
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const db = await getDb();
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get('date') || undefined;
 
-    // Auto-sync mapped IoT EM to machine_em if mappings exist
+    // Auto-sync mapped IoT EM to machine_em across all shifts (1, 2, 3) from Railway
     try {
-      const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
-      if (setDoc?.iotMachineMapping && Object.keys(setDoc.iotMachineMapping).length > 0) {
-        await syncIotEmToSpinningMonitor(setDoc.iotMachineMapping);
-      }
-    } catch (_) {}
+      await fetchAndSyncAllShiftsFromRailway(date);
+    } catch (syncErr) {
+      console.warn('Auto-sync all shifts from Railway failed:', syncErr);
+      // Fallback: sync from existing iot_em documents in database
+      try {
+        const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
+        if (setDoc?.iotMachineMapping && Object.keys(setDoc.iotMachineMapping).length > 0) {
+          await syncIotEmToSpinningMonitor(setDoc.iotMachineMapping);
+        }
+      } catch (_) {}
+    }
 
     const doc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
 

@@ -295,8 +295,8 @@ export async function syncIotEmAndManageShiftHistory(latestPayload?: any): Promi
     let item = latestPayload;
     if (!item) {
       try {
-        const res = await fetch(`${REMOTE_IOT_API}/common?limit=1&sort=createdAt&order=desc`, {
-          headers: { Accept: 'application/json', 'X-Company-Slug': 'scm' },
+        const res = await fetch(`${IOT_COMMON_API_URL}?limit=50&_t=${Date.now()}`, {
+          headers: { Accept: 'application/json' },
           cache: 'no-store'
         });
         if (res.ok) {
@@ -656,6 +656,187 @@ export async function syncIotEmToSpinningMonitor(
   } catch (err) {
     console.error('Error syncing iot_em to spinning monitor:', err);
     return { success: false, updatedCount: 0, machineEm: {} };
+  }
+}
+
+/**
+ * 6. Fetch and Sync ALL Shifts (1, 2, 3) from Railway MAG SPinFO Common API
+ * - Explicitly queries Shift 1, Shift 2, and Shift 3 from Railway
+ * - Combines multi-part packets to accurately capture all machines
+ * - Upserts hourly EM records for every shift into MongoDB iot_em
+ * - Auto-syncs to spinning monitor machine_em so Operator EM Format displays all shifts
+ */
+export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Promise<{
+  success: boolean;
+  syncedShifts: number[];
+  syncedMachines: number;
+  dates: string[];
+  machineEm: Record<string, Record<string, Record<number | string, number>>>;
+}> {
+  try {
+    const db = await getIotDb();
+    const emCol = db.collection<IotEmRecord>(IOT_COLLECTIONS.EM);
+    const commonCol = db.collection(IOT_COLLECTIONS.COMMON);
+
+    // Normalize targetDate to YYYY-MM-DD
+    let normalizedDate = targetDate ? targetDate.trim() : undefined;
+    if (normalizedDate) {
+      const parts = normalizedDate.split(/[-/]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          normalizedDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        } else {
+          normalizedDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+    }
+
+    const syncedShifts: number[] = [];
+    const dateSet = new Set<string>();
+    let totalSyncedMachines = 0;
+
+    // 1. Fetch unfiltered recent stream first to capture latest live ticks
+    try {
+      const url = new URL(IOT_COMMON_API_URL);
+      url.searchParams.set('limit', '50');
+      if (normalizedDate) url.searchParams.set('shiftDate', normalizedDate);
+      url.searchParams.set('_t', String(Date.now()));
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 7000);
+      const res = await fetch(url.toString(), {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const json = await res.json();
+        const rawDocs = Array.isArray(json) ? json : (json.data || []);
+        for (const doc of rawDocs) {
+          if (!doc || !Array.isArray(doc.machines)) continue;
+          const { _id, ...cleanDoc } = doc;
+          const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
+          await commonCol.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fetch shifts 1, 2, and 3 explicitly from Railway to ensure all shifts have data
+    for (const shiftNum of [1, 2, 3]) {
+      try {
+        const url = new URL(IOT_COMMON_API_URL);
+        url.searchParams.set('shift', String(shiftNum));
+        url.searchParams.set('limit', '20');
+        if (normalizedDate) url.searchParams.set('shiftDate', normalizedDate);
+        url.searchParams.set('_t', String(Date.now()));
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 7000);
+        const res = await fetch(url.toString(), {
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+
+        if (!res.ok) continue;
+        const json = await res.json();
+        const rawDocs = Array.isArray(json) ? json : (json.data || []);
+        if (!Array.isArray(rawDocs) || rawDocs.length === 0) continue;
+
+        // Group by msgId or (shiftDate + shift + dataTime) to merge multi-part machines
+        const msgMap = new Map<string, any[]>();
+        for (const doc of rawDocs) {
+          if (!doc || !Array.isArray(doc.machines)) continue;
+          const { _id, ...cleanDoc } = doc;
+          const msgId = cleanDoc.msgId || _id || `${cleanDoc.shiftDate}_${cleanDoc.shift}_${cleanDoc.part || 1}`;
+          await commonCol.updateOne({ msgId }, { $set: cleanDoc }, { upsert: true });
+
+          const groupKey = `${cleanDoc.shiftDate || ''}_${cleanDoc.shift || shiftNum}_${cleanDoc.dataTime || cleanDoc.msgId || ''}`;
+          const list = msgMap.get(groupKey) || [];
+          list.push(cleanDoc);
+          msgMap.set(groupKey, list);
+        }
+
+        // For each transmission group, extract and save EM for all machines
+        for (const [_gKey, packetList] of msgMap.entries()) {
+          const base = packetList[0];
+          const machineMap = new Map<string, any>();
+          for (const pkt of packetList) {
+            for (const m of (pkt.machines || [])) {
+              const key = String(m.machine || m.machineId || '');
+              if (key) machineMap.set(key, m);
+            }
+          }
+          const machines = Array.from(machineMap.values());
+          if (machines.length === 0) continue;
+
+          const sDate = String(base.shiftDate || (base.dataTime ? base.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+          const month = sDate.slice(0, 7);
+          const shift = Number(base.shift || shiftNum);
+          const hour = calculateShiftHour(shift, base.dataTime);
+          dateSet.add(sDate);
+
+          for (const m of machines) {
+            const mNo = String(m.machine || m.machineId || 'RF01');
+            const sideL = (m.sides || []).find((s: any) => s.side === 'L');
+            const sideR = (m.sides || []).find((s: any) => s.side === 'R');
+            const emLeft = Number(sideL?.endMendingTime || 0);
+            const emRight = Number(sideR?.endMendingTime || 0);
+            const emTotal = Number((emLeft + emRight).toFixed(2));
+            const unit = String(sideL?.endMendingTimeUnit || sideR?.endMendingTimeUnit || 'min');
+            const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+            const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+            const totalEndBreaks = Number(m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
+            await emCol.updateOne(
+              { machineNo: mNo, date: sDate, shift: shift, hour: hour },
+              {
+                $set: {
+                  machineNo: mNo,
+                  date: sDate,
+                  month,
+                  shift: shift,
+                  hour: hour,
+                  hourLabel: `Hour ${hour}`,
+                  emLeft,
+                  emRight,
+                  emTotal,
+                  unit,
+                  endBreakCountLeft,
+                  endBreakCountRight,
+                  totalEndBreaks,
+                  isFinalized: false,
+                  updatedAt: new Date()
+                },
+                $setOnInsert: { recordedAt: new Date() }
+              },
+              { upsert: true }
+            );
+            totalSyncedMachines++;
+          }
+        }
+        syncedShifts.push(shiftNum);
+      } catch (err: any) {
+        console.warn(`[fetchAndSyncAllShiftsFromRailway] Failed to sync shift ${shiftNum}:`, err?.message);
+      }
+    }
+
+    // 3. Sync all updated iot_em records into spinning monitor machine_em
+    const syncRes = await syncIotEmToSpinningMonitor(undefined, normalizedDate);
+
+    return {
+      success: true,
+      syncedShifts,
+      syncedMachines: totalSyncedMachines,
+      dates: Array.from(dateSet),
+      machineEm: syncRes.machineEm
+    };
+  } catch (err: any) {
+    console.error('[fetchAndSyncAllShiftsFromRailway] General error:', err);
+    return { success: false, syncedShifts: [], syncedMachines: 0, dates: [], machineEm: {} };
   }
 }
 
