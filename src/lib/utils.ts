@@ -901,6 +901,92 @@ export function calculateSiderSlotIncentive(
   return 0;
 }
 
+function isValidDevice(dev?: string | null): boolean {
+  if (!dev) return false;
+  const d = dev.trim().toUpperCase();
+  return d !== '' && d !== 'NONE' && d !== 'UNASSIGNED' && d !== 'NULL' && d !== '0';
+}
+
+/**
+ * Resolves an IoT device assigned to a spinning frame through machine matching.
+ * Supports exact match, numeric digits, and all standard prefixes (SP021, 21, SP21, RF03).
+ */
+export function resolveMappedDevice(
+  mapping: Record<string, string> | undefined,
+  frameNo: string
+): string | undefined {
+  if (!mapping || !frameNo) return undefined;
+  const clean = frameNo.trim();
+  const upper = clean.toUpperCase();
+
+  // 1. Direct match
+  if (mapping[clean] && isValidDevice(mapping[clean])) return mapping[clean].trim().toUpperCase();
+  if (mapping[upper] && isValidDevice(mapping[upper])) return mapping[upper].trim().toUpperCase();
+
+  // 2. Numeric / prefix variants
+  const digits = upper.match(/\d+/);
+  if (digits) {
+    const rawNum = digits[0];
+    const num = String(parseInt(rawNum, 10));
+    const p2 = rawNum.padStart(2, '0');
+    const p3 = rawNum.padStart(3, '0');
+    const numVariants = [
+      rawNum,
+      num,
+      p2,
+      p3,
+      `SP${p3}`,
+      `SP${p2}`,
+      `SP${num}`,
+      `RF${p2}`,
+      `RF${num}`,
+      `K${p2}`,
+      `K${num}`
+    ];
+    for (const v of numVariants) {
+      if (mapping[v] && isValidDevice(mapping[v])) {
+        return mapping[v].trim().toUpperCase();
+      }
+    }
+
+    // 3. Match keys in mapping whose digits match
+    const intTarget = parseInt(rawNum, 10);
+    for (const [key, dev] of Object.entries(mapping)) {
+      if (!isValidDevice(dev)) continue;
+      const keyDigits = key.toUpperCase().match(/\d+/);
+      if (keyDigits && parseInt(keyDigits[0], 10) === intTarget) {
+        return dev.trim().toUpperCase();
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Resolves the physical spinning frame mapped to an IoT device.
+ */
+export function resolveMappedFrame(
+  mapping: Record<string, string> | undefined,
+  deviceNo: string
+): string | undefined {
+  if (!mapping || !deviceNo) return undefined;
+  const clean = deviceNo.trim();
+  const upper = clean.toUpperCase();
+
+  for (const [frame, dev] of Object.entries(mapping)) {
+    if (!isValidDevice(dev)) continue;
+    const cleanDev = dev.trim().toUpperCase();
+    if (cleanDev === upper) return frame;
+    const devDigits = cleanDev.match(/\d+/);
+    const upperDigits = upper.match(/\d+/);
+    if (devDigits && upperDigits && parseInt(devDigits[0], 10) === parseInt(upperDigits[0], 10)) {
+      return frame;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Universal lookup for Machine EM values.
  * Resolves regardless of date format (DD/MM/YYYY vs YYYY-MM-DD),
@@ -922,13 +1008,20 @@ export function getMachineEmValue(
   else if (shiftStr === 'II' || shiftStr === '2' || shiftStr.includes('2')) sKey = '2';
   else if (shiftStr === 'III' || shiftStr === '3' || shiftStr.includes('3')) sKey = '3';
 
-  // 2. Date candidates: exact, canonical (DD/MM/YYYY), ISO (YYYY-MM-DD)
+  // 2. Date candidates: exact, canonical (DD/MM/YYYY), ISO (YYYY-MM-DD), d/m/yyyy, etc.
   const canonical = normalizeToCanonicalDate(date);
   const parts = parseUniversalDateParts(date);
-  const iso = parts
-    ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
-    : date;
-  const dateCandidates = Array.from(new Set([date, canonical, iso])).filter(Boolean);
+  const dateCandidates = new Set<string>([date, canonical]);
+  if (parts) {
+    const iso = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+    const ddmmyyyy = `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}/${parts.year}`;
+    const dmmyyyy = `${parts.day}/${parts.month}/${parts.year}`;
+    const d_mm_yyyy = `${parts.day}/${String(parts.month).padStart(2, '0')}/${parts.year}`;
+    dateCandidates.add(iso);
+    dateCandidates.add(ddmmyyyy);
+    dateCandidates.add(dmmyyyy);
+    dateCandidates.add(d_mm_yyyy);
+  }
 
   // 3. Frame candidates: exact, trimmed, digits, padded, and registered device mappings
   const cleanFrame = frameNo.trim();
@@ -949,32 +1042,29 @@ export function getMachineEmValue(
     frameCandidates.add(`RF${num}`);
     frameCandidates.add(`SP${p3}`);
     frameCandidates.add(`SP${p2}`);
+    frameCandidates.add(`SP${num}`);
     frameCandidates.add(`K${p2}`);
     frameCandidates.add(`K${num}`);
   }
 
   // If a mapping is provided, also check the registered device or mapped spinning frame
   if (mapping && Object.keys(mapping).length > 0) {
-    // 3a. Forward mapping: frame -> device (e.g. SP021 -> RF01, 1 -> RF01)
-    const mappedDevice = mapping[frameNo] || mapping[cleanFrame] || mapping[upperFrame] || (digits ? mapping[digits[0]] : undefined);
-    if (mappedDevice && mappedDevice !== 'NONE' && mappedDevice !== 'None' && mappedDevice !== 'unassigned') {
-      const devClean = mappedDevice.trim();
-      const devUpper = devClean.toUpperCase();
-      frameCandidates.add(devClean);
-      frameCandidates.add(devUpper);
-      const devDigits = devUpper.match(/\d+/);
+    // 3a. Forward mapping: frame -> device (e.g. SP021 -> RF03, 21 -> RF03)
+    const mappedDevice = resolveMappedDevice(mapping, frameNo);
+    if (mappedDevice) {
+      frameCandidates.add(mappedDevice);
+      const devDigits = mappedDevice.match(/\d+/);
       if (devDigits) {
         frameCandidates.add(`RF${devDigits[0].padStart(2, '0')}`);
         frameCandidates.add(String(parseInt(devDigits[0], 10)));
       }
     }
 
-    // 3b. Inverse mapping: device -> frame (e.g. RF01 -> SP021)
-    for (const [f, dev] of Object.entries(mapping)) {
-      if (dev && dev.trim().toUpperCase() === upperFrame) {
-        frameCandidates.add(f);
-        frameCandidates.add(f.trim().toUpperCase());
-      }
+    // 3b. Inverse mapping: device -> frame (e.g. RF03 -> SP021)
+    const mappedFrame = resolveMappedFrame(mapping, frameNo);
+    if (mappedFrame) {
+      frameCandidates.add(mappedFrame);
+      frameCandidates.add(mappedFrame.trim().toUpperCase());
     }
   }
 

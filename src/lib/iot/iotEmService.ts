@@ -555,9 +555,11 @@ export async function getMappedMachineEmFromIotEm(
 
     // If mappings not explicitly passed, load active mappings from system settings
     let activeMappings = mappings;
+    let mappingsByDate: Record<string, Record<string, string>> = {};
     if (!activeMappings || Object.keys(activeMappings).length === 0) {
       const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
       activeMappings = setDoc?.iotMachineMapping || {};
+      mappingsByDate = setDoc?.iotMachineMappingByDate || {};
     }
 
     const merged: Record<string, Record<string, Record<string, number>>> = {};
@@ -590,7 +592,18 @@ export async function getMappedMachineEmFromIotEm(
 
       // Collect all machine/frame keys to record this EM under
       const targetKeys = new Set<string>(getFrameVariants(cleanIot));
-      const mappedFrames = iotToSpinningMap.get(cleanIot) || [];
+      const mappedFrames = new Set<string>(iotToSpinningMap.get(cleanIot) || []);
+
+      // Also check date-specific mappings for this record's date
+      const dateMap = mappingsByDate[rec.date] || mappingsByDate[normalizeToCanonicalDate(rec.date)];
+      if (dateMap) {
+        for (const [sFrame, iDev] of Object.entries(dateMap)) {
+          if (iDev && iDev.trim().toUpperCase() === cleanIot) {
+            mappedFrames.add(sFrame);
+          }
+        }
+      }
+
       for (const frame of mappedFrames) {
         getFrameVariants(frame).forEach(k => targetKeys.add(k));
       }

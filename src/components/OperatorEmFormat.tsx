@@ -21,11 +21,9 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, computeOperatorShiftEm, normalizeShed } from '../lib/utils';
+import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed } from '../lib/utils';
+export { getMachineEmValue, resolveMappedDevice };
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
-
-// Re-export for any existing external consumers
-export { getMachineEmValue };
 
 interface OperatorEmFormatProps {
   history: DailyReport[];
@@ -717,13 +715,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     XLSX.writeFile(wb, `Sider_Monthly_EM_${monthsList[selectedMonth - 1].label}_${selectedYear}.xlsx`);
   };
 
-  // Daily EM Report Rows
+  // Daily EM Report Rows: Displays the data based on each assigned production machine
   const dailyEmRows = useMemo(() => {
     if (!selectedDailyEmDate) return [];
     
     const canonicalSelected = normalizeToCanonicalDate(selectedDailyEmDate);
     const report = effectiveHistory.find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonicalSelected);
-    if (!report) return [];
+    if (!report || !report.entries || report.entries.length === 0) return [];
 
     const list: {
       siderName: string;
@@ -735,36 +733,83 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       em: number;
     }[] = [];
 
-    effectiveWorkers.forEach(worker => {
-      const shiftRes = computeOperatorShiftEm(worker, report, machineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
-      if (shiftRes && shiftRes.totalSides > 0) {
-        const mcLabel = shiftRes.machinesDetail
-          .map(m => {
-            const devBadge = registeredInfoForMonth.frameToDevice[m.frameNo] ? ` [${registeredInfoForMonth.frameToDevice[m.frameNo]}]` : '';
-            return `${m.frameNo}${devBadge} (${m.sides}s)`;
-          })
-          .join(', ');
-        const countLabel = shiftRes.machinesDetail
-          .map(m => m.count)
-          .filter(Boolean)
-          .join(', ');
+    report.entries.forEach(entry => {
+      // Resolve all siders assigned to this machine entry
+      const assignedIds: string[] = [];
+      if (entry.siderIds && entry.siderIds.length > 0) {
+        entry.siderIds.forEach(id => {
+          if (id && id !== '-' && id !== '--' && id !== 'unassigned' && id !== 'none' && id !== '0') {
+            assignedIds.push(id);
+          }
+        });
+      } else if (entry.siderId && entry.siderId !== '-' && entry.siderId !== '--' && entry.siderId !== 'unassigned' && entry.siderId !== 'none' && entry.siderId !== '0') {
+        assignedIds.push(entry.siderId);
+      }
 
+      // Check name match as fallback if no IDs are linked
+      if (assignedIds.length === 0 && entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '') {
+        const nameMatchWorker = effectiveWorkers.find(w => 
+          w.name.toLowerCase().trim() === entry.siderName!.toLowerCase().trim()
+        );
+        if (nameMatchWorker) {
+          assignedIds.push(nameMatchWorker.id);
+        }
+      }
+
+      // Get EM for this assigned production machine (resolves from iot_em via machine-to-machine allocation)
+      let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift, registeredInfoForMonth.frameToDevice);
+      if (emValue === undefined) {
+        emValue = entry.doffEmt ?? 0;
+      }
+
+      const mappedDev = resolveMappedDevice(registeredInfoForMonth.frameToDevice, entry.frameNo);
+      const devBadge = mappedDev ? ` [${mappedDev}]` : '';
+      const mcDisplay = `${entry.frameNo}${devBadge}`;
+
+      if (assignedIds.length > 0) {
+        assignedIds.forEach(id => {
+          const worker = effectiveWorkers.find(w => 
+            (w.id && w.id.toLowerCase() === id.toLowerCase()) || 
+            (w.tNo && w.tNo.toLowerCase() === id.toLowerCase())
+          );
+          const name = worker ? worker.name : (entry.siderName || 'Unassigned');
+          if (name.toLowerCase().trim() !== 'unassigned') {
+            list.push({
+              siderName: name,
+              tNo: worker?.tNo,
+              shift: entry.shift,
+              mcNo: mcDisplay,
+              count: entry.count || '-',
+              gps: entry.gpsActual || 0,
+              em: emValue
+            });
+          }
+        });
+      } else if (entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '') {
+        const worker = effectiveWorkers.find(w => w.name.toLowerCase().trim() === entry.siderName!.toLowerCase().trim());
         list.push({
-          siderName: worker.name,
-          tNo: worker.tNo,
-          shift: shiftRes.shift,
-          mcNo: mcLabel,
-          count: countLabel || '-',
-          gps: shiftRes.totalGps,
-          em: shiftRes.totalEm
+          siderName: entry.siderName,
+          tNo: worker?.tNo,
+          shift: entry.shift,
+          mcNo: mcDisplay,
+          count: entry.count || '-',
+          gps: entry.gpsActual || 0,
+          em: emValue
         });
       }
     });
 
+    // Sort by Shift (I, II, III), then MC NO (numeric ascending), then Sider Name
     return list.sort((a, b) => {
-      const aTNo = parseInt(a.tNo || '0') || 0;
-      const bTNo = parseInt(b.tNo || '0') || 0;
-      return aTNo - bTNo;
+      const shiftOrder: Record<Shift, number> = { 'I': 1, 'II': 2, 'III': 3 };
+      const aOrder = shiftOrder[a.shift] || 99;
+      const bOrder = shiftOrder[b.shift] || 99;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+
+      const aMc = a.mcNo.localeCompare(b.mcNo, undefined, { numeric: true });
+      if (aMc !== 0) return aMc;
+
+      return a.siderName.localeCompare(b.siderName);
     });
   }, [effectiveHistory, selectedDailyEmDate, machineEm, effectiveWorkers, registeredInfoForMonth]);
 
@@ -1306,7 +1351,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                     </thead>
                     <tbody>
                       {machines.map(machine => {
-                        const registeredDev = registeredInfoForMonth.frameToDevice[machine];
+                        const registeredDev = resolveMappedDevice(registeredInfoForMonth.frameToDevice, machine) || registeredInfoForMonth.frameToDevice[machine];
                         return (
                           <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
                             <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
