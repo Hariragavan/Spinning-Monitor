@@ -13,10 +13,7 @@ export async function GET(req: Request) {
       filter.$or = [{ shed }, { shed: 'All Sheds' }];
     }
 
-    let rules = await db.collection<IncentiveRule>('incentiverules').find(filter, { projection: { _id: 0 } }).toArray();
-    if (!rules || rules.length === 0) {
-      rules = await db.collection<IncentiveRule>('incentive_rules').find(filter, { projection: { _id: 0 } }).toArray();
-    }
+    const rules = await db.collection<IncentiveRule>('incentive_rules').find(filter, { projection: { _id: 0 } }).toArray();
 
     const normalized = (rules || []).map(r => ({
       ...r,
@@ -44,8 +41,15 @@ export async function POST(req: Request) {
       const shed = rule.shed || 'Shed 1';
       const dept = rule.department || 'Sider';
       const filter = { count: cleanCount, department: dept, shed };
-      await db.collection('incentiverules').updateOne(filter, { $set: { ...rule, count: cleanCount, shed, department: dept } }, { upsert: true });
-      await db.collection('incentive_rules').updateOne(filter, { $set: { ...rule, count: cleanCount, shed, department: dept } }, { upsert: true });
+      
+      await db.collection('incentive_rules').updateOne(
+        filter,
+        { $set: { ...rule, count: cleanCount, shed, department: dept } },
+        { upsert: true }
+      );
+      // Drop legacy incentiverules if present
+      await db.collection('incentiverules').drop().catch(() => {});
+
       return NextResponse.json({ success: true, data: { ...rule, count: cleanCount, shed, department: dept } });
     }
 
@@ -74,14 +78,12 @@ export async function POST(req: Request) {
       }
     }
 
-    await db.collection('incentiverules').deleteMany({});
-    if (normalizedRules.length > 0) {
-      await db.collection('incentiverules').insertMany(normalizedRules.map(x => ({ ...x })));
-    }
     await db.collection('incentive_rules').deleteMany({});
     if (normalizedRules.length > 0) {
       await db.collection('incentive_rules').insertMany(normalizedRules.map(x => ({ ...x })));
     }
+    // Drop legacy incentiverules if present
+    await db.collection('incentiverules').drop().catch(() => {});
 
     return NextResponse.json({ success: true, count: normalizedRules.length });
   } catch (error: any) {
@@ -102,8 +104,8 @@ export async function DELETE(req: Request) {
       if (shed && shed !== 'All' && shed !== 'All Sheds') {
         deleteFilter.shed = shed;
       }
-      await db.collection('incentiverules').deleteMany(deleteFilter);
       await db.collection('incentive_rules').deleteMany(deleteFilter);
+      await db.collection('incentiverules').drop().catch(() => {});
       return NextResponse.json({ success: true, message: 'Incentive rules wiped successfully' });
     }
 
@@ -120,7 +122,6 @@ export async function DELETE(req: Request) {
       filter.$or = [{ shed }, { shed: 'All Sheds' }];
     }
 
-    await db.collection('incentiverules').deleteMany(filter);
     await db.collection('incentive_rules').deleteMany(filter);
     return NextResponse.json({ success: true, message: `Rule ${cleanCount} deleted` });
   } catch (error: any) {

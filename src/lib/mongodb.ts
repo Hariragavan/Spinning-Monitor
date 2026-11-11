@@ -1,4 +1,5 @@
 import { MongoClient, Db } from 'mongodb';
+import { transferAndCleanupDatabase } from '@/lib/dbMigration';
 
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/scm-spinning';
 const options = {};
@@ -61,21 +62,17 @@ export function getTargetDbName(): string {
 }
 
 /**
- * All required collections for both Spinning Monitor operations and IoT live telemetry.
+ * All required canonical collections for both Spinning Monitor operations and IoT live telemetry.
  * Explicitly created so they always display properly in MongoDB Atlas.
  */
 export const REQUIRED_COLLECTIONS: string[] = [
   // 1. Spinning Mill Collections
   'workers',
   'machines',
-  'yarncounts',
   'count_conversions',
-  'incentiverules',
   'incentive_rules',
   'reports',
   'dailyproductionlogs',
-  'machineemlogs',
-  'shiftallocations',
   'settings',
   'frozen_months',
   'millcalendars',
@@ -91,7 +88,6 @@ export const REQUIRED_COLLECTIONS: string[] = [
   'iot_production_entries',
   'iot_maintenance_schedules',
   'iot_spinfo_lives',
-  'iot_spinfo_histories',
   'iot_machine_status_events',
   'iot_employee_activities',
   'iot_employee_performances',
@@ -186,8 +182,12 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
         }
       }
 
-      // 4. Drop legacy redundant machine_em collection if it still exists
-      await db.collection('machine_em').drop().catch(() => {});
+      // 4. Safe transfer from legacy/duplicate tables and Atlas cleanup
+      try {
+        await transferAndCleanupDatabase(db);
+      } catch (cleanupErr) {
+        console.warn('[MongoDB Init] Transfer and cleanup warning:', cleanupErr);
+      }
 
       // 5. Unify split databases: If old 'spinning_monitor' database exists on this Atlas cluster,
       // copy any IoT documents into this canonical database (scm-spinning) so no data is stranded

@@ -126,13 +126,9 @@ export async function POST(req: Request) {
       }));
 
       await db.collection('dailyproductionlogs').deleteMany({ date: report.date, shed });
-      await db.collection('dailyproductionlogs').insertMany(prodLogs);
-
-      await db.collection('machineemlogs').deleteMany({ date: report.date, shed });
-      await db.collection('machineemlogs').insertMany(emLogs);
-
-      await db.collection('shiftallocations').deleteMany({ date: report.date, shed });
-      await db.collection('shiftallocations').insertMany(allocLogs);
+      if (prodLogs.length > 0) {
+        await db.collection('dailyproductionlogs').insertMany(prodLogs);
+      }
     }
 
     return NextResponse.json({ success: true, data: reportWithTs });

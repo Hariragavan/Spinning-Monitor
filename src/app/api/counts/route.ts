@@ -2,34 +2,6 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { CountConversion } from '@/types';
 
-const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
-  // Shed 1 Counts (Matching Mill Standards)
-  { count: '030/1-PH-PC', multiplicationFactor: 0.539, description: '30/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
-  { count: '040/1-PH-PC', multiplicationFactor: 0.803, description: '40/1 Poly Hosiery PC Yarn', shed: 'Shed 1' },
-  { count: '34/1-PH-PV', multiplicationFactor: 0.54, description: '34/1 Poly Viscose Yarn', shed: 'Shed 1' },
-  { count: '042/1-CH-NY', multiplicationFactor: 0.7235, description: '42/1 Comb Hosiery NY', shed: 'Shed 1' },
-  { count: '038/1-CH-NY', multiplicationFactor: 0.6641, description: '38/1 Comb Hosiery NY', shed: 'Shed 1' },
-  { count: '034/1-PH-PC', multiplicationFactor: 0.54, description: 'Auto-imported count (034/1-PH-PC)', shed: 'Shed 1' },
-  
-  // Shed 2 Counts
-  { count: '32/1-CH-CY', multiplicationFactor: 0.7155, description: '32/1 Comb Hosiery Compact Weft', shed: 'Shed 2' },
-  { count: '34/1CHY-OCY', multiplicationFactor: 0.7836, description: '34/1 Comb Hosiery Compact Compact', shed: 'Shed 2' },
-  { count: '30/1CH', multiplicationFactor: 0.6495, description: '30/1 Comb Hosiery', shed: 'Shed 2' },
-  { count: '20/1-CW-WVG', multiplicationFactor: 0.3536, description: '20/1 Carded Weft Weaving', shed: 'Shed 2' },
-  
-  // Shed 3 Counts
-  { count: '26/1-CHY', multiplicationFactor: 0.585, description: '26/1 Comb Hosiery Yarn', shed: 'Shed 3' },
-  { count: '40s Micro Weft', multiplicationFactor: 1.0, description: '40s Micro Weft Yarn', shed: 'Shed 3' },
-  { count: '50s Compact', multiplicationFactor: 1.35, description: '50s Compact Yarn', shed: 'Shed 3' },
-  { count: '60s Super Combed', multiplicationFactor: 1.837, description: '60s Super Combed Yarn', shed: 'Shed 3' },
-
-  // KTTM Counts
-  { count: '60s CW', multiplicationFactor: 1.837, description: '60s Combed Warp', shed: 'KTTM' },
-  { count: '40s KTTM', multiplicationFactor: 1.0, description: '40s KTTM High Speed Standard', shed: 'KTTM' },
-  { count: '80s Compact', multiplicationFactor: 2.45, description: '80s Compact Yarn', shed: 'KTTM' },
-  { count: '100s Dobby', multiplicationFactor: 3.10, description: '100s Dobby Yarn', shed: 'KTTM' }
-];
-
 export async function GET(req: Request) {
   try {
     const db = await getDb();
@@ -41,10 +13,7 @@ export async function GET(req: Request) {
       filter.$or = [{ shed }, { shed: 'All Sheds' }];
     }
 
-    let counts = (await db.collection('yarncounts').find(filter, { projection: { _id: 0 } }).toArray()) as any;
-    if (!counts || counts.length === 0) {
-      counts = (await db.collection('count_conversions').find(filter, { projection: { _id: 0 } }).toArray()) as any;
-    }
+    const counts = (await db.collection('count_conversions').find(filter, { projection: { _id: 0 } }).toArray()) as any;
     
     // Ensure shed is always defined
     const normalizedCounts = (counts || []).map((c: any) => ({
@@ -85,16 +54,15 @@ export async function POST(req: Request) {
       }
 
       if (shed && shed !== 'All Sheds' && shed !== 'All') {
-        await db.collection('yarncounts').deleteMany({ shed });
         await db.collection('count_conversions').deleteMany({ shed });
       } else {
-        await db.collection('yarncounts').deleteMany({});
         await db.collection('count_conversions').deleteMany({});
       }
       if (normalizedCounts.length > 0) {
-        await db.collection('yarncounts').insertMany(normalizedCounts);
         await db.collection('count_conversions').insertMany(normalizedCounts);
       }
+      // Drop legacy yarncounts collection if present
+      await db.collection('yarncounts').drop().catch(() => {});
       return NextResponse.json({ success: true, count: normalizedCounts.length });
     }
 
@@ -107,16 +75,14 @@ export async function POST(req: Request) {
     const itemShed = item.shed && item.shed !== 'All' ? item.shed : 'Shed 1';
     const filter = { count: cleanCount, shed: itemShed };
 
-    await db.collection('yarncounts').updateOne(
-      filter,
-      { $set: { ...item, count: cleanCount, shed: itemShed } },
-      { upsert: true }
-    );
     await db.collection('count_conversions').updateOne(
       filter,
       { $set: { ...item, count: cleanCount, shed: itemShed } },
       { upsert: true }
     );
+
+    // Drop legacy yarncounts collection if present
+    await db.collection('yarncounts').drop().catch(() => {});
 
     return NextResponse.json({ success: true, data: { ...item, count: cleanCount, shed: itemShed } });
   } catch (error: any) {
@@ -137,8 +103,8 @@ export async function DELETE(req: Request) {
       if (shed && shed !== 'All' && shed !== 'All Sheds') {
         deleteFilter.shed = shed;
       }
-      await db.collection('yarncounts').deleteMany(deleteFilter);
       await db.collection('count_conversions').deleteMany(deleteFilter);
+      await db.collection('yarncounts').drop().catch(() => {});
       return NextResponse.json({ success: true, message: 'Counts wiped successfully' });
     }
 
@@ -152,11 +118,9 @@ export async function DELETE(req: Request) {
       filter.shed = shed;
     }
 
-    await db.collection('yarncounts').deleteMany(filter);
     await db.collection('count_conversions').deleteMany(filter);
     return NextResponse.json({ success: true, message: `Count ${cleanCount} deleted` });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to delete count' }, { status: 500 });
   }
 }
-

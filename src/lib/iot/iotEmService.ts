@@ -196,7 +196,7 @@ export async function getLightweightMachineStatuses(): Promise<{
     if (!rawItem || !Array.isArray(rawItem.machines)) {
       rawItem = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
       if (!rawItem || !Array.isArray(rawItem.machines)) {
-        rawItem = await db.collection(IOT_COLLECTIONS.COMMON).findOne({}, { sort: { createdAt: -1 } });
+        rawItem = await db.collection(IOT_COLLECTIONS.SHIFTWISE).findOne({}, { sort: { shiftDate: -1, shift: -1 } });
       }
     }
 
@@ -298,7 +298,7 @@ export async function syncIotEmAndManageShiftHistory(latestPayload?: any): Promi
     if (!item || !Array.isArray(item.machines)) {
       item = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
       if (!item || !Array.isArray(item.machines)) {
-        item = await db.collection(IOT_COLLECTIONS.COMMON).findOne({}, { sort: { createdAt: -1 } });
+        item = await db.collection(IOT_COLLECTIONS.SHIFTWISE).findOne({}, { sort: { shiftDate: -1, shift: -1 } });
       }
     }
 
