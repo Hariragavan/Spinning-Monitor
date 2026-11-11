@@ -25,7 +25,7 @@ export type ActiveKpiType =
   | 'END_MENDING_TIME'
   | 'HOURLY_PRODUCTION';
 
-export type ViewModeType = 'cards' | 'spindle_map' | 'table';
+export type ViewModeType = 'cards' | 'table';
 
 export type ModalTabType =
   | 'overview'
@@ -99,9 +99,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
   const [emLoading, setEmLoading] = useState<boolean>(false);
   const [emFilterShift, setEmFilterShift] = useState<string>('All');
   const [emFilterMachine, setEmFilterMachine] = useState<string>('All');
-
-  // 120 visual ticks per side representing spindle slots across the frame
-  const visualTicks = useMemo(() => Array.from({ length: 120 }, (_, i) => i + 1), []);
 
   // Guard against concurrent or duplicate fetches
   const isFetchingRef = React.useRef(false);
@@ -338,35 +335,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
 
     return list;
   }, [overview, selectedRunStatus, selectedCount, activeKpi, endBreaksSort]);
-
-  // Max spindle number across machines (e.g. 706 in RF01 R side) so high spindle numbers map accurately to the 120 visual ticks
-  const getMaxSpindleForMachine = useCallback((breaksLeft: Array<{ spindleNo: number }>, breaksRight: Array<{ spindleNo: number }>): number => {
-    const allNos = [...breaksLeft.map(b => b.spindleNo), ...breaksRight.map(b => b.spindleNo)];
-    const maxFound = allNos.length > 0 ? Math.max(...allNos) : 120;
-    return Math.max(120, Math.ceil(maxFound / 120) * 120);
-  }, []);
-
-  const getTickBreakInfo = useCallback((
-    breaks: Array<{ spindleNo: number; createdTime?: string; timestamp?: string }>,
-    tickIndex1Based: number,
-    maxSpindle: number
-  ): { broken: boolean; label: string } => {
-    if (!breaks || breaks.length === 0) {
-      return { broken: false, label: `Slot #${tickIndex1Based}` };
-    }
-    const match = breaks.find(b => {
-      const mappedSlot = Math.min(120, Math.max(1, Math.ceil((b.spindleNo / maxSpindle) * 120)));
-      return mappedSlot === tickIndex1Based;
-    });
-    if (match) {
-      const timeStr = match.createdTime || match.timestamp || '';
-      return {
-        broken: true,
-        label: `Spindle #${match.spindleNo}${timeStr ? ` · Break at ${timeStr}` : ' (End Break)'}`
-      };
-    }
-    return { broken: false, label: `Spindle slot ${tickIndex1Based}` };
-  }, []);
 
   // Machine navigation in modal
   const currentIndex = displayedMachines.findIndex(m => m.machineId === (selectedMachineDetail?.machine?.machineId || activeMachineId));
@@ -912,13 +880,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   Cards
                 </button>
                 <button
-                  className={`pill-btn ${viewMode === 'spindle_map' ? 'active' : ''}`}
-                  onClick={() => setViewMode('spindle_map')}
-                  title="Interactive Left (L) & Right (R) Spindle Break Map"
-                >
-                  Spindle Map
-                </button>
-                <button
                   className={`pill-btn ${viewMode === 'table' ? 'active' : ''}`}
                   onClick={() => setViewMode('table')}
                   title="Telemetry Table View"
@@ -1158,133 +1119,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             </div>
           )}
 
-          {/* VIEW 2: SPINDLE MAP TABLE (Supports any spindleNo from sides[].endBreaks[]) */}
-          {viewMode === 'spindle_map' && (
-            <div className="spindle-map-container">
-              <div className="spindle-map-table-header">
-                <div className="col-machine">MACHINE</div>
-                <div className="col-side">LEFT SIDE (L) · SPINDLES & END BREAKS</div>
-                <div className="col-side">RIGHT SIDE (R) · SPINDLES & END BREAKS</div>
-                <div className="col-breaks">BREAKS & EM</div>
-              </div>
-
-              {displayedMachines.map(m => {
-                const leftSide = m.sides?.find(s => s.side === 'L') || m.sides?.[0];
-                const rightSide = m.sides?.find(s => s.side === 'R') || m.sides?.[1];
-                const leftBreaks = leftSide?.endBreaks || [];
-                const rightBreaks = rightSide?.endBreaks || [];
-                const maxSpindle = getMaxSpindleForMachine(leftBreaks, rightBreaks);
-
-                return (
-                  <div
-                    key={m.machineId}
-                    className={`spindle-map-row ${
-                      m.runStatus === 'RUN'
-                        ? 'status-running'
-                        : m.runStatus === 'STOP'
-                        ? 'status-stopped'
-                        : 'status-doffing'
-                    }`}
-                    onClick={() => openMachineModal(m.machineId)}
-                  >
-                    <div className="col-machine">
-                      <span
-                        className={`status-dot ${
-                          m.runStatus === 'RUN' ? 'running' : m.runStatus === 'DOFF' ? 'doffing' : 'stopped'
-                        }`}
-                      ></span>
-                      <strong>{m.machineId}</strong>
-                      <span className="badge-mini">{m.runStatus} · {m.count}</span>
-                    </div>
-
-                    {/* Left Spindle Ticks & Broken Spindle Badges */}
-                    <div className="col-side">
-                      <div className="spindle-ticks">
-                        {visualTicks.map(tick => {
-                          const info = getTickBreakInfo(leftBreaks, tick, maxSpindle);
-                          return (
-                            <div
-                              key={`L-${tick}`}
-                              className={`spindle-tick ${info.broken ? 'broken' : ''}`}
-                              title={`Left (L) · ${info.label}`}
-                            ></div>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.68rem' }}>
-                        <span style={{ color: '#64748b' }}>
-                          EM: <strong>{leftSide?.endMendingTime ?? 0} {leftSide?.endMendingTimeUnit || 'min'}</strong>
-                        </span>
-                        {leftBreaks.map(b => (
-                          <span
-                            key={`lb-badge-${b.spindleNo}-${b.createdTime}`}
-                            style={{
-                              background: '#fee2e2',
-                              color: '#b91c1c',
-                              fontWeight: 700,
-                              padding: '0.05rem 0.35rem',
-                              borderRadius: '4px'
-                            }}
-                          >
-                            Spindle #{b.spindleNo} ({b.createdTime.split(' ')[1] || b.createdTime})
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Right Spindle Ticks & Broken Spindle Badges */}
-                    <div className="col-side">
-                      <div className="spindle-ticks">
-                        {visualTicks.map(tick => {
-                          const info = getTickBreakInfo(rightBreaks, tick, maxSpindle);
-                          return (
-                            <div
-                              key={`R-${tick}`}
-                              className={`spindle-tick ${info.broken ? 'broken' : ''}`}
-                              title={`Right (R) · ${info.label}`}
-                            ></div>
-                          );
-                        })}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.3rem', fontSize: '0.68rem' }}>
-                        <span style={{ color: '#64748b' }}>
-                          EM: <strong>{rightSide?.endMendingTime ?? 0} {rightSide?.endMendingTimeUnit || 'min'}</strong>
-                        </span>
-                        {rightBreaks.map(b => (
-                          <span
-                            key={`rb-badge-${b.spindleNo}-${b.createdTime}`}
-                            style={{
-                              background: '#fee2e2',
-                              color: '#b91c1c',
-                              fontWeight: 700,
-                              padding: '0.05rem 0.35rem',
-                              borderRadius: '4px'
-                            }}
-                          >
-                            Spindle #{b.spindleNo} ({b.createdTime.split(' ')[1] || b.createdTime})
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="col-breaks">
-                      <span className="breaks-num">{m.totalEndBreakCount}</span>
-                      <span className="breaks-detail">{m.breakSidesDisplay}</span>
-                    </div>
-                  </div>
-                );
-              })}
-
-              <div className="spindle-legend">
-                <span className="legend-item"><span className="dot red"></span> End break spindle</span>
-                <span className="legend-item"><span className="dot gray"></span> Active spindle</span>
-                <span className="legend-item"><span className="dot green"></span> RUN</span>
-                <span className="legend-item"><span className="dot orange"></span> DOFF / STOP</span>
-              </div>
-            </div>
-          )}
-
-          {/* VIEW 3: TELEMETRY DATA TABLE (Strictly JSON fields) */}
+          {/* VIEW 2: TELEMETRY DATA TABLE (Strictly JSON fields) */}
           {viewMode === 'table' && (
             <div className="breaks-table-card" style={{ marginTop: '0.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1704,76 +1539,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         </div>
                       </div>
 
-                      {/* Interactive Spindle Map preview inside Overview */}
-                      {(() => {
-                        const leftBreaks = selectedMachineDetail.endBreaks?.leftSide || [];
-                        const rightBreaks = selectedMachineDetail.endBreaks?.rightSide || [];
-                        const maxSpindle = getMaxSpindleForMachine(leftBreaks, rightBreaks);
-                        return (
-                          <div className="spindle-map-container" style={{ marginTop: '1.25rem' }}>
-                            <div className="spindle-map-table-header">
-                              <div className="col-machine">FRAME SPINDLES</div>
-                              <div className="col-side">LEFT SIDE (L)</div>
-                              <div className="col-side">RIGHT SIDE (R)</div>
-                              <div className="col-breaks">BREAKS</div>
-                            </div>
-                            <div
-                              className={`spindle-map-row ${
-                                selectedMachineDetail.machine.runStatus === 'RUN'
-                                  ? 'status-running'
-                                  : selectedMachineDetail.machine.runStatus === 'STOP'
-                                  ? 'status-stopped'
-                                  : 'status-doffing'
-                              }`}
-                            >
-                              <div className="col-machine">
-                                <span
-                                  className={`status-dot ${
-                                    selectedMachineDetail.machine.runStatus === 'RUN'
-                                      ? 'running'
-                                      : selectedMachineDetail.machine.runStatus === 'DOFF'
-                                      ? 'doffing'
-                                      : 'stopped'
-                                  }`}
-                                ></span>
-                                <strong>{selectedMachineDetail.machine?.machineId}</strong>
-                              </div>
-                              <div className="col-side spindle-ticks">
-                                {visualTicks.map(tick => {
-                                  const info = getTickBreakInfo(leftBreaks, tick, maxSpindle);
-                                  return (
-                                    <div
-                                      key={`m-L-${tick}`}
-                                      className={`spindle-tick ${info.broken ? 'broken' : ''}`}
-                                      title={`Left (L) · ${info.label}`}
-                                    ></div>
-                                  );
-                                })}
-                              </div>
-                              <div className="col-side spindle-ticks">
-                                {visualTicks.map(tick => {
-                                  const info = getTickBreakInfo(rightBreaks, tick, maxSpindle);
-                                  return (
-                                    <div
-                                      key={`m-R-${tick}`}
-                                      className={`spindle-tick ${info.broken ? 'broken' : ''}`}
-                                      title={`Right (R) · ${info.label}`}
-                                    ></div>
-                                  );
-                                })}
-                              </div>
-                              <div className="col-breaks">
-                                <span className="breaks-num">
-                                  {selectedMachineDetail.machine?.totalEndBreakCount ?? 0}
-                                </span>
-                                <span className="breaks-detail">
-                                  {selectedMachineDetail.machine?.breakSidesDisplay}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
                     </div>
                   )}
 
