@@ -185,23 +185,7 @@ export const iotApi = {
 
     const fallback = getSampleSpinfoOverview();
 
-    // 1. Direct browser fetch to live MAG SPinFO Common API (https://iot-machine-backend-production.up.railway.app/api/common)
-    try {
-      const liveCommon = await fetchLiveCommonPayload({
-        fromDate: filter?.fromDate,
-        toDate: filter?.toDate,
-        shift: filter?.shift
-      });
-      if (liveCommon && Array.isArray(liveCommon.machines) && liveCommon.machines.length > 0) {
-        // Sync payload to Next.js / MongoDB in the background without blocking the UI
-        this.syncLivePayloadToDb(liveCommon).catch(() => {});
-        return transformCommonToOverview(liveCommon);
-      }
-    } catch (remoteErr) {
-      console.warn('Direct live fetch from Railway common API failed, falling back to Next.js route:', remoteErr);
-    }
-
-    // 2. Next.js API route fallback (reads from MongoDB Atlas or server-side cached fallback)
+    // 1. Call Next.js API route first (fast, same-origin, memory-cached, server-side timeout resilient)
     try {
       const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
         `/api/iot/spinfo/overview?${params.toString()}`,
@@ -210,6 +194,17 @@ export const iotApi = {
       );
       if (res?.data && res.data.frameStatus && Array.isArray(res.data.machines) && res.data.machines.length > 0) {
         return res.data;
+      }
+    } catch (_) {}
+
+    // 2. Direct remote fetch fallback
+    try {
+      const liveCommon = await fetchLiveCommonPayload({
+        fromDate: filter?.fromDate,
+        shift: filter?.shift
+      });
+      if (liveCommon && Array.isArray(liveCommon.machines)) {
+        return transformCommonToOverview(liveCommon);
       }
     } catch (_) {}
 
@@ -234,19 +229,7 @@ export const iotApi = {
 
     const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
 
-    // 1. Direct browser fetch to live MAG SPinFO Common API
-    try {
-      const liveCommon = await fetchLiveCommonPayload({
-        fromDate: filter?.fromDate,
-        toDate: filter?.toDate,
-        shift: filter?.shift
-      });
-      if (liveCommon && Array.isArray(liveCommon.machines)) {
-        return buildMachineDetailFromCommon(machineId, liveCommon);
-      }
-    } catch (_) {}
-
-    // 2. Next.js API route fallback
+    // 1. Call Next.js API route first
     try {
       const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
         `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,
@@ -258,18 +241,18 @@ export const iotApi = {
       }
     } catch (_) {}
 
-    return fallback;
-  },
-
-  async syncLivePayloadToDb(payload: any): Promise<void> {
-    if (!payload || typeof window === 'undefined') return;
+    // 2. Direct remote fetch fallback
     try {
-      await fetch('/api/iot/spinfo/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const liveCommon = await fetchLiveCommonPayload({
+        fromDate: filter?.fromDate,
+        shift: filter?.shift
       });
+      if (liveCommon && Array.isArray(liveCommon.machines)) {
+        return buildMachineDetailFromCommon(machineId, liveCommon);
+      }
     } catch (_) {}
+
+    return fallback;
   },
 
   async syncSpinfoData(): Promise<SpinfoOverviewResponse> {
