@@ -1,5 +1,5 @@
 import { Db } from 'mongodb';
-import { IOT_COLLECTIONS, syncShiftEndNonMachineIotData } from '@/lib/iot/iotDb';
+import { IOT_COLLECTIONS } from '@/lib/iot/iotDb';
 
 function normalizeToIsoDate(dStr: string | null | undefined): string {
   if (!dStr) return '';
@@ -372,14 +372,6 @@ export async function transferAndCleanupDatabase(db: Db): Promise<MigrationRepor
         report.errors.push(`shiftallocations drop error: ${err.message}`);
       }
     }
-
-    // -------------------------------------------------------------
-    // 7. Ensure latest shift non-machine IoT entities are populated
-    // -------------------------------------------------------------
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      await syncShiftEndNonMachineIotData(today, 1);
-    } catch (_) {}
 
   } catch (outerErr: any) {
     report.success = false;
