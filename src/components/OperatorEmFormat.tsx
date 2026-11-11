@@ -393,7 +393,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const handleRefreshLiveEm = async () => {
     setIsRefreshingEm(true);
     try {
-      const res = await fetch(`/api/machine-em?force=true&_t=${Date.now()}`);
+      const res = await fetch(`/api/machine-em?force=true&syncHistory=true&_t=${Date.now()}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {

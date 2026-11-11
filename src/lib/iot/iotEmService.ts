@@ -673,6 +673,109 @@ export async function syncIotEmToSpinningMonitor(
 }
 
 /**
+ * 5b. Sync EM Data from History (iot_spinfo_histories and iot_commondatas)
+ * - Scans historical telemetry records stored in MongoDB
+ * - Extracts end mending time and end break counts for all machines across past shifts
+ * - Bulk-upserts hourly EM records into iot_em
+ * - Calls syncIotEmToSpinningMonitor() to make past EM available across all historical dates
+ */
+export async function syncEmFromHistory(): Promise<{
+  success: boolean;
+  historicalDates: string[];
+  totalRecordsUpserted: number;
+  machineEm: Record<string, Record<string, Record<number | string, number>>>;
+}> {
+  try {
+    const db = await getIotDb();
+    const emCol = db.collection<IotEmRecord>(IOT_COLLECTIONS.EM);
+    const histCol = db.collection(IOT_COLLECTIONS.SPINFO_HISTORIES);
+    const commonCol = db.collection(IOT_COLLECTIONS.COMMON);
+
+    const [histRecords, commonRecords] = await Promise.all([
+      histCol.find({ machines: { $exists: true, $ne: [] } }).sort({ shiftDate: 1, shift: 1 }).toArray(),
+      commonCol.find({ machines: { $exists: true, $ne: [] } }).sort({ shiftDate: 1, shift: 1 }).toArray()
+    ]);
+
+    const allPackets = [...histRecords, ...commonRecords];
+    if (allPackets.length === 0) {
+      const syncRes = await syncIotEmToSpinningMonitor();
+      return { success: true, historicalDates: [], totalRecordsUpserted: 0, machineEm: syncRes.machineEm };
+    }
+
+    const emBulkOps: any[] = [];
+    const dateSet = new Set<string>();
+
+    for (const doc of allPackets) {
+      const sDate = doc.shiftDate || (doc.dataTime ? doc.dataTime.slice(0, 10) : null);
+      if (!sDate) continue;
+      const shift = Number(doc.shift || 1);
+      const month = sDate.slice(0, 7);
+      const hour = calculateShiftHour(shift, doc.dataTime);
+      dateSet.add(sDate);
+
+      for (const m of (doc.machines || [])) {
+        const mNo = String(m.machine || m.machineId || '');
+        if (!mNo) continue;
+        const sideL = (m.sides || []).find((s: any) => s.side === 'L');
+        const sideR = (m.sides || []).find((s: any) => s.side === 'R');
+        const emLeft = Number(sideL?.endMendingTime || 0);
+        const emRight = Number(sideR?.endMendingTime || 0);
+        const emTotal = Number((emLeft + emRight).toFixed(2));
+        const unit = String(sideL?.endMendingTimeUnit || sideR?.endMendingTimeUnit || 'min');
+        const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+        const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+        const totalEndBreaks = Number(m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
+        if (emTotal > 0 || totalEndBreaks > 0) {
+          emBulkOps.push({
+            updateOne: {
+              filter: { machineNo: mNo, date: sDate, shift, hour },
+              update: {
+                $set: {
+                  machineNo: mNo,
+                  date: sDate,
+                  month,
+                  shift,
+                  hour,
+                  hourLabel: `Hour ${hour}`,
+                  emLeft,
+                  emRight,
+                  emTotal,
+                  unit,
+                  endBreakCountLeft,
+                  endBreakCountRight,
+                  totalEndBreaks,
+                  isFinalized: true,
+                  updatedAt: new Date()
+                },
+                $setOnInsert: { recordedAt: new Date() }
+              },
+              upsert: true
+            }
+          });
+        }
+      }
+    }
+
+    if (emBulkOps.length > 0) {
+      await emCol.bulkWrite(emBulkOps, { ordered: false }).catch(() => {});
+    }
+
+    const syncRes = await syncIotEmToSpinningMonitor();
+
+    return {
+      success: true,
+      historicalDates: Array.from(dateSet).sort(),
+      totalRecordsUpserted: emBulkOps.length,
+      machineEm: syncRes.machineEm
+    };
+  } catch (err: any) {
+    console.error('Error syncing EM from history:', err);
+    return { success: false, historicalDates: [], totalRecordsUpserted: 0, machineEm: {} };
+  }
+}
+
+/**
  * 6. Fetch and Sync ALL Shifts (1, 2, 3) from Railway MAG SPinFO Common API
  * - Queries Shift 1, Shift 2, and Shift 3 in parallel from Railway (sub-3 second completion)
  * - Combines multi-part packets to accurately capture all machines

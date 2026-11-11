@@ -28,7 +28,8 @@ import {
   getIotEmRecords,
   getLatestEmForAllIotMachines,
   syncIotEmToSpinningMonitor,
-  fetchAndSyncAllShiftsFromRailway
+  fetchAndSyncAllShiftsFromRailway,
+  syncEmFromHistory
 } from '@/lib/iot/iotEmService';
 
 const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
@@ -68,6 +69,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const targetDate = searchParams.get('date') || undefined;
       const syncResult = await fetchAndSyncAllShiftsFromRailway(targetDate);
       return NextResponse.json(syncResult);
+    }
+
+    // 0.2b Sync Historical EM from Saved Telemetry Histories
+    if (path === 'em/sync-history' || path === 'sync-history-em') {
+      const historyResult = await syncEmFromHistory();
+      return NextResponse.json(historyResult);
     }
 
     // 0.3 Latest EM for All 46 IoT Machines (for Settings machine matching dropdowns)

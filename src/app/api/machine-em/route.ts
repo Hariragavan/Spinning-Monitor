@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { MachineEmData } from '@/types';
-import { syncIotEmToSpinningMonitor, fetchAndSyncAllShiftsFromRailway } from '@/lib/iot/iotEmService';
+import { syncIotEmToSpinningMonitor, fetchAndSyncAllShiftsFromRailway, syncEmFromHistory } from '@/lib/iot/iotEmService';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -9,6 +9,7 @@ export const fetchCache = 'force-no-store';
 export const maxDuration = 30;
 
 let lastRailwaySyncTime = 0;
+let hasSyncedHistory = false;
 
 export async function GET(req: Request) {
   try {
@@ -16,8 +17,23 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const date = searchParams.get('date') || undefined;
     const force = Boolean(searchParams.get('force') || searchParams.get('sync'));
+    const syncHistoryRequested = searchParams.get('syncHistory') === 'true';
 
-    // Auto-sync mapped IoT EM to machine_em across all shifts (1, 2, 3) from Railway
+    // 1. Check if historical EM from telemetry history needs to be synchronized
+    if (syncHistoryRequested || !hasSyncedHistory) {
+      try {
+        const currentDoc = await db.collection('machine_em').findOne({ _id: 'machine_em_data' as any });
+        const dateCount = Object.keys(currentDoc?.data || {}).length;
+        if (syncHistoryRequested || dateCount < 5) {
+          await syncEmFromHistory();
+          hasSyncedHistory = true;
+        }
+      } catch (histErr) {
+        console.warn('Historical EM sync warning:', histErr);
+      }
+    }
+
+    // 2. Auto-sync mapped IoT EM to machine_em across all shifts (1, 2, 3) from Railway
     // Throttled to at most once every 15 seconds unless force=true is requested
     const now = Date.now();
     if (force || (now - lastRailwaySyncTime >= 15000)) {
