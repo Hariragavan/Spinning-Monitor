@@ -190,11 +190,9 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
 
     for (const [_key, recList] of shiftGroups.entries()) {
       const baseRec = recList[0];
-      const isShiftEnd = (
-        baseRec.recordType === 'SHIFT_END' ||
-        String(baseRec.msgId || '').toUpperCase().endsWith('-END') ||
-        recList.some(r => r.recordType === 'SHIFT_END' || String(r.msgId || '').toUpperCase().endsWith('-END'))
-      );
+      const shiftDate = String(baseRec.shiftDate || (baseRec.dataTime ? baseRec.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+      const month = shiftDate.slice(0, 7);
+      const shift = Number(baseRec.shift || 1);
 
       // Merge multi-part packets to accurately get all 46 machines
       const machineMap = new Map<string, any>();
@@ -207,33 +205,40 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
       const mergedMachines = Array.from(machineMap.values());
       if (mergedMachines.length === 0) continue;
 
-      const shiftDate = String(baseRec.shiftDate || (baseRec.dataTime ? baseRec.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
-      const month = shiftDate.slice(0, 7);
-      const shift = Number(baseRec.shift || 1);
+      // Detect shift-end: either explicit SHIFT_END marker, or packet timestamp near/past shift completion
+      const isShiftEnd = (
+        baseRec.recordType === 'SHIFT_END' ||
+        String(baseRec.msgId || '').toUpperCase().endsWith('-END') ||
+        recList.some(r => r.recordType === 'SHIFT_END' || String(r.msgId || '').toUpperCase().endsWith('-END')) ||
+        (shift === 1 && new Date().getHours() >= 14) ||
+        (shift === 2 && new Date().getHours() >= 22) ||
+        (shift === 3 && (new Date().getHours() >= 6 && new Date().getHours() < 14))
+      );
 
-      // 1. If SHIFT_END: Save permanent shift-wise summary to iot_shiftwise_data (NOT time-wise)
-      if (isShiftEnd) {
-        const { _id, ...cleanDoc } = baseRec;
-        const msgId = cleanDoc.msgId || `${shiftDate.replace(/-/g, '')}-S${shift}-END`;
-        await shiftwiseCol.updateOne(
-          { shiftDate, shift },
-          {
-            $set: {
-              ...cleanDoc,
-              msgId,
-              recordType: 'SHIFT_END',
-              shiftDate,
-              month,
-              shift,
-              machineCount: mergedMachines.length,
-              machines: mergedMachines,
-              updatedAt: new Date()
-            },
-            $setOnInsert: { createdAt: new Date() }
+      // 1. Save permanent / latest shift summary to iot_shiftwise_data
+      // Strip _id and createdAt to avoid Mongo update conflicts with $setOnInsert
+      const { _id, createdAt: _ignoreCreated, ...cleanDoc } = baseRec;
+      const msgId = cleanDoc.msgId || `${shiftDate.replace(/-/g, '')}-S${shift}-END`;
+      await shiftwiseCol.updateOne(
+        { shiftDate, shift },
+        {
+          $set: {
+            ...cleanDoc,
+            msgId,
+            recordType: isShiftEnd ? 'SHIFT_END' : (cleanDoc.recordType || 'SHIFT_LIVE'),
+            shiftDate,
+            month,
+            shift,
+            machineCount: mergedMachines.length,
+            machines: mergedMachines,
+            updatedAt: new Date()
           },
-          { upsert: true }
-        );
+          $setOnInsert: { createdAt: new Date() }
+        },
+        { upsert: true }
+      );
 
+      if (isShiftEnd) {
         // Auto-save non-machine IoT entities at shift end: cardtap, rounds, maintenance, employee, performance
         syncShiftEndNonMachineIotData(shiftDate, shift).catch(syncErr => {
           console.warn('[persistLiveIotPayload] syncShiftEndNonMachineIotData warning:', syncErr);

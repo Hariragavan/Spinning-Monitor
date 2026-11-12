@@ -46,8 +46,8 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'IOT Dashboard',
     items: [
       { id: 'iot-machine-dashboard', label: 'Machine Dashboard', icon: Cpu, badge: 'Live' },
+      { id: 'iot-daily-production', label: 'Daily Production', icon: Layers },
       { id: 'iot-employee-dashboard', label: 'Employee Dashboard', icon: Users },
-      { id: 'iot-production-entry', label: 'Production Entry', icon: FileText },
       { id: 'iot-reports', label: 'Reports (5)', icon: BarChart3 },
       { id: 'iot-maintenance', label: 'Maintenance Calendar', icon: Calendar },
       { id: 'iot-configuration', label: 'Configuration', icon: Settings },

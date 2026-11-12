@@ -1010,10 +1010,18 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
 
     for (const [_gKey, packetList] of msgMap.entries()) {
       const base = packetList[0];
+      const shift = Number(base.shift || 1);
+      const sDate = String(base.shiftDate || (base.dataTime ? base.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
+      const month = sDate.slice(0, 7);
+      dateSet.add(sDate);
+
       const isShiftEnd = (
         base.recordType === 'SHIFT_END' ||
         String(base.msgId || '').toUpperCase().endsWith('-END') ||
-        packetList.some((pkt: any) => pkt.recordType === 'SHIFT_END' || String(pkt.msgId || '').toUpperCase().endsWith('-END'))
+        packetList.some((pkt: any) => pkt.recordType === 'SHIFT_END' || String(pkt.msgId || '').toUpperCase().endsWith('-END')) ||
+        (shift === 1 && new Date().getHours() >= 14) ||
+        (shift === 2 && new Date().getHours() >= 22) ||
+        (shift === 3 && (new Date().getHours() >= 6 && new Date().getHours() < 14))
       );
 
       const machineMap = new Map<string, any>();
@@ -1026,14 +1034,9 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
       const machines = Array.from(machineMap.values());
       if (machines.length === 0) continue;
 
-      const sDate = String(base.shiftDate || (base.dataTime ? base.dataTime.slice(0, 10) : new Date().toISOString().slice(0, 10)));
-      const month = sDate.slice(0, 7);
-      const shift = Number(base.shift || 1);
-      dateSet.add(sDate);
-
       // 1. If SHIFT_END: Save permanent shift-wise summary to iot_shiftwise_data (NOT time-wise)
       if (isShiftEnd) {
-        const { _id, ...cleanDoc } = base;
+        const { _id, createdAt: _ignoreCreated, ...cleanDoc } = base;
         const msgId = cleanDoc.msgId || `${sDate.replace(/-/g, '')}-S${shift}-END`;
         await shiftwiseCol.updateOne(
           { shiftDate: sDate, shift },

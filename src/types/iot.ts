@@ -573,3 +573,112 @@ export interface Company {
   active: boolean;
   description?: string;
 }
+
+export interface IotDailyProductionMachineRow {
+  sNo: number;
+  spinningFrame: string;
+  iotMachine: string;
+  shed: string;
+  count: string;
+  runStatus: 'RUN' | 'STOP' | 'DOFF' | 'OFFLINE' | string;
+  spindleSpeed: number;
+  targetKg: number;
+  actualKg: number;
+  varianceKg: number;
+  achievementPct: number;
+  wastePct: number;
+  emTotalMin: number;
+  emLeftMin: number;
+  emRightMin: number;
+  endBreakCount: number;
+  hourWiseProduction: { hour: number; production: number }[];
+}
+
+export interface IotDailyProductionShiftSummary {
+  shift: number;
+  shiftName: string;
+  shiftHours: number;
+  timing: {
+    from: string;
+    to: string;
+    dataTime?: string;
+  };
+  productionKg: number;
+  targetKg: number;
+  achievementPct: number;
+  varianceKg: number;
+  overallEm: number;
+  totalEm: number;
+  activeMachineCount: number;
+  totalMachineCount: number;
+  wastePercentage: number;
+  activeMachines: {
+    spinningFrame: string;
+    iotMachine: string;
+    count: string;
+    speed: number;
+    prodKg: number;
+  }[];
+  machines: IotDailyProductionMachineRow[];
+}
+
+export interface IotMonthDateShiftRow {
+  date: string;
+  shift: number;
+  shiftName: string;
+  shiftHours: number;
+  timing: {
+    from: string;
+    to: string;
+    dataTime?: string;
+  };
+  productionKg: number;
+  targetKg: number;
+  achievementPct: number;
+  varianceKg: number;
+  overallEm: number;
+  totalEm: number;
+  activeMachineCount: number;
+  totalMachineCount: number;
+  wastePercentage: number;
+  activeMachinesSummary: string;
+}
+
+export interface IotDailyProductionResponse {
+  success: boolean;
+  month: string;
+  availableMonths: string[];
+  date: string;
+  availableDates: string[];
+  selectedShift: number | 'all';
+  monthGrandTotal: {
+    productionKg: number;
+    targetKg: number;
+    achievementPct: number;
+    varianceKg: number;
+    overallEm: number;
+    totalEm: number;
+    wastePercentage: number;
+    totalShifts: number;
+  };
+  monthRows: IotMonthDateShiftRow[];
+  dayMachines: IotDailyProductionMachineRow[];
+  daySummary?: {
+    productionKg: number;
+    targetKg: number;
+    achievementPct: number;
+    varianceKg: number;
+    overallEm: number;
+    totalEm: number;
+    activeMachineCount: number;
+    totalMachineCount: number;
+    wastePercentage: number;
+    shiftHours: number;
+    timing: { from: string; to: string; dataTime?: string };
+    activeMachines: { spinningFrame: string; iotMachine: string; count: string; speed: number; prodKg: number }[];
+  };
+  overallSummary?: any;
+  shifts?: IotDailyProductionShiftSummary[];
+  tableRows?: IotDailyProductionMachineRow[];
+}
+

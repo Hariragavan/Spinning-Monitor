@@ -34,8 +34,8 @@ import { CountSummary } from '@/components/CountSummary';
 import { CountWiseFrames } from '@/components/CountWiseFrames';
 import { MonthlyCountGpss } from '@/components/MonthlyCountGpss';
 import { IotMachineDashboard } from '@/components/iot/IotMachineDashboard';
+import { IotDailyProduction } from '@/components/iot/IotDailyProduction';
 import { IotEmployeeDashboard } from '@/components/iot/IotEmployeeDashboard';
-import { IotProductionEntry } from '@/components/iot/IotProductionEntry';
 import { IotReports } from '@/components/iot/IotReports';
 import { IotMaintenance } from '@/components/iot/IotMaintenance';
 import { IotConfiguration } from '@/components/iot/IotConfiguration';
@@ -2081,10 +2081,11 @@ export default function Home() {
             <IotEmployeeDashboard />
           </div>
         );
+      case 'iot-daily-production':
       case 'iot-production-entry':
         return (
           <div className="iot-system-scope w-full">
-            <IotProductionEntry />
+            <IotDailyProduction initialDate={activeDailyReport?.date} isTvMode={isTvMode} />
           </div>
         );
       case 'iot-reports':

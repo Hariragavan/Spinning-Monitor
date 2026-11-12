@@ -213,6 +213,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       return NextResponse.json({ success: true, data });
     }
 
+    // 9b. Shift End Daily Production Telemetry
+    if (path === 'daily-production' || path === 'shift-end-production') {
+      const { GET: getDailyProdRoute } = await import('@/app/api/iot/daily-production/route');
+      return getDailyProdRoute(req);
+    }
+
     // 10. Production Entries / Reports
     if (
       path === 'production' ||

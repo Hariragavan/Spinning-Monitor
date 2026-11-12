@@ -14,7 +14,8 @@ import {
   ProductionEntryInput,
   ProductionReportRow,
   ProductionReportFilter,
-  MachineRoundPerformance
+  MachineRoundPerformance,
+  IotDailyProductionResponse
 } from '@/types/iot';
 import {
   getSampleSpinfoOverview,
@@ -626,6 +627,65 @@ export const iotApi = {
     const shifts = getStored<Shift[]>('shifts', []);
     setStored('shifts', shifts.filter(s => s.shiftId !== shiftId));
     return true;
+  },
+
+  // 5b. Daily Shift End Production Telemetry
+  async getDailyProduction(params?: {
+    month?: string;
+    date?: string;
+    shift?: string | number;
+    shed?: string;
+  }): Promise<IotDailyProductionResponse> {
+    const q = new URLSearchParams();
+    if (params?.month) q.set('month', params.month);
+    if (params?.date) q.set('date', params.date);
+    if (params?.shift !== undefined) q.set('shift', String(params.shift));
+    if (params?.shed) q.set('shed', params.shed);
+    const qs = q.toString();
+    const url = `/api/iot/daily-production${qs ? `?${qs}` : ''}`;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err: any) {
+      console.error('getDailyProduction error:', err);
+      return {
+        success: false,
+        month: params?.month || (params?.date ? params.date.slice(0, 7) : new Date().toISOString().slice(0, 7)),
+        availableMonths: [],
+        date: params?.date || new Date().toISOString().slice(0, 10),
+        availableDates: [],
+        selectedShift: params?.shift === 'all' ? 'all' : (Number(params?.shift) || 'all'),
+        monthGrandTotal: {
+          productionKg: 0,
+          targetKg: 0,
+          achievementPct: 0,
+          varianceKg: 0,
+          overallEm: 0,
+          totalEm: 0,
+          wastePercentage: 0,
+          totalShifts: 0
+        },
+        monthRows: [],
+        dayMachines: [],
+        overallSummary: {
+          productionKg: 0,
+          targetKg: 0,
+          achievementPct: 0,
+          varianceKg: 0,
+          overallEm: 0,
+          totalEm: 0,
+          activeMachineCount: 0,
+          totalMachineCount: 0,
+          wastePercentage: 0,
+          shiftHours: 8,
+          timing: { from: '06:00', to: '14:00' },
+          activeMachines: []
+        },
+        shifts: [],
+        tableRows: []
+      };
+    }
   },
 
   // 6. Maintenance (https://iot-machine-backend.onrender.com/api)
