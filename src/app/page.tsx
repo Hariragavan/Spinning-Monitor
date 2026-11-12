@@ -447,7 +447,6 @@ export default function Home() {
   }, []);
 
   const [settings, setSettings] = useState<SystemSettings>({
-    googleSheetUrl: 'https://docs.google.com/spreadsheets/d/1hRAJzrd6YeOymi86nx8CI_gacJe9m93H/edit?usp=sharing',
     autoUpdateEnabled: false,
     lastSyncDate: null,
     bestSiderOverrideId: null,
@@ -457,9 +456,6 @@ export default function Home() {
     gaiterCounts: { I: 1, II: 1, III: 1 },
     tvShowBestSiderMonth: true,
     emHighLimit: 4,
-    whatsAppProdPhone: '+919944711575',
-    whatsAppEmPhone: '+919944711575',
-    whatsAppIncentivePhone: '+919944711575',
     tvSlideIntervals: {
       'overview': 15,
       'charts': 20,
@@ -508,7 +504,12 @@ export default function Home() {
       'em-outliers-compare': 15,
       'sheds': 20,
       'shift-comparison': 20
-    }
+    },
+    iotMachineMapping: {},
+    machineToMachineMapping: {},
+    machinePairs: [],
+    iotMachineMappingByDate: {},
+    iotMachineAllocationPeriods: [],
   });
 
   const [isTvMode, setIsTvMode] = useState(false);
@@ -3187,9 +3188,15 @@ export default function Home() {
                   newMappings,
                   effDate
                 );
+                const machinePairs = Object.entries(newMappings).map(([spinningFrame, iotMachine]) => ({
+                  spinningFrame,
+                  iotMachine
+                }));
                 const updated: SystemSettings = {
                   ...settings,
                   iotMachineMapping: newMappings,
+                  machineToMachineMapping: newMappings,
+                  machinePairs,
                   iotMachineMappingByDate: {
                     ...(settings.iotMachineMappingByDate || {}),
                     [effDate]: newMappings

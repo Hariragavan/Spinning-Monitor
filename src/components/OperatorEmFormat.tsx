@@ -286,16 +286,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   }, [safeSettings?.iotMachineMapping, safeSettings?.iotMachineMappingByDate, selectedMonth, selectedYear]);
 
   // Sync state
-  const [sheetUrl, setSheetUrl] = useState<string>(
-    safeSettings?.machineEmGoogleSheetUrl || 
-    'https://docs.google.com/spreadsheets/d/1VaoDxAzZ9k--KLMuLUpG9TVOsRo8TXrO/edit?usp=sharing'
-  );
-
-  React.useEffect(() => {
-    if (safeSettings?.machineEmGoogleSheetUrl) {
-      setSheetUrl(safeSettings.machineEmGoogleSheetUrl);
-    }
-  }, [safeSettings?.machineEmGoogleSheetUrl]);
+  const [sheetUrl, setSheetUrl] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ success: boolean; message: string; dates?: string[] } | null>(null);
 

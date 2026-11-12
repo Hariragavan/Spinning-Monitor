@@ -145,7 +145,9 @@ export interface MachineEmData {
 }
 
 export interface SystemSettings {
-  googleSheetUrl: string;
+  googleSheetUrl?: string;
+  machineEmGoogleSheetUrl?: string;
+  lastMachineEmSyncDate?: string | null;
   autoUpdateEnabled: boolean;
   lastSyncDate: string | null;
   bestSiderOverrideId?: string | null;
@@ -157,16 +159,13 @@ export interface SystemSettings {
   tvMonth?: number;
   tvYear?: number;
   tvShowBestSiderMonth?: boolean;
-  machineEmGoogleSheetUrl?: string;
-  lastMachineEmSyncDate?: string | null;
   emHighLimit?: number;
-  whatsAppProdPhone?: string;
-  whatsAppEmPhone?: string;
-  whatsAppIncentivePhone?: string;
   tvSlideIntervals?: Record<string, number>;
   tvSlideEnabled?: Record<string, boolean>;
   shed40sFormulas?: Record<string, string>;
   iotMachineMapping?: Record<string, string>;
+  machineToMachineMapping?: Record<string, string>;
+  machinePairs?: { spinningFrame: string; iotMachine: string }[];
   iotMachineMappingByDate?: Record<string, Record<string, string>>;
   iotMachineAllocationPeriods?: IotMachineAllocationPeriod[];
 }

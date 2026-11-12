@@ -744,15 +744,32 @@ export async function syncIotEmToSpinningMonitor(
       const currentPeriods = existingDoc?.iotMachineAllocationPeriods || [];
       const updatedPeriods = calculateUpdatedAllocationPeriods(currentPeriods, mappings, effectiveDate);
 
+      const machinePairs = Object.entries(mappings).map(([spinningFrame, iotMachine]) => ({
+        spinningFrame,
+        iotMachine
+      }));
+
       const updateFields: any = {
         iotMachineMapping: mappings,
+        machineToMachineMapping: mappings,
+        machinePairs,
         [`iotMachineMappingByDate.${effectiveDate}`]: mappings,
         iotMachineAllocationPeriods: updatedPeriods
       };
 
       await db.collection('settings').updateOne(
         { _id: 'system_settings' as any },
-        { $set: updateFields },
+        { 
+          $set: updateFields,
+          $unset: {
+            whatsAppProdPhone: '',
+            whatsAppEmPhone: '',
+            whatsAppIncentivePhone: '',
+            googleSheetUrl: '',
+            machineEmGoogleSheetUrl: '',
+            lastMachineEmSyncDate: ''
+          }
+        },
         { upsert: true }
       );
     }
