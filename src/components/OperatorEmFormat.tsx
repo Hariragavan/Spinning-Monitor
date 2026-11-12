@@ -22,8 +22,41 @@ import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
 import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed } from '../lib/utils';
-export { getMachineEmValue, resolveMappedDevice };
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
+
+// Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
+const mapShiftToNum = (shift: Shift | string | number): string => {
+  const s = String(shift || '').trim().toUpperCase();
+  if (s === 'I' || s === '1' || s.includes('1')) return '1';
+  if (s === 'II' || s === '2' || s.includes('2')) return '2';
+  if (s === 'III' || s === '3' || s.includes('3')) return '3';
+  return '1';
+};
+
+const mapNumToShift = (num: string): Shift => {
+  if (num === '1') return 'I';
+  if (num === '2') return 'II';
+  if (num === '3') return 'III';
+  return 'I';
+};
+
+const dateToInputString = (dStr: string): string => {
+  if (!dStr) return '';
+  const parts = parseUniversalDateParts(dStr);
+  if (!parts) return '';
+  const mStr = parts.month.toString().padStart(2, '0');
+  const dStr2 = parts.day.toString().padStart(2, '0');
+  return `${parts.year}-${mStr}-${dStr2}`;
+};
+
+const inputStringToDate = (val: string): string => {
+  if (!val) return '';
+  const parts = val.split('-');
+  if (parts.length !== 3) return '';
+  return `${parseInt(parts[2])}/${parseInt(parts[1]).toString().padStart(2, '0')}/${parts[0]}`;
+};
+
+const shifts: ('1' | '2' | '3')[] = ['1', '2', '3'];
 
 interface OperatorEmFormatProps {
   history: DailyReport[];
@@ -62,6 +95,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   currentShed,
   onSelectShed
 }) => {
+  const safeSettings = settings || ({} as Partial<SystemSettings>);
   const [localTvMode, setLocalTvMode] = useState<boolean>(false);
   const activeTv = appIsTvMode || localTvMode;
 
@@ -196,7 +230,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const deviceToFrame: Record<string, string> = {};
 
     // 1. From iotMachineMappingByDate for any date in this month
-    const mappingsByDate = settings.iotMachineMappingByDate || {};
+    const mappingsByDate = safeSettings?.iotMachineMappingByDate || {};
     for (const [dKey, map] of Object.entries(mappingsByDate)) {
       const parts = parseUniversalDateParts(dKey);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear && map) {
@@ -234,7 +268,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
 
     // 3. Fallback to settings.iotMachineMapping
-    const activeMap = settings.iotMachineMapping || {};
+    const activeMap = safeSettings?.iotMachineMapping || {};
     for (const [frame, device] of Object.entries(activeMap)) {
       if (device && device !== 'NONE' && device !== 'None' && device !== 'unassigned') {
         const cleanDev = device.trim().toUpperCase();
@@ -249,13 +283,19 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       registeredFrames: Object.keys(frameToDevice),
       registeredDevices: Object.keys(deviceToFrame)
     };
-  }, [settings.iotMachineMapping, settings.iotMachineMappingByDate, selectedMonth, selectedYear]);
+  }, [safeSettings?.iotMachineMapping, safeSettings?.iotMachineMappingByDate, selectedMonth, selectedYear]);
 
   // Sync state
   const [sheetUrl, setSheetUrl] = useState<string>(
-    settings.machineEmGoogleSheetUrl || 
+    safeSettings?.machineEmGoogleSheetUrl || 
     'https://docs.google.com/spreadsheets/d/1VaoDxAzZ9k--KLMuLUpG9TVOsRo8TXrO/edit?usp=sharing'
   );
+
+  React.useEffect(() => {
+    if (safeSettings?.machineEmGoogleSheetUrl) {
+      setSheetUrl(safeSettings.machineEmGoogleSheetUrl);
+    }
+  }, [safeSettings?.machineEmGoogleSheetUrl]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ success: boolean; message: string; dates?: string[] } | null>(null);
 
@@ -462,40 +502,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
     return false;
   }, [assignedMachinesByDateAndShift, effectiveHistory]);
-
-  const shifts: ('1' | '2' | '3')[] = ['1', '2', '3'];
-
-  // Helper mapping Shift I, II, III <-> 1, 2, 3
-  const mapShiftToNum = (shift: Shift | string | number): string => {
-    const s = String(shift).trim().toUpperCase();
-    if (s === 'I' || s === '1' || s.includes('1')) return '1';
-    if (s === 'II' || s === '2' || s.includes('2')) return '2';
-    if (s === 'III' || s === '3' || s.includes('3')) return '3';
-    return '1';
-  };
-
-  const mapNumToShift = (num: string): Shift => {
-    if (num === '1') return 'I';
-    if (num === '2') return 'II';
-    if (num === '3') return 'III';
-    return 'I';
-  };
-
-  const dateToInputString = (dStr: string): string => {
-    if (!dStr) return '';
-    const parts = parseUniversalDateParts(dStr);
-    if (!parts) return '';
-    const mStr = parts.month.toString().padStart(2, '0');
-    const dStr2 = parts.day.toString().padStart(2, '0');
-    return `${parts.year}-${mStr}-${dStr2}`;
-  };
-
-  const inputStringToDate = (val: string): string => {
-    if (!val) return '';
-    const parts = val.split('-');
-    if (parts.length !== 3) return '';
-    return `${parseInt(parts[2])}/${parseInt(parts[1]).toString().padStart(2, '0')}/${parts[0]}`;
-  };
 
   // Active dates for the selected Month & Year (strictly for selectedMonth and selectedYear)
   const selectedMonthDates = useMemo(() => {
@@ -2166,3 +2172,5 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     </div>
   );
 };
+
+export { getMachineEmValue, resolveMappedDevice };

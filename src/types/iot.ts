@@ -298,6 +298,7 @@ export interface SpinfoFrameStatus {
   totalEndBreaks?: number;
   leftBreaks?: number;
   rightBreaks?: number;
+  endMendingTime?: number;
 }
 
 export interface SpinfoPerformanceAndCare {

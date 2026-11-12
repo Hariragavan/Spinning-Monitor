@@ -28,13 +28,17 @@ export interface MachineRunningStatusItem {
   speed: number;
   speedUnit: string;
   count: string;
+  emLeft?: number;
+  emRight?: number;
+  emTotal?: number;
+  totalEndBreaks?: number;
   lastUpdated: string;
 }
 
 // In-memory cache for 45-sec lightweight status
 let cachedStatuses: MachineRunningStatusItem[] = [];
 let lastStatusFetchTime = 0;
-const STATUS_CACHE_TTL_MS = 35000; // 35 seconds throttle for fresh remote polling
+const STATUS_CACHE_TTL_MS = 25000; // 25 seconds throttle so 45s poll always gets fresh data
 
 /**
  * Calculates shift hour (1 through 8) given shift and dataTime timestamp
@@ -215,10 +219,7 @@ export async function getLightweightMachineStatuses(): Promise<{
         { upsert: true }
       );
 
-      // Check and prune completed older shifts
-      await pruneCompletedShiftHistories(db, shiftDate, shift);
-
-      // Extract lightweight statuses
+      // Extract lightweight statuses AND EM values
       cachedStatuses = rawItem.machines.map((m: any, idx: number) => {
         const id = String(m.machine || m.machineId || `RF${String(idx + 1).padStart(2, '0')}`);
         const rawStatus = String(m.runStatus || 'STOP').toUpperCase();
@@ -230,6 +231,15 @@ export async function getLightweightMachineStatuses(): Promise<{
         const speedUnit = String(m.spindleSpeedUnit || 'rpm');
         const count = String(m.count || '');
 
+        const sideL = (m.sides || []).find((s: any) => s.side === 'L');
+        const sideR = (m.sides || []).find((s: any) => s.side === 'R');
+        const emLeft = Number(sideL?.endMendingTime || 0);
+        const emRight = Number(sideR?.endMendingTime || 0);
+        const emTotal = Number((emLeft + emRight).toFixed(2));
+        const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+        const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+        const totalEndBreaks = Number(m.shiftEndBreaks || m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
         return {
           machine: id,
           runStatus,
@@ -237,9 +247,43 @@ export async function getLightweightMachineStatuses(): Promise<{
           speed,
           speedUnit,
           count,
+          emLeft,
+          emRight,
+          emTotal,
+          totalEndBreaks,
           lastUpdated: rawItem.dataTime || new Date().toISOString()
         };
       });
+
+      // Upsert EM records to iot_em on every 45s cycle so live database stays current
+      const emBulk: any[] = [];
+      for (const st of cachedStatuses) {
+        if (!st.machine) continue;
+        emBulk.push({
+          updateOne: {
+            filter: { machineNo: st.machine, date: shiftDate, shift },
+            update: {
+              $set: {
+                machineNo: st.machine,
+                date: shiftDate,
+                month,
+                shift,
+                emLeft: st.emLeft || 0,
+                emRight: st.emRight || 0,
+                emTotal: st.emTotal || 0,
+                totalEndBreaks: st.totalEndBreaks || 0,
+                updatedAt: new Date()
+              },
+              $setOnInsert: { recordedAt: new Date() }
+            },
+            upsert: true
+          }
+        });
+      }
+      if (emBulk.length > 0) {
+        await db.collection(IOT_COLLECTIONS.EM).bulkWrite(emBulk, { ordered: false }).catch(() => {});
+      }
+
       lastStatusFetchTime = now;
     }
   } catch (err) {

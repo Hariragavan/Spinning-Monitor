@@ -1029,6 +1029,10 @@ export const iotApi = {
       speed: number;
       speedUnit: string;
       count: string;
+      emLeft?: number;
+      emRight?: number;
+      emTotal?: number;
+      totalEndBreaks?: number;
       lastUpdated: string;
     }>;
   }> {

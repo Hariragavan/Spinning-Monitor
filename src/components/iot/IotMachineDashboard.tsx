@@ -158,9 +158,12 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 ...m,
                 runStatus: live.runStatus,
                 spindleSpeedCurrent: live.speed,
-                statusBadge: live.statusBadge
+                statusBadge: live.statusBadge,
+                avgEndMendingTime: typeof live.emTotal === 'number' ? live.emTotal : m.avgEndMendingTime,
+                totalEndBreakCount: typeof live.totalEndBreaks === 'number' ? live.totalEndBreaks : m.totalEndBreakCount
               };
             });
+            const totalEm = updated.reduce((acc, curr) => acc + (curr.avgEndMendingTime || 0), 0);
             return {
               ...prev,
               frameStatus: {
@@ -169,7 +172,8 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 stopped: res.stopped,
                 doffing: res.doffing,
                 offline: res.offline,
-                runningPercent: Math.round((res.running / (res.totalMachines || 1)) * 100)
+                runningPercent: Math.round((res.running / (res.totalMachines || 1)) * 100),
+                endMendingTime: totalEm > 0 ? Number(totalEm.toFixed(2)) : prev.frameStatus.endMendingTime
               },
               machines: updated
             };

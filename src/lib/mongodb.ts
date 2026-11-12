@@ -66,7 +66,7 @@ export function getTargetDbName(): string {
  * Explicitly created so they always display properly in MongoDB Atlas.
  */
 export const REQUIRED_COLLECTIONS: string[] = [
-  // 1. Spinning Mill Collections
+  // 1. Spinning Mill Collections (10)
   'workers',
   'machines',
   'count_conversions',
@@ -78,17 +78,12 @@ export const REQUIRED_COLLECTIONS: string[] = [
   'millcalendars',
   'users',
 
-  // 2. IoT Telemetry Collections
+  // 2. IoT Telemetry Collections (8)
   'iot_shiftwise_data',
-  'iot_machines',
-  'iot_employees',
   'iot_devices',
-  'iot_shifts',
-  'iot_machine_mappings',
-  'iot_production_entries',
+  'iot_employees',
   'iot_maintenance_schedules',
   'iot_spinfo_lives',
-  'iot_machine_status_events',
   'iot_employee_activities',
   'iot_employee_performances',
   'iot_em'
@@ -135,7 +130,6 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
             db.collection('incentive_rules').createIndex({ count: 1, shed: 1, department: 1 }),
             db.collection('iot_em').createIndex({ date: 1, machineNo: 1, shift: 1 }),
             db.collection('iot_shiftwise_data').createIndex({ shiftDate: 1, shift: 1 }, { unique: true }),
-            db.collection('iot_machines').createIndex({ machineNo: 1 }),
             db.collection('iot_employees').createIndex({ employeeId: 1 }),
             db.collection('iot_devices').createIndex({ deviceId: 1 }),
             db.collection('iot_maintenance_schedules').createIndex({ machineId: 1, shiftDate: 1, shift: 1 }),

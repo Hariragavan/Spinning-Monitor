@@ -23,6 +23,8 @@ function normalizeToIsoDate(dStr: string | null | undefined): string {
 
 export interface MigrationReport {
   success: boolean;
+  initialCollections?: string[];
+  finalCollections?: string[];
   transferred: {
     machineEmToIotEm: number;
     machineEmLogsToIotEm: number;
@@ -59,6 +61,7 @@ export async function transferAndCleanupDatabase(db: Db): Promise<MigrationRepor
   try {
     const existingCols = await db.listCollections().toArray();
     const existingNames = new Set(existingCols.map(c => c.name));
+    report.initialCollections = Array.from(existingNames).sort();
 
     // -------------------------------------------------------------
     // 1. Transfer from machine_em -> iot_em
@@ -233,8 +236,8 @@ export async function transferAndCleanupDatabase(db: Db): Promise<MigrationRepor
             }
             const machines = Array.from(mMerged.values());
 
-            // Upsert shift closing summary into iot_shiftwise_data
-            const { _id, ...cleanBase } = base;
+            // Upsert shift closing summary into iot_shiftwise_data (strip createdAt to avoid conflict with $setOnInsert)
+            const { _id, createdAt: origCreatedAt, ...cleanBase } = base;
             const msgId = cleanBase.msgId || `${sDate.replace(/-/g, '')}-S${sNum}-END`;
             await db.collection(IOT_COLLECTIONS.SHIFTWISE).updateOne(
               { shiftDate: sDate, shift: sNum },
@@ -250,7 +253,7 @@ export async function transferAndCleanupDatabase(db: Db): Promise<MigrationRepor
                   machines,
                   updatedAt: new Date()
                 },
-                $setOnInsert: { createdAt: new Date() }
+                $setOnInsert: { createdAt: origCreatedAt ? new Date(origCreatedAt) : new Date() }
               },
               { upsert: true }
             );
@@ -372,6 +375,31 @@ export async function transferAndCleanupDatabase(db: Db): Promise<MigrationRepor
         report.errors.push(`shiftallocations drop error: ${err.message}`);
       }
     }
+
+    // -------------------------------------------------------------
+    // 7. Drop all remaining unused/unwanted tables so Atlas matches local exactly
+    // -------------------------------------------------------------
+    const remainingUnwanted = [
+      'iot_machines',
+      'iot_shifts',
+      'iot_machine_mappings',
+      'iot_production_entries',
+      'iot_machine_status_events'
+    ];
+    for (const tbl of remainingUnwanted) {
+      if (existingNames.has(tbl)) {
+        try {
+          await db.collection(tbl).drop().catch(() => {});
+          report.droppedCollections.push(tbl);
+        } catch (err: any) {
+          report.errors.push(`${tbl} drop error: ${err.message}`);
+        }
+      }
+    }
+
+    // Record final collections remaining in database
+    const finalCols = await db.listCollections().toArray();
+    report.finalCollections = finalCols.map(c => c.name).sort();
 
   } catch (outerErr: any) {
     report.success = false;

@@ -25,17 +25,17 @@ import {
 export const IOT_COLLECTIONS = {
   SHIFTWISE: 'iot_shiftwise_data',
   COMMON: 'iot_shiftwise_data', // Alias for backwards compatibility
-  MACHINES: 'iot_machines',
+  MACHINES: 'machines',
   EMPLOYEES: 'iot_employees',
   DEVICES: 'iot_devices',
-  SHIFTS: 'iot_shifts',
-  MAPPINGS: 'iot_machine_mappings',
-  PRODUCTION_ENTRIES: 'iot_production_entries',
+  SHIFTS: 'iot_shiftwise_data',
+  MAPPINGS: 'settings',
+  PRODUCTION_ENTRIES: 'dailyproductionlogs',
   MAINTENANCE: 'iot_maintenance_schedules',
   SPINFO_LIVES: 'iot_spinfo_lives',
-  SPINFO_HISTORIES: 'iot_spinfo_histories',
-  MACHINE_STATUS_EVENTS: 'iot_machine_status_events',
-  STATUS_EVENTS: 'iot_machine_status_events',
+  SPINFO_HISTORIES: 'iot_shiftwise_data',
+  MACHINE_STATUS_EVENTS: 'iot_spinfo_lives',
+  STATUS_EVENTS: 'iot_spinfo_lives',
   EMPLOYEE_ACTIVITIES: 'iot_employee_activities',
   ACTIVITIES: 'iot_employee_activities',
   EMPLOYEE_PERFORMANCES: 'iot_employee_performances',
@@ -742,58 +742,11 @@ export async function getIotEmployeeMetrics(filter?: {
 // Shifts Table CRUD (https://iot-machine-backend.onrender.com/api/master/shifts)
 // -------------------------------------------------------------
 export async function getIotShifts(): Promise<Shift[]> {
-  await ensureIotSeeded();
-
-  try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/shifts`, { cache: 'no-store' });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        const mapped: Shift[] = json.data.map((s: any) => ({
-          shiftId: String(s._id || s.shiftId || s.name || s.shiftName),
-          name: String(s.name || s.shiftName || 'Shift 1'),
-          shiftName: String(s.shiftName || s.name || 'Shift 1'),
-          startTime: String(s.startTime || '06:00'),
-          endTime: String(s.endTime || '14:00'),
-          overnight: Boolean(s.overnight),
-          active: s.active !== false
-        }));
-
-        try {
-          const db = await getIotDb();
-          for (const sh of mapped) {
-            await db.collection(IOT_COLLECTIONS.SHIFTS).updateOne(
-              { shiftId: sh.shiftId },
-              { $set: sh },
-              { upsert: true }
-            );
-          }
-        } catch (_) {}
-        return mapped;
-      }
-    }
-  } catch (_) {}
-
-  try {
-    const db = await getIotDb();
-    const list = await db
-      .collection<Shift>(IOT_COLLECTIONS.SHIFTS)
-      .find({}, { projection: { _id: 0 } })
-      .toArray();
-    if (list.length > 0) {
-      return list.map((s: any) => ({
-        shiftId: String(s.shiftId || s._id),
-        name: String(s.name || s.shiftName || 'Shift 1'),
-        shiftName: String(s.shiftName || s.name || 'Shift 1'),
-        startTime: String(s.startTime || '06:00'),
-        endTime: String(s.endTime || '14:00'),
-        overnight: Boolean(s.overnight),
-        active: s.active !== false
-      }));
-    }
-  } catch (_) {}
-
-  return [];
+  return [
+    { shiftId: '1', name: 'Shift 1', shiftName: 'Shift 1', startTime: '06:00', endTime: '14:00', overnight: false, active: true },
+    { shiftId: '2', name: 'Shift 2', shiftName: 'Shift 2', startTime: '14:00', endTime: '22:00', overnight: false, active: true },
+    { shiftId: '3', name: 'Shift 3', shiftName: 'Shift 3', startTime: '22:00', endTime: '06:00', overnight: true, active: true }
+  ];
 }
 
 export async function saveIotShift(shift: Shift): Promise<Shift> {

@@ -2435,39 +2435,41 @@ export default function Home() {
       }
 
       case 'operator-em-format': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
+        const tvActiveMonth = (isTvMode && settings?.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
+        const tvActiveYear = (isTvMode && settings?.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
         return (
-          <OperatorEmFormat
-            machines={machines}
-            currentShed={selectedShed}
-            onSelectShed={setSelectedShed}
-            history={currentShedHistory}
-            allHistory={reportHistory}
-            workers={currentShedWorkers}
-            allWorkers={workers}
-            rules={currentShedRules}
-            machineEm={machineEm}
-            onUpdateMachineEm={async (newData, sheetUrl) => {
-              setMachineEm(newData);
-              await apiClient.saveMachineEm(newData);
-              if (sheetUrl) {
-                const nextSettings = {
-                  ...settings,
-                  machineEmGoogleSheetUrl: sheetUrl,
-                  lastMachineEmSyncDate: new Date().toLocaleString()
-                };
-                setSettings(nextSettings);
-                await apiClient.saveSettings(nextSettings);
-              }
-            }}
-            settings={settings}
-            isTvMode={isTvMode}
-            month={tvActiveMonth}
-            year={tvActiveYear}
-            tvPageInterval={settings.tvPageIntervals?.['operator-em-format']}
-            onPagesDetermined={setSubPagesCount}
-          />
+          <ErrorBoundary>
+            <OperatorEmFormat
+              machines={machines}
+              currentShed={selectedShed}
+              onSelectShed={setSelectedShed}
+              history={currentShedHistory}
+              allHistory={reportHistory}
+              workers={currentShedWorkers}
+              allWorkers={workers}
+              rules={currentShedRules}
+              machineEm={machineEm}
+              onUpdateMachineEm={async (newData, sheetUrl) => {
+                setMachineEm(newData);
+                await apiClient.saveMachineEm(newData);
+                if (sheetUrl) {
+                  const nextSettings = {
+                    ...settings,
+                    machineEmGoogleSheetUrl: sheetUrl,
+                    lastMachineEmSyncDate: new Date().toLocaleString()
+                  };
+                  setSettings(nextSettings);
+                  await apiClient.saveSettings(nextSettings);
+                }
+              }}
+              settings={settings}
+              isTvMode={isTvMode}
+              month={tvActiveMonth}
+              year={tvActiveYear}
+              tvPageInterval={settings?.tvPageIntervals?.['operator-em-format']}
+              onPagesDetermined={setSubPagesCount}
+            />
+          </ErrorBoundary>
         );
       }
 
