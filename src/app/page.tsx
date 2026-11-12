@@ -3184,6 +3184,10 @@ export default function Home() {
               activeDate={activeDailyReport?.date || undefined}
               onSaveMappings={async (newMappings, saveDate, customPeriods) => {
                 const effDate = saveDate || activeDailyReport?.date || new Date().toISOString().slice(0, 10);
+                const parts = parseUniversalDateParts(effDate);
+                const effIso = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : effDate;
+                const effCanonical = normalizeToCanonicalDate(effDate);
+
                 const updatedPeriods = customPeriods || calculateUpdatedAllocationPeriods(
                   settings.iotMachineAllocationPeriods || [],
                   newMappings,
@@ -3200,7 +3204,9 @@ export default function Home() {
                   machinePairs,
                   iotMachineMappingByDate: {
                     ...(settings.iotMachineMappingByDate || {}),
-                    [effDate]: newMappings
+                    [effDate]: newMappings,
+                    [effIso]: newMappings,
+                    [effCanonical]: newMappings
                   },
                   iotMachineAllocationPeriods: updatedPeriods
                 };
@@ -3208,7 +3214,7 @@ export default function Home() {
                 await apiClient.saveSettings(updated);
               }}
               onMachineEmUpdated={(newEm) => {
-                setMachineEm(newEm);
+                setMachineEm(prev => ({ ...(prev || {}), ...(newEm || {}) }));
               }}
               onDeletePeriod={async (periodId) => {
                 const updatedPeriods = (settings.iotMachineAllocationPeriods || []).filter(p => p.id !== periodId);

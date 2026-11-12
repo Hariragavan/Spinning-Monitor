@@ -1286,7 +1286,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
     // Rows 3-8: Machines
     machines.forEach(machine => {
-      const activeDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine);
+      const activeDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine) 
+        || safeSettings?.iotMachineMapping?.[machine] 
+        || registeredInfoForMonth.frameToDevice[machine];
       const row: any[] = [activeDev ? `${machine} (${activeDev})` : machine];
       selectedMonthDates.forEach(date => {
         const dateMapping = resolveEffectiveMappingForDate(
@@ -1667,7 +1669,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                     </thead>
                     <tbody>
                       {machines.map(machine => {
-                        const registeredDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine) || safeSettings?.iotMachineMapping?.[machine];
+                        const registeredDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine) 
+                          || safeSettings?.iotMachineMapping?.[machine] 
+                          || registeredInfoForMonth.frameToDevice[machine];
                         return (
                           <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
                             <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">

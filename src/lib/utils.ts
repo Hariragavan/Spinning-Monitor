@@ -1105,7 +1105,14 @@ export function resolveEffectiveMappingForDate(
   const targetIso = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : targetDate.slice(0, 10);
   const targetCanonical = normalizeToCanonicalDate(targetDate);
 
-  // 1. Check allocation periods
+  // 1. Check exact date-keyed mappings first (explicit assignment for that exact day takes precedence!)
+  if (fallbackByDate) {
+    if (fallbackByDate[targetDate] !== undefined) return fallbackByDate[targetDate] || {};
+    if (fallbackByDate[targetCanonical] !== undefined) return fallbackByDate[targetCanonical] || {};
+    if (fallbackByDate[targetIso] !== undefined) return fallbackByDate[targetIso] || {};
+  }
+
+  // 2. Check allocation periods (date-to-date validity ranges)
   if (periods && periods.length > 0) {
     const sorted = [...periods].sort((a, b) => b.fromDate.localeCompare(a.fromDate));
     for (const p of sorted) {
@@ -1121,19 +1128,15 @@ export function resolveEffectiveMappingForDate(
     }
   }
 
-  // 2. Check date-keyed mappings
+  // 3. Fallback: Carry-forward from most recent prior date mapping in fallbackByDate
   if (fallbackByDate) {
-    if (fallbackByDate[targetDate]) return fallbackByDate[targetDate];
-    if (fallbackByDate[targetCanonical]) return fallbackByDate[targetCanonical];
-    if (fallbackByDate[targetIso]) return fallbackByDate[targetIso];
-
     const priorDates = Object.keys(fallbackByDate).filter(d => {
       const dp = parseUniversalDateParts(d);
       const diso = dp ? `${dp.year}-${String(dp.month).padStart(2, '0')}-${String(dp.day).padStart(2, '0')}` : d;
       return diso <= targetIso;
     }).sort().reverse();
     if (priorDates.length > 0 && fallbackByDate[priorDates[0]]) {
-      return fallbackByDate[priorDates[0]];
+      return fallbackByDate[priorDates[0]] || {};
     }
   }
 
@@ -1157,13 +1160,31 @@ export function getPreviousDayIso(isoDate: string): string {
 }
 
 /**
+ * Helper to get the next calendar day in YYYY-MM-DD format.
+ */
+export function getNextDayIso(isoDate: string): string {
+  if (!isoDate) return isoDate;
+  const parts = parseUniversalDateParts(isoDate);
+  const target = parts
+    ? new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+    : new Date(isoDate);
+  target.setUTCDate(target.getUTCDate() + 1);
+  const y = target.getUTCFullYear();
+  const m = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(target.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * Updates or creates allocation period rows in the settings table.
  * Preserves date-to-date validity ranges:
- * - If an existing ongoing period (toDate === null) exists and targetDate > fromDate:
+ * - If targetDate is ongoing (>= active fromDate):
  *   Closes previous period with toDate = previousDay(targetDate).
  *   Creates new period starting at targetDate with toDate = null.
  * - If targetDate === existing active period's fromDate:
  *   Updates the active period's mappings in place.
+ * - If targetDate is historical (< active fromDate):
+ *   Updates or inserts a period strictly for targetDate without overwriting any surrounding days.
  * - If no periods exist:
  *   Creates initial period starting from targetDate (or start of month) to null.
  */
@@ -1187,7 +1208,7 @@ export function calculateUpdatedAllocationPeriods(
     }
   }
 
-  const periods: IotMachineAllocationPeriod[] = (existingPeriods || []).map(p => ({
+  let periods: IotMachineAllocationPeriod[] = (existingPeriods || []).map(p => ({
     ...p,
     mappings: { ...(p.mappings || {}) }
   }));
@@ -1236,11 +1257,69 @@ export function calculateUpdatedAllocationPeriods(
       });
       return periods.sort((a, b) => a.fromDate.localeCompare(b.fromDate));
     } else {
-      // Target is earlier than active fromDate: insert historical period
+      // Target is earlier than active fromDate (historical date)
+      // Check if targetIso falls within an existing historical period
+      const hitIdx = periods.findIndex(p => p.fromDate <= targetIso && p.toDate && targetIso <= p.toDate);
+      if (hitIdx !== -1) {
+        const hit = periods[hitIdx];
+        if (hit.fromDate === targetIso && hit.toDate === targetIso) {
+          hit.mappings = cleanMappings;
+          hit.updatedAt = now;
+        } else if (hit.fromDate === targetIso && hit.toDate && hit.toDate > targetIso) {
+          hit.fromDate = getNextDayIso(targetIso);
+          hit.updatedAt = now;
+          periods.push({
+            id: `period_${Date.now()}`,
+            fromDate: targetIso,
+            toDate: targetIso,
+            shed: shed || hit.shed || 'All',
+            mappings: cleanMappings,
+            createdAt: now,
+            updatedAt: now
+          });
+        } else if (hit.fromDate < targetIso && hit.toDate === targetIso) {
+          hit.toDate = getPreviousDayIso(targetIso);
+          hit.updatedAt = now;
+          periods.push({
+            id: `period_${Date.now()}`,
+            fromDate: targetIso,
+            toDate: targetIso,
+            shed: shed || hit.shed || 'All',
+            mappings: cleanMappings,
+            createdAt: now,
+            updatedAt: now
+          });
+        } else if (hit.fromDate < targetIso && hit.toDate && hit.toDate > targetIso) {
+          const origTo = hit.toDate;
+          hit.toDate = getPreviousDayIso(targetIso);
+          hit.updatedAt = now;
+          periods.push({
+            id: `period_${Date.now()}_single`,
+            fromDate: targetIso,
+            toDate: targetIso,
+            shed: shed || hit.shed || 'All',
+            mappings: cleanMappings,
+            createdAt: now,
+            updatedAt: now
+          });
+          periods.push({
+            id: `period_${Date.now()}_tail`,
+            fromDate: getNextDayIso(targetIso),
+            toDate: origTo,
+            shed: hit.shed || 'All',
+            mappings: { ...(hit.mappings || {}) },
+            createdAt: now,
+            updatedAt: now
+          });
+        }
+        return periods.sort((a, b) => a.fromDate.localeCompare(b.fromDate));
+      }
+
+      // If outside existing historical periods, add standalone single-day period
       periods.push({
         id: `period_${Date.now()}`,
         fromDate: targetIso,
-        toDate: getPreviousDayIso(active.fromDate),
+        toDate: targetIso,
         shed: shed || 'All',
         mappings: cleanMappings,
         createdAt: now,

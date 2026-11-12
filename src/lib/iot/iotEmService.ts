@@ -778,10 +778,15 @@ export async function getSingleMachineEmDetail(
     const cleanMachine = machine.trim().toUpperCase();
     const frameVariants = Array.from(getFrameVariants(cleanMachine));
 
-    // 1. Check settings for mapped device
+    // 1. Check settings for mapped device using date-specific resolution
     const settings = await db.collection('settings').findOne({ _id: 'system_settings' as any }).catch(() => null);
-    const mapping = settings?.machineToMachineMapping || settings?.iotMachineMapping || {};
-    const mappedIot = mapping[cleanMachine] || mapping[machine] || undefined;
+    const dateMapping = resolveEffectiveMappingForDate(
+      date,
+      settings?.iotMachineAllocationPeriods || [],
+      settings?.iotMachineMappingByDate || {},
+      settings?.machineToMachineMapping || settings?.iotMachineMapping || {}
+    );
+    const mappedIot = dateMapping[cleanMachine] || dateMapping[machine] || undefined;
     if (mappedIot) {
       frameVariants.push(mappedIot.toUpperCase().trim());
     }
@@ -876,8 +881,12 @@ export async function syncIotEmToSpinningMonitor(
     const db = await getIotDb();
 
     // Persist mappings into settings collection if explicitly provided
-    if (mappings && Object.keys(mappings).length > 0) {
+    if (mappings !== undefined) {
       const effectiveDate = targetDate || new Date().toISOString().slice(0, 10);
+      const parts = parseUniversalDateParts(effectiveDate);
+      const effIso = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : effectiveDate;
+      const effCanonical = normalizeToCanonicalDate(effectiveDate);
+
       const existingDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
       const currentPeriods = existingDoc?.iotMachineAllocationPeriods || [];
       const updatedPeriods = calculateUpdatedAllocationPeriods(currentPeriods, mappings, effectiveDate);
@@ -892,6 +901,8 @@ export async function syncIotEmToSpinningMonitor(
         machineToMachineMapping: mappings,
         machinePairs,
         [`iotMachineMappingByDate.${effectiveDate}`]: mappings,
+        [`iotMachineMappingByDate.${effIso}`]: mappings,
+        [`iotMachineMappingByDate.${effCanonical}`]: mappings,
         iotMachineAllocationPeriods: updatedPeriods
       };
 
@@ -912,7 +923,8 @@ export async function syncIotEmToSpinningMonitor(
       );
     }
 
-    const machineEm = await getMappedMachineEmFromIotEm(mappings, targetDate);
+    // Always fetch all dates so complete monthly EM matrix is preserved
+    const machineEm = await getMappedMachineEmFromIotEm(undefined, undefined);
     const updatedCount = Object.keys(machineEm).length;
 
     return {

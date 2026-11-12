@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Activity, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2, Calendar, Clock, Database, ChevronRight } from 'lucide-react';
-import { cn, getTodayDateString, resolveEffectiveMappingForDate } from '@/lib/utils';
+import { cn, getTodayDateString, resolveEffectiveMappingForDate, parseUniversalDateParts } from '@/lib/utils';
 import { MachineMasterItem, MachineEmData, IotMachineAllocationPeriod } from '@/types';
 
 // The actual 46 live IoT hardware machines from the API (RF03, RF04, RF09..RF14, RF19..RF56)
@@ -62,7 +62,11 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
 
   // Selected Date for assignment (defaults to activeDate or today YYYY-MM-DD)
   const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return activeDate || getTodayDateString();
+    if (activeDate) {
+      const parts = parseUniversalDateParts(activeDate);
+      if (parts) return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+    }
+    return getTodayDateString();
   });
 
   const [searchQuery, setSearchQuery] = useState<string>('');
