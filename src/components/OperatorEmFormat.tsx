@@ -80,17 +80,23 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
   };
 
+  // Live EM background refresh state from MongoDB
+  const [liveMachineEm, setLiveMachineEm] = useState<MachineEmData | null>(null);
+  const effectiveMachineEm = useMemo(() => {
+    return liveMachineEm || machineEm || {};
+  }, [liveMachineEm, machineEm]);
+
   // Scope history and workers to the active shed
   const effectiveHistory = useMemo(() => {
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
     const source = allHistory && allHistory.length > 0 ? allHistory : (history || []);
-    return source.filter(r => !r.shed || normalizeShed(r.shed) === targetNorm);
+    return (source || []).filter(r => !r || !r.shed || normalizeShed(r.shed) === targetNorm);
   }, [allHistory, history, activeShedTab]);
 
   const effectiveWorkers = useMemo(() => {
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
     const source = allWorkers && allWorkers.length > 0 ? allWorkers : (workers || []);
-    return source.filter(w => !w.shed || normalizeShed(w.shed) === targetNorm);
+    return (source || []).filter(w => !w || !w.shed || normalizeShed(w.shed) === targetNorm);
   }, [allWorkers, workers, activeShedTab]);
 
   const [activeSubTab, setActiveSubTab] = useState<'grid' | 'individual' | 'abstract' | 'operator-monthly-em' | 'daily-em-report'>(
@@ -125,11 +131,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return dates;
   }, [selectedMonth, selectedYear]);
 
-  // Available dates in effectiveHistory and machineEm belonging strictly to the selected month and year
+  // Available dates in effectiveHistory and effectiveMachineEm belonging strictly to the selected month and year
   const selectedMonthHistoryDates = useMemo(() => {
     const datesSet = new Set<string>();
 
-    effectiveHistory.forEach(r => {
+    (effectiveHistory || []).forEach(r => {
       if (!r || !r.date) return;
       const parts = parseUniversalDateParts(r.date);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
@@ -137,7 +143,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
     });
 
-    Object.keys(machineEm || {}).forEach(dStr => {
+    Object.keys(effectiveMachineEm || {}).forEach(dStr => {
       const parts = parseUniversalDateParts(dStr);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
         datesSet.add(normalizeToCanonicalDate(dStr));
@@ -147,7 +153,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return Array.from(datesSet).sort((a, b) => {
       return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
     });
-  }, [effectiveHistory, machineEm, selectedMonth, selectedYear]);
+  }, [effectiveHistory, effectiveMachineEm, selectedMonth, selectedYear]);
 
   // Selected date for daily EM report (clamped strictly to selected month)
   const [selectedDailyEmDate, setSelectedDailyEmDate] = useState<string>('');
@@ -287,9 +293,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const seen = new Set<string>();
     const list: string[] = [];
 
-    const addClean = (m: string) => {
-      if (!m) return;
-      const clean = m.trim();
+    const addClean = (val: any) => {
+      if (val === null || val === undefined) return;
+      const clean = String(val).trim();
+      if (!clean) return;
       const lower = clean.toLowerCase();
       // Filter out grand totals, empty, dashes, and IoT device identifiers (RFxx)
       if (
@@ -310,9 +317,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
     // 1. Primary Source: machines registered in Machine Master for this shed
     const fromRegistry = (machinesProp || []).filter(
-      m => normalizeShed(m.shed || 'Shed 1') === targetNorm
+      m => m && normalizeShed(m.shed || 'Shed 1') === targetNorm
     );
-    fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo));
+    fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
 
     // If registry has machines for this shed, strictly use ONLY those machine numbers!
     if (list.length > 0) {
@@ -323,19 +330,19 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     // 2. Fallback: If Machine Master item table has not been populated yet:
     // a. Spinning frame numbers configured in IoT Machine Mapping for this shed
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
-      if (!f.toUpperCase().startsWith('RF')) {
+      if (f && !String(f).toUpperCase().startsWith('RF')) {
         addClean(f);
       }
     });
 
     // b. Spinning frame numbers from history reports belonging to this shed
-    effectiveHistory.forEach(report => {
-      if (!report || !report.date || !report.entries) return;
+    (effectiveHistory || []).forEach(report => {
+      if (!report || !report.date || !Array.isArray(report.entries)) return;
       if (normalizeShed(report.shed || 'Shed 1') !== targetNorm) return;
       const parts = parseUniversalDateParts(report.date);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
         report.entries.forEach(e => {
-          if (e.frameNo) addClean(e.frameNo);
+          if (e && e.frameNo) addClean(e.frameNo);
         });
       }
     });
@@ -347,9 +354,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   // Set of verified existing machine frame numbers for active shed
   const existingMachinesSet = useMemo(() => {
     const s = new Set<string>();
-    machines.forEach(m => {
-      s.add(m.toUpperCase());
-      const digits = m.match(/\d+/);
+    (machines || []).forEach(m => {
+      const clean = String(m || '').trim().toUpperCase();
+      if (!clean) return;
+      s.add(clean);
+      const digits = clean.match(/\d+/);
       if (digits) {
         s.add(digits[0]);
         s.add(String(parseInt(digits[0], 10)));
@@ -361,10 +370,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return s;
   }, [machines]);
 
-  const isMachineExisted = useCallback((frameNo: string): boolean => {
-    if (!frameNo) return false;
-    if (machines.length === 0) return true; // If machine registry not yet populated, do not block
-    const clean = frameNo.trim().toUpperCase();
+  const isMachineExisted = useCallback((frameNo: any): boolean => {
+    if (frameNo === null || frameNo === undefined) return false;
+    const clean = String(frameNo).trim().toUpperCase();
+    if (!clean) return false;
+    if (!machines || machines.length === 0) return true; // If machine registry not yet populated, do not block
     if (existingMachinesSet.has(clean)) return true;
     const digits = clean.match(/\d+/);
     if (digits) {
@@ -379,8 +389,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const assignedMachinesByDateAndShift = useMemo(() => {
     const map = new Map<string, Map<string, Set<string>>>();
 
-    effectiveHistory.forEach(report => {
-      if (!report || !report.date || !report.entries) return;
+    (effectiveHistory || []).forEach(report => {
+      if (!report || !report.date || !Array.isArray(report.entries)) return;
       const canonicalDate = normalizeToCanonicalDate(report.date);
       const isoDate = (() => {
         const parts = parseUniversalDateParts(report.date);
@@ -390,14 +400,17 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       const datesToRecord = [report.date, canonicalDate, isoDate];
 
       report.entries.forEach(entry => {
-        const frame = entry.frameNo || (entry as any).machineId;
+        if (!entry) return;
+        const rawFrame = entry.frameNo || (entry as any).machineId;
+        if (rawFrame === null || rawFrame === undefined) return;
+        const frame = String(rawFrame).trim();
         if (!frame) return;
 
         // Check if an operator is assigned to this machine
         const hasAssignedSider = (
-          (entry.siderIds && entry.siderIds.some(id => id && id !== '-' && id !== '--' && id !== 'unassigned' && id !== 'none' && id !== '0')) ||
-          (entry.siderId && entry.siderId !== '-' && entry.siderId !== '--' && entry.siderId !== 'unassigned' && entry.siderId !== 'none' && entry.siderId !== '0') ||
-          (entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '' && entry.siderName.trim() !== '-')
+          (Array.isArray(entry.siderIds) && entry.siderIds.some(id => id && String(id).trim() !== '-' && String(id).trim() !== '--' && String(id).toLowerCase().trim() !== 'unassigned' && String(id).toLowerCase().trim() !== 'none' && String(id).trim() !== '0')) ||
+          (entry.siderId && String(entry.siderId).trim() !== '-' && String(entry.siderId).trim() !== '--' && String(entry.siderId).toLowerCase().trim() !== 'unassigned' && String(entry.siderId).toLowerCase().trim() !== 'none' && String(entry.siderId).trim() !== '0') ||
+          (entry.siderName && String(entry.siderName).toLowerCase().trim() !== 'unassigned' && String(entry.siderName).trim() !== '' && String(entry.siderName).trim() !== '-')
         );
 
         if (!hasAssignedSider) return;
@@ -405,13 +418,15 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         const sKey = mapShiftToNum(entry.shift || (report as any).shift || '1');
 
         datesToRecord.forEach(d => {
+          if (!d) return;
           if (!map.has(d)) map.set(d, new Map());
           const shiftMap = map.get(d)!;
           if (!shiftMap.has(sKey)) shiftMap.set(sKey, new Set());
           const frameSet = shiftMap.get(sKey)!;
 
-          frameSet.add(frame.trim().toUpperCase());
-          const digits = frame.match(/\d+/);
+          const clean = frame.toUpperCase();
+          frameSet.add(clean);
+          const digits = clean.match(/\d+/);
           if (digits) {
             frameSet.add(digits[0]);
             frameSet.add(String(parseInt(digits[0], 10)));
@@ -426,19 +441,22 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return map;
   }, [effectiveHistory]);
 
-  const isMachineAssignedOnShift = useCallback((date: string, shift: string, machine: string): boolean => {
+  const isMachineAssignedOnShift = useCallback((date: string, shift: string, machine: any): boolean => {
+    if (!date || machine === null || machine === undefined) return false;
+    const cleanMachine = String(machine).trim().toUpperCase();
+    if (!cleanMachine) return false;
+
     const canonical = normalizeToCanonicalDate(date);
     const shiftMap = assignedMachinesByDateAndShift.get(date) || assignedMachinesByDateAndShift.get(canonical);
     if (!shiftMap) {
       // If a daily report exists for this date, but this machine has no shift entry, it was NOT assigned
-      const hasReport = effectiveHistory.some(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
+      const hasReport = (effectiveHistory || []).some(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
       return !hasReport;
     }
     const frameSet = shiftMap.get(shift);
     if (!frameSet) return false;
-    const clean = machine.trim().toUpperCase();
-    if (frameSet.has(clean)) return true;
-    const digits = clean.match(/\d+/);
+    if (frameSet.has(cleanMachine)) return true;
+    const digits = cleanMachine.match(/\d+/);
     if (digits) {
       return frameSet.has(digits[0]) || frameSet.has(String(parseInt(digits[0], 10)));
     }
@@ -492,13 +510,15 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const [lastLiveEmTime, setLastLiveEmTime] = useState<string>('');
 
   const handleRefreshLiveEm = async () => {
+    if (isRefreshingEm) return;
     setIsRefreshingEm(true);
     try {
       const res = await fetch(`/api/machine-em?force=true&syncHistory=true&_t=${Date.now()}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data) {
-          await onUpdateMachineEm(json.data);
+          // Update live EM data locally without triggering unnecessary write-backs
+          setLiveMachineEm(json.data);
           setLastLiveEmTime(new Date().toLocaleTimeString());
         }
       }
@@ -509,14 +529,20 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
   };
 
-  // Continuous live background polling every 12 seconds
+  // Continuous live background polling every 15 seconds
   React.useEffect(() => {
+    let isMounted = true;
     handleRefreshLiveEm();
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      handleRefreshLiveEm();
-    }, 12000);
-    return () => clearInterval(timer);
+      if (isMounted) {
+        handleRefreshLiveEm();
+      }
+    }, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+    };
   }, []);
 
   // Sync Google Sheet handler
@@ -570,7 +596,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       return;
     }
 
-    const updated = JSON.parse(JSON.stringify(machineEm)) as MachineEmData;
+    const updated = JSON.parse(JSON.stringify(effectiveMachineEm)) as MachineEmData;
     
     // Register under all date variants so whichever lookup format is used, it resolves properly
     const dateKeys = Array.from(new Set([
@@ -603,10 +629,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const calculateColAverage = (date: string, shift: string): string => {
     let sum = 0;
     let count = 0;
-    machines.forEach(m => {
+    (machines || []).forEach(m => {
       // Only include if machine is available and assigned on this shift
       if (!isMachineAssignedOnShift(date, shift, m)) return;
-      const val = getMachineEmValue(machineEm, date, m, shift, registeredInfoForMonth.frameToDevice);
+      const val = getMachineEmValue(effectiveMachineEm, date, m, shift, registeredInfoForMonth.frameToDevice);
       if (val !== undefined && val !== null) {
         sum += val;
         count++;
@@ -633,10 +659,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       em: number;
     }[] = [];
 
-    const selectedWorker = effectiveWorkers.find(w => w.id === selectedWorkerId || w.tNo === selectedWorkerId);
+    const selectedWorker = (effectiveWorkers || []).find(w => w && (w.id === selectedWorkerId || w.tNo === selectedWorkerId));
 
     // Search active daily reports
-    effectiveHistory.forEach(report => {
+    (effectiveHistory || []).forEach(report => {
       // Filter by date range
       if (!report || !report.date) return;
       const rDate = parseUniversalDate(report.date);
@@ -644,9 +670,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (start && rDate < start) return;
       if (end && rDate > end) return;
 
-      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, machineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
-      if (shiftRes && shiftRes.machinesDetail.length > 0) {
+      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
+      if (shiftRes && Array.isArray(shiftRes.machinesDetail) && shiftRes.machinesDetail.length > 0) {
         shiftRes.machinesDetail.forEach(m => {
+          if (!m || !isMachineExisted(m.frameNo)) return;
           const devBadge = registeredInfoForMonth.frameToDevice[m.frameNo] ? ` [${registeredInfoForMonth.frameToDevice[m.frameNo]}]` : '';
           logs.push({
             date: report.date,
@@ -664,7 +691,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return logs.sort((a, b) => {
       return parseUniversalDate(a.date).getTime() - parseUniversalDate(b.date).getTime();
     });
-  }, [effectiveHistory, machineEm, selectedWorkerId, fromDate, toDate, effectiveWorkers, registeredInfoForMonth]);
+  }, [effectiveHistory, effectiveMachineEm, selectedWorkerId, fromDate, toDate, effectiveWorkers, registeredInfoForMonth, isMachineExisted]);
 
   // Aggregate stats for individual view
   const individualStats = useMemo(() => {
@@ -692,11 +719,12 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }> = {};
 
     // Initialize all active workers
-    effectiveWorkers.forEach(w => {
+    (effectiveWorkers || []).forEach(w => {
+      if (!w || !w.id) return;
       siderData[w.id] = {
         id: w.id,
-        name: w.name,
-        tNo: w.tNo,
+        name: w.name || 'Unknown',
+        tNo: w.tNo || '-',
         shifts: 0,
         totalGps: 0,
         totalEm: 0,
@@ -705,20 +733,21 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     });
 
     // Process all history reports in the target month
-    effectiveHistory.forEach(report => {
-      if (!report || !report.date) return;
+    (effectiveHistory || []).forEach(report => {
+      if (!report || !report.date || !Array.isArray(report.entries)) return;
       const parts = parseUniversalDateParts(report.date);
       if (!parts) return;
       if (parts.month !== selectedMonth || parts.year !== selectedYear) return;
 
-      effectiveWorkers.forEach(worker => {
-        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
+      (effectiveWorkers || []).forEach(worker => {
+        if (!worker || !worker.id) return;
+        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
         if (shiftRes && shiftRes.totalSides > 0) {
           if (!siderData[worker.id]) {
             siderData[worker.id] = {
               id: worker.id,
-              name: worker.name,
-              tNo: worker.tNo,
+              name: worker.name || 'Unknown',
+              tNo: worker.tNo || '-',
               shifts: 0,
               totalGps: 0,
               totalEm: 0,
@@ -744,15 +773,15 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         avgGps: w.shifts > 0 ? (w.totalGps / w.shifts) : 0,
         avgEm: w.emCount > 0 ? (w.totalEm / w.emCount) : 0
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [effectiveHistory, effectiveWorkers, machineEm, selectedMonth, selectedYear, registeredInfoForMonth]);
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [effectiveHistory, effectiveWorkers, effectiveMachineEm, selectedMonth, selectedYear, registeredInfoForMonth]);
 
   // Operator Monthly EM grid data
   const operatorEmGridData = useMemo(() => {
     const lookup: Record<string, Record<string, number>> = {};
 
-    effectiveHistory.forEach(report => {
-      if (!report || !report.date || !report.entries) return;
+    (effectiveHistory || []).forEach(report => {
+      if (!report || !report.date || !Array.isArray(report.entries)) return;
       const parts = parseUniversalDateParts(report.date);
       if (!parts || parts.month !== selectedMonth || parts.year !== selectedYear) return;
       const dateStr = normalizeToCanonicalDate(report.date);
@@ -761,23 +790,26 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         lookup[dateStr] = {};
       }
 
-      effectiveWorkers.forEach(worker => {
-        const shiftRes = computeOperatorShiftEm(worker, report, machineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
+      (effectiveWorkers || []).forEach(worker => {
+        if (!worker || !worker.id) return;
+        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
         if (shiftRes && shiftRes.totalSides > 0 && shiftRes.totalEm > 0) {
           const prev = lookup[dateStr][worker.id] || 0;
           lookup[dateStr][worker.id] = Number((prev + shiftRes.totalEm).toFixed(3));
-          lookup[dateStr][worker.tNo] = lookup[dateStr][worker.id];
+          if (worker.tNo) {
+            lookup[dateStr][worker.tNo] = lookup[dateStr][worker.id];
+          }
         }
       });
     });
 
-    const rows = effectiveWorkers.map(worker => {
+    const rows = (effectiveWorkers || []).map(worker => {
       const dateValues: Record<string, number | null> = {};
       let totalEmSum = 0;
       let totalEmCount = 0;
 
       calendarDates.forEach(dateStr => {
-        const val = lookup[dateStr]?.[worker.id] ?? lookup[dateStr]?.[worker.tNo];
+        const val = worker ? (lookup[dateStr]?.[worker.id] ?? (worker.tNo ? lookup[dateStr]?.[worker.tNo] : undefined)) : undefined;
         if (val !== undefined && val !== null) {
           dateValues[dateStr] = val;
           totalEmSum += val;
@@ -799,13 +831,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
     // Sort by Ticket number (tNo) ascending and filter out workers with no EM data
     return rows
-      .filter(r => r.averageEm !== null)
+      .filter(r => r && r.averageEm !== null)
       .sort((a, b) => {
-        const aTNo = parseInt(a.worker.tNo) || 0;
-        const bTNo = parseInt(b.worker.tNo) || 0;
+        const aTNo = parseInt(String(a.worker?.tNo || '0'), 10) || 0;
+        const bTNo = parseInt(String(b.worker?.tNo || '0'), 10) || 0;
         return aTNo - bTNo;
       });
-  }, [effectiveHistory, effectiveWorkers, machineEm, calendarDates, selectedMonth, selectedYear, registeredInfoForMonth]);
+  }, [effectiveHistory, effectiveWorkers, effectiveMachineEm, calendarDates, selectedMonth, selectedYear, registeredInfoForMonth]);
 
   // Excel Export: Operator Monthly EM
   const exportOperatorMonthlyToExcel = () => {
@@ -813,7 +845,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     
     const headers = ['TNo', 'Sider Name', ...calendarDates];
     const dataRows = operatorEmGridData.map(row => {
-      const r: any[] = [row.worker.tNo, row.worker.name.toUpperCase()];
+      const r: any[] = [row.worker?.tNo || '-', String(row.worker?.name || '').toUpperCase()];
       calendarDates.forEach(dateStr => {
         const val = row.dateValues[dateStr];
         r.push(val !== null ? val : '');
@@ -832,8 +864,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     if (!selectedDailyEmDate) return [];
     
     const canonicalSelected = normalizeToCanonicalDate(selectedDailyEmDate);
-    const report = effectiveHistory.find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonicalSelected);
-    if (!report || !report.entries || report.entries.length === 0) return [];
+    const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonicalSelected);
+    if (!report || !Array.isArray(report.entries) || report.entries.length === 0) return [];
 
     const list: {
       siderName: string;
@@ -846,27 +878,33 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }[] = [];
 
     report.entries.forEach(entry => {
+      if (!entry) return;
+      const rawFrame = entry.frameNo || (entry as any).machineId;
+      if (rawFrame === null || rawFrame === undefined) return;
+      const frameNo = String(rawFrame).trim();
+      if (!frameNo) return;
+
       // 1. Machine existence check (do not show machines that do not exist in the active registry)
-      if (!isMachineExisted(entry.frameNo)) return;
+      if (!isMachineExisted(frameNo)) return;
 
       // 2. Resolve all siders assigned to this machine entry
       const assignedIds: string[] = [];
-      if (entry.siderIds && entry.siderIds.length > 0) {
+      if (Array.isArray(entry.siderIds) && entry.siderIds.length > 0) {
         entry.siderIds.forEach(id => {
-          if (id && id !== '-' && id !== '--' && id !== 'unassigned' && id !== 'none' && id !== '0') {
-            assignedIds.push(id);
+          if (id && String(id).trim() !== '-' && String(id).trim() !== '--' && String(id).toLowerCase().trim() !== 'unassigned' && String(id).toLowerCase().trim() !== 'none' && String(id).trim() !== '0') {
+            assignedIds.push(String(id).trim());
           }
         });
-      } else if (entry.siderId && entry.siderId !== '-' && entry.siderId !== '--' && entry.siderId !== 'unassigned' && entry.siderId !== 'none' && entry.siderId !== '0') {
-        assignedIds.push(entry.siderId);
+      } else if (entry.siderId && String(entry.siderId).trim() !== '-' && String(entry.siderId).trim() !== '--' && String(entry.siderId).toLowerCase().trim() !== 'unassigned' && String(entry.siderId).toLowerCase().trim() !== 'none' && String(entry.siderId).trim() !== '0') {
+        assignedIds.push(String(entry.siderId).trim());
       }
 
       // Check name match as fallback if no IDs are linked
       if (assignedIds.length === 0 && entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '') {
-        const nameMatchWorker = effectiveWorkers.find(w => 
-          w.name.toLowerCase().trim() === entry.siderName!.toLowerCase().trim()
+        const nameMatchWorker = (effectiveWorkers || []).find(w => 
+          w && w.name && w.name.toLowerCase().trim() === String(entry.siderName).toLowerCase().trim()
         );
-        if (nameMatchWorker) {
+        if (nameMatchWorker && nameMatchWorker.id) {
           assignedIds.push(nameMatchWorker.id);
         }
       }
@@ -877,23 +915,25 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
 
       // Get EM for this assigned production machine (resolves from iot_em via machine-to-machine allocation)
-      let emValue = getMachineEmValue(machineEm, report.date, entry.frameNo, entry.shift, registeredInfoForMonth.frameToDevice);
+      let emValue = getMachineEmValue(effectiveMachineEm, report.date, frameNo, entry.shift, registeredInfoForMonth.frameToDevice);
       if (emValue === undefined) {
         emValue = entry.doffEmt ?? 0;
       }
 
-      const mappedDev = resolveMappedDevice(registeredInfoForMonth.frameToDevice, entry.frameNo);
+      const mappedDev = resolveMappedDevice(registeredInfoForMonth.frameToDevice, frameNo);
       const devBadge = mappedDev ? ` [${mappedDev}]` : '';
-      const mcDisplay = `${entry.frameNo}${devBadge}`;
+      const mcDisplay = `${frameNo}${devBadge}`;
 
       if (assignedIds.length > 0) {
         assignedIds.forEach(id => {
-          const worker = effectiveWorkers.find(w => 
-            (w.id && w.id.toLowerCase() === id.toLowerCase()) || 
-            (w.tNo && w.tNo.toLowerCase() === id.toLowerCase())
+          const worker = (effectiveWorkers || []).find(w => 
+            w && (
+              (w.id && String(w.id).toLowerCase() === String(id).toLowerCase()) || 
+              (w.tNo && String(w.tNo).toLowerCase() === String(id).toLowerCase())
+            )
           );
           const name = worker ? worker.name : (entry.siderName || 'Unassigned');
-          if (name.toLowerCase().trim() !== 'unassigned') {
+          if (name && name.toLowerCase().trim() !== 'unassigned') {
             list.push({
               siderName: name,
               tNo: worker?.tNo,
@@ -906,7 +946,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
           }
         });
       } else if (entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '') {
-        const worker = effectiveWorkers.find(w => w.name.toLowerCase().trim() === entry.siderName!.toLowerCase().trim());
+        const worker = (effectiveWorkers || []).find(w => w && w.name && w.name.toLowerCase().trim() === String(entry.siderName).toLowerCase().trim());
         list.push({
           siderName: entry.siderName,
           tNo: worker?.tNo,
@@ -931,7 +971,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
       return a.siderName.localeCompare(b.siderName);
     });
-  }, [effectiveHistory, selectedDailyEmDate, machineEm, effectiveWorkers, registeredInfoForMonth]);
+  }, [effectiveHistory, selectedDailyEmDate, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth, isMachineExisted]);
 
   const exportDailyEmToExcel = () => {
     if (dailyEmRows.length === 0) return;
@@ -1111,7 +1151,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       const row: any[] = [registeredDev ? `${machine} (${registeredDev})` : machine];
       selectedMonthDates.forEach(date => {
         shifts.forEach(shift => {
-          const val = getMachineEmValue(machineEm, date, machine, shift, registeredInfoForMonth.frameToDevice);
+          const isAssigned = isMachineAssignedOnShift(date, shift, machine);
+          const val = isAssigned ? getMachineEmValue(effectiveMachineEm, date, machine, shift, registeredInfoForMonth.frameToDevice) : undefined;
           row.push(val !== undefined ? val : '');
         });
       });
@@ -1493,7 +1534,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                               <React.Fragment key={`val-${machine}-${date}`}>
                                 {shifts.map(shift => {
                                   const isAssigned = isMachineAssignedOnShift(date, shift, machine);
-                                  const val = isAssigned ? getMachineEmValue(machineEm, date, machine, shift, registeredInfoForMonth.frameToDevice) : undefined;
+                                  const val = isAssigned ? getMachineEmValue(effectiveMachineEm, date, machine, shift, registeredInfoForMonth.frameToDevice) : undefined;
                                   return (
                                     <td 
                                       key={`cell-${machine}-${date}-${shift}`}
