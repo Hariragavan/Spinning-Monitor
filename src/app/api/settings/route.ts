@@ -83,14 +83,44 @@ export async function POST(req: Request) {
     delete cleanSettings.machineEmGoogleSheetUrl;
     delete cleanSettings.lastMachineEmSyncDate;
 
+    // Helper to sanitize duplicate numeric keys (e.g. remove bare '9' if 'SP009' exists)
+    const cleanDuplicateKeys = (map: Record<string, any> | undefined): Record<string, any> => {
+      if (!map || typeof map !== 'object') return {};
+      const cleaned: Record<string, any> = { ...map };
+      const keys = Object.keys(cleaned);
+      for (const k of keys) {
+        if (/^\d+$/.test(k.trim())) {
+          const num = parseInt(k.trim(), 10);
+          const hasPrefixed = keys.some(other => {
+            if (/^\d+$/.test(other.trim())) return false;
+            const m = other.match(/\d+/);
+            return m && parseInt(m[0], 10) === num;
+          });
+          if (hasPrefixed) {
+            delete cleaned[k];
+          }
+        }
+      }
+      return cleaned;
+    };
+
     // Ensure machineToMachineMapping and machinePairs are stored alongside iotMachineMapping
-    const currentMapping = cleanSettings.iotMachineMapping || cleanSettings.machineToMachineMapping || {};
+    const rawMapping = cleanSettings.iotMachineMapping || cleanSettings.machineToMachineMapping || {};
+    const currentMapping = cleanDuplicateKeys(rawMapping);
     cleanSettings.iotMachineMapping = currentMapping;
     cleanSettings.machineToMachineMapping = currentMapping;
     cleanSettings.machinePairs = Object.entries(currentMapping).map(([spinningFrame, iotMachine]) => ({
       spinningFrame,
       iotMachine
     }));
+
+    if (cleanSettings.iotMachineMappingByDate && typeof cleanSettings.iotMachineMappingByDate === 'object') {
+      const sanitizedByDate: Record<string, any> = {};
+      for (const [d, m] of Object.entries(cleanSettings.iotMachineMappingByDate)) {
+        sanitizedByDate[d] = cleanDuplicateKeys(m as any);
+      }
+      cleanSettings.iotMachineMappingByDate = sanitizedByDate;
+    }
 
     await db.collection('settings').updateOne(
       { _id: 'system_settings' as any },

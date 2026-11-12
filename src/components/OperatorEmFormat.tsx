@@ -367,6 +367,28 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
     };
 
+    // Helper to deduplicate machine lists: removes bare numeric machines (e.g. '9', '10') if a prefixed equivalent exists (e.g. 'SP009', 'SP010')
+    const deduplicateMachines = (rawList: string[]): string[] => {
+      const filtered = rawList.filter(item => {
+        const trimmed = item.trim();
+        if (!trimmed || trimmed === '-' || trimmed === '0') return false;
+        const isPureNumber = /^\d+$/.test(trimmed);
+        if (isPureNumber) {
+          const num = parseInt(trimmed, 10);
+          const hasPrefixed = rawList.some(other => {
+            const otherTrim = other.trim();
+            if (/^\d+$/.test(otherTrim)) return false;
+            const m = otherTrim.match(/\d+/);
+            return m && parseInt(m[0], 10) === num;
+          });
+          if (hasPrefixed) return false;
+        }
+        return true;
+      });
+
+      return filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    };
+
     // 1. Primary Source: machines registered in Machine Master for this shed
     const fromRegistry = (machinesProp || []).filter(
       m => m && normalizeShed(m.shed || 'Shed 1') === targetNorm
@@ -375,16 +397,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
     // If registry has machines for this shed, strictly use ONLY those machine numbers!
     if (list.length > 0) {
-      list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      return list;
+      return deduplicateMachines(list);
     }
 
     // 2. Fallback: If Machine Master item table has not been populated yet:
     // a. Spinning frame numbers configured in IoT Machine Mapping for this shed
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
-      if (f && !String(f).toUpperCase().startsWith('RF')) {
-        addClean(f);
+      if (!f || String(f).toUpperCase().startsWith('RF')) return;
+      const clean = String(f).trim();
+      const numMatch = clean.match(/\d+/);
+      const frameNum = numMatch ? parseInt(numMatch[0], 10) : null;
+      
+      // Filter by shed when Machine Master is unpopulated:
+      // Shed 1: frames 1-24
+      // Shed 2: frames 25-46
+      // Shed 3: frames > 46
+      // KTTM: frame name includes KT
+      if (frameNum !== null) {
+        if (targetNorm === 'Shed 1' && (frameNum < 1 || frameNum > 24)) return;
+        if (targetNorm === 'Shed 2' && (frameNum < 25 || frameNum > 46)) return;
+        if (targetNorm === 'Shed 3' && frameNum <= 46) return;
+        if (targetNorm === 'KTTM' && !clean.toUpperCase().includes('KT')) return;
       }
+      addClean(clean);
     });
 
     // b. Spinning frame numbers from history reports belonging to this shed
@@ -399,8 +434,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
     });
 
-    list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    return list;
+    return deduplicateMachines(list);
   }, [machinesProp, activeShedTab, registeredInfoForMonth, effectiveHistory, selectedMonth, selectedYear]);
 
   // Set of verified existing machine frame numbers for active shed

@@ -1,5 +1,6 @@
 import { MongoClient, Db } from 'mongodb';
 import { transferAndCleanupDatabase } from '@/lib/dbMigration';
+import { migrateFromOldDatabases } from '@/lib/oldDbMigration';
 
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/scm-spinning';
 const options = {};
@@ -183,24 +184,19 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
         console.warn('[MongoDB Init] Transfer and cleanup warning:', cleanupErr);
       }
 
-      // 5. Unify split databases: If old 'spinning_monitor' database exists on this Atlas cluster,
-      // copy any IoT documents into this canonical database (scm-spinning) so no data is stranded
-      if (missing.length > 0 && db.databaseName !== 'spinning_monitor') {
+      // 5. Automatic Old Database Discovery & Migration (One-time or on empty tables)
+      // If spinning tables (machines, workers, reports) are empty, search old DBs (spinning_monitor, etc.)
+      const currentMachineCount = await db.collection('machines').countDocuments().catch(() => 0);
+      const currentWorkerCount = await db.collection('workers').countDocuments().catch(() => 0);
+      const currentReportCount = await db.collection('reports').countDocuments().catch(() => 0);
+      if (currentMachineCount === 0 || currentWorkerCount === 0 || currentReportCount === 0) {
         try {
-          const connectedClient = await clientPromise;
-          const oldDb = connectedClient.db('spinning_monitor');
-          const oldCollections = ['iot_shiftwise_data', 'iot_spinfo_lives', 'iot_em', 'settings'];
-          for (const cName of oldCollections) {
-            const currentCount = await db.collection(cName).countDocuments();
-            if (currentCount === 0) {
-              const oldDocs = await oldDb.collection(cName).find({}).toArray();
-              if (oldDocs.length > 0) {
-                console.log(`[MongoDB Migration] Migrating ${oldDocs.length} documents from spinning_monitor.${cName} to ${db.databaseName}.${cName}`);
-                await db.collection(cName).insertMany(oldDocs, { ordered: false }).catch(() => {});
-              }
-            }
-          }
-        } catch (_) {}
+          console.log(`[MongoDB Init] Core spinning tables are empty in ${db.databaseName} (machines: ${currentMachineCount}, workers: ${currentWorkerCount}, reports: ${currentReportCount}). Checking for historical data in old databases...`);
+          const migrationSummary = await migrateFromOldDatabases(db);
+          console.log('[MongoDB Init] Migration from old databases result:', JSON.stringify(migrationSummary.transferredCounts));
+        } catch (migErr) {
+          console.warn('[MongoDB Init] Migration from old databases warning:', migErr);
+        }
       }
 
       isInitialized = true;
