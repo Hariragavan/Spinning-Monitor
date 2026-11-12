@@ -47,15 +47,24 @@ async function syncLatestShiftsFromRemote(db: any) {
     const datesToSync = [yesterday, today];
     const shiftsToSync = [1, 2, 3];
 
-    const ep = 'https://iot-machine-backend.onrender.com/api/common';
+    const ep = process.env.IOT_COMMON_API || 'https://iot-machine-backend-production.up.railway.app/api/common';
     const shiftwiseCol = db.collection(IOT_COLLECTIONS.SHIFTWISE);
+    const emCol = db.collection(IOT_COLLECTIONS.EM);
+
+    // Get mappings to also upsert into iot_em with spinning frame numbers
+    const settings = await db.collection('settings').findOne({}).catch(() => null);
+    const mapping = settings?.machineToMachineMapping || settings?.iotMachineMapping || {};
+    const iotToSpinning: Record<string, string> = {};
+    for (const [spin, iot] of Object.entries(mapping)) {
+      if (iot) iotToSpinning[String(iot).toUpperCase().trim()] = String(spin).trim();
+    }
 
     for (const sDate of datesToSync) {
       for (const sNum of shiftsToSync) {
         try {
           const url = `${ep}?shiftDate=${sDate}&shift=${sNum}&limit=1&sort=_id&order=desc`;
           const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3500);
+          const timeout = setTimeout(() => controller.abort(), 4500);
           const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal, cache: 'no-store' });
           clearTimeout(timeout);
           if (!res.ok) continue;
@@ -90,6 +99,56 @@ async function syncLatestShiftsFromRemote(db: any) {
               },
               { upsert: true }
             );
+
+            // Also keep iot_em synchronized for this shift
+            const emBulk: any[] = [];
+            for (const m of cleanDoc.machines) {
+              const iotId = String(m.machine || m.machineId || '').toUpperCase().trim();
+              const spinId = iotToSpinning[iotId] || iotId;
+              const digits = spinId.match(/\d+/);
+              const rawNum = digits ? String(parseInt(digits[0], 10)) : '';
+              const p3 = digits ? digits[0].padStart(3, '0') : '';
+
+              const sideL = m.sides?.find((s: any) => s.side === 'L');
+              const sideR = m.sides?.find((s: any) => s.side === 'R');
+              const emLeft = Number(sideL?.endMendingTime || 0);
+              const emRight = Number(sideR?.endMendingTime || 0);
+              const emTotal = Number((emLeft + emRight).toFixed(2));
+              const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+              const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+              const totalEndBreaks = Number(m.shiftEndBreaks || m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
+              const mKeys = new Set([iotId, spinId, p3, rawNum].filter(Boolean));
+              for (const mKey of mKeys) {
+                emBulk.push({
+                  updateOne: {
+                    filter: { machineNo: mKey, date: sDate, shift: sNum },
+                    update: {
+                      $set: {
+                        machineNo: mKey,
+                        date: sDate,
+                        month,
+                        shift: sNum,
+                        emLeft,
+                        emRight,
+                        emTotal,
+                        unit: 'min',
+                        endBreakCountLeft,
+                        endBreakCountRight,
+                        totalEndBreaks,
+                        isShiftFinal: true,
+                        updatedAt: new Date()
+                      },
+                      $setOnInsert: { recordedAt: new Date() }
+                    },
+                    upsert: true
+                  }
+                });
+              }
+            }
+            if (emBulk.length > 0) {
+              await emCol.bulkWrite(emBulk, { ordered: false }).catch(() => {});
+            }
           }
         } catch (_) {}
       }
@@ -211,13 +270,12 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const overallEm = doc.stdEndMendingTime !== undefined && Number(doc.stdEndMendingTime) > 0
-        ? Number(Number(doc.stdEndMendingTime).toFixed(2))
-        : sActiveList.length > 0
-          ? Number((sTotalEm / sActiveList.length).toFixed(2))
-          : rawMachines.length > 0
-            ? Number((sTotalEm / rawMachines.length).toFixed(2))
-            : 0;
+      // Overall EM calculation: Fleet average of actual machine end mending times
+      const overallEm = sActiveList.length > 0
+        ? Number((sTotalEm / sActiveList.length).toFixed(2))
+        : rawMachines.length > 0
+          ? Number((sTotalEm / rawMachines.length).toFixed(2))
+          : 0;
 
       const avgWaste = sWasteCount > 0 ? Number((sWasteSum / sWasteCount).toFixed(2)) : 0;
       const varianceKg = Number((sProd - sTarget).toFixed(2));

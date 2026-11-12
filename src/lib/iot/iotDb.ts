@@ -206,13 +206,17 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
       if (mergedMachines.length === 0) continue;
 
       // Detect shift-end: either explicit SHIFT_END marker, or packet timestamp near/past shift completion
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const isPastDate = shiftDate < todayIso;
+      const currentHour = new Date().getHours();
       const isShiftEnd = (
+        isPastDate ||
         baseRec.recordType === 'SHIFT_END' ||
         String(baseRec.msgId || '').toUpperCase().endsWith('-END') ||
         recList.some(r => r.recordType === 'SHIFT_END' || String(r.msgId || '').toUpperCase().endsWith('-END')) ||
-        (shift === 1 && new Date().getHours() >= 14) ||
-        (shift === 2 && new Date().getHours() >= 22) ||
-        (shift === 3 && (new Date().getHours() >= 6 && new Date().getHours() < 14))
+        (shift === 1 && currentHour >= 14) ||
+        (shift === 2 && currentHour >= 22) ||
+        (shift === 3 && (currentHour >= 6 && currentHour < 14))
       );
 
       // 1. Save permanent / latest shift summary to iot_shiftwise_data
@@ -245,10 +249,22 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
         });
       }
 
-      // 2. Machine EM update in iot_em (Machine-by-machine, shift-by-shift, date-wise)
+      // 2. Machine EM update in iot_em (all keys: RF ID, SP ID, frame numbers)
+      const settings = await db.collection('settings').findOne({ _id: 'system_settings' as any }).catch(() => null);
+      const mapping = settings?.machineToMachineMapping || settings?.iotMachineMapping || {};
+      const iotToSpinning: Record<string, string> = {};
+      for (const [spin, iot] of Object.entries(mapping)) {
+        if (iot) iotToSpinning[String(iot).toUpperCase().trim()] = String(spin).trim();
+      }
+
       const emBulkOps: any[] = [];
       for (const m of mergedMachines) {
-        const mNo = String(m.machine || m.machineId || 'RF01');
+        const iotId = String(m.machine || m.machineId || 'RF01').toUpperCase().trim();
+        const spinId = iotToSpinning[iotId] || iotId;
+        const digits = spinId.match(/\d+/);
+        const rawNum = digits ? String(parseInt(digits[0], 10)) : '';
+        const p3 = digits ? digits[0].padStart(3, '0') : '';
+
         const sideL = (m.sides || []).find((s: any) => s.side === 'L');
         const sideR = (m.sides || []).find((s: any) => s.side === 'R');
         const emLeft = Number(sideL?.endMendingTime || 0);
@@ -259,30 +275,34 @@ export async function persistLiveIotPayload(payload: any): Promise<void> {
         const endBreakCountRight = Number(sideR?.endBreakCount || 0);
         const totalEndBreaks = Number(m.shiftEndBreaks || m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
 
-        emBulkOps.push({
-          updateOne: {
-            filter: { machineNo: mNo, date: shiftDate, shift },
-            update: {
-              $set: {
-                machineNo: mNo,
-                date: shiftDate,
-                month,
-                shift,
-                emLeft,
-                emRight,
-                emTotal,
-                unit,
-                endBreakCountLeft,
-                endBreakCountRight,
-                totalEndBreaks,
-                isShiftFinal: isShiftEnd,
-                updatedAt: new Date()
+        const machineKeys = new Set([iotId, spinId, p3, rawNum].filter(Boolean));
+
+        for (const mKey of machineKeys) {
+          emBulkOps.push({
+            updateOne: {
+              filter: { machineNo: mKey, date: shiftDate, shift },
+              update: {
+                $set: {
+                  machineNo: mKey,
+                  date: shiftDate,
+                  month,
+                  shift,
+                  emLeft,
+                  emRight,
+                  emTotal,
+                  unit,
+                  endBreakCountLeft,
+                  endBreakCountRight,
+                  totalEndBreaks,
+                  isShiftFinal: isShiftEnd,
+                  updatedAt: new Date()
+                },
+                $setOnInsert: { recordedAt: new Date() }
               },
-              $setOnInsert: { recordedAt: new Date() }
-            },
-            upsert: true
-          }
-        });
+              upsert: true
+            }
+          });
+        }
       }
 
       if (emBulkOps.length > 0) {
