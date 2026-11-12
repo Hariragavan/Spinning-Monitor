@@ -323,11 +323,6 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     }).length;
   }, [shedMachines, mappings]);
 
-  // Sorted list of allocation periods for table display (newest first)
-  const periodsList = useMemo(() => {
-    return [...allocationPeriods].sort((a, b) => b.fromDate.localeCompare(a.fromDate));
-  }, [allocationPeriods]);
-
   return (
     <div className="bg-stone-50/80 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
       {/* HEADER */}
@@ -601,121 +596,6 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
           })}
         </div>
       )}
-
-      {/* ALLOCATION PERIODS HISTORY TABLE (DATE-TO-DATE AUDIT & PERSISTENCE) */}
-      <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-2xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-4">
-          <div>
-            <h4 className="text-base font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
-              <Calendar size={18} className="text-blue-600" />
-              <span>Machine to IoT Allocation Periods History</span>
-            </h4>
-            <p className="text-xs text-stone-500 font-semibold mt-0.5">
-              Persistent date-to-date tracking saved in settings table. Preserves machine pairs from day to day until changed.
-            </p>
-          </div>
-          <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-xl bg-stone-100 text-stone-700 border border-stone-200 shrink-0">
-            {periodsList.length} Allocation {periodsList.length === 1 ? 'Period' : 'Periods'} Recorded
-          </span>
-        </div>
-
-        {periodsList.length === 0 ? (
-          <div className="text-center py-8 text-stone-400 font-semibold text-xs">
-            No allocation periods recorded yet. Select an IoT machine above to create the initial active allocation period.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-stone-200 bg-stone-50/80 text-[11px] font-black uppercase text-stone-600 tracking-wider">
-                  <th className="py-3 px-3">#</th>
-                  <th className="py-3 px-3">Date Range</th>
-                  <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3">Shed</th>
-                  <th className="py-3 px-3">Pairs</th>
-                  <th className="py-3 px-3">Machine Mappings</th>
-                  <th className="py-3 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {periodsList.map((p, idx) => {
-                  const isActive = !p.toDate;
-                  const pairEntries = Object.entries(p.mappings || {});
-                  return (
-                    <tr key={p.id || idx} className={cn("hover:bg-stone-50/60 transition-colors", isActive && "bg-blue-50/20")}>
-                      <td className="py-3 px-3 font-mono font-bold text-stone-500">{idx + 1}</td>
-                      <td className="py-3 px-3 font-mono font-black text-stone-900 whitespace-nowrap">
-                        <span className="text-blue-700">{p.fromDate}</span>
-                        <span className="mx-1.5 text-stone-400">→</span>
-                        {isActive ? (
-                          <span className="text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                            Present (Active)
-                          </span>
-                        ) : (
-                          <span className="text-stone-700">{p.toDate}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        {isActive ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                            Active Until Changed
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
-                            Archived
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 font-bold text-stone-700">{p.shed || 'All'}</td>
-                      <td className="py-3 px-3 font-mono font-bold text-stone-800">{pairEntries.length} frames</td>
-                      <td className="py-3 px-3">
-                        <div className="flex flex-wrap gap-1 max-w-md">
-                          {pairEntries.slice(0, 10).map(([f, d]) => (
-                            <span key={f} className="inline-flex items-center gap-1 font-mono text-[10.5px] px-2 py-0.5 rounded-lg bg-stone-100 text-stone-800 border border-stone-200">
-                              <span className="font-bold">{f}</span>
-                              <span className="text-stone-400">↔</span>
-                              <span className="font-black text-blue-700">{d}</span>
-                            </span>
-                          ))}
-                          {pairEntries.length > 10 && (
-                            <span className="text-[10px] font-bold text-stone-400 self-center">
-                              +{pairEntries.length - 10} more
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedDate(p.fromDate);
-                              setMappings(p.mappings || {});
-                            }}
-                            className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 cursor-pointer transition-colors"
-                            title="Load this period's mappings into editor"
-                          >
-                            Load
-                          </button>
-                          {onDeletePeriod && (
-                            <button
-                              onClick={() => onDeletePeriod(p.id)}
-                              className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 cursor-pointer transition-colors"
-                              title="Delete this period row"
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
