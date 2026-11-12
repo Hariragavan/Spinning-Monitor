@@ -51,6 +51,9 @@ export const IotMaintenance: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const timer = setInterval(loadData, AUTO_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, []);
 
   const monthLabel = useMemo(() => {

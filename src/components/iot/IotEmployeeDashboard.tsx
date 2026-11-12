@@ -136,6 +136,15 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     refresh(true);
   }, [employeeId, machineId, shiftName, selectedDate]);
 
+  // Periodic 5-Minute Auto-Refresh (300,000 ms)
+  useEffect(() => {
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const timer = setInterval(() => {
+      refresh(false);
+    }, AUTO_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [employeeId, machineId, shiftName, selectedDate]);
+
   // Calculations for KPIs
   const totalRounds = useMemo(() => {
     return employeeMetrics.reduce((sum, x) => sum + (x.roundsCompleted ?? x.rounds ?? 0), 0);

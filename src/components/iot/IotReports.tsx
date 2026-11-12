@@ -149,6 +149,18 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
     }
   }, [activeReportType]);
 
+  // Periodic 5-Minute Auto-Refresh (300,000 ms)
+  useEffect(() => {
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const timer = setInterval(() => {
+      loadReport();
+      if (activeReportType === 'employee_productivity') {
+        loadRoundPerformance();
+      }
+    }, AUTO_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [activeReportType]);
+
   const applyFilters = () => {
     loadReport();
     if (activeReportType === 'employee_productivity') {

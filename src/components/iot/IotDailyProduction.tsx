@@ -68,11 +68,12 @@ export const IotDailyProduction: React.FC<IotDailyProductionProps> = ({
     fetchData(selectedMonth, selectedShift);
   }, [selectedMonth, selectedShift, fetchData]);
 
-  // 24x7 Live Auto-Refresh (Updates every 45 seconds from API)
+  // Periodic 5-Minute Auto-Refresh (300,000 ms)
   useEffect(() => {
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     const timer = setInterval(() => {
       fetchData(selectedMonth, selectedShift, true);
-    }, 45000);
+    }, AUTO_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [selectedMonth, selectedShift, fetchData]);
 

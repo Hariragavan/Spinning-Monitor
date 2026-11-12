@@ -195,7 +195,8 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
 
   useEffect(() => {
     loadIotEmData();
-    const interval = setInterval(loadIotEmData, 45000);
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const interval = setInterval(loadIotEmData, AUTO_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [loadIotEmData]);
 

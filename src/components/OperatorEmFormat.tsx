@@ -526,16 +526,17 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
   };
 
-  // Continuous live background polling every 15 seconds
+  // Periodic 5-minute background auto-refresh for live Machine EM
   React.useEffect(() => {
     let isMounted = true;
     handleRefreshLiveEm();
+    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       if (isMounted) {
         handleRefreshLiveEm();
       }
-    }, 15000);
+    }, AUTO_REFRESH_INTERVAL_MS);
     return () => {
       isMounted = false;
       clearInterval(timer);
