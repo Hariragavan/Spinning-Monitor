@@ -1,6 +1,7 @@
 import { getIotDb } from '@/lib/mongodb';
 import { IOT_COLLECTIONS, REMOTE_IOT_API, IOT_COMMON_API_URL } from '@/lib/iot/iotDb';
-import { normalizeToCanonicalDate, parseUniversalDateParts } from '@/lib/utils';
+import { normalizeToCanonicalDate, parseUniversalDateParts, resolveEffectiveMappingForDate, calculateUpdatedAllocationPeriods } from '@/lib/utils';
+import { IotMachineAllocationPeriod } from '@/types';
 
 export interface IotEmRecord {
   machineNo: string;
@@ -527,6 +528,35 @@ export async function getLatestEmForAllIotMachines(): Promise<Record<string, {
         };
       }
     }
+
+    // If cachedStatuses is empty, trigger lightweight status fetch to populate live telemetry
+    if (cachedStatuses.length === 0) {
+      try {
+        await getLightweightMachineStatuses();
+      } catch (_) {}
+    }
+
+    // Merge with in-memory cachedStatuses if available to get live speed, runStatus, and current EM
+    for (const st of cachedStatuses) {
+      if (st.machine) {
+        const existing = map[st.machine] || {};
+        map[st.machine] = {
+          machineNo: st.machine,
+          emTotal: typeof st.emTotal === 'number' ? st.emTotal : (existing.emTotal || 0),
+          emLeft: typeof st.emLeft === 'number' ? st.emLeft : (existing.emLeft || 0),
+          emRight: typeof st.emRight === 'number' ? st.emRight : (existing.emRight || 0),
+          speed: st.speed || 0,
+          runStatus: st.runStatus || 'STOP',
+          statusBadge: st.statusBadge || 'Stopped',
+          count: st.count || '',
+          shift: existing.shift || 1,
+          hour: existing.hour || 1,
+          date: existing.date || new Date().toISOString().slice(0, 10),
+          updatedAt: st.lastUpdated || new Date().toISOString()
+        };
+      }
+    }
+
     return map;
   } catch (err) {
     console.error('Error fetching latest EM for all IoT machines:', err);
@@ -548,16 +578,22 @@ export function getFrameVariants(frame: string): string[] {
     const p2 = rawNum.padStart(2, '0');
     const p3 = rawNum.padStart(3, '0');
 
-    variants.add(rawNum);
-    variants.add(unpadded);
-    variants.add(p2);
-    variants.add(p3);
-    variants.add(`RF${p2}`);
-    variants.add(`RF${unpadded}`);
-    variants.add(`SP${p3}`);
-    variants.add(`SP${p2}`);
-    variants.add(`K${p2}`);
-    variants.add(`K${unpadded}`);
+    if (upper.startsWith('RF')) {
+      // ONLY RF device variants for IoT hardware devices
+      variants.add(upper);
+      variants.add(`RF${p2}`);
+      variants.add(`RF${unpadded}`);
+    } else {
+      // Spinning machine frame variants (SP, K, numbers)
+      variants.add(rawNum);
+      variants.add(unpadded);
+      variants.add(p2);
+      variants.add(p3);
+      variants.add(`SP${p3}`);
+      variants.add(`SP${p2}`);
+      variants.add(`K${p2}`);
+      variants.add(`K${unpadded}`);
+    }
   }
 
   return Array.from(variants);
@@ -600,10 +636,14 @@ export async function getMappedMachineEmFromIotEm(
     // If mappings not explicitly passed, load active mappings from system settings
     let activeMappings = mappings;
     let mappingsByDate: Record<string, Record<string, string>> = {};
-    if (!activeMappings || Object.keys(activeMappings).length === 0) {
-      const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
-      activeMappings = setDoc?.iotMachineMapping || {};
-      mappingsByDate = setDoc?.iotMachineMappingByDate || {};
+    let allocationPeriods: IotMachineAllocationPeriod[] = [];
+    const setDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
+    if (setDoc) {
+      if (!activeMappings || Object.keys(activeMappings).length === 0) {
+        activeMappings = setDoc.iotMachineMapping || {};
+      }
+      mappingsByDate = setDoc.iotMachineMappingByDate || {};
+      allocationPeriods = setDoc.iotMachineAllocationPeriods || [];
     }
 
     const merged: Record<string, Record<string, Record<string, number>>> = {};
@@ -636,10 +676,16 @@ export async function getMappedMachineEmFromIotEm(
 
       // Collect all machine/frame keys to record this EM under
       const targetKeys = new Set<string>(getFrameVariants(cleanIot));
-      const mappedFrames = new Set<string>(iotToSpinningMap.get(cleanIot) || []);
+      const mappedFrames = new Set<string>();
 
-      // Also check date-specific mappings for this record's date
-      const dateMap = mappingsByDate[rec.date] || mappingsByDate[normalizeToCanonicalDate(rec.date)];
+      // Check date-specific mappings for this record's date using date range periods
+      const dateMap = resolveEffectiveMappingForDate(
+        rec.date,
+        allocationPeriods,
+        mappingsByDate,
+        activeMappings
+      );
+
       if (dateMap) {
         for (const [sFrame, iDev] of Object.entries(dateMap)) {
           if (iDev && iDev.trim().toUpperCase() === cleanIot) {
@@ -648,6 +694,7 @@ export async function getMappedMachineEmFromIotEm(
         }
       }
 
+      // ONLY add spinning frame variants if explicitly mapped!
       for (const frame of mappedFrames) {
         getFrameVariants(frame).forEach(k => targetKeys.add(k));
       }
@@ -676,6 +723,7 @@ export async function getMappedMachineEmFromIotEm(
 /**
  * 5b. Sync Mapped IoT EM to Spinning Monitor
  * - Updates settings if new mappings are provided
+ * - Preserves date-to-date allocation periods in settings table
  * - Returns mapped EM matrix directly from iot_em (without machine_em table)
  */
 export async function syncIotEmToSpinningMonitor(
@@ -692,9 +740,14 @@ export async function syncIotEmToSpinningMonitor(
     // Persist mappings into settings collection if explicitly provided
     if (mappings && Object.keys(mappings).length > 0) {
       const effectiveDate = targetDate || new Date().toISOString().slice(0, 10);
+      const existingDoc = await db.collection('settings').findOne({ _id: 'system_settings' as any });
+      const currentPeriods = existingDoc?.iotMachineAllocationPeriods || [];
+      const updatedPeriods = calculateUpdatedAllocationPeriods(currentPeriods, mappings, effectiveDate);
+
       const updateFields: any = {
         iotMachineMapping: mappings,
-        [`iotMachineMappingByDate.${effectiveDate}`]: mappings
+        [`iotMachineMappingByDate.${effectiveDate}`]: mappings,
+        iotMachineAllocationPeriods: updatedPeriods
       };
 
       await db.collection('settings').updateOne(

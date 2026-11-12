@@ -21,7 +21,7 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed } from '../lib/utils';
+import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 
 // Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
@@ -635,10 +635,21 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const calculateColAverage = (date: string, shift: string): string => {
     let sum = 0;
     let count = 0;
+    const dateMapping = resolveEffectiveMappingForDate(
+      date,
+      safeSettings?.iotMachineAllocationPeriods,
+      safeSettings?.iotMachineMappingByDate,
+      safeSettings?.iotMachineMapping
+    );
+
     (machines || []).forEach(m => {
       // Only include if machine is available and assigned on this shift
       if (!isMachineAssignedOnShift(date, shift, m)) return;
-      const val = getMachineEmValue(effectiveMachineEm, date, m, shift, registeredInfoForMonth.frameToDevice);
+      // Machine MUST be assigned to an IoT device on this date!
+      const mappedDev = resolveMappedDevice(dateMapping, m);
+      if (!mappedDev || mappedDev === 'NONE') return;
+
+      const val = getMachineEmValue(effectiveMachineEm, date, m, shift, dateMapping);
       if (val !== undefined && val !== null) {
         sum += val;
         count++;
@@ -676,11 +687,18 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (start && rDate < start) return;
       if (end && rDate > end) return;
 
-      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
+      const dateMapping = resolveEffectiveMappingForDate(
+        report.date,
+        safeSettings?.iotMachineAllocationPeriods,
+        safeSettings?.iotMachineMappingByDate,
+        safeSettings?.iotMachineMapping
+      );
+      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, effectiveMachineEm, effectiveWorkers, dateMapping);
       if (shiftRes && Array.isArray(shiftRes.machinesDetail) && shiftRes.machinesDetail.length > 0) {
         shiftRes.machinesDetail.forEach(m => {
           if (!m || !isMachineExisted(m.frameNo)) return;
-          const devBadge = registeredInfoForMonth.frameToDevice[m.frameNo] ? ` [${registeredInfoForMonth.frameToDevice[m.frameNo]}]` : '';
+          const mappedDev = resolveMappedDevice(dateMapping, m.frameNo);
+          const devBadge = mappedDev ? ` [${mappedDev}]` : '';
           logs.push({
             date: report.date,
             shift: shiftRes.shift,
@@ -745,9 +763,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (!parts) return;
       if (parts.month !== selectedMonth || parts.year !== selectedYear) return;
 
+      const dateMapping = resolveEffectiveMappingForDate(
+        report.date,
+        safeSettings?.iotMachineAllocationPeriods,
+        safeSettings?.iotMachineMappingByDate,
+        safeSettings?.iotMachineMapping
+      );
+
       (effectiveWorkers || []).forEach(worker => {
         if (!worker || !worker.id) return;
-        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
+        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping);
         if (shiftRes && shiftRes.totalSides > 0) {
           if (!siderData[worker.id]) {
             siderData[worker.id] = {
@@ -796,9 +821,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         lookup[dateStr] = {};
       }
 
+      const dateMapping = resolveEffectiveMappingForDate(
+        report.date,
+        safeSettings?.iotMachineAllocationPeriods,
+        safeSettings?.iotMachineMappingByDate,
+        safeSettings?.iotMachineMapping
+      );
+
       (effectiveWorkers || []).forEach(worker => {
         if (!worker || !worker.id) return;
-        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth.frameToDevice);
+        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping);
         if (shiftRes && shiftRes.totalSides > 0 && shiftRes.totalEm > 0) {
           const prev = lookup[dateStr][worker.id] || 0;
           lookup[dateStr][worker.id] = Number((prev + shiftRes.totalEm).toFixed(3));
@@ -921,12 +953,18 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
 
       // Get EM for this assigned production machine (resolves from iot_em via machine-to-machine allocation)
-      let emValue = getMachineEmValue(effectiveMachineEm, report.date, frameNo, entry.shift, registeredInfoForMonth.frameToDevice);
+      const dateMapping = resolveEffectiveMappingForDate(
+        report.date,
+        safeSettings?.iotMachineAllocationPeriods,
+        safeSettings?.iotMachineMappingByDate,
+        safeSettings?.iotMachineMapping
+      );
+      const mappedDev = resolveMappedDevice(dateMapping, frameNo);
+      let emValue = mappedDev ? getMachineEmValue(effectiveMachineEm, report.date, frameNo, entry.shift, dateMapping) : undefined;
       if (emValue === undefined) {
         emValue = entry.doffEmt ?? 0;
       }
 
-      const mappedDev = resolveMappedDevice(registeredInfoForMonth.frameToDevice, frameNo);
       const devBadge = mappedDev ? ` [${mappedDev}]` : '';
       const mcDisplay = `${frameNo}${devBadge}`;
 
@@ -1153,12 +1191,23 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
     // Rows 3-8: Machines
     machines.forEach(machine => {
-      const registeredDev = registeredInfoForMonth.frameToDevice[machine];
-      const row: any[] = [registeredDev ? `${machine} (${registeredDev})` : machine];
+      const activeDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine);
+      const row: any[] = [activeDev ? `${machine} (${activeDev})` : machine];
       selectedMonthDates.forEach(date => {
+        const dateMapping = resolveEffectiveMappingForDate(
+          date,
+          safeSettings?.iotMachineAllocationPeriods,
+          safeSettings?.iotMachineMappingByDate,
+          safeSettings?.iotMachineMapping
+        );
+        const mappedDev = resolveMappedDevice(dateMapping, machine);
+        const isIotAssigned = Boolean(mappedDev && mappedDev !== 'NONE');
+
         shifts.forEach(shift => {
           const isAssigned = isMachineAssignedOnShift(date, shift, machine);
-          const val = isAssigned ? getMachineEmValue(effectiveMachineEm, date, machine, shift, registeredInfoForMonth.frameToDevice) : undefined;
+          const val = (isAssigned && isIotAssigned)
+            ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)
+            : undefined;
           row.push(val !== undefined ? val : '');
         });
       });
@@ -1523,7 +1572,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                     </thead>
                     <tbody>
                       {machines.map(machine => {
-                        const registeredDev = resolveMappedDevice(registeredInfoForMonth.frameToDevice, machine) || registeredInfoForMonth.frameToDevice[machine];
+                        const registeredDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine) || safeSettings?.iotMachineMapping?.[machine];
                         return (
                           <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
                             <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
@@ -1536,37 +1585,57 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                 )}
                               </div>
                             </td>
-                            {selectedMonthDates.map(date => (
-                              <React.Fragment key={`val-${machine}-${date}`}>
-                                {shifts.map(shift => {
-                                  const isAssigned = isMachineAssignedOnShift(date, shift, machine);
-                                  const val = isAssigned ? getMachineEmValue(effectiveMachineEm, date, machine, shift, registeredInfoForMonth.frameToDevice) : undefined;
-                                  return (
-                                    <td 
-                                      key={`cell-${machine}-${date}-${shift}`}
-                                      onClick={() => {
-                                        if (isAssigned) {
-                                          setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' });
+                            {selectedMonthDates.map(date => {
+                              const dateMapping = resolveEffectiveMappingForDate(
+                                date,
+                                safeSettings?.iotMachineAllocationPeriods,
+                                safeSettings?.iotMachineMappingByDate,
+                                safeSettings?.iotMachineMapping
+                              );
+                              const mappedDev = resolveMappedDevice(dateMapping, machine);
+                              const isIotAssigned = Boolean(mappedDev && mappedDev !== 'NONE');
+
+                              return (
+                                <React.Fragment key={`val-${machine}-${date}`}>
+                                  {shifts.map(shift => {
+                                    const isAssigned = isMachineAssignedOnShift(date, shift, machine);
+                                    // ONLY show EM if the machine is mapped to an IoT device on this date!
+                                    const val = (isAssigned && isIotAssigned) 
+                                      ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping) 
+                                      : undefined;
+                                    return (
+                                      <td 
+                                        key={`cell-${machine}-${date}-${shift}`}
+                                        onClick={() => {
+                                          if (isAssigned && isIotAssigned) {
+                                            setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' });
+                                          }
+                                        }}
+                                        className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all ${
+                                          isAssigned && isIotAssigned
+                                            ? 'hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group'
+                                            : 'text-stone-300 bg-stone-50/20 cursor-not-allowed'
+                                        }`}
+                                        title={
+                                          !isIotAssigned
+                                            ? `${machine} is not assigned to an IoT machine on ${date}`
+                                            : !isAssigned
+                                            ? `${machine} was not assigned in Shift ${shift} on ${date}`
+                                            : `${machine} [${mappedDev}] · Shift ${shift} · ${date}`
                                         }
-                                      }}
-                                      className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all ${
-                                        isAssigned
-                                          ? 'hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group'
-                                          : 'text-stone-300 bg-stone-50/20 cursor-not-allowed'
-                                      }`}
-                                      title={isAssigned ? undefined : `${machine} was not assigned in Shift ${shift} on ${date}`}
-                                    >
-                                      {isAssigned ? (val !== undefined ? val : '-') : '-'}
-                                      {isAssigned && (
-                                        <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
-                                          <Edit size={8} />
-                                        </div>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                              </React.Fragment>
-                            ))}
+                                      >
+                                        {(isAssigned && isIotAssigned) ? (val !== undefined ? val : '-') : '-'}
+                                        {(isAssigned && isIotAssigned) && (
+                                          <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
+                                            <Edit size={8} />
+                                          </div>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              );
+                            })}
                           </tr>
                         );
                       })}

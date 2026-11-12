@@ -1,31 +1,50 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Activity, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2, Calendar } from 'lucide-react';
-import { cn, getTodayDateString } from '@/lib/utils';
-import { MachineMasterItem, MachineEmData } from '@/types';
+import { Activity, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2, Calendar, Clock, Database, ChevronRight } from 'lucide-react';
+import { cn, getTodayDateString, resolveEffectiveMappingForDate } from '@/lib/utils';
+import { MachineMasterItem, MachineEmData, IotMachineAllocationPeriod } from '@/types';
 
 // The 46 IoT Machines available from iot_machines / iot_em
 const IOT_MACHINES_LIST = Array.from({ length: 46 }, (_, i) => `RF${String(i + 1).padStart(2, '0')}`);
+
+export interface IotLiveTelemetryItem {
+  machineNo: string;
+  emTotal: number;
+  emLeft?: number;
+  emRight?: number;
+  speed?: number;
+  runStatus?: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE';
+  statusBadge?: string;
+  count?: string;
+  shift?: number;
+  hour?: number;
+  date?: string;
+  updatedAt?: string;
+}
 
 interface IotMachineMatchingSettingsProps {
   machines: MachineMasterItem[];
   currentMappings?: Record<string, string>;
   mappingsByDate?: Record<string, Record<string, string>>;
+  allocationPeriods?: IotMachineAllocationPeriod[];
   machineEm: MachineEmData;
   activeDate?: string;
-  onSaveMappings: (mappings: Record<string, string>, date?: string) => Promise<void>;
+  onSaveMappings: (mappings: Record<string, string>, date?: string, updatedPeriods?: IotMachineAllocationPeriod[]) => Promise<void>;
   onMachineEmUpdated: (newEmData: MachineEmData) => void;
+  onDeletePeriod?: (periodId: string) => Promise<void>;
 }
 
 export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProps> = ({
   machines,
   currentMappings = {},
   mappingsByDate = {},
+  allocationPeriods = [],
   machineEm,
   activeDate,
   onSaveMappings,
-  onMachineEmUpdated
+  onMachineEmUpdated,
+  onDeletePeriod
 }) => {
   // Only Shed 1, Shed 2, Shed 3 are involved (KTTM is strictly excluded)
   const [selectedShed, setSelectedShed] = useState<'Shed 1' | 'Shed 2' | 'Shed 3'>('Shed 1');
@@ -39,35 +58,19 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [recentlySynced, setRecentlySynced] = useState<string | null>(null);
 
-  // Live EM by IoT machine: { [iotMachineNo]: { emTotal, emLeft, emRight, shift, hour, date } }
-  const [iotLiveEmMap, setIotLiveEmMap] = useState<Record<string, {
-    machineNo: string;
-    emTotal: number;
-    shift: number;
-    hour: number;
-    date: string;
-  }>>({});
+  // Live telemetry by IoT machine: { [iotMachineNo]: IotLiveTelemetryItem }
+  const [iotLiveEmMap, setIotLiveEmMap] = useState<Record<string, IotLiveTelemetryItem>>({});
 
-  // Continuous Carry-Forward Resolution Algorithm:
-  // Finds the most recent mapping on or before targetDate
+  // Continuous Carry-Forward Resolution Algorithm using date-range periods & date maps
   const resolveEffectiveMapping = useCallback((targetDate: string): { mapping: Record<string, string>; sourceDate: string } => {
-    if (mappingsByDate && Object.keys(mappingsByDate).length > 0) {
-      const dates = Object.keys(mappingsByDate).filter(d => d <= targetDate).sort().reverse();
-      if (dates.length > 0 && mappingsByDate[dates[0]]) {
-        return { mapping: mappingsByDate[dates[0]], sourceDate: dates[0] };
-      }
-    }
-    return { mapping: currentMappings || {}, sourceDate: targetDate };
-  }, [mappingsByDate, currentMappings]);
+    const eff = resolveEffectiveMappingForDate(targetDate, allocationPeriods, mappingsByDate, currentMappings);
+    return { mapping: eff, sourceDate: targetDate };
+  }, [allocationPeriods, mappingsByDate, currentMappings]);
 
   // Active mappings for the selected date
   const [mappings, setMappings] = useState<Record<string, string>>(() => {
     return resolveEffectiveMapping(selectedDate).mapping;
   });
-
-  const effectiveSource = useMemo(() => {
-    return resolveEffectiveMapping(selectedDate);
-  }, [resolveEffectiveMapping, selectedDate]);
 
   // When date changes, update mapping using carry-forward logic
   useEffect(() => {
@@ -75,21 +78,91 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     setMappings(eff.mapping);
   }, [selectedDate, resolveEffectiveMapping]);
 
-  // Load latest EM for all 46 IoT machines
+  // Load latest EM and live status for all 46 IoT machines
   const loadIotEmData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/iot/em/live-by-machine?_t=${Date.now()}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          setIotLiveEmMap(json.data);
+      const emData: Record<string, IotLiveTelemetryItem> = {};
+
+      // 1. Fetch live status so speed, runStatus, and current real-time telemetry are guaranteed
+      try {
+        const statusRes = await fetch(`/api/iot/status?_t=${Date.now()}`);
+        if (statusRes.ok) {
+          const statusJson = await statusRes.json();
+          const list = statusJson.machines || statusJson.data?.machines || [];
+          if (Array.isArray(list)) {
+            for (const m of list) {
+              const mId = m.machine || m.machineId;
+              if (!mId) continue;
+              const cleanId = String(mId).trim().toUpperCase();
+              emData[cleanId] = {
+                machineNo: cleanId,
+                emTotal: Number(m.emTotal || 0),
+                emLeft: Number(m.emLeft || 0),
+                emRight: Number(m.emRight || 0),
+                speed: Number(m.speed ?? 0),
+                runStatus: m.runStatus || 'STOP',
+                statusBadge: m.statusBadge || 'Stopped',
+                count: m.count || '',
+                shift: statusJson.shift || 1,
+                hour: 1,
+                date: statusJson.shiftDate || new Date().toISOString().slice(0, 10),
+                updatedAt: m.lastUpdated || new Date().toISOString()
+              };
+              const num = parseInt(cleanId.replace(/\D/g, ''), 10);
+              if (!isNaN(num)) {
+                const p2 = `RF${String(num).padStart(2, '0')}`;
+                if (!emData[p2]) emData[p2] = emData[cleanId];
+              }
+            }
+          }
         }
+      } catch (_) {}
+
+      // 2. Also fetch live-by-machine from database
+      try {
+        const res = await fetch(`/api/iot/em/live-by-machine?_t=${Date.now()}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            for (const [mId, val] of Object.entries(json.data as Record<string, any>)) {
+              const cleanId = mId.toUpperCase();
+              const existing: Partial<IotLiveTelemetryItem> = emData[cleanId] || {};
+              emData[cleanId] = {
+                machineNo: cleanId,
+                emTotal: typeof val.emTotal === 'number' && val.emTotal > 0 ? val.emTotal : (existing.emTotal || 0),
+                emLeft: typeof val.emLeft === 'number' ? val.emLeft : (existing.emLeft || 0),
+                emRight: typeof val.emRight === 'number' ? val.emRight : (existing.emRight || 0),
+                speed: typeof val.speed === 'number' ? val.speed : (existing.speed || 0),
+                runStatus: val.runStatus || existing.runStatus || 'STOP',
+                statusBadge: val.statusBadge || existing.statusBadge || 'Stopped',
+                count: val.count || existing.count || '',
+                shift: val.shift || existing.shift || 1,
+                hour: val.hour || existing.hour || 1,
+                date: val.date || existing.date || new Date().toISOString().slice(0, 10),
+                updatedAt: val.updatedAt || existing.updatedAt || new Date().toISOString()
+              };
+              const num = parseInt(cleanId.replace(/\D/g, ''), 10);
+              if (!isNaN(num)) {
+                const p2 = `RF${String(num).padStart(2, '0')}`;
+                if (!emData[p2]) emData[p2] = emData[cleanId];
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (Object.keys(emData).length > 0) {
+        setIotLiveEmMap(emData);
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('Error loading IoT live EM/status data:', err);
+    }
   }, []);
 
   useEffect(() => {
     loadIotEmData();
+    const interval = setInterval(loadIotEmData, 45000);
+    return () => clearInterval(interval);
   }, [loadIotEmData]);
 
   // Track allocated IoT machines to enforce STRICT 1-TO-1 UNIQUE ALLOCATION
@@ -181,7 +254,6 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
       const numeric = parseInt(rf.replace(/\D/g, ''), 10);
       if (!isNaN(numeric) && numeric >= 1 && numeric <= 46) {
         const iotId = `RF${String(numeric).padStart(2, '0')}`;
-        // Ensure not already taken by another frame
         const currentOwner = updated[rf];
         const takenBy = Object.entries(updated).find(([f, id]) => id === iotId && f !== rf);
         if (!takenBy || currentOwner === iotId) {
@@ -212,6 +284,11 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     }).length;
   }, [shedMachines, mappings]);
 
+  // Sorted list of allocation periods for table display (newest first)
+  const periodsList = useMemo(() => {
+    return [...allocationPeriods].sort((a, b) => b.fromDate.localeCompare(a.fromDate));
+  }, [allocationPeriods]);
+
   return (
     <div className="bg-stone-50/80 p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs space-y-6">
       {/* HEADER */}
@@ -224,11 +301,11 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
             <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
               <span>IoT Machine Matching & EM Settings</span>
               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                1-to-1 Allocation · Table: iot_em
+                1-to-1 Allocation · Table: settings & iot_em
               </span>
             </h3>
             <p className="text-xs text-stone-500 font-bold mt-0.5">
-              Assign spinning machines to IoT machines. Persistent per date with continuous carry-forward until changed.
+              Assign spinning machines to IoT machines. Persistent date-to-date tracking saved in settings until changed.
             </p>
           </div>
         </div>
@@ -283,15 +360,10 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
             />
           </div>
 
-          {effectiveSource.sourceDate !== selectedDate ? (
-            <span className="text-[10.5px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
-              ⚡ Continuous: Inherited from <strong>{effectiveSource.sourceDate}</strong> until changed
-            </span>
-          ) : (
-            <span className="text-[10.5px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              ✓ Configured specifically for <strong>{selectedDate}</strong>
-            </span>
-          )}
+          <span className="text-[10.5px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 flex items-center gap-1">
+            <Clock size={12} />
+            <span>Persisted Date-to-Date · Saves pairs until changed</span>
+          </span>
         </div>
 
         <span className="text-[11px] font-mono font-bold text-stone-500">
@@ -401,25 +473,41 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                     </div>
                   </div>
 
-                  {/* LIVE EM BADGE (ONLY EM IS SHOWN) */}
+                  {/* LIVE TELEMETRY & EM BADGE */}
                   <div className="text-right">
                     {currentIot && liveEmData ? (
-                      <div className="inline-flex flex-col items-end">
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black font-mono bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs flex items-center gap-1">
+                      <div className="inline-flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border font-mono",
+                            liveEmData.runStatus === 'RUN' ? "bg-emerald-100 text-emerald-800 border-emerald-300" :
+                            liveEmData.runStatus === 'DOFF' ? "bg-blue-100 text-blue-800 border-blue-300" :
+                            liveEmData.runStatus === 'OFFLINE' ? "bg-amber-100 text-amber-800 border-amber-300" :
+                            "bg-stone-100 text-stone-700 border-stone-300"
+                          )}>
+                            {liveEmData.runStatus || 'STOP'}
+                          </span>
+                          {typeof liveEmData.speed === 'number' && liveEmData.speed > 0 && (
+                            <span className="text-[10px] font-mono font-bold text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded">
+                              {liveEmData.speed} rpm
+                            </span>
+                          )}
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs flex items-center gap-1">
                           <CheckCircle2 size={11} className="text-emerald-600" />
                           <span>EM: {liveEmData.emTotal.toFixed(2)} min</span>
                         </span>
-                        <span className="text-[9px] text-stone-400 font-mono mt-0.5">
-                          Shift {liveEmData.shift} · Hr {liveEmData.hour}
+                        <span className="text-[9px] text-stone-400 font-mono">
+                          Shift {liveEmData.shift || 1} · {liveEmData.date}
                         </span>
                       </div>
                     ) : currentIot ? (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono bg-blue-50 text-blue-700 border border-blue-200">
+                      <span className="px-2.5 py-1 rounded-xl text-[10px] font-bold font-mono bg-blue-50 text-blue-700 border border-blue-200">
                         Mapped to {currentIot}
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-400">
-                        No IoT EM
+                      <span className="px-2.5 py-1 rounded-xl text-[10px] font-medium bg-stone-100 text-stone-400 border border-stone-200">
+                        No IoT Assigned
                       </span>
                     )}
                   </div>
@@ -437,7 +525,7 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                     onChange={(e) => handleAssignMachine(rf, e.target.value)}
                     disabled={isSyncing}
                     className={cn(
-                      "text-xs font-mono font-bold rounded-xl px-3 py-1.5 border transition-all cursor-pointer outline-hidden focus:ring-2 focus:ring-blue-500/20 max-w-[180px]",
+                      "text-xs font-mono font-bold rounded-xl px-3 py-1.5 border transition-all cursor-pointer outline-hidden focus:ring-2 focus:ring-blue-500/20 max-w-[200px]",
                       currentIot
                         ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
                         : "bg-white text-stone-700 border-stone-300 hover:border-stone-400"
@@ -448,7 +536,9 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                     </option>
                     {IOT_MACHINES_LIST.map(iotNo => {
                       const emInfo = iotLiveEmMap[iotNo];
-                      const emLabel = emInfo ? ` (${emInfo.emTotal.toFixed(1)}m)` : '';
+                      const emLabel = emInfo && emInfo.emTotal > 0 ? ` · ${emInfo.emTotal.toFixed(1)}m` : '';
+                      const statusLabel = emInfo?.runStatus ? ` · ${emInfo.runStatus}` : '';
+                      const speedLabel = emInfo?.speed ? ` · ${emInfo.speed}rpm` : '';
                       const assignedTo = allocatedIotToFrame.get(iotNo);
                       const isAssignedToOther = assignedTo && assignedTo !== rf;
 
@@ -461,7 +551,7 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                             isAssignedToOther ? "text-amber-800 bg-amber-50 font-bold" : "text-stone-900"
                           )}
                         >
-                          {iotNo} {emLabel} {isAssignedToOther ? `[Allocated to ${assignedTo}]` : ''}
+                          {iotNo}{statusLabel}{speedLabel}{emLabel} {isAssignedToOther ? `[Allocated to ${assignedTo}]` : ''}
                         </option>
                       );
                     })}
@@ -472,7 +562,123 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
           })}
         </div>
       )}
+
+      {/* ALLOCATION PERIODS HISTORY TABLE (DATE-TO-DATE AUDIT & PERSISTENCE) */}
+      <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-4">
+          <div>
+            <h4 className="text-base font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
+              <Calendar size={18} className="text-blue-600" />
+              <span>Machine to IoT Allocation Periods History</span>
+            </h4>
+            <p className="text-xs text-stone-500 font-semibold mt-0.5">
+              Persistent date-to-date tracking saved in settings table. Preserves machine pairs from day to day until changed.
+            </p>
+          </div>
+          <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-xl bg-stone-100 text-stone-700 border border-stone-200 shrink-0">
+            {periodsList.length} Allocation {periodsList.length === 1 ? 'Period' : 'Periods'} Recorded
+          </span>
+        </div>
+
+        {periodsList.length === 0 ? (
+          <div className="text-center py-8 text-stone-400 font-semibold text-xs">
+            No allocation periods recorded yet. Select an IoT machine above to create the initial active allocation period.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-stone-200 bg-stone-50/80 text-[11px] font-black uppercase text-stone-600 tracking-wider">
+                  <th className="py-3 px-3">#</th>
+                  <th className="py-3 px-3">Date Range</th>
+                  <th className="py-3 px-3">Status</th>
+                  <th className="py-3 px-3">Shed</th>
+                  <th className="py-3 px-3">Pairs</th>
+                  <th className="py-3 px-3">Machine Mappings</th>
+                  <th className="py-3 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {periodsList.map((p, idx) => {
+                  const isActive = !p.toDate;
+                  const pairEntries = Object.entries(p.mappings || {});
+                  return (
+                    <tr key={p.id || idx} className={cn("hover:bg-stone-50/60 transition-colors", isActive && "bg-blue-50/20")}>
+                      <td className="py-3 px-3 font-mono font-bold text-stone-500">{idx + 1}</td>
+                      <td className="py-3 px-3 font-mono font-black text-stone-900 whitespace-nowrap">
+                        <span className="text-blue-700">{p.fromDate}</span>
+                        <span className="mx-1.5 text-stone-400">→</span>
+                        {isActive ? (
+                          <span className="text-emerald-700 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            Present (Active)
+                          </span>
+                        ) : (
+                          <span className="text-stone-700">{p.toDate}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        {isActive ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                            Active Until Changed
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                            Archived
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 font-bold text-stone-700">{p.shed || 'All'}</td>
+                      <td className="py-3 px-3 font-mono font-bold text-stone-800">{pairEntries.length} frames</td>
+                      <td className="py-3 px-3">
+                        <div className="flex flex-wrap gap-1 max-w-md">
+                          {pairEntries.slice(0, 10).map(([f, d]) => (
+                            <span key={f} className="inline-flex items-center gap-1 font-mono text-[10.5px] px-2 py-0.5 rounded-lg bg-stone-100 text-stone-800 border border-stone-200">
+                              <span className="font-bold">{f}</span>
+                              <span className="text-stone-400">↔</span>
+                              <span className="font-black text-blue-700">{d}</span>
+                            </span>
+                          ))}
+                          {pairEntries.length > 10 && (
+                            <span className="text-[10px] font-bold text-stone-400 self-center">
+                              +{pairEntries.length - 10} more
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedDate(p.fromDate);
+                              setMappings(p.mappings || {});
+                            }}
+                            className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 cursor-pointer transition-colors"
+                            title="Load this period's mappings into editor"
+                          >
+                            Load
+                          </button>
+                          {onDeletePeriod && (
+                            <button
+                              onClick={() => onDeletePeriod(p.id)}
+                              className="px-2 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 cursor-pointer transition-colors"
+                              title="Delete this period row"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
+
 export default IotMachineMatchingSettings;

@@ -168,6 +168,17 @@ export interface SystemSettings {
   shed40sFormulas?: Record<string, string>;
   iotMachineMapping?: Record<string, string>;
   iotMachineMappingByDate?: Record<string, Record<string, string>>;
+  iotMachineAllocationPeriods?: IotMachineAllocationPeriod[];
+}
+
+export interface IotMachineAllocationPeriod {
+  id: string;               // e.g. "period_1", "period_1794463000"
+  fromDate: string;         // YYYY-MM-DD
+  toDate: string | null;    // YYYY-MM-DD or null if active ongoing
+  shed?: string;            // "Shed 1" | "Shed 2" | "Shed 3" | "All"
+  mappings: Record<string, string>; // { "SP023": "RF23", ... }
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FrozenMonthAbstractItem {

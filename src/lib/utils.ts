@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { IncentiveRule, ProductionEntry, Sider, DailyReport, Shift, Shed, MachineEmData } from "../types";
+import { IncentiveRule, ProductionEntry, Sider, DailyReport, Shift, Shed, MachineEmData, IotMachineAllocationPeriod } from "../types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1038,13 +1038,16 @@ export function getMachineEmValue(
     frameCandidates.add(num);
     frameCandidates.add(p2);
     frameCandidates.add(p3);
-    frameCandidates.add(`RF${p2}`);
-    frameCandidates.add(`RF${num}`);
     frameCandidates.add(`SP${p3}`);
     frameCandidates.add(`SP${p2}`);
     frameCandidates.add(`SP${num}`);
     frameCandidates.add(`K${p2}`);
     frameCandidates.add(`K${num}`);
+    // If caller explicitly queried an RF device (e.g. RF03), include RF candidates
+    if (upperFrame.startsWith('RF')) {
+      frameCandidates.add(`RF${p2}`);
+      frameCandidates.add(`RF${num}`);
+    }
   }
 
   // If a mapping is provided, also check the registered device or mapped spinning frame
@@ -1084,6 +1087,181 @@ export function getMachineEmValue(
   }
 
   return undefined;
+}
+
+/**
+ * Resolves the active machine-to-IoT mapping for a specific date using date-range periods,
+ * with fallbacks to date-keyed mappings and current settings.
+ */
+export function resolveEffectiveMappingForDate(
+  targetDate: string,
+  periods: IotMachineAllocationPeriod[] = [],
+  fallbackByDate: Record<string, Record<string, string>> = {},
+  fallbackCurrent: Record<string, string> = {}
+): Record<string, string> {
+  if (!targetDate) return fallbackCurrent || {};
+
+  const parts = parseUniversalDateParts(targetDate);
+  const targetIso = parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : targetDate.slice(0, 10);
+  const targetCanonical = normalizeToCanonicalDate(targetDate);
+
+  // 1. Check allocation periods
+  if (periods && periods.length > 0) {
+    const sorted = [...periods].sort((a, b) => b.fromDate.localeCompare(a.fromDate));
+    for (const p of sorted) {
+      const pFrom = p.fromDate;
+      const pTo = p.toDate;
+      if (targetIso >= pFrom && (!pTo || targetIso <= pTo)) {
+        return p.mappings || {};
+      }
+    }
+    // If target is newer than all periods, use latest
+    if (sorted[0] && targetIso >= sorted[0].fromDate) {
+      return sorted[0].mappings || {};
+    }
+  }
+
+  // 2. Check date-keyed mappings
+  if (fallbackByDate) {
+    if (fallbackByDate[targetDate]) return fallbackByDate[targetDate];
+    if (fallbackByDate[targetCanonical]) return fallbackByDate[targetCanonical];
+    if (fallbackByDate[targetIso]) return fallbackByDate[targetIso];
+
+    const priorDates = Object.keys(fallbackByDate).filter(d => {
+      const dp = parseUniversalDateParts(d);
+      const diso = dp ? `${dp.year}-${String(dp.month).padStart(2, '0')}-${String(dp.day).padStart(2, '0')}` : d;
+      return diso <= targetIso;
+    }).sort().reverse();
+    if (priorDates.length > 0 && fallbackByDate[priorDates[0]]) {
+      return fallbackByDate[priorDates[0]];
+    }
+  }
+
+  return fallbackCurrent || {};
+}
+
+/**
+ * Helper to get the previous calendar day in YYYY-MM-DD format.
+ */
+export function getPreviousDayIso(isoDate: string): string {
+  if (!isoDate) return isoDate;
+  const parts = parseUniversalDateParts(isoDate);
+  const target = parts
+    ? new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+    : new Date(isoDate);
+  target.setUTCDate(target.getUTCDate() - 1);
+  const y = target.getUTCFullYear();
+  const m = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(target.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Updates or creates allocation period rows in the settings table.
+ * Preserves date-to-date validity ranges:
+ * - If an existing ongoing period (toDate === null) exists and targetDate > fromDate:
+ *   Closes previous period with toDate = previousDay(targetDate).
+ *   Creates new period starting at targetDate with toDate = null.
+ * - If targetDate === existing active period's fromDate:
+ *   Updates the active period's mappings in place.
+ * - If no periods exist:
+ *   Creates initial period starting from targetDate (or start of month) to null.
+ */
+export function calculateUpdatedAllocationPeriods(
+  existingPeriods: IotMachineAllocationPeriod[] = [],
+  newMappings: Record<string, string>,
+  targetDate: string,
+  shed?: string
+): IotMachineAllocationPeriod[] {
+  const parts = parseUniversalDateParts(targetDate);
+  const targetIso = parts
+    ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+    : targetDate.slice(0, 10);
+  const now = new Date().toISOString();
+
+  // Clean empty or 'NONE' mappings
+  const cleanMappings: Record<string, string> = {};
+  for (const [k, v] of Object.entries(newMappings || {})) {
+    if (v && v !== 'NONE' && v !== 'None' && v !== 'unassigned') {
+      cleanMappings[k.trim()] = v.trim().toUpperCase();
+    }
+  }
+
+  const periods: IotMachineAllocationPeriod[] = (existingPeriods || []).map(p => ({
+    ...p,
+    mappings: { ...(p.mappings || {}) }
+  }));
+
+  if (periods.length === 0) {
+    const monthStart = `${targetIso.slice(0, 7)}-01`;
+    const fromDate = targetIso < monthStart ? targetIso : monthStart;
+    return [{
+      id: `period_${Date.now()}`,
+      fromDate,
+      toDate: null,
+      shed: shed || 'All',
+      mappings: cleanMappings,
+      createdAt: now,
+      updatedAt: now
+    }];
+  }
+
+  // Sort periods ascending by fromDate
+  periods.sort((a, b) => a.fromDate.localeCompare(b.fromDate));
+
+  // Find active ongoing period (toDate === null)
+  const activeOngoingIdx = periods.findIndex(p => !p.toDate);
+
+  if (activeOngoingIdx !== -1) {
+    const active = periods[activeOngoingIdx];
+    if (targetIso === active.fromDate) {
+      active.mappings = cleanMappings;
+      active.updatedAt = now;
+      if (shed && shed !== 'All') active.shed = shed;
+      return periods;
+    } else if (targetIso > active.fromDate) {
+      // Close active period at previous day
+      active.toDate = getPreviousDayIso(targetIso);
+      active.updatedAt = now;
+
+      // Add new period starting at targetIso
+      periods.push({
+        id: `period_${Date.now()}`,
+        fromDate: targetIso,
+        toDate: null,
+        shed: shed || 'All',
+        mappings: cleanMappings,
+        createdAt: now,
+        updatedAt: now
+      });
+      return periods.sort((a, b) => a.fromDate.localeCompare(b.fromDate));
+    } else {
+      // Target is earlier than active fromDate: insert historical period
+      periods.push({
+        id: `period_${Date.now()}`,
+        fromDate: targetIso,
+        toDate: getPreviousDayIso(active.fromDate),
+        shed: shed || 'All',
+        mappings: cleanMappings,
+        createdAt: now,
+        updatedAt: now
+      });
+      return periods.sort((a, b) => a.fromDate.localeCompare(b.fromDate));
+    }
+  }
+
+  // If no ongoing period, add new ongoing period starting at targetIso
+  periods.push({
+    id: `period_${Date.now()}`,
+    fromDate: targetIso,
+    toDate: null,
+    shed: shed || 'All',
+    mappings: cleanMappings,
+    createdAt: now,
+    updatedAt: now
+  });
+
+  return periods.sort((a, b) => a.fromDate.localeCompare(b.fromDate));
 }
 
 export interface OperatorShiftEmResult {

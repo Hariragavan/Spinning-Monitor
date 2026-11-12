@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   },
   iotMachineMapping: {},
   iotMachineMappingByDate: {},
+  iotMachineAllocationPeriods: [],
 };
 
 export async function GET() {

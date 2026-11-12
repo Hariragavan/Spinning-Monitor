@@ -44,7 +44,7 @@ import { IotMachineMatchingSettings } from '@/components/IotMachineMatchingSetti
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, isSameShed } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, isSameShed, calculateUpdatedAllocationPeriods } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching, extractCountNumber } from '@/lib/utils';
@@ -3177,23 +3177,39 @@ export default function Home() {
               machines={machines}
               currentMappings={settings.iotMachineMapping || {}}
               mappingsByDate={settings.iotMachineMappingByDate || {}}
+              allocationPeriods={settings.iotMachineAllocationPeriods || []}
               machineEm={machineEm}
               activeDate={activeDailyReport?.date || undefined}
-              onSaveMappings={async (newMappings, saveDate) => {
+              onSaveMappings={async (newMappings, saveDate, customPeriods) => {
                 const effDate = saveDate || activeDailyReport?.date || new Date().toISOString().slice(0, 10);
-                const updated = {
+                const updatedPeriods = customPeriods || calculateUpdatedAllocationPeriods(
+                  settings.iotMachineAllocationPeriods || [],
+                  newMappings,
+                  effDate
+                );
+                const updated: SystemSettings = {
                   ...settings,
                   iotMachineMapping: newMappings,
                   iotMachineMappingByDate: {
                     ...(settings.iotMachineMappingByDate || {}),
                     [effDate]: newMappings
-                  }
+                  },
+                  iotMachineAllocationPeriods: updatedPeriods
                 };
                 setSettings(updated);
                 await apiClient.saveSettings(updated);
               }}
               onMachineEmUpdated={(newEm) => {
                 setMachineEm(newEm);
+              }}
+              onDeletePeriod={async (periodId) => {
+                const updatedPeriods = (settings.iotMachineAllocationPeriods || []).filter(p => p.id !== periodId);
+                const updated: SystemSettings = {
+                  ...settings,
+                  iotMachineAllocationPeriods: updatedPeriods
+                };
+                setSettings(updated);
+                await apiClient.saveSettings(updated);
               }}
             />
 
