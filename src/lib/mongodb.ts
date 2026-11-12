@@ -199,6 +199,16 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
         }
       }
 
+      // 6. Ensure 24x7 Server Background Daemon is running (45s EM/Status/Prod, 5m Shift/Entities)
+      if (typeof window === 'undefined') {
+        try {
+          const { startServerDaemon } = await import('@/lib/serverDaemon');
+          startServerDaemon();
+        } catch (daemonErr) {
+          console.warn('[MongoDB Init] Server daemon start warning:', daemonErr);
+        }
+      }
+
       isInitialized = true;
     } catch (err) {
       console.error('[MongoDB Init] Error ensuring database initialization:', err);
