@@ -10,6 +10,8 @@ import {
   Download, 
   Upload, 
   Edit, 
+  Eye,
+  Activity,
   RefreshCw, 
   AlertCircle, 
   ChevronLeft, 
@@ -290,6 +292,25 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ success: boolean; message: string; dates?: string[] } | null>(null);
 
+  // Side breakdown details (Left EM, Right EM, Total EM)
+  const [liveMachineEmDetails, setLiveMachineEmDetails] = useState<Record<string, Record<string, Record<string, any>>>>({});
+
+  // Active EM Side Details modal state (Left EM, Right EM, Total EM)
+  const [activeEmDetail, setActiveEmDetail] = useState<{
+    date: string;
+    machine: string;
+    mappedIot?: string;
+    shift: Shift | number | string;
+    emTotal: number;
+    emLeft?: number;
+    emRight?: number;
+    breaksLeft?: number;
+    breaksRight?: number;
+    totalBreaks?: number;
+    unit?: string;
+    loading?: boolean;
+  } | null>(null);
+
   // Manual cell edit state
   const [editingCell, setEditingCell] = useState<{
     date: string;
@@ -516,6 +537,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         if (json.success && json.data) {
           // Update live EM data locally without triggering unnecessary write-backs
           setLiveMachineEm(json.data);
+          if (json.details) {
+            setLiveMachineEmDetails(json.details);
+          }
           setLastLiveEmTime(new Date().toLocaleTimeString());
         }
       }
@@ -526,17 +550,96 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
   };
 
-  // Periodic 5-minute background auto-refresh for live Machine EM
+  // Inspect Left EM, Right EM, and Total EM for clicked machine box
+  const handleOpenEmDetail = async (date: string, machine: string, shift: Shift | number | string, val?: number, mappedIot?: string) => {
+    const sKey = mapShiftToNum(shift);
+    const cleanDate = normalizeToCanonicalDate(date);
+    const dVariants = [date, cleanDate];
+    const mVariants = [
+      machine,
+      machine.toUpperCase().trim(),
+      machine.replace(/^SP0*/i, ''),
+      machine.replace(/^RF0*/i, '')
+    ];
+
+    let foundDetail: any = null;
+    for (const d of dVariants) {
+      if (!liveMachineEmDetails[d]) continue;
+      for (const m of mVariants) {
+        if (liveMachineEmDetails[d][m]?.[sKey]) {
+          foundDetail = liveMachineEmDetails[d][m][sKey];
+          break;
+        }
+      }
+      if (foundDetail) break;
+    }
+
+    if (foundDetail) {
+      setActiveEmDetail({
+        date,
+        machine,
+        mappedIot: foundDetail.mappedIot || mappedIot,
+        shift,
+        emTotal: Number(foundDetail.emTotal ?? (val || 0)),
+        emLeft: Number(foundDetail.emLeft || 0),
+        emRight: Number(foundDetail.emRight || 0),
+        breaksLeft: foundDetail.endBreakCountLeft,
+        breaksRight: foundDetail.endBreakCountRight,
+        totalBreaks: foundDetail.totalEndBreaks,
+        unit: foundDetail.unit || 'min',
+        loading: false
+      });
+      return;
+    }
+
+    // Set initial with known val and loading true
+    setActiveEmDetail({
+      date,
+      machine,
+      mappedIot,
+      shift,
+      emTotal: Number(val || 0),
+      loading: true
+    });
+
+    try {
+      const res = await fetch(`/api/machine-em/detail?date=${encodeURIComponent(date)}&machine=${encodeURIComponent(machine)}&shift=${encodeURIComponent(sKey)}&_t=${Date.now()}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const d = json.data;
+          setActiveEmDetail({
+            date,
+            machine,
+            mappedIot: d.mappedIot || mappedIot,
+            shift,
+            emTotal: Number(d.emTotal ?? (val || 0)),
+            emLeft: Number(d.emLeft || 0),
+            emRight: Number(d.emRight || 0),
+            breaksLeft: d.endBreakCountLeft,
+            breaksRight: d.endBreakCountRight,
+            totalBreaks: d.totalEndBreaks,
+            unit: d.unit || 'min',
+            loading: false
+          });
+          return;
+        }
+      }
+    } catch (_) {}
+
+    setActiveEmDetail(prev => prev ? { ...prev, loading: false } : null);
+  };
+
+  // Periodic 45-second background auto-refresh for live Machine EM
   React.useEffect(() => {
     let isMounted = true;
     handleRefreshLiveEm();
-    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       if (isMounted) {
         handleRefreshLiveEm();
       }
-    }, AUTO_REFRESH_INTERVAL_MS);
+    }, 45000);
     return () => {
       isMounted = false;
       clearInterval(timer);
@@ -1600,7 +1703,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                         key={`cell-${machine}-${date}-${shift}`}
                                         onClick={() => {
                                           if (isAssigned && isIotAssigned) {
-                                            setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' });
+                                            handleOpenEmDetail(date, machine, shift, val, mappedDev);
                                           }
                                         }}
                                         className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all ${
@@ -1613,13 +1716,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                             ? `${machine} is not assigned to an IoT machine on ${date}`
                                             : !isAssigned
                                             ? `${machine} was not assigned in Shift ${shift} on ${date}`
-                                            : `${machine} [${mappedDev}] · Shift ${shift} · ${date}`
+                                            : `Click to view Left/Right/Total EM: ${machine} [${mappedDev}] · Shift ${shift} · ${date}`
                                         }
                                       >
                                         {(isAssigned && isIotAssigned) ? (val !== undefined ? val : '-') : '-'}
                                         {(isAssigned && isIotAssigned) && (
                                           <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
-                                            <Edit size={8} />
+                                            <Eye size={8} />
                                           </div>
                                         )}
                                       </td>
@@ -1781,7 +1884,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                             <td className="p-3 text-center font-bold text-stone-700">{item.machine}</td>
                             <td className="p-3 font-mono text-stone-500">{item.count}</td>
                             <td className="p-3 text-right font-mono text-stone-600 font-bold">{item.gps.toFixed(3)}</td>
-                            <td className="p-3 text-right font-mono text-indigo-600 font-bold">{item.em.toFixed(2)}</td>
+                            <td 
+                              onClick={() => handleOpenEmDetail(item.date, item.machine, item.shift, item.em)}
+                              className="p-3 text-right font-mono text-indigo-600 font-bold hover:bg-indigo-50/70 hover:underline cursor-pointer transition-colors"
+                              title="Click to view Left EM, Right EM & Total EM"
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                {item.em.toFixed(2)}
+                                <Eye size={10} className="text-indigo-400 opacity-60" />
+                              </span>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -2168,63 +2280,125 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Manual Cell Edit Modal */}
-      {editingCell && (
-        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+      {/* Machine EM Side Details Modal (Left EM, Right EM, Total EM) */}
+      {activeEmDetail && (
+        <div 
+          className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+          onClick={() => setActiveEmDetail(null)}
+        >
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white p-8 rounded-[2rem] border border-stone-200 shadow-2xl max-w-sm w-full flex flex-col gap-5"
+            exit={{ scale: 0.95, opacity: 0 }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white p-7 rounded-[2rem] border border-stone-200 shadow-2xl max-w-md w-full flex flex-col gap-5"
           >
+            {/* Modal Header */}
             <div className="flex justify-between items-start">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Manual Override</span>
-                <h3 className="font-serif italic text-xl tracking-tight text-stone-850">Edit Machine EM</h3>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-200 shadow-xs">
+                  <Activity size={18} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                    Machine EM Breakdown
+                  </span>
+                  <h3 className="font-serif italic text-xl tracking-tight text-stone-900">
+                    Frame {activeEmDetail.machine}
+                  </h3>
+                </div>
               </div>
               <button 
-                onClick={() => setEditingCell(null)}
-                className="p-1 rounded-full text-stone-400 hover:text-stone-750 transition-colors cursor-pointer"
+                onClick={() => setActiveEmDetail(null)}
+                className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+                title="Close"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Cell Info */}
-            <div className="bg-stone-50 p-4 rounded-xl border border-stone-100 text-[11px] font-bold text-stone-500 flex flex-col gap-1 leading-relaxed">
-              <div>Date: <span className="text-stone-900">{editingCell.date}</span></div>
-              <div>Machine: <span className="text-stone-900">{editingCell.machine}</span></div>
-              <div>Shift: <span className="text-stone-900">{editingCell.shift}</span></div>
+            {/* Context Badge (Date, Shift, IoT Machine) */}
+            <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200/80 flex items-center justify-between text-xs text-stone-600">
+              <div className="flex items-center gap-1.5">
+                <Calendar size={13} className="text-stone-400" />
+                <span className="font-bold text-stone-900">{activeEmDetail.date}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-stone-200/80 font-bold text-stone-800 text-[11px]">
+                  Shift {activeEmDetail.shift}
+                </span>
+                {activeEmDetail.mappedIot && (
+                  <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 font-mono font-bold text-[11px]">
+                    IoT: {activeEmDetail.mappedIot}
+                  </span>
+                )}
+              </div>
             </div>
 
-            {/* Input field */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[9px] font-black uppercase tracking-wider text-stone-400">EM Value</label>
-              <input
-                type="number"
-                step="0.01"
-                autoFocus
-                value={editingCell.value}
-                onChange={(e) => setEditingCell({ ...editingCell, value: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleCellUpdate();
-                  if (e.key === 'Escape') setEditingCell(null);
-                }}
-                className="bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold rounded-xl px-4 py-3 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-              />
+            {/* Sides Grid: Left EM & Right EM */}
+            <div className="grid grid-cols-2 gap-3">
+              {/* Left Side */}
+              <div className="bg-gradient-to-br from-blue-50/80 to-blue-50/20 p-4 rounded-2xl border border-blue-100 flex flex-col">
+                <div className="flex items-center justify-between text-blue-700 text-[11px] font-bold uppercase tracking-wider mb-2">
+                  <span>Left Side EM</span>
+                  <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-[10px] font-mono">Side L</span>
+                </div>
+                <div className="font-mono text-2xl font-black text-blue-950">
+                  {activeEmDetail.emLeft !== undefined ? activeEmDetail.emLeft.toFixed(2) : '-'}
+                  <span className="text-xs font-normal text-blue-600 ml-1">min</span>
+                </div>
+                {activeEmDetail.breaksLeft !== undefined && (
+                  <div className="text-[11px] text-blue-700/80 mt-1 font-medium">
+                    {activeEmDetail.breaksLeft} end breaks
+                  </div>
+                )}
+              </div>
+
+              {/* Right Side */}
+              <div className="bg-gradient-to-br from-indigo-50/80 to-indigo-50/20 p-4 rounded-2xl border border-indigo-100 flex flex-col">
+                <div className="flex items-center justify-between text-indigo-700 text-[11px] font-bold uppercase tracking-wider mb-2">
+                  <span>Right Side EM</span>
+                  <span className="px-1.5 py-0.5 rounded bg-indigo-100/80 text-[10px] font-mono">Side R</span>
+                </div>
+                <div className="font-mono text-2xl font-black text-indigo-950">
+                  {activeEmDetail.emRight !== undefined ? activeEmDetail.emRight.toFixed(2) : '-'}
+                  <span className="text-xs font-normal text-indigo-600 ml-1">min</span>
+                </div>
+                {activeEmDetail.breaksRight !== undefined && (
+                  <div className="text-[11px] text-indigo-700/80 mt-1 font-medium">
+                    {activeEmDetail.breaksRight} end breaks
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="flex gap-3 justify-end mt-2">
+            {/* Total Machine EM Highlight */}
+            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-4 rounded-2xl text-white shadow-sm shadow-emerald-500/20 flex flex-col gap-1">
+              <div className="flex items-center justify-between text-emerald-100 text-xs font-bold uppercase tracking-wider">
+                <span>Total Machine EM</span>
+                <span className="text-[10px] font-mono text-emerald-200">Side L + Side R</span>
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <div className="font-mono text-3xl font-black text-white tracking-tight">
+                  {activeEmDetail.emTotal.toFixed(2)}
+                  <span className="text-sm font-normal text-emerald-100 ml-1.5">min</span>
+                </div>
+                {activeEmDetail.totalBreaks !== undefined && (
+                  <div className="text-xs text-emerald-100 font-medium">
+                    Total Breaks: <span className="font-bold text-white">{activeEmDetail.totalBreaks}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <div className="flex justify-end mt-1">
               <button
-                onClick={() => setEditingCell(null)}
-                className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-500 hover:bg-stone-50 active:scale-95 transition-all cursor-pointer"
+                type="button"
+                onClick={() => setActiveEmDetail(null)}
+                className="w-full py-3 rounded-xl bg-stone-900 hover:bg-stone-850 text-white font-bold text-xs uppercase tracking-wider transition cursor-pointer shadow-xs active:scale-95"
               >
-                Cancel
-              </button>
-              <button
-                onClick={handleCellUpdate}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-wider hover:bg-emerald-700 active:scale-95 transition-all cursor-pointer shadow-sm"
-              >
-                Save Changes
+                Close
               </button>
             </div>
           </motion.div>

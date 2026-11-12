@@ -22,6 +22,21 @@ export interface IotEmRecord {
   updatedAt: Date;
 }
 
+export interface IotEmSideDetail {
+  machineNo: string;
+  spinningFrame?: string;
+  mappedIot?: string;
+  date: string;
+  shift: number;
+  emLeft: number;
+  emRight: number;
+  emTotal: number;
+  unit: string;
+  endBreakCountLeft?: number;
+  endBreakCountRight?: number;
+  totalEndBreaks?: number;
+}
+
 export interface MachineRunningStatusItem {
   machine: string;
   runStatus: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE';
@@ -170,10 +185,10 @@ export async function getLightweightMachineStatuses(): Promise<{
 
   let rawItem: any = null;
 
-  // 1. Try to fetch live payload from remote API
+  // 1. Try to fetch live payload from remote API with sort=_id&order=desc to avoid 32MB sort limit
   const endpoints = [
-    `${REMOTE_IOT_API}/common?limit=1`,
-    IOT_COMMON_API_URL ? `${IOT_COMMON_API_URL}?limit=1` : null
+    `${REMOTE_IOT_API}/common?limit=1&sort=_id&order=desc`,
+    IOT_COMMON_API_URL ? `${IOT_COMMON_API_URL}?limit=1&sort=_id&order=desc` : null
   ].filter(Boolean) as string[];
 
   for (const url of endpoints) {
@@ -668,11 +683,32 @@ export async function getMappedMachineEmFromIotEm(
 
     const iotRecords = await emCol.find(query).sort({ date: 1, shift: 1, updatedAt: 1 }).toArray();
 
+    const detailsMap: Record<string, Record<string, Record<string, IotEmSideDetail>>> = {};
+
     for (const rec of iotRecords) {
       if (!rec || !rec.machineNo || !rec.date) continue;
       const cleanIot = rec.machineNo.trim().toUpperCase();
       const shiftNum = Number(rec.shift || 1);
-      const emVal = Number(rec.emTotal ?? ((rec.emLeft || 0) + (rec.emRight || 0)));
+      const emLeft = Number(rec.emLeft || 0);
+      const emRight = Number(rec.emRight || 0);
+      const emVal = Number(rec.emTotal ?? (emLeft + emRight));
+      const endBreakCountLeft = Number(rec.endBreakCountLeft || 0);
+      const endBreakCountRight = Number(rec.endBreakCountRight || 0);
+      const totalEndBreaks = Number(rec.totalEndBreaks || (endBreakCountLeft + endBreakCountRight));
+      const unit = String(rec.unit || 'min');
+
+      const sideDetail: IotEmSideDetail = {
+        machineNo: cleanIot,
+        date: rec.date,
+        shift: shiftNum,
+        emLeft,
+        emRight,
+        emTotal: emVal,
+        unit,
+        endBreakCountLeft,
+        endBreakCountRight,
+        totalEndBreaks
+      };
 
       // Collect all machine/frame keys to record this EM under
       const targetKeys = new Set<string>(getFrameVariants(cleanIot));
@@ -690,6 +726,8 @@ export async function getMappedMachineEmFromIotEm(
         for (const [sFrame, iDev] of Object.entries(dateMap)) {
           if (iDev && iDev.trim().toUpperCase() === cleanIot) {
             mappedFrames.add(sFrame);
+            sideDetail.spinningFrame = sFrame;
+            sideDetail.mappedIot = cleanIot;
           }
         }
       }
@@ -702,21 +740,121 @@ export async function getMappedMachineEmFromIotEm(
       const dateKeys = getDateVariants(rec.date);
       for (const dKey of dateKeys) {
         if (!merged[dKey]) merged[dKey] = {};
+        if (!detailsMap[dKey]) detailsMap[dKey] = {};
 
         for (const fKey of targetKeys) {
           if (!merged[dKey][fKey]) merged[dKey][fKey] = {};
+          if (!detailsMap[dKey][fKey]) detailsMap[dKey][fKey] = {};
 
           // Record latest EM value for this machine, date and shift
           merged[dKey][fKey][shiftNum] = emVal;
           merged[dKey][fKey][String(shiftNum)] = emVal;
+
+          detailsMap[dKey][fKey][shiftNum] = sideDetail;
+          detailsMap[dKey][fKey][String(shiftNum)] = sideDetail;
         }
       }
     }
 
+    (merged as any)._details = detailsMap;
     return merged;
   } catch (err) {
     console.error('Error fetching mapped machine EM from iot_em:', err);
     return {};
+  }
+}
+
+/**
+ * Single machine EM side breakdown lookup (Left EM, Right EM, Total EM)
+ */
+export async function getSingleMachineEmDetail(
+  date: string,
+  machine: string,
+  shift: number | string
+): Promise<IotEmSideDetail | null> {
+  try {
+    const db = await getIotDb();
+    const sNum = Number(shift) || 1;
+    const cleanMachine = machine.trim().toUpperCase();
+    const frameVariants = Array.from(getFrameVariants(cleanMachine));
+
+    // 1. Check settings for mapped device
+    const settings = await db.collection('settings').findOne({ _id: 'system_settings' as any }).catch(() => null);
+    const mapping = settings?.machineToMachineMapping || settings?.iotMachineMapping || {};
+    const mappedIot = mapping[cleanMachine] || mapping[machine] || undefined;
+    if (mappedIot) {
+      frameVariants.push(mappedIot.toUpperCase().trim());
+    }
+
+    const dateCandidates = Array.from(getDateVariants(date));
+
+    // 2. Query iot_em
+    const rec = await db.collection<IotEmRecord>(IOT_COLLECTIONS.EM).findOne({
+      date: { $in: dateCandidates },
+      shift: sNum,
+      machineNo: { $in: frameVariants }
+    });
+
+    if (rec) {
+      return {
+        machineNo: rec.machineNo,
+        spinningFrame: cleanMachine,
+        mappedIot,
+        date: rec.date,
+        shift: sNum,
+        emLeft: Number(rec.emLeft || 0),
+        emRight: Number(rec.emRight || 0),
+        emTotal: Number(rec.emTotal ?? ((rec.emLeft || 0) + (rec.emRight || 0))),
+        unit: rec.unit || 'min',
+        endBreakCountLeft: rec.endBreakCountLeft,
+        endBreakCountRight: rec.endBreakCountRight,
+        totalEndBreaks: rec.totalEndBreaks
+      };
+    }
+
+    // 3. Fallback: Query iot_shiftwise_data
+    const shiftDoc = await db.collection(IOT_COLLECTIONS.SHIFTWISE).findOne({
+      shiftDate: { $in: dateCandidates },
+      shift: sNum
+    });
+
+    if (shiftDoc && Array.isArray(shiftDoc.machines)) {
+      const matchM = shiftDoc.machines.find((m: any) => {
+        const id = String(m.machine || m.machineId || '').toUpperCase().trim();
+        return frameVariants.includes(id);
+      });
+
+      if (matchM) {
+        const sideL = matchM.sides?.find((s: any) => s.side === 'L');
+        const sideR = matchM.sides?.find((s: any) => s.side === 'R');
+        const emLeft = Number(sideL?.endMendingTime || 0);
+        const emRight = Number(sideR?.endMendingTime || 0);
+        const emTotal = Number((emLeft + emRight).toFixed(2));
+        const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+        const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+        const totalEndBreaks = Number(matchM.shiftEndBreaks || matchM.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
+        return {
+          machineNo: String(matchM.machine || matchM.machineId || cleanMachine),
+          spinningFrame: cleanMachine,
+          mappedIot,
+          date: shiftDoc.shiftDate,
+          shift: sNum,
+          emLeft,
+          emRight,
+          emTotal,
+          unit: 'min',
+          endBreakCountLeft,
+          endBreakCountRight,
+          totalEndBreaks
+        };
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error('Error in getSingleMachineEmDetail:', err);
+    return null;
   }
 }
 

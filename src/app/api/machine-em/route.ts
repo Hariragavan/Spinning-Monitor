@@ -35,9 +35,10 @@ export async function GET(req: Request) {
 
     // Direct read from single canonical table iot_em
     const data = await getMappedMachineEmFromIotEm(undefined, date);
+    const details = (data as any)._details || {};
 
     return NextResponse.json(
-      { success: true, data },
+      { success: true, data, details },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
