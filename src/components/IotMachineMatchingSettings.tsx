@@ -5,8 +5,19 @@ import { Activity, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2, Cal
 import { cn, getTodayDateString, resolveEffectiveMappingForDate } from '@/lib/utils';
 import { MachineMasterItem, MachineEmData, IotMachineAllocationPeriod } from '@/types';
 
-// The 46 IoT Machines available from iot_machines / iot_em
-const IOT_MACHINES_LIST = Array.from({ length: 46 }, (_, i) => `RF${String(i + 1).padStart(2, '0')}`);
+// The actual 46 live IoT hardware machines from the API (RF03, RF04, RF09..RF14, RF19..RF56)
+export const DEFAULT_LIVE_IOT_MACHINES: string[] = [
+  'RF03', 'RF04', 'RF09', 'RF10', 'RF11',
+  'RF12', 'RF13', 'RF14', 'RF19', 'RF20',
+  'RF21', 'RF22', 'RF23', 'RF24', 'RF25',
+  'RF26', 'RF27', 'RF28', 'RF29', 'RF30',
+  'RF31', 'RF32', 'RF33', 'RF34', 'RF35',
+  'RF36', 'RF37', 'RF38', 'RF39', 'RF40',
+  'RF41', 'RF42', 'RF43', 'RF44', 'RF45',
+  'RF46', 'RF47', 'RF48', 'RF49', 'RF50',
+  'RF51', 'RF52', 'RF53', 'RF54', 'RF55',
+  'RF56'
+];
 
 export interface IotLiveTelemetryItem {
   machineNo: string;
@@ -61,6 +72,9 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
   // Live telemetry by IoT machine: { [iotMachineNo]: IotLiveTelemetryItem }
   const [iotLiveEmMap, setIotLiveEmMap] = useState<Record<string, IotLiveTelemetryItem>>({});
 
+  // Dynamic live IoT machine IDs detected directly from the live API
+  const [availableIotMachines, setAvailableIotMachines] = useState<string[]>(DEFAULT_LIVE_IOT_MACHINES);
+
   // Continuous Carry-Forward Resolution Algorithm using date-range periods & date maps
   const resolveEffectiveMapping = useCallback((targetDate: string): { mapping: Record<string, string>; sourceDate: string } => {
     const eff = resolveEffectiveMappingForDate(targetDate, allocationPeriods, mappingsByDate, currentMappings);
@@ -71,6 +85,18 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
   const [mappings, setMappings] = useState<Record<string, string>>(() => {
     return resolveEffectiveMapping(selectedDate).mapping;
   });
+
+  // Dynamic list of IoT machines in dropdown: ONLY machines from the live API + any currently mapped device
+  const dropdownIotMachines = useMemo(() => {
+    const listSet = new Set<string>(availableIotMachines);
+    // If a device is already saved in mappings, ensure it appears in dropdown so user can see or unassign it
+    Object.values(mappings).forEach(dev => {
+      if (dev && dev !== 'NONE' && dev !== 'None' && dev !== 'unassigned') {
+        listSet.add(dev.trim().toUpperCase());
+      }
+    });
+    return Array.from(listSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [availableIotMachines, mappings]);
 
   // When date changes, update mapping using carry-forward logic
   useEffect(() => {
@@ -89,11 +115,13 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
         if (statusRes.ok) {
           const statusJson = await statusRes.json();
           const list = statusJson.machines || statusJson.data?.machines || [];
-          if (Array.isArray(list)) {
+          if (Array.isArray(list) && list.length > 0) {
+            const detectedLive: string[] = [];
             for (const m of list) {
               const mId = m.machine || m.machineId;
               if (!mId) continue;
               const cleanId = String(mId).trim().toUpperCase();
+              detectedLive.push(cleanId);
               emData[cleanId] = {
                 machineNo: cleanId,
                 emTotal: Number(m.emTotal || 0),
@@ -113,6 +141,12 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                 const p2 = `RF${String(num).padStart(2, '0')}`;
                 if (!emData[p2]) emData[p2] = emData[cleanId];
               }
+            }
+            if (detectedLive.length > 0) {
+              const uniqueLive = Array.from(new Set<string>(detectedLive)).sort((a, b) =>
+                a.localeCompare(b, undefined, { numeric: true })
+              );
+              setAvailableIotMachines(uniqueLive);
             }
           }
         }
@@ -246,18 +280,23 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
     await syncMappingsToSpinning(updated, spinningFrameNo);
   };
 
-  // Auto-match for the current shed: matches only available unassigned IoT machines 1-to-1
+  // Auto-match for the current shed: matches only available unassigned live IoT machines 1-to-1
   const handleAutoMatchShed = async () => {
     const updated = { ...mappings };
+    const liveSet = new Set(availableIotMachines);
+
     shedMachines.forEach(m => {
       const rf = (m.rfNo || (m as any).frameNo || '').trim();
       const numeric = parseInt(rf.replace(/\D/g, ''), 10);
-      if (!isNaN(numeric) && numeric >= 1 && numeric <= 46) {
+      if (!isNaN(numeric)) {
         const iotId = `RF${String(numeric).padStart(2, '0')}`;
-        const currentOwner = updated[rf];
-        const takenBy = Object.entries(updated).find(([f, id]) => id === iotId && f !== rf);
-        if (!takenBy || currentOwner === iotId) {
-          updated[rf] = iotId;
+        // Only match if this IoT machine actually exists in the live API!
+        if (liveSet.has(iotId)) {
+          const currentOwner = updated[rf];
+          const takenBy = Object.entries(updated).find(([f, id]) => id === iotId && f !== rf);
+          if (!takenBy || currentOwner === iotId) {
+            updated[rf] = iotId;
+          }
         }
       }
     });
@@ -301,7 +340,7 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
             <h3 className="text-lg sm:text-xl font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
               <span>IoT Machine Matching & EM Settings</span>
               <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                1-to-1 Allocation · Table: settings & iot_em
+                {availableIotMachines.length} Live Machines from API · 1-to-1 Allocation
               </span>
             </h3>
             <p className="text-xs text-stone-500 font-bold mt-0.5">
@@ -534,7 +573,7 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
                     <option value="NONE" className="bg-white text-stone-700 font-sans">
                       — Unassigned —
                     </option>
-                    {IOT_MACHINES_LIST.map(iotNo => {
+                    {dropdownIotMachines.map(iotNo => {
                       const emInfo = iotLiveEmMap[iotNo];
                       const emLabel = emInfo && emInfo.emTotal > 0 ? ` · ${emInfo.emTotal.toFixed(1)}m` : '';
                       const statusLabel = emInfo?.runStatus ? ` · ${emInfo.runStatus}` : '';
