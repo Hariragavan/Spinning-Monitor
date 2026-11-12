@@ -582,7 +582,7 @@ export async function getMappedMachineEmFromIotEm(
       query.date = { $in: dVariants };
     }
 
-    const iotRecords = await emCol.find(query).sort({ date: 1, shift: 1 }).toArray();
+    const iotRecords = await emCol.find(query).sort({ date: 1, shift: 1, updatedAt: 1 }).toArray();
 
     for (const rec of iotRecords) {
       if (!rec || !rec.machineNo || !rec.date) continue;
@@ -615,13 +615,9 @@ export async function getMappedMachineEmFromIotEm(
         for (const fKey of targetKeys) {
           if (!merged[dKey][fKey]) merged[dKey][fKey] = {};
 
-          const existing = merged[dKey][fKey][shiftNum];
-          const bestVal = existing !== undefined && existing > 0
-            ? (emVal > 0 ? Math.max(existing, emVal) : existing)
-            : emVal;
-
-          merged[dKey][fKey][shiftNum] = bestVal;
-          merged[dKey][fKey][String(shiftNum)] = bestVal;
+          // Record latest EM value for this machine, date and shift
+          merged[dKey][fKey][shiftNum] = emVal;
+          merged[dKey][fKey][String(shiftNum)] = emVal;
         }
       }
     }
@@ -817,7 +813,7 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
     const dateSet = new Set<string>();
     let totalSyncedMachines = 0;
 
-    // Helper to fetch from Railway with a 4000ms timeout
+    // Helper to fetch from Railway with an 8000ms timeout
     const fetchRailway = async (params: Record<string, string>): Promise<any[]> => {
       try {
         const url = new URL(IOT_COMMON_API_URL);
@@ -825,7 +821,7 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
         url.searchParams.set('_t', String(Date.now()));
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
         const res = await fetch(url.toString(), {
           headers: { Accept: 'application/json' },
           cache: 'no-store',
@@ -842,28 +838,37 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
       }
     };
 
-    // Parallel fetch: Recent packets + Shift 1 + Shift 2 + Shift 3
+    // Primary fetch: Retrieve the latest 50 live packets across all active shifts
     const baseParams: Record<string, string> = normalizedDate ? { shiftDate: normalizedDate } : {};
-    const [recentDocsRes, s1DocsRes, s2DocsRes, s3DocsRes] = await Promise.allSettled([
-      fetchRailway({ ...baseParams, limit: '25' }),
-      fetchRailway({ ...baseParams, shift: '1', limit: '20' }),
-      fetchRailway({ ...baseParams, shift: '2', limit: '20' }),
-      fetchRailway({ ...baseParams, shift: '3', limit: '20' })
-    ]);
-
     const allRawDocs: any[] = [];
-    if (recentDocsRes.status === 'fulfilled') allRawDocs.push(...recentDocsRes.value);
-    if (s1DocsRes.status === 'fulfilled' && s1DocsRes.value.length > 0) {
-      allRawDocs.push(...s1DocsRes.value);
-      syncedShifts.push(1);
+
+    const primaryDocs = await fetchRailway({ ...baseParams, limit: '50' });
+    if (primaryDocs && primaryDocs.length > 0) {
+      allRawDocs.push(...primaryDocs);
+      primaryDocs.forEach(d => {
+        if (d?.shift) syncedShifts.push(Number(d.shift));
+      });
     }
-    if (s2DocsRes.status === 'fulfilled' && s2DocsRes.value.length > 0) {
-      allRawDocs.push(...s2DocsRes.value);
-      syncedShifts.push(2);
-    }
-    if (s3DocsRes.status === 'fulfilled' && s3DocsRes.value.length > 0) {
-      allRawDocs.push(...s3DocsRes.value);
-      syncedShifts.push(3);
+
+    // Secondary fetch: if fewer than 10 packets or specific target date requested, poll shifts 1, 2, 3 in parallel
+    if (allRawDocs.length < 10 || normalizedDate) {
+      const [s1Res, s2Res, s3Res] = await Promise.allSettled([
+        fetchRailway({ ...baseParams, shift: '1', limit: '25' }),
+        fetchRailway({ ...baseParams, shift: '2', limit: '25' }),
+        fetchRailway({ ...baseParams, shift: '3', limit: '25' })
+      ]);
+      if (s1Res.status === 'fulfilled' && s1Res.value.length > 0) {
+        allRawDocs.push(...s1Res.value);
+        syncedShifts.push(1);
+      }
+      if (s2Res.status === 'fulfilled' && s2Res.value.length > 0) {
+        allRawDocs.push(...s2Res.value);
+        syncedShifts.push(2);
+      }
+      if (s3Res.status === 'fulfilled' && s3Res.value.length > 0) {
+        allRawDocs.push(...s3Res.value);
+        syncedShifts.push(3);
+      }
     }
 
     if (allRawDocs.length === 0) {

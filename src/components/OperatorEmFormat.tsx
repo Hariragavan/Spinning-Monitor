@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -341,8 +341,109 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     });
 
     list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    return list.length > 0 ? list : ['SP021', 'SP022', 'SP023'];
+    return list;
   }, [machinesProp, activeShedTab, registeredInfoForMonth, effectiveHistory, selectedMonth, selectedYear]);
+
+  // Set of verified existing machine frame numbers for active shed
+  const existingMachinesSet = useMemo(() => {
+    const s = new Set<string>();
+    machines.forEach(m => {
+      s.add(m.toUpperCase());
+      const digits = m.match(/\d+/);
+      if (digits) {
+        s.add(digits[0]);
+        s.add(String(parseInt(digits[0], 10)));
+        s.add(`RF${digits[0].padStart(2, '0')}`);
+        s.add(`SP${digits[0].padStart(2, '0')}`);
+        s.add(`SP${digits[0].padStart(3, '0')}`);
+      }
+    });
+    return s;
+  }, [machines]);
+
+  const isMachineExisted = useCallback((frameNo: string): boolean => {
+    if (!frameNo) return false;
+    if (machines.length === 0) return true; // If machine registry not yet populated, do not block
+    const clean = frameNo.trim().toUpperCase();
+    if (existingMachinesSet.has(clean)) return true;
+    const digits = clean.match(/\d+/);
+    if (digits) {
+      if (existingMachinesSet.has(digits[0]) || existingMachinesSet.has(String(parseInt(digits[0], 10)))) {
+        return true;
+      }
+    }
+    return false;
+  }, [existingMachinesSet, machines]);
+
+  // Fast map of: date -> shift -> Set of assigned machines
+  const assignedMachinesByDateAndShift = useMemo(() => {
+    const map = new Map<string, Map<string, Set<string>>>();
+
+    effectiveHistory.forEach(report => {
+      if (!report || !report.date || !report.entries) return;
+      const canonicalDate = normalizeToCanonicalDate(report.date);
+      const isoDate = (() => {
+        const parts = parseUniversalDateParts(report.date);
+        return parts ? `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}` : report.date;
+      })();
+
+      const datesToRecord = [report.date, canonicalDate, isoDate];
+
+      report.entries.forEach(entry => {
+        const frame = entry.frameNo || (entry as any).machineId;
+        if (!frame) return;
+
+        // Check if an operator is assigned to this machine
+        const hasAssignedSider = (
+          (entry.siderIds && entry.siderIds.some(id => id && id !== '-' && id !== '--' && id !== 'unassigned' && id !== 'none' && id !== '0')) ||
+          (entry.siderId && entry.siderId !== '-' && entry.siderId !== '--' && entry.siderId !== 'unassigned' && entry.siderId !== 'none' && entry.siderId !== '0') ||
+          (entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '' && entry.siderName.trim() !== '-')
+        );
+
+        if (!hasAssignedSider) return;
+
+        const sKey = mapShiftToNum(entry.shift || (report as any).shift || '1');
+
+        datesToRecord.forEach(d => {
+          if (!map.has(d)) map.set(d, new Map());
+          const shiftMap = map.get(d)!;
+          if (!shiftMap.has(sKey)) shiftMap.set(sKey, new Set());
+          const frameSet = shiftMap.get(sKey)!;
+
+          frameSet.add(frame.trim().toUpperCase());
+          const digits = frame.match(/\d+/);
+          if (digits) {
+            frameSet.add(digits[0]);
+            frameSet.add(String(parseInt(digits[0], 10)));
+            frameSet.add(`RF${digits[0].padStart(2, '0')}`);
+            frameSet.add(`SP${digits[0].padStart(2, '0')}`);
+            frameSet.add(`SP${digits[0].padStart(3, '0')}`);
+          }
+        });
+      });
+    });
+
+    return map;
+  }, [effectiveHistory]);
+
+  const isMachineAssignedOnShift = useCallback((date: string, shift: string, machine: string): boolean => {
+    const canonical = normalizeToCanonicalDate(date);
+    const shiftMap = assignedMachinesByDateAndShift.get(date) || assignedMachinesByDateAndShift.get(canonical);
+    if (!shiftMap) {
+      // If a daily report exists for this date, but this machine has no shift entry, it was NOT assigned
+      const hasReport = effectiveHistory.some(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
+      return !hasReport;
+    }
+    const frameSet = shiftMap.get(shift);
+    if (!frameSet) return false;
+    const clean = machine.trim().toUpperCase();
+    if (frameSet.has(clean)) return true;
+    const digits = clean.match(/\d+/);
+    if (digits) {
+      return frameSet.has(digits[0]) || frameSet.has(String(parseInt(digits[0], 10)));
+    }
+    return false;
+  }, [assignedMachinesByDateAndShift, effectiveHistory]);
 
   const shifts: ('1' | '2' | '3')[] = ['1', '2', '3'];
 
@@ -388,6 +489,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
   // Live EM background refresh from MongoDB
   const [isRefreshingEm, setIsRefreshingEm] = useState(false);
+  const [lastLiveEmTime, setLastLiveEmTime] = useState<string>('');
+
   const handleRefreshLiveEm = async () => {
     setIsRefreshingEm(true);
     try {
@@ -396,6 +499,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         const json = await res.json();
         if (json.success && json.data) {
           await onUpdateMachineEm(json.data);
+          setLastLiveEmTime(new Date().toLocaleTimeString());
         }
       }
     } catch (e) {
@@ -405,8 +509,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
   };
 
+  // Continuous live background polling every 12 seconds
   React.useEffect(() => {
     handleRefreshLiveEm();
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      handleRefreshLiveEm();
+    }, 12000);
+    return () => clearInterval(timer);
   }, []);
 
   // Sync Google Sheet handler
@@ -489,13 +599,15 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     setEditingCell(null);
   };
 
-  // 1. Calculate Grand Totals and dynamic average of Column EM
+  // 1. Calculate Grand Totals and dynamic average of Column EM (only for assigned & available machines)
   const calculateColAverage = (date: string, shift: string): string => {
     let sum = 0;
     let count = 0;
     machines.forEach(m => {
+      // Only include if machine is available and assigned on this shift
+      if (!isMachineAssignedOnShift(date, shift, m)) return;
       const val = getMachineEmValue(machineEm, date, m, shift, registeredInfoForMonth.frameToDevice);
-      if (val !== undefined) {
+      if (val !== undefined && val !== null) {
         sum += val;
         count++;
       }
@@ -734,7 +846,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }[] = [];
 
     report.entries.forEach(entry => {
-      // Resolve all siders assigned to this machine entry
+      // 1. Machine existence check (do not show machines that do not exist in the active registry)
+      if (!isMachineExisted(entry.frameNo)) return;
+
+      // 2. Resolve all siders assigned to this machine entry
       const assignedIds: string[] = [];
       if (entry.siderIds && entry.siderIds.length > 0) {
         entry.siderIds.forEach(id => {
@@ -754,6 +869,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         if (nameMatchWorker) {
           assignedIds.push(nameMatchWorker.id);
         }
+      }
+
+      // 3. Do not show if machine was not assigned to any operator
+      if (assignedIds.length === 0 && (!entry.siderName || entry.siderName.toLowerCase().trim() === 'unassigned' || entry.siderName.trim() === '')) {
+        return;
       }
 
       // Get EM for this assigned production machine (resolves from iot_em via machine-to-machine allocation)
@@ -1290,6 +1410,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                   }}
                 />
 
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-2xl text-emerald-800 text-[10px] font-bold uppercase tracking-wider md:mt-4 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Live EM Active{lastLiveEmTime ? ` · ${lastLiveEmTime}` : ''}</span>
+                </div>
+
                 <button
                   onClick={handleRefreshLiveEm}
                   disabled={isRefreshingEm}
@@ -1367,17 +1492,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                             {selectedMonthDates.map(date => (
                               <React.Fragment key={`val-${machine}-${date}`}>
                                 {shifts.map(shift => {
-                                  const val = getMachineEmValue(machineEm, date, machine, shift, registeredInfoForMonth.frameToDevice);
+                                  const isAssigned = isMachineAssignedOnShift(date, shift, machine);
+                                  const val = isAssigned ? getMachineEmValue(machineEm, date, machine, shift, registeredInfoForMonth.frameToDevice) : undefined;
                                   return (
                                     <td 
                                       key={`cell-${machine}-${date}-${shift}`}
-                                      onClick={() => setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' })}
-                                      className="p-2.5 text-center font-mono border-r border-stone-100 hover:bg-emerald-50 hover:text-emerald-800 transition-all cursor-pointer relative group"
+                                      onClick={() => {
+                                        if (isAssigned) {
+                                          setEditingCell({ date, machine, shift, value: val !== undefined ? String(val) : '' });
+                                        }
+                                      }}
+                                      className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all ${
+                                        isAssigned
+                                          ? 'hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group'
+                                          : 'text-stone-300 bg-stone-50/20 cursor-not-allowed'
+                                      }`}
+                                      title={isAssigned ? undefined : `${machine} was not assigned in Shift ${shift} on ${date}`}
                                     >
-                                      {val !== undefined ? val : '-'}
-                                      <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
-                                        <Edit size={8} />
-                                      </div>
+                                      {isAssigned ? (val !== undefined ? val : '-') : '-'}
+                                      {isAssigned && (
+                                        <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
+                                          <Edit size={8} />
+                                        </div>
+                                      )}
                                     </td>
                                   );
                                 })}
@@ -1803,6 +1940,21 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                     </button>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-2xl text-emerald-800 text-[10px] font-bold uppercase tracking-wider md:mt-4 shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Live EM Active{lastLiveEmTime ? ` · ${lastLiveEmTime}` : ''}</span>
+                </div>
+
+                <button
+                  onClick={handleRefreshLiveEm}
+                  disabled={isRefreshingEm}
+                  className="flex items-center gap-2 bg-blue-600 text-white font-black text-xs uppercase tracking-wider px-5 py-3 rounded-2xl hover:bg-blue-700 active:scale-95 transition-all cursor-pointer shadow-sm md:mt-4 disabled:opacity-50"
+                  title="Refresh live EM data from IoT telemetry"
+                >
+                  <RefreshCw size={14} className={isRefreshingEm ? "animate-spin" : ""} />
+                  <span>{isRefreshingEm ? "Syncing..." : "Sync Live EM"}</span>
+                </button>
 
                 <button
                   onClick={exportDailyEmToExcel}
