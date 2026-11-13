@@ -54,6 +54,7 @@ const CalendarDatePicker = dynamic(
   { ssr: false }
 );
 import { syncFromGoogleSheet, syncMachineEmFromGoogleSheet } from '@/lib/googleSheets';
+import { useKeepAwake } from '@/lib/useKeepAwake';
 
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -513,6 +514,8 @@ export default function Home() {
   });
 
   const [isTvMode, setIsTvMode] = useState(false);
+  // Keep TV screen awake and prevent standby while TV Mode is active
+  useKeepAwake(isTvMode);
   const [isTvSettingsOpen, setIsTvSettingsOpen] = useState(false);
   const [tvStarted, setTvStarted] = useState(false);
   const [isSupervisorMode, setIsSupervisorMode] = useState(false);
@@ -1264,6 +1267,24 @@ export default function Home() {
         } as Record<Shift, string[]>,
         timestamp: Date.now()
       };
+    });
+  };
+
+  const assignMachineGaiterSide = (entryIndex: number | number[], gaiterSide: string) => {
+    const indices = Array.isArray(entryIndex) ? entryIndex : [entryIndex];
+    if (indices.length === 0) return;
+
+    updateActiveReport(prev => {
+      const newEntries = [...prev.entries];
+      indices.forEach(idx => {
+        if (newEntries[idx]) {
+          newEntries[idx] = {
+            ...newEntries[idx],
+            gaiterSide: (gaiterSide || 'LH,RH') as any
+          };
+        }
+      });
+      return { ...prev, entries: newEntries, timestamp: Date.now() };
     });
   };
 
@@ -2196,6 +2217,8 @@ export default function Home() {
               isTvMode={isTvMode}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
+              machineEm={machineEm}
+              settings={settings}
             />
           </motion.div>
         );
@@ -2278,6 +2301,7 @@ export default function Home() {
             assignWorker={assignWorkerToMachine}
             assignGaiter={assignGaiter}
             assignMachineGaiter={assignMachineGaiter}
+            assignMachineGaiterSide={assignMachineGaiterSide}
             assignAiCone={assignAiCone}
             assignFitter={assignFitter}
             dates={availableReportDates}

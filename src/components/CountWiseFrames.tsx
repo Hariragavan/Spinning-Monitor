@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { DailyReport, CountConversion, Sider, Shift } from '../types';
-import { cn, resolveWorker } from '../lib/utils';
+import { DailyReport, CountConversion, Sider, Shift, MachineEmData, SystemSettings } from '../types';
+import { cn, resolveWorker, normalizeToCanonicalDate, getMachineEmValue, resolveEffectiveMappingForDate } from '../lib/utils';
+import { useKeepAwake } from '../lib/useKeepAwake';
 import { 
   Activity, Gauge, Users, Zap, Calendar, ChevronLeft, ChevronRight, 
   Layers, CheckCircle2, TrendingUp, UserCheck, ShieldCheck, Play, Pause,
-  Sparkles
+  Sparkles, Sun, Clock
 } from 'lucide-react';
 
 interface CountWiseFramesProps {
@@ -20,6 +21,8 @@ interface CountWiseFramesProps {
   tvPageInterval?: number;
   onSelectDate?: (date: string) => void;
   availableDates?: string[];
+  machineEm?: MachineEmData;
+  settings?: SystemSettings;
 }
 
 export interface FrameTelemetryItem {
@@ -34,6 +37,10 @@ export interface FrameTelemetryItem {
   targetRatio: number;
   siderNames: string;
   gaiterName: string;
+  currentShiftEm: number;
+  currentShiftEmText: string;
+  emLeft?: number;
+  emRight?: number;
 }
 
 export interface CountGroup {
@@ -198,8 +205,13 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
   onPagesDetermined,
   tvPageInterval = 15,
   onSelectDate,
-  availableDates = []
+  availableDates = [],
+  machineEm,
+  settings
 }) => {
+  // 0. Screen Wake Lock in TV Mode - ensures screen does not sleep while TV mode is active
+  useKeepAwake(isTvMode);
+
   const [internalIndex, setInternalIndex] = useState(0);
   const activeCountIndex = propActiveCountIndex !== undefined ? propActiveCountIndex : internalIndex;
 
@@ -212,7 +224,70 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
 
   const [isAutoCyclingPaused, setIsAutoCyclingPaused] = useState(false);
 
-  // 1. Group Frames by Running Count
+  // 1. Current Shift Calculation based on mill operating hours
+  // Shift 1: 06:00 - 14:00 (Hours 6 to 13:59)
+  // Shift 2: 14:00 - 22:00 (Hours 14 to 21:59)
+  // Shift 3: 22:00 - 06:00 (Hours 22 to 05:59)
+  const currentMillShift = useMemo<Shift>(() => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    if (currentHour >= 6 && currentHour < 14) return 'I';
+    if (currentHour >= 14 && currentHour < 22) return 'II';
+    return 'III';
+  }, []);
+
+  const [selectedShiftOverride, setSelectedShiftOverride] = useState<Shift | null>(null);
+  const activeShift = selectedShiftOverride || currentMillShift;
+
+  // 2. Live Machine EM data & background 45s polling from /api/machine-em
+  const [liveEmData, setLiveEmData] = useState<MachineEmData>(machineEm || {});
+  const [liveEmDetails, setLiveEmDetails] = useState<Record<string, Record<string, Record<string, any>>>>(
+    ((machineEm as any)?._details) || {}
+  );
+
+  useEffect(() => {
+    if (machineEm && Object.keys(machineEm).length > 0) {
+      setLiveEmData(prev => ({ ...machineEm, ...prev }));
+      if ((machineEm as any)._details) {
+        setLiveEmDetails(prev => ({ ...(machineEm as any)._details, ...prev }));
+      }
+    }
+  }, [machineEm]);
+
+  useEffect(() => {
+    const fetchLiveEm = async () => {
+      try {
+        const res = await fetch(`/api/machine-em?date=${encodeURIComponent(report.date || '')}&_t=${Date.now()}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            setLiveEmData(prev => ({ ...prev, ...json.data }));
+            if (json.details) {
+              setLiveEmDetails(prev => ({ ...prev, ...json.details }));
+            }
+          }
+        }
+      } catch (err) {
+        // ignore background poll errors
+      }
+    };
+
+    fetchLiveEm();
+    const interval = setInterval(fetchLiveEm, 45000); // 45-second live EM polling
+    return () => clearInterval(interval);
+  }, [report.date]);
+
+  // Effective IoT machine mapping for the current report date
+  const effectiveMapping = useMemo(() => {
+    return resolveEffectiveMappingForDate(
+      report.date || '',
+      settings?.iotMachineAllocationPeriods,
+      settings?.iotMachineMappingByDate,
+      settings?.iotMachineMapping
+    );
+  }, [report.date, settings]);
+
+  // 3. Group Frames by Running Count
   const countGroups: CountGroup[] = useMemo(() => {
     const countSet = new Set<string>();
 
@@ -230,6 +305,12 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
     if (uniqueCountNames.length === 0) {
       return [];
     }
+
+    const sKey = activeShift === 'I' ? '1' : activeShift === 'II' ? '2' : '3';
+    const sNum = Number(sKey);
+    const dateStr = report.date || '';
+    const cleanDate = normalizeToCanonicalDate(dateStr);
+    const dVariants = [dateStr, cleanDate].filter(Boolean);
 
     return uniqueCountNames.map(countName => {
       // Find all frames with this count
@@ -316,7 +397,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
 
         const targetRatio = stdGps > 0 ? Math.round((actualGps / stdGps) * 100) : 0;
 
-        // Assigned Crew lookups
+        // Assigned Crew lookups: Siders
         const sidersSet = new Set<string>();
         entries.forEach(e => {
           if (e.siderIds && e.siderIds.length > 0) {
@@ -344,19 +425,146 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
           }
         });
 
-        // Machine gaiter
-        let gaiterNameStr = '';
-        const gaiterId = entries[0]?.gaiterId || report.gaiters?.[entries[0]?.shift || 'I']?.[0];
-        if (gaiterId) {
-          const cleanGid = String(gaiterId || '').trim().toUpperCase();
-          const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
-            (w.id && w.id.toUpperCase() === cleanGid) ||
-            (w.tNo && w.tNo.toUpperCase() === cleanGid)
-          );
-          if (isBelongingToCurrentShed) {
-            const gw = resolveWorker(gaiterId, entries[0]?.gaiterName, workers);
-            if (gw?.name) gaiterNameStr = `${gw.name}${gw.tNo ? ` (${gw.tNo})` : ''}`;
+        // Assigned Gaiters with side notation: (LH, RH), (LH), (RH)
+        const gaitersMap = new Map<string, { name: string; tNo?: string; sides: Set<string> }>();
+
+        entries.forEach(e => {
+          let gId = e.gaiterId;
+          let gName = e.gaiterName;
+
+          // If not assigned per machine, check if report has shift-level gaiters
+          if (!gId && !gName && report.gaiters?.[e.shift] && report.gaiters[e.shift].length > 0) {
+            gId = report.gaiters[e.shift][0];
           }
+
+          if (gId || gName) {
+            const cleanGid = String(gId || '').trim().toUpperCase();
+            const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
+              (w.id && w.id.toUpperCase() === cleanGid) ||
+              (w.tNo && w.tNo.toUpperCase() === cleanGid) ||
+              (w.name && gName && w.name.trim().toLowerCase() === gName.trim().toLowerCase())
+            );
+
+            if (isBelongingToCurrentShed) {
+              const gw = resolveWorker(gId, gName, workers);
+              if (gw?.name) {
+                const key = gw.id || gw.tNo || gw.name;
+                if (!gaitersMap.has(key)) {
+                  gaitersMap.set(key, {
+                    name: gw.name,
+                    tNo: gw.tNo,
+                    sides: new Set<string>()
+                  });
+                }
+                const record = gaitersMap.get(key)!;
+                const sideSpec = String(e.gaiterSide || '').toUpperCase().trim();
+                if (sideSpec === 'LH') {
+                  record.sides.add('LH');
+                } else if (sideSpec === 'RH') {
+                  record.sides.add('RH');
+                } else if (sideSpec === 'BOTH' || (sideSpec.includes('LH') && sideSpec.includes('RH'))) {
+                  record.sides.add('LH');
+                  record.sides.add('RH');
+                } else {
+                  // Default to full machine coverage: (LH, RH)
+                  record.sides.add('LH');
+                  record.sides.add('RH');
+                }
+              }
+            }
+          }
+        });
+
+        // Format gaiters with sides: e.g. "NAME (TNO) (LH, RH)" or "NAME (LH)"
+        const formattedGaiters = Array.from(gaitersMap.values()).map(g => {
+          let sideTag = '(LH, RH)';
+          if (g.sides.has('LH') && g.sides.has('RH')) {
+            sideTag = '(LH, RH)';
+          } else if (g.sides.has('LH')) {
+            sideTag = '(LH)';
+          } else if (g.sides.has('RH')) {
+            sideTag = '(RH)';
+          }
+          const tNoStr = g.tNo ? ` (${g.tNo})` : '';
+          return `${g.name}${tNoStr} ${sideTag}`;
+        });
+
+        const gaiterDisplayStr = formattedGaiters.length > 0 
+          ? formattedGaiters.join(' · ') 
+          : 'Unassigned';
+
+        // Current Shift's Machine EM Resolution
+        const cleanFNo = fNo.trim();
+        const upperFNo = cleanFNo.toUpperCase();
+        const digitsOnly = upperFNo.replace(/\D/g, '');
+        const numOnly = digitsOnly ? String(parseInt(digitsOnly, 10)) : '';
+        const p2 = digitsOnly ? digitsOnly.padStart(2, '0') : '';
+        const p3 = digitsOnly ? digitsOnly.padStart(3, '0') : '';
+
+        const fVariants = [
+          cleanFNo,
+          upperFNo,
+          digitsOnly,
+          numOnly,
+          p2,
+          p3,
+          `SP${p3}`,
+          `SP${p2}`,
+          `SP${numOnly}`,
+          `RF${p2}`,
+          `RF${numOnly}`
+        ].filter(Boolean);
+
+        // 1. Check liveEmDetails for side breakdown
+        let emDetail: any = null;
+        for (const d of dVariants) {
+          if (!liveEmDetails[d]) continue;
+          for (const f of fVariants) {
+            if (liveEmDetails[d][f]?.[sKey] !== undefined) {
+              emDetail = liveEmDetails[d][f][sKey];
+              break;
+            }
+            if (liveEmDetails[d][f]?.[sNum] !== undefined) {
+              emDetail = liveEmDetails[d][f][sNum];
+              break;
+            }
+          }
+          if (emDetail) break;
+        }
+
+        // 2. Check liveEmData via getMachineEmValue with date-effective IoT mapping
+        const val = getMachineEmValue(liveEmData, dateStr, fNo, activeShift, effectiveMapping);
+
+        let currentShiftEm: number | undefined = undefined;
+        let emLeft: number | undefined = undefined;
+        let emRight: number | undefined = undefined;
+
+        if (emDetail) {
+          currentShiftEm = typeof emDetail.emTotal === 'number' ? emDetail.emTotal : val;
+          emLeft = typeof emDetail.emLeft === 'number' ? emDetail.emLeft : undefined;
+          emRight = typeof emDetail.emRight === 'number' ? emDetail.emRight : undefined;
+        } else if (val !== undefined) {
+          currentShiftEm = val;
+        }
+
+        // 3. Fallback to entry.doffEmt if no IoT EM logged yet
+        if (currentShiftEm === undefined) {
+          const shiftEntry = entries.find(e => e.shift === activeShift);
+          if (shiftEntry?.doffEmt && shiftEntry.doffEmt > 0) {
+            currentShiftEm = shiftEntry.doffEmt;
+          }
+        }
+
+        const finalEm = currentShiftEm !== undefined ? Number(currentShiftEm.toFixed(2)) : 0;
+        let emText = '0.00 min';
+        if (finalEm > 0) {
+          if ((emLeft !== undefined || emRight !== undefined) && ((emLeft || 0) > 0 || (emRight || 0) > 0)) {
+            emText = `Total: ${finalEm.toFixed(2)} min (LH: ${(emLeft || 0).toFixed(2)} · RH: ${(emRight || 0).toFixed(2)})`;
+          } else {
+            emText = `${finalEm.toFixed(2)} min`;
+          }
+        } else {
+          emText = '0.00 min';
         }
 
         return {
@@ -370,7 +578,11 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
           efficiency: eff,
           targetRatio,
           siderNames: sidersSet.size > 0 ? Array.from(sidersSet).join(' · ') : 'Unassigned',
-          gaiterName: gaiterNameStr || 'Unassigned'
+          gaiterName: gaiterDisplayStr,
+          currentShiftEm: finalEm,
+          currentShiftEmText: emText,
+          emLeft,
+          emRight
         };
       });
 
@@ -395,7 +607,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
         factor
       };
     }).filter((g): g is CountGroup => g !== null && g.frames.length > 0);
-  }, [report, workers, countConversions]);
+  }, [report, workers, countConversions, activeShift, liveEmData, liveEmDetails, settings]);
 
   // Report pages count to parent TV dashboard
   useEffect(() => {
@@ -404,7 +616,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
     }
   }, [onPagesDetermined, countGroups.length]);
 
-  // 2. Auto-cycling through count subpages in TV mode if not controlled externally
+  // 4. Auto-cycling through count subpages in TV mode if not controlled externally
   useEffect(() => {
     if (!isTvMode || isAutoCyclingPaused || countGroups.length <= 1 || propActiveCountIndex !== undefined) return;
 
@@ -434,6 +646,8 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
     );
   }
 
+  const shiftNameLabel = activeShift === 'I' ? 'Shift 1' : activeShift === 'II' ? 'Shift 2' : 'Shift 3';
+
   return (
     <div className={cn(
       "w-full transition-all duration-300 font-sans",
@@ -453,7 +667,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
               <Activity size={22} className="text-blue-600" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2 py-0.5 rounded-md bg-emerald-100 border border-emerald-300 text-emerald-950 text-[10px] font-black uppercase font-mono tracking-wider">
                   PART {safeIndex + 1} OF {countGroups.length}
                 </span>
@@ -466,6 +680,43 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                     <span className="text-stone-300 text-xs">•</span>
                     <span className="text-[11px] font-black text-black uppercase">
                       {report.shed}
+                    </span>
+                  </>
+                )}
+
+                {/* EM Shift Selector & Live Indicator */}
+                <span className="text-stone-300 text-xs">•</span>
+                <div className="flex items-center gap-1 bg-stone-100 px-2 py-0.5 rounded-lg border border-stone-200">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-stone-600 mr-0.5">EM:</span>
+                  {(['I', 'II', 'III'] as Shift[]).map(s => {
+                    const isSel = activeShift === s;
+                    const isLive = !selectedShiftOverride && currentMillShift === s;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSelectedShiftOverride(s === activeShift && selectedShiftOverride ? null : s)}
+                        className={cn(
+                          "px-1.5 py-0.2 rounded text-[9px] font-black font-mono transition-all cursor-pointer border",
+                          isSel 
+                            ? "bg-violet-600 text-white border-violet-700 shadow-2xs" 
+                            : "bg-white text-stone-700 border-stone-200 hover:bg-stone-50"
+                        )}
+                        title={`View Shift ${s === 'I' ? '1' : s === 'II' ? '2' : '3'} EM`}
+                      >
+                        {s === 'I' ? 'S1' : s === 'II' ? 'S2' : 'S3'}{isLive ? ' • Live' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* TV Mode Keep-Awake Badge */}
+                {isTvMode && (
+                  <>
+                    <span className="text-stone-300 text-xs">•</span>
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-300 text-amber-900 text-[10px] font-black uppercase font-mono tracking-wider">
+                      <Sun size={11} className="text-amber-500" />
+                      <span>SCREEN AWAKE</span>
                     </span>
                   </>
                 )}
@@ -642,9 +893,9 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                 </div>
               </div>
 
-              {/* Bottom: Assigned Crew Section */}
+              {/* Bottom: Assigned Crew & Live EM Section */}
               <div className="pt-3 border-t border-stone-200 space-y-2">
-                {/* Sider Box */}
+                {/* 1. Sider Box */}
                 <div className="flex items-center gap-2 p-2 rounded-xl bg-white border border-stone-200 shadow-2xs">
                   <span className="w-6 h-6 rounded-lg bg-emerald-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
                     S
@@ -659,7 +910,7 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                   </div>
                 </div>
 
-                {/* Gaiter Box */}
+                {/* 2. Gaiter Box with (LH, RH), (LH), (RH) side notation */}
                 <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs">
                   <span className="w-6 h-6 rounded-lg bg-amber-500 text-white font-black text-[10px] flex items-center justify-center shrink-0">
                     G
@@ -673,15 +924,34 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                     </span>
                   </div>
                 </div>
+
+                {/* 3. Current Shift EM Box */}
+                <div className="flex items-center gap-2 p-2 rounded-xl bg-violet-50/90 border border-violet-200 shadow-2xs">
+                  <span className="w-6 h-6 rounded-lg bg-violet-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                    EM
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] font-black uppercase text-violet-950 block tracking-wider leading-none">
+                        CURRENT SHIFT EM ({shiftNameLabel.toUpperCase()})
+                      </span>
+                      <span className="text-[10px] font-mono font-black text-violet-900 bg-violet-100/90 px-1.5 py-0.2 rounded border border-violet-300">
+                        {frame.currentShiftEm.toFixed(2)} min
+                      </span>
+                    </div>
+                    <span className="text-xs font-black text-black truncate block mt-0.5">
+                      {frame.currentShiftEmText}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           );
         })}
-
-
       </div>
+
       {/* ========================================================================= */}
-      {/* 3. BOTTOM COUNT NAVIGATION BAR ("in down show the no of counts to select") */}
+      {/* 3. BOTTOM COUNT NAVIGATION BAR                                           */}
       {/* ========================================================================= */}
       <div className="bg-white rounded-2xl border border-stone-200 shadow-2xs p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-1.5">

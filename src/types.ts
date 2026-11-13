@@ -56,6 +56,7 @@ export interface ProductionEntry {
   siderName?: string; // Link to worker by Name (extracted from Excel)
   gaiterId?: string; // Link to machine-specific gaiter by worker ID
   gaiterName?: string; // Link to machine-specific gaiter by worker Name
+  gaiterSide?: 'LH' | 'RH' | 'LH,RH' | 'BOTH' | string; // Side allocation for gaiter: (LH), (RH), (LH,RH)
   shed?: string; // e.g. 'Shed 1', 'Shed 2', 'Shed 3'
 }
 

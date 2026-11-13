@@ -8,11 +8,12 @@ import {
   Calendar, Clock, Check, Users, Gauge, Layers, Star, Zap,
   Award, ArrowUpRight, Sparkles, Medal, UserCheck, Coins, FileText, Target,
   Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown, Scan,
-  FileSpreadsheet
+  FileSpreadsheet, Sun
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed, MachineMasterItem } from '../types';
 import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate, isCountNameMatching } from '../lib/utils';
 import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
+import { useKeepAwake } from '../lib/useKeepAwake';
 
 // Import the core application components
 import { KPIStats } from './KPIStats';
@@ -391,6 +392,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   onRefresh,
   isRefreshing = false
 }) => {
+  // Prevent TV display from sleeping while dashboard is running
+  useKeepAwake(true);
+
   // 1. Controls & Hover States
   const [showControls, setShowControls] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
@@ -1447,6 +1451,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       tvPageInterval={settings.tvPageIntervals?.['count-frames']}
                       onSelectDate={onSelectDate}
                       availableDates={availableDates}
+                      machineEm={machineEm}
+                      settings={settings}
                     />
                   </div>
                 );

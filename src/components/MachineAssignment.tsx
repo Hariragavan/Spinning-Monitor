@@ -31,6 +31,7 @@ interface MachineAssignmentProps {
   assignWorker: (entryIndex: number, siderId: string, slotIndex: number) => void;
   assignGaiter: (shift: Shift, gaiterIds: string[]) => void;
   assignMachineGaiter?: (entryIndex: number | number[], gaiterId: string) => void;
+  assignMachineGaiterSide?: (entryIndex: number | number[], gaiterSide: string) => void;
   assignAiCone?: (shift: Shift, aiConeIds: string[]) => void;
   assignFitter?: (shift: Shift, fitterIds: string[]) => void;
   dates: string[];
@@ -53,6 +54,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   assignWorker,
   assignGaiter,
   assignMachineGaiter,
+  assignMachineGaiterSide,
   assignAiCone = () => {},
   assignFitter = () => {},
   dates,
@@ -160,6 +162,13 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
       const curGaiters = gaiters[targetShift] || [];
       const updated = Array.from(new Set([...curGaiters, gaiterId].filter(Boolean)));
       assignGaiter(targetShift, updated);
+    }
+  };
+
+  // Safe machine gaiter side update: (LH, RH), (LH), (RH)
+  const handleAssignMachineGaiterSide = (entryIdx: number, side: string) => {
+    if (assignMachineGaiterSide) {
+      assignMachineGaiterSide(entryIdx, side);
     }
   };
 
@@ -947,6 +956,20 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                             <Zap size={13} />
                           </div>
                         </div>
+                        {machineGaiterId && (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <span className="text-[9px] font-black uppercase text-amber-900 tracking-wider">Side:</span>
+                            <select
+                              value={entry.gaiterSide || 'LH,RH'}
+                              onChange={(e) => handleAssignMachineGaiterSide(idx, e.target.value)}
+                              className="px-2 py-0.5 bg-white border border-amber-300 rounded text-[10px] font-black text-amber-950 outline-none cursor-pointer font-mono"
+                            >
+                              <option value="LH,RH">(LH, RH) Both Sides</option>
+                              <option value="LH">(LH) Left Side</option>
+                              <option value="RH">(RH) Right Side</option>
+                            </select>
+                          </div>
+                        )}
                       </td>
 
                       {/* COVERAGE STATUS */}
