@@ -199,9 +199,19 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
 
     shifts.forEach(shift => {
       const activeNorm = normalizeShed(shed || report.shed);
-      const shiftEntries = (report.entries || []).filter(e => 
-        e.shift === shift && (!e.shed || normalizeShed(e.shed) === activeNorm)
-      );
+      const shiftEntries = (report.entries || []).filter(e => {
+        if (e.shift !== shift) return false;
+        const cleanFrame = (e.frameNo || '').trim();
+        if (/^\d+$/.test(cleanFrame)) return false; // Ignore bare unpadded numbers (9, 10, 11)
+        const numMatch = cleanFrame.match(/\d+/);
+        const num = numMatch ? parseInt(numMatch[0], 10) : null;
+        if (num !== null) {
+          if (activeNorm === 'Shed 1' && (num < 1 || num > 24)) return false;
+          if (activeNorm === 'Shed 2' && (num < 25 || num > 44)) return false;
+          if (activeNorm === 'Shed 3' && (num < 45 && num !== 23)) return false;
+        }
+        return !e.shed || normalizeShed(e.shed) === activeNorm;
+      });
       if (shiftEntries.length === 0) return;
 
       const workerMap = new Map<string, {
@@ -223,30 +233,33 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
         for (let sIdx = 0; sIdx < numSlots; sIdx++) {
           const rawId = (entry.siderIds && entry.siderIds.length > sIdx) 
             ? entry.siderIds[sIdx] 
-            : (sIdx === 0 ? entry.siderId : '');
-          if (!rawId) continue;
-          const clean = String(rawId).trim();
+            : (sIdx === 0 ? (entry.siderId || entry.siderName || '') : '');
+          const clean = String(rawId || (sIdx === 0 ? entry.siderName : '') || '').trim();
           if (!clean || invalidMarkers.includes(clean.toUpperCase())) continue;
 
           const worker = resolveWorker(clean, entry.siderName, workers);
-          // Strictly verify that the worker belongs to the current shed
+          // Strictly verify that the worker belongs to the current shed (or match by name/siderName)
           const isBelongingToCurrentShed = workers.length === 0 || workers.some(w => 
             (w.id && (w.id.toUpperCase() === clean.toUpperCase() || w.id === worker.id)) ||
             (w.tNo && (w.tNo.toUpperCase() === clean.toUpperCase() || w.tNo === worker.tNo)) ||
-            (w.name && w.name.trim().toLowerCase() === worker.name.trim().toLowerCase())
-          );
+            (w.name && w.name.trim().toLowerCase() === worker.name.trim().toLowerCase()) ||
+            (entry.siderName && w.name && w.name.trim().toLowerCase() === entry.siderName.trim().toLowerCase())
+          ) || (entry.siderName && !invalidMarkers.includes(entry.siderName.toUpperCase()));
           if (!isBelongingToCurrentShed) {
             continue;
           }
 
           entryHasAssignedWorker = true;
-          const workerKey = (worker.id || worker.tNo || worker.name || clean).toUpperCase();
+          const displayName = (worker.name && !worker.name.startsWith('Worker ') && worker.name !== 'Unknown Worker')
+            ? worker.name
+            : (entry.siderName || clean);
+          const workerKey = (worker.id || worker.tNo || displayName).toUpperCase();
 
           if (!workerMap.has(workerKey)) {
             workerMap.set(workerKey, {
-              worker,
-              tNo: worker.tNo || worker.id || clean,
-              name: worker.name || clean,
+              worker: { ...worker, name: displayName },
+              tNo: worker.tNo || worker.id || '',
+              name: displayName,
               shift,
               machineSlots: []
             });

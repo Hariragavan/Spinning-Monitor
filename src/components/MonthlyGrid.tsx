@@ -113,17 +113,26 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
 
   const years = [2025, 2026, 2027];
   
-  // Extract all machine numbers
+  // Strict monthly reports strictly belonging to selectedMonth and selectedYear
+  const monthlyReports = useMemo(() => {
+    return (history || []).filter(report => {
+      if (!report || !report.date) return false;
+      const parts = parseUniversalDateParts(report.date);
+      return parts && parts.month === selectedMonth && parts.year === selectedYear;
+    });
+  }, [history, selectedMonth, selectedYear]);
+
+  // Extract all machine numbers strictly active in this month
   const machineNos = useMemo(() => {
     const nos = new Set<string>();
-    history.forEach(report => {
+    monthlyReports.forEach(report => {
       if (report.summaries) report.summaries.forEach(s => nos.add(s.frameNo));
       if (report.entries) report.entries.forEach(e => {
         if (e.frameNo && e.frameNo !== 'K00') nos.add(e.frameNo);
       });
     });
     return Array.from(nos).sort();
-  }, [history]);
+  }, [monthlyReports]);
 
   // Extract all unique siders from BOTH current workers AND history
   const historyWorkersList = useMemo(() => {
@@ -135,17 +144,8 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
       return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
     };
 
-    // 1. Seed with Master Workers (Absolute Source of Truth)
-    workers.forEach(w => {
-      siderMap.set(w.id, { 
-        id: w.id, 
-        name: w.name, 
-        tNo: isUUID(w.tNo) ? "" : (w.tNo || "") 
-      });
-    });
-
-    // 2. Process History to find missing workers or entries
-    history.forEach(report => {
+    // 1. Only process workers strictly active in this month's reports
+    monthlyReports.forEach(report => {
       if (!report || !report.entries) return;
       report.entries.forEach(e => {
         const assignedIds = new Set<string>();
@@ -238,7 +238,14 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
         });
       }
     });
-    
+
+    // If no reports exist for this month yet, fall back to master workers
+    if (siderMap.size === 0) {
+      workers.forEach(w => {
+        siderMap.set(w.id, { id: w.id, name: w.name, tNo: isUUID(w.tNo) ? "" : (w.tNo || "") });
+      });
+    }
+
     const finalWorkers = Array.from(siderMap.values());
 
     // Try to sort by TK No if it's numeric, otherwise by name
@@ -252,7 +259,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
       if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
       return a.tNo.localeCompare(b.tNo);
     });
-  }, [history, workers]);
+  }, [monthlyReports, workers]);
 
   const getMetricByDay = (day: number, workerId: string, machineId: string, tNo: string, workerName?: string) => {
     const dateStr = `${day.toString().padStart(2, '0')}/${selectedMonth.toString().padStart(2, '0')}/${selectedYear}`;

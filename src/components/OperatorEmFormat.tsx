@@ -390,9 +390,19 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     };
 
     // 1. Primary Source: machines registered in Machine Master for this shed
-    const fromRegistry = (machinesProp || []).filter(
-      m => m && normalizeShed(m.shed || 'Shed 1') === targetNorm
-    );
+    const fromRegistry = (machinesProp || []).filter(m => {
+      if (!m) return false;
+      if (normalizeShed(m.shed || 'Shed 1') !== targetNorm) return false;
+      const fNo = String(m.rfNo || (m as any).frameNo || (m as any).machineId || '').trim().toUpperCase();
+      const numMatch = fNo.match(/\d+/);
+      const num = numMatch ? parseInt(numMatch[0], 10) : null;
+      if (num !== null) {
+        if (targetNorm === 'Shed 1' && (num < 1 || num > 24)) return false;
+        if (targetNorm === 'Shed 2' && (num < 25 || num > 44)) return false;
+        if (targetNorm === 'Shed 3' && (num < 45 && num !== 23)) return false;
+      }
+      return true;
+    });
     fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
 
     // If registry has machines for this shed, strictly use ONLY those machine numbers!
@@ -1732,10 +1742,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                 <React.Fragment key={`val-${machine}-${date}`}>
                                   {shifts.map(shift => {
                                     const isAssigned = isMachineAssignedOnShift(date, shift, machine);
-                                    // ONLY show EM if the machine is mapped to an IoT device on this date!
-                                    const val = (isAssigned && isIotAssigned) 
-                                      ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping) 
+                                    // Read live EM whenever machine is IoT assigned on this date
+                                    const val = isIotAssigned
+                                      ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)
                                       : undefined;
+                                    const hasVal = val !== undefined && val !== null;
                                     return (
                                       <td 
                                         key={`cell-${machine}-${date}-${shift}`}
@@ -1757,8 +1768,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                             : `Click to view Left/Right/Total EM: ${machine} [${mappedDev}] · Shift ${shift} · ${date}`
                                         }
                                       >
-                                        {(isAssigned && isIotAssigned) ? (val !== undefined ? val : '-') : '-'}
-                                        {(isAssigned && isIotAssigned) && (
+                                        {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
+                                        {isIotAssigned && hasVal && (
                                           <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
                                             <Eye size={8} />
                                           </div>

@@ -12,6 +12,7 @@ interface MachineDailyIncentiveProps {
   machineSiderCounts: Record<string, number>;
   isTvMode?: boolean;
   shed?: string;
+  machines?: any[];
 }
 
 export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
@@ -21,7 +22,8 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
   onSelectDate,
   machineSiderCounts = {},
   isTvMode = false,
-  shed
+  shed,
+  machines: machinesProp = []
 }) => {
   // Determine if current shed is KTTM (or frame belongs to KTTM)
   const isKttmShed = useMemo(() => {
@@ -57,10 +59,50 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
   // Get active unique frame numbers strictly for the current shed
   const machines = useMemo(() => {
     const activeNorm = normalizeShed(shed || report.shed);
-    const shedEntries = (report.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm);
+
+    // 1. If machines master list is available, strictly use machines registered for this shed
+    if (machinesProp && machinesProp.length > 0) {
+      const shedRegistryFrames = machinesProp
+        .filter(m => normalizeShed(m.shed || 'Shed 1') === activeNorm)
+        .map(m => m.rfNo || (m as any).frameNo || (m as any).machineId)
+        .filter(Boolean);
+      if (shedRegistryFrames.length > 0) {
+        const set = new Set<string>();
+        shedRegistryFrames.forEach(f => {
+          const clean = String(f).trim();
+          if (clean && clean !== '-' && clean !== '0' && !/^\d+$/.test(clean)) {
+            set.add(clean);
+          }
+        });
+        if (set.size > 0) {
+          return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        }
+      }
+    }
+
+    // 2. Fallback to report entries, but strictly enforce shed machine boundary rules:
+    // Shed 1: frames 1-24 (SP001 - SP024)
+    // Shed 2: frames 25-44 (SP025 - SP044)
+    // Shed 3: frames 45-56, SP023
+    // KTTM: frame name includes KT or starts with K
+    const shedEntries = (report.entries || []).filter(e => {
+      if (!e.frameNo) return false;
+      const clean = e.frameNo.trim();
+      if (/^\d+$/.test(clean)) return false; // Ignore bare unpadded numbers (9, 10, 11)
+      const fUpper = clean.toUpperCase();
+      const numMatch = fUpper.match(/\d+/);
+      const num = numMatch ? parseInt(numMatch[0], 10) : null;
+      if (num !== null) {
+        if (activeNorm === 'Shed 1' && (num < 1 || num > 24)) return false;
+        if (activeNorm === 'Shed 2' && (num < 25 || num > 44)) return false;
+        if (activeNorm === 'Shed 3' && (num < 45 && num !== 23)) return false;
+        if (activeNorm === 'KTTM' && !fUpper.startsWith('K')) return false;
+      }
+      return !e.shed || normalizeShed(e.shed) === activeNorm;
+    });
     const unique = Array.from(new Set(shedEntries.map(e => e.frameNo))).filter(Boolean).sort();
     return unique;
-  }, [report.entries, shed, report.shed]);
+  }, [report.entries, shed, report.shed, machinesProp]);
 
   // Process data for the machine-wise rows
   const tableRows = useMemo(() => {
@@ -167,9 +209,12 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             let workerName = '';
             if (hasAssigned) {
               const res = resolveWorker(raw0 || raw1, entry.siderName, workers);
-              if (res.name && !invalidMarkers.includes(res.name.toUpperCase()) && checkWorkerInCurrentShed(res, raw0 || raw1)) {
+              if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
                 workerName = res.name;
               }
+            }
+            if (!workerName && entry.siderName && !invalidMarkers.includes(entry.siderName.toUpperCase())) {
+              workerName = entry.siderName;
             }
 
             // Sum slot 0 and slot 1 incentives according to allocation rules
@@ -221,9 +266,12 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
             let worker: any = null;
             if (!isUnassigned) {
               const res = resolveWorker(cleanId, entry.siderName, workers);
-              if (res.name && !invalidMarkers.includes(res.name.toUpperCase()) && checkWorkerInCurrentShed(res, cleanId)) {
+              if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
                 worker = res;
               }
+            }
+            if (!worker && entry.siderName && !invalidMarkers.includes(entry.siderName.toUpperCase())) {
+              worker = { id: entry.siderName, name: entry.siderName, tNo: '', department: 'Sider' };
             }
 
             const incentive = worker ? calculateSiderSlotIncentive(entry, 0, report, rules, workers, shed) : 0;
@@ -278,9 +326,12 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
               let worker: any = null;
               if (!isUnassigned) {
                 const res = resolveWorker(cleanId, entry.siderName, workers);
-                if (res.name && !invalidMarkers.includes(res.name.toUpperCase()) && checkWorkerInCurrentShed(res, cleanId)) {
+                if (res.name && !invalidMarkers.includes(res.name.toUpperCase())) {
                   worker = res;
                 }
+              }
+              if (!worker && entry.siderName && !invalidMarkers.includes(entry.siderName.toUpperCase())) {
+                worker = { id: entry.siderName, name: entry.siderName, tNo: '', department: 'Sider' };
               }
 
               let incentive = 0;

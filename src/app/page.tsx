@@ -2261,6 +2261,7 @@ export default function Home() {
             onSelectDate={handleTopDateChange}
             machineSiderCounts={settings.machineSiderCounts}
             shed={selectedShed}
+            machines={currentShedMachines}
           />
         );
 
