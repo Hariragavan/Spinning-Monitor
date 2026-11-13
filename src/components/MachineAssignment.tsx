@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn, findDuplicatesInReport } from '../lib/utils';
 import { CalendarDatePicker } from './CalendarPickers';
+import { SearchableWorkerSelect } from './SearchableWorkerSelect';
 
 interface MachineAssignmentProps {
   workers: Sider[];
@@ -765,66 +766,40 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
 
                       {/* LH SIDER (50% LEFT / SLOT 0) */}
                       <td className="px-4 py-3.5 align-middle">
-                        <div className="relative">
-                          <select
-                            value={lhWorkerId}
-                            onChange={(e) => assignWorker(idx, e.target.value, 0)}
-                            className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all cursor-pointer font-mono"
-                          >
-                            <option value="">-- No LH Sider Assigned --</option>
-                            {siderDeptWorkers.length > 0 && (
-                              <optgroup label="Sider / Ringframe Department">
-                                {siderDeptWorkers.map((w) => (
-                                  <option key={w.id} value={w.id}>
-                                    {w.name} ({w.tNo})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                            <optgroup label="All Other Workers">
-                              {otherSiderWorkers.map((w) => (
-                                <option key={w.id} value={w.id}>
-                                  {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                        </div>
+                        <SearchableWorkerSelect
+                          value={lhWorkerId}
+                          onChange={(wId) => assignWorker(idx, wId, 0)}
+                          workers={workers}
+                          placeholder="-- No LH Sider --"
+                          priorityDeptFilter={(w) => Boolean(
+                            w.department?.toLowerCase().includes('sider') || 
+                            w.department?.toLowerCase().includes('ring') ||
+                            w.department?.toLowerCase().includes('spin')
+                          )}
+                          priorityLabel="Sider / Ringframe Staff"
+                          otherLabel="Other Mill Staff"
+                        />
                       </td>
 
                       {/* RH SIDER (50% RIGHT / SLOT 1) + BOTH SIDES SHORTCUT */}
                       <td className="px-4 py-3.5 align-middle">
                         {targetSides >= 2 ? (
                           <div className="flex items-center gap-1.5">
-                            <div className="relative flex-1">
-                              <select
+                            <div className="flex-1">
+                              <SearchableWorkerSelect
                                 value={rhWorkerId}
-                                onChange={(e) => assignWorker(idx, e.target.value, 1)}
-                                className={cn(
-                                  "w-full px-3 py-2 border rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all cursor-pointer font-mono",
-                                  isBothSides 
-                                    ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-black" 
-                                    : "bg-stone-50 border-stone-200"
+                                onChange={(wId) => assignWorker(idx, wId, 1)}
+                                workers={workers}
+                                placeholder="-- No RH Sider --"
+                                className={isBothSides ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-black" : undefined}
+                                priorityDeptFilter={(w) => Boolean(
+                                  w.department?.toLowerCase().includes('sider') || 
+                                  w.department?.toLowerCase().includes('ring') ||
+                                  w.department?.toLowerCase().includes('spin')
                                 )}
-                              >
-                                <option value="">-- No RH Sider Assigned --</option>
-                                {siderDeptWorkers.length > 0 && (
-                                  <optgroup label="Sider / Ringframe Department">
-                                    {siderDeptWorkers.map((w) => (
-                                      <option key={w.id} value={w.id}>
-                                        {w.name} ({w.tNo})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )}
-                                <optgroup label="All Other Workers">
-                                  {otherSiderWorkers.map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              </select>
+                                priorityLabel="Sider / Ringframe Staff"
+                                otherLabel="Other Mill Staff"
+                              />
                             </div>
 
                             {/* Quick Both Sides Button */}
@@ -856,31 +831,20 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                       {maxSidesInView >= 3 && (
                         <td className="px-4 py-3.5 align-middle">
                           {targetSides >= 3 ? (
-                            <div className="relative">
-                              <select
-                                value={s3WorkerId}
-                                onChange={(e) => assignWorker(idx, e.target.value, 2)}
-                                className="w-full px-3 py-2 bg-purple-50/50 border border-purple-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all cursor-pointer font-mono"
-                              >
-                                <option value="">-- No S3 Sider Assigned --</option>
-                                {siderDeptWorkers.length > 0 && (
-                                  <optgroup label="Sider / Ringframe Department">
-                                    {siderDeptWorkers.map((w) => (
-                                      <option key={w.id} value={w.id}>
-                                        {w.name} ({w.tNo})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )}
-                                <optgroup label="All Other Workers">
-                                  {otherSiderWorkers.map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              </select>
-                            </div>
+                            <SearchableWorkerSelect
+                              value={s3WorkerId}
+                              onChange={(wId) => assignWorker(idx, wId, 2)}
+                              workers={workers}
+                              placeholder="-- No S3 Sider --"
+                              className="bg-purple-50/50 border-purple-200"
+                              priorityDeptFilter={(w) => Boolean(
+                                w.department?.toLowerCase().includes('sider') || 
+                                w.department?.toLowerCase().includes('ring') ||
+                                w.department?.toLowerCase().includes('spin')
+                              )}
+                              priorityLabel="Sider / Ringframe Staff"
+                              otherLabel="Other Mill Staff"
+                            />
                           ) : (
                             <div className="px-3 py-2 text-center text-stone-300 text-xs font-medium italic">
                               —
@@ -893,31 +857,20 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                       {maxSidesInView >= 4 && (
                         <td className="px-4 py-3.5 align-middle">
                           {targetSides >= 4 ? (
-                            <div className="relative">
-                              <select
-                                value={s4WorkerId}
-                                onChange={(e) => assignWorker(idx, e.target.value, 3)}
-                                className="w-full px-3 py-2 bg-indigo-50/50 border border-indigo-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all cursor-pointer font-mono"
-                              >
-                                <option value="">-- No S4 Sider Assigned --</option>
-                                {siderDeptWorkers.length > 0 && (
-                                  <optgroup label="Sider / Ringframe Department">
-                                    {siderDeptWorkers.map((w) => (
-                                      <option key={w.id} value={w.id}>
-                                        {w.name} ({w.tNo})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )}
-                                <optgroup label="All Other Workers">
-                                  {otherSiderWorkers.map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              </select>
-                            </div>
+                            <SearchableWorkerSelect
+                              value={s4WorkerId}
+                              onChange={(wId) => assignWorker(idx, wId, 3)}
+                              workers={workers}
+                              placeholder="-- No S4 Sider --"
+                              className="bg-indigo-50/50 border-indigo-200"
+                              priorityDeptFilter={(w) => Boolean(
+                                w.department?.toLowerCase().includes('sider') || 
+                                w.department?.toLowerCase().includes('ring') ||
+                                w.department?.toLowerCase().includes('spin')
+                              )}
+                              priorityLabel="Sider / Ringframe Staff"
+                              otherLabel="Other Mill Staff"
+                            />
                           ) : (
                             <div className="px-3 py-2 text-center text-stone-300 text-xs font-medium italic">
                               —
@@ -928,34 +881,16 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
 
                       {/* GAITER ALLOCATION (PER MACHINE) */}
                       <td className="px-4 py-3.5 align-middle">
-                        <div className="relative">
-                          <select
-                            value={machineGaiterId}
-                            onChange={(e) => handleAssignMachineGaiter(idx, e.target.value)}
-                            className="w-full px-3 py-2 bg-amber-50/40 border border-amber-200 rounded-xl text-xs font-bold text-stone-800 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all cursor-pointer font-mono"
-                          >
-                            <option value="">-- No Gaiter Assigned --</option>
-                            {gaiterDeptWorkers.length > 0 && (
-                              <optgroup label="Gaiter Department">
-                                {gaiterDeptWorkers.map((w) => (
-                                  <option key={w.id} value={w.id}>
-                                    {w.name} ({w.tNo})
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                            <optgroup label="All Other Workers">
-                              {otherGaiterWorkers.map((w) => (
-                                <option key={w.id} value={w.id}>
-                                  {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-500">
-                            <Zap size={13} />
-                          </div>
-                        </div>
+                        <SearchableWorkerSelect
+                          value={machineGaiterId}
+                          onChange={(wId) => handleAssignMachineGaiter(idx, wId)}
+                          workers={workers}
+                          placeholder="-- No Gaiter --"
+                          className="bg-amber-50/40 border-amber-200"
+                          priorityDeptFilter={(w) => Boolean(w.department?.toLowerCase().includes('gaiter'))}
+                          priorityLabel="Gaiter Department Staff"
+                          otherLabel="Other Mill Staff"
+                        />
                         {machineGaiterId && (
                           <div className="mt-1.5 flex items-center gap-1.5">
                             <span className="text-[9px] font-black uppercase text-amber-900 tracking-wider">Side:</span>
