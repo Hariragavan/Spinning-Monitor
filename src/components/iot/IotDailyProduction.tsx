@@ -17,7 +17,8 @@ import {
   Cpu,
   Search,
   Filter,
-  CheckCircle2
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { iotApi } from '@/lib/iot/iotApi';
@@ -51,8 +52,8 @@ export const IotDailyProduction: React.FC<IotDailyProductionProps> = ({
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [data, setData] = useState<IotDailyProductionResponse | null>(null);
 
-  // Selected shift row for displaying machine details underneath
-  const [selectedShiftKey, setSelectedShiftKey] = useState<string | null>(null);
+  // Modal popup state for viewing machine details of a shift
+  const [modalShiftKey, setModalShiftKey] = useState<string | null>(null);
   const [machineSearch, setMachineSearch] = useState<string>('');
   const [selectedShedFilter, setSelectedShedFilter] = useState<string>('all');
 
@@ -154,18 +155,11 @@ export const IotDailyProduction: React.FC<IotDailyProductionProps> = ({
   const monthGrandTotal = data?.monthGrandTotal;
   const availableMonths = data?.availableMonths || [];
 
-  // Default active shift row for bottom machine details table: first shift in monthRows if not set
-  useEffect(() => {
-    if (!selectedShiftKey && monthRows.length > 0) {
-      setSelectedShiftKey(`${monthRows[0].date}-${monthRows[0].shift}`);
-    }
-  }, [monthRows, selectedShiftKey]);
-
-  // Find currently selected shift row object
+  // Find currently selected shift row object for modal popup
   const activeShiftRow = useMemo(() => {
-    if (!selectedShiftKey) return monthRows[0] || null;
-    return monthRows.find(r => `${r.date}-${r.shift}` === selectedShiftKey) || monthRows[0] || null;
-  }, [monthRows, selectedShiftKey]);
+    if (!modalShiftKey) return null;
+    return monthRows.find(r => `${r.date}-${r.shift}` === modalShiftKey) || null;
+  }, [monthRows, modalShiftKey]);
 
   // Filtered machines for the active shift
   const activeShiftMachines = useMemo(() => {
@@ -376,12 +370,12 @@ export const IotDailyProduction: React.FC<IotDailyProductionProps> = ({
                     : dObj.toLocaleDateString('en-US', { weekday: 'short' });
 
                   const rowKey = `${r.date}-${r.shift}`;
-                  const isSelected = selectedShiftKey === rowKey;
+                  const isSelected = modalShiftKey === rowKey;
 
                   return (
                     <tr
                       key={`${rowKey}-${idx}`}
-                      onClick={() => setSelectedShiftKey(rowKey)}
+                      onClick={() => setModalShiftKey(rowKey)}
                       className={`cursor-pointer transition-colors ${
                         isSelected
                           ? 'bg-emerald-50/80 ring-2 ring-emerald-500/30'
@@ -460,16 +454,12 @@ export const IotDailyProduction: React.FC<IotDailyProductionProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedShiftKey(rowKey);
+                            setModalShiftKey(rowKey);
                           }}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200'
-                          }`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-200 shadow-2xs"
                         >
-                          <span>{isSelected ? 'Viewing' : 'View'}</span>
-                          {isSelected ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          <Cpu size={13} />
+                          <span>View Shift Details</span>
                         </button>
                       </td>
                     </tr>
@@ -510,272 +500,290 @@ export const IotDailyProduction: React.FC<IotDailyProductionProps> = ({
         )}
       </div>
 
-      {/* 3. Shift Machine Details (Displayed below when user clicks a shift row) */}
+      {/* 3. Shift Machine Details Modal Popup (Interactive Dialog when user clicks a shift row or View button) */}
       {activeShiftRow && (
-        <div className="mt-8 bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-          {/* Header Bar */}
-          <div className="px-5 py-4 border-b border-stone-200 bg-stone-50/70 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <h3 className="text-sm font-black text-stone-900 uppercase tracking-wider">
-                  Machine Details — {activeShiftRow.shiftName} ({new Date(activeShiftRow.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})
-                </h3>
-                <span className="text-[11px] font-bold text-stone-600 bg-stone-100 px-2 py-0.5 rounded border border-stone-200">
-                  {activeShiftRow.timing.from} - {activeShiftRow.timing.to} ({activeShiftRow.shiftHours} hrs)
-                </span>
-                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  Total Production: {activeShiftRow.productionKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
-                </span>
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+          onClick={() => setModalShiftKey(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl border border-stone-200 shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header Bar */}
+            <div className="px-6 py-5 border-b border-stone-200 bg-stone-50/90 flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <h3 className="text-base font-black text-stone-900 uppercase tracking-wider">
+                    Machine Details — {activeShiftRow.shiftName} ({new Date(activeShiftRow.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })})
+                  </h3>
+                  <span className="text-[11px] font-bold text-stone-600 bg-stone-100 px-2 py-0.5 rounded border border-stone-200">
+                    {activeShiftRow.timing.from} - {activeShiftRow.timing.to} ({activeShiftRow.shiftHours} hrs)
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    Total: {activeShiftRow.productionKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg
+                  </span>
+                </div>
+                <p className="text-xs text-stone-600 font-medium mt-1">
+                  Individual frame telemetry: yarn count, spindle speed, production, end breaks, and EM
+                </p>
               </div>
-              <p className="text-xs text-stone-600 font-medium mt-1">
-                Real-time machine running status, yarn count, spindle speed, production, end breaks, and EM for each frame
-              </p>
-            </div>
 
-            {/* Shed Filters & Search */}
-            <div className="flex items-center gap-2.5 flex-wrap">
-              {/* Shed Filter Pills */}
-              {availableSheds.length > 0 && (
-                <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-stone-200 shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedShedFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                      selectedShedFilter === 'all'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'text-stone-600 hover:text-stone-900'
-                    }`}
-                  >
-                    All Sheds
-                  </button>
-                  {availableSheds.map(shed => (
+              {/* Controls and Close Button */}
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Shed Filter Pills */}
+                {availableSheds.length > 0 && (
+                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-stone-200 shadow-2xs">
                     <button
-                      key={shed}
                       type="button"
-                      onClick={() => setSelectedShedFilter(shed)}
+                      onClick={() => setSelectedShedFilter('all')}
                       className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        selectedShedFilter.toLowerCase() === shed.toLowerCase()
+                        selectedShedFilter === 'all'
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'text-stone-600 hover:text-stone-900'
                       }`}
                     >
-                      {shed}
+                      All Sheds
                     </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Search input */}
-              <div className="relative">
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                <input
-                  type="text"
-                  placeholder="Filter frame or count..."
-                  value={machineSearch}
-                  onChange={(e) => setMachineSearch(e.target.value)}
-                  className="pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-200 rounded-xl outline-none focus:border-emerald-500 font-medium text-stone-900 placeholder-stone-400 w-44"
-                />
-              </div>
-
-              <span className="text-xs font-bold text-stone-600 bg-stone-100 px-3 py-1.5 rounded-xl border border-stone-200">
-                {activeShiftMachines.length} / {activeShiftRow.machines?.length || 0} Frames
-              </span>
-            </div>
-          </div>
-
-          {/* Machine Details Table */}
-          {activeShiftMachines.length === 0 ? (
-            <div className="p-12 text-center text-stone-600">
-              <Cpu size={26} className="text-stone-400 mx-auto mb-2" />
-              <p className="text-xs font-bold text-stone-800">No machine records match the filter</p>
-              <p className="text-[11px] text-stone-500 mt-0.5">Try clearing the search or changing the shed filter above.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-stone-100/90 text-stone-700 font-bold uppercase tracking-wider text-[11px] border-b border-stone-200">
-                    <th className="py-3 px-3 text-center w-12">#</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap">Spinning Frame</th>
-                    <th className="py-3 px-3 whitespace-nowrap">IoT Device</th>
-                    <th className="py-3 px-3 whitespace-nowrap">Shed</th>
-                    <th className="py-3 px-3.5 whitespace-nowrap">Yarn Count</th>
-                    <th className="py-3 px-3 text-center whitespace-nowrap">Status</th>
-                    <th className="py-3 px-3.5 text-right whitespace-nowrap">Spindle Speed</th>
-                    <th className="py-3 px-3.5 text-right whitespace-nowrap">Production (kg)</th>
-                    <th className="py-3 px-3.5 text-right whitespace-nowrap">Left EM (min)</th>
-                    <th className="py-3 px-3.5 text-right whitespace-nowrap">Right EM (min)</th>
-                    <th className="py-3 px-3.5 text-right whitespace-nowrap">Total EM (min)</th>
-                    <th className="py-3 px-3 text-center whitespace-nowrap">End Breaks</th>
-                    <th className="py-3 px-3 text-right whitespace-nowrap">Waste %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {activeShiftMachines.map((m, mIdx) => {
-                    const isRunning = m.runStatus === 'RUN';
-                    const isDoffing = m.runStatus === 'DOFF';
-                    const isStopped = m.runStatus === 'STOP';
-
-                    return (
-                      <tr
-                        key={`${m.spinningFrame}-${m.iotMachine}-${mIdx}`}
-                        className={`hover:bg-emerald-50/30 transition-colors ${
-                          mIdx % 2 === 0 ? 'bg-white' : 'bg-stone-50/40'
+                    {availableSheds.map(shed => (
+                      <button
+                        key={shed}
+                        type="button"
+                        onClick={() => setSelectedShedFilter(shed)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                          selectedShedFilter.toLowerCase() === shed.toLowerCase()
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'text-stone-600 hover:text-stone-900'
                         }`}
                       >
-                        {/* S.No */}
-                        <td className="py-2.5 px-3 text-center font-mono text-stone-600 text-[11px]">
-                          {mIdx + 1}
-                        </td>
+                        {shed}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                        {/* Spinning Frame */}
-                        <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          <span className="font-mono font-black text-stone-900 text-xs">
-                            {m.spinningFrame}
-                          </span>
-                        </td>
+                {/* Search input */}
+                <div className="relative">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                  <input
+                    type="text"
+                    placeholder="Filter frame or count..."
+                    value={machineSearch}
+                    onChange={(e) => setMachineSearch(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-200 rounded-xl outline-none focus:border-emerald-500 font-medium text-stone-900 placeholder-stone-400 w-44"
+                  />
+                </div>
 
-                        {/* IoT Device */}
-                        <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs text-stone-600">
-                          {m.iotMachine || '-'}
-                        </td>
+                <span className="text-xs font-bold text-stone-600 bg-stone-100 px-3 py-1.5 rounded-xl border border-stone-200">
+                  {activeShiftMachines.length} / {activeShiftRow.machines?.length || 0} Frames
+                </span>
 
-                        {/* Shed */}
-                        <td className="py-2.5 px-3 whitespace-nowrap">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
-                            {m.shed}
-                          </span>
-                        </td>
-
-                        {/* Yarn Count */}
-                        <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          <span className="font-bold text-stone-850 text-xs">
-                            {m.count || '-'}
-                          </span>
-                        </td>
-
-                        {/* Run Status */}
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                              isRunning
-                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                : isDoffing
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                  : isStopped
-                                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                                    : 'bg-stone-100 text-stone-600 border border-stone-300'
-                            }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isRunning ? 'bg-emerald-500 animate-pulse' : isDoffing ? 'bg-amber-500' : isStopped ? 'bg-rose-500' : 'bg-stone-400'
-                              }`}
-                            />
-                            {m.runStatus || 'OFFLINE'}
-                          </span>
-                        </td>
-
-                        {/* Spindle Speed */}
-                        <td className="py-2.5 px-3.5 text-right font-mono text-xs text-stone-700 whitespace-nowrap">
-                          {m.spindleSpeed > 0 ? `${m.spindleSpeed.toLocaleString('en-IN')} rpm` : '-'}
-                        </td>
-
-                        {/* Production (kg) */}
-                        <td className="py-2.5 px-3.5 text-right font-mono font-black text-stone-900 text-xs whitespace-nowrap">
-                          {m.actualKg > 0 ? (
-                            <span className="text-emerald-800 font-bold">
-                              {m.actualKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          ) : (
-                            <span className="text-stone-400">0.00</span>
-                          )}
-                        </td>
-
-                        {/* Left EM */}
-                        <td className="py-2.5 px-3.5 text-right font-mono text-xs text-stone-700 whitespace-nowrap">
-                          {m.emLeftMin > 0 ? `${m.emLeftMin.toFixed(2)} min` : '-'}
-                        </td>
-
-                        {/* Right EM */}
-                        <td className="py-2.5 px-3.5 text-right font-mono text-xs text-stone-700 whitespace-nowrap">
-                          {m.emRightMin > 0 ? `${m.emRightMin.toFixed(2)} min` : '-'}
-                        </td>
-
-                        {/* Total EM */}
-                        <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                          <span className={`font-mono text-xs font-black ${
-                            m.emTotalMin > 0 ? 'text-stone-900' : 'text-stone-400'
-                          }`}>
-                            {m.emTotalMin > 0 ? `${m.emTotalMin.toFixed(2)} min` : '-'}
-                          </span>
-                        </td>
-
-                        {/* End Breaks */}
-                        <td className="py-2.5 px-3 text-center font-mono text-xs whitespace-nowrap">
-                          {m.endBreakCount > 0 ? (
-                            <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-900 border border-amber-200">
-                              {m.endBreakCount}
-                            </span>
-                          ) : (
-                            <span className="text-stone-400">-</span>
-                          )}
-                        </td>
-
-                        {/* Waste % */}
-                        <td className="py-2.5 px-3 text-right font-mono text-xs text-stone-600 whitespace-nowrap">
-                          {m.wastePct > 0 ? `${m.wastePct.toFixed(2)}%` : '-'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-
-                {/* Machine Summary Footer */}
-                <tfoot>
-                  <tr className="bg-stone-100/90 font-black text-stone-900 border-t-2 border-stone-300">
-                    <td className="py-3 px-3 text-center font-bold text-[10px] uppercase tracking-wider text-stone-700" colSpan={4}>
-                      Shift Total ({activeShiftMachines.length} Frames)
-                    </td>
-                    <td className="py-3 px-3.5 font-bold text-xs text-stone-600">
-                      {activeShiftMachines.filter(m => m.runStatus === 'RUN').length} Running
-                    </td>
-                    <td className="py-3 px-3 text-center text-xs font-bold text-emerald-800">
-                      {Math.round((activeShiftMachines.filter(m => m.runStatus === 'RUN').length / Math.max(1, activeShiftMachines.length)) * 100)}% Active
-                    </td>
-                    <td className="py-3 px-3.5 text-right font-mono text-xs text-stone-700">
-                      {(() => {
-                        const running = activeShiftMachines.filter(m => m.spindleSpeed > 0);
-                        return running.length > 0 ? `${Math.round(running.reduce((a, b) => a + b.spindleSpeed, 0) / running.length).toLocaleString('en-IN')} rpm avg` : '-';
-                      })()}
-                    </td>
-                    <td className="py-3 px-3.5 text-right font-mono text-emerald-800 text-xs font-black">
-                      {activeShiftMachines.reduce((a, b) => a + b.actualKg, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-3 px-3.5 text-right font-mono text-xs text-stone-700">
-                      {activeShiftMachines.reduce((a, b) => a + b.emLeftMin, 0).toFixed(2)} min
-                    </td>
-                    <td className="py-3 px-3.5 text-right font-mono text-xs text-stone-700">
-                      {activeShiftMachines.reduce((a, b) => a + b.emRightMin, 0).toFixed(2)} min
-                    </td>
-                    <td className="py-3 px-3.5 text-right font-mono text-xs font-black text-stone-900">
-                      {activeShiftMachines.reduce((a, b) => a + b.emTotalMin, 0).toFixed(2)} min
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono text-xs font-bold text-amber-900">
-                      {activeShiftMachines.reduce((a, b) => a + b.endBreakCount, 0)} breaks
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono text-xs">
-                      {(() => {
-                        const withW = activeShiftMachines.filter(m => m.wastePct > 0);
-                        return withW.length > 0 ? `${(withW.reduce((a, b) => a + b.wastePct, 0) / withW.length).toFixed(2)}%` : '-';
-                      })()}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
+                {/* Close Modal Button */}
+                <button
+                  type="button"
+                  onClick={() => setModalShiftKey(null)}
+                  className="w-8 h-8 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-500 hover:text-stone-900 flex items-center justify-center cursor-pointer transition-colors"
+                  title="Close popup"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
-          )}
+
+            {/* Modal Table Body (Scrollable) */}
+            <div className="overflow-y-auto flex-1 p-0">
+              {activeShiftMachines.length === 0 ? (
+                <div className="p-16 text-center text-stone-600">
+                  <Cpu size={32} className="text-stone-400 mx-auto mb-3" />
+                  <p className="text-sm font-bold text-stone-800">No machine records match the filter</p>
+                  <p className="text-xs text-stone-500 mt-1">Try clearing the search or changing the shed filter above.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-stone-100 text-stone-700 font-bold uppercase tracking-wider text-[11px] border-b border-stone-200 shadow-2xs">
+                      <th className="py-3 px-3 text-center w-12 bg-stone-100">#</th>
+                      <th className="py-3 px-3.5 whitespace-nowrap bg-stone-100">Spinning Frame</th>
+                      <th className="py-3 px-3 whitespace-nowrap bg-stone-100">IoT Device</th>
+                      <th className="py-3 px-3 whitespace-nowrap bg-stone-100">Shed</th>
+                      <th className="py-3 px-3.5 whitespace-nowrap bg-stone-100">Yarn Count</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap bg-stone-100">Status</th>
+                      <th className="py-3 px-3.5 text-right whitespace-nowrap bg-stone-100">Spindle Speed</th>
+                      <th className="py-3 px-3.5 text-right whitespace-nowrap bg-stone-100">Production (kg)</th>
+                      <th className="py-3 px-3.5 text-right whitespace-nowrap bg-stone-100">Left EM (min)</th>
+                      <th className="py-3 px-3.5 text-right whitespace-nowrap bg-stone-100">Right EM (min)</th>
+                      <th className="py-3 px-3.5 text-right whitespace-nowrap bg-stone-100">Total EM (min)</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap bg-stone-100">End Breaks</th>
+                      <th className="py-3 px-3 text-right whitespace-nowrap bg-stone-100">Waste %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {activeShiftMachines.map((m, mIdx) => {
+                      const isRunning = m.runStatus === 'RUN';
+                      const isDoffing = m.runStatus === 'DOFF';
+                      const isStopped = m.runStatus === 'STOP';
+
+                      return (
+                        <tr
+                          key={`${m.spinningFrame}-${m.iotMachine}-${mIdx}`}
+                          className={`hover:bg-emerald-50/30 transition-colors ${
+                            mIdx % 2 === 0 ? 'bg-white' : 'bg-stone-50/40'
+                          }`}
+                        >
+                          {/* S.No */}
+                          <td className="py-2.5 px-3 text-center font-mono text-stone-600 text-[11px]">
+                            {mIdx + 1}
+                          </td>
+
+                          {/* Spinning Frame */}
+                          <td className="py-2.5 px-3.5 whitespace-nowrap">
+                            <span className="font-mono font-black text-stone-900 text-xs">
+                              {m.spinningFrame}
+                            </span>
+                          </td>
+
+                          {/* IoT Device */}
+                          <td className="py-2.5 px-3 whitespace-nowrap font-mono text-xs text-stone-600">
+                            {m.iotMachine || '-'}
+                          </td>
+
+                          {/* Shed */}
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
+                              {m.shed}
+                            </span>
+                          </td>
+
+                          {/* Yarn Count */}
+                          <td className="py-2.5 px-3.5 whitespace-nowrap">
+                            <span className="font-bold text-stone-850 text-xs">
+                              {m.count || '-'}
+                            </span>
+                          </td>
+
+                          {/* Run Status */}
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                isRunning
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : isDoffing
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : isStopped
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                      : 'bg-stone-100 text-stone-600 border border-stone-300'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  isRunning ? 'bg-emerald-500 animate-pulse' : isDoffing ? 'bg-amber-500' : isStopped ? 'bg-rose-500' : 'bg-stone-400'
+                                }`}
+                              />
+                              {m.runStatus || 'OFFLINE'}
+                            </span>
+                          </td>
+
+                          {/* Spindle Speed */}
+                          <td className="py-2.5 px-3.5 text-right font-mono text-xs text-stone-700 whitespace-nowrap">
+                            {m.spindleSpeed > 0 ? `${m.spindleSpeed.toLocaleString('en-IN')} rpm` : '-'}
+                          </td>
+
+                          {/* Production (kg) */}
+                          <td className="py-2.5 px-3.5 text-right font-mono font-black text-stone-900 text-xs whitespace-nowrap">
+                            {m.actualKg > 0 ? (
+                              <span className="text-emerald-800 font-bold">
+                                {m.actualKg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400">0.00</span>
+                            )}
+                          </td>
+
+                          {/* Left EM */}
+                          <td className="py-2.5 px-3.5 text-right font-mono text-xs text-stone-700 whitespace-nowrap">
+                            {m.emLeftMin > 0 ? `${m.emLeftMin.toFixed(2)} min` : '-'}
+                          </td>
+
+                          {/* Right EM */}
+                          <td className="py-2.5 px-3.5 text-right font-mono text-xs text-stone-700 whitespace-nowrap">
+                            {m.emRightMin > 0 ? `${m.emRightMin.toFixed(2)} min` : '-'}
+                          </td>
+
+                          {/* Total EM */}
+                          <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
+                            <span className={`font-mono text-xs font-black ${
+                              m.emTotalMin > 0 ? 'text-stone-900' : 'text-stone-400'
+                            }`}>
+                              {m.emTotalMin > 0 ? `${m.emTotalMin.toFixed(2)} min` : '-'}
+                            </span>
+                          </td>
+
+                          {/* End Breaks */}
+                          <td className="py-2.5 px-3 text-center font-mono text-xs whitespace-nowrap">
+                            {m.endBreakCount > 0 ? (
+                              <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                                {m.endBreakCount}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400">-</span>
+                            )}
+                          </td>
+
+                          {/* Waste % */}
+                          <td className="py-2.5 px-3 text-right font-mono text-xs text-stone-600 whitespace-nowrap">
+                            {m.wastePct > 0 ? `${m.wastePct.toFixed(2)}%` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+
+                  {/* Machine Summary Footer */}
+                  <tfoot className="sticky bottom-0 z-10">
+                    <tr className="bg-stone-100 font-black text-stone-900 border-t-2 border-stone-300 shadow-md">
+                      <td className="py-3 px-3 text-center font-bold text-[10px] uppercase tracking-wider text-stone-700" colSpan={4}>
+                        Shift Total ({activeShiftMachines.length} Frames)
+                      </td>
+                      <td className="py-3 px-3.5 font-bold text-xs text-stone-600">
+                        {activeShiftMachines.filter(m => m.runStatus === 'RUN').length} Running
+                      </td>
+                      <td className="py-3 px-3 text-center text-xs font-bold text-emerald-800">
+                        {Math.round((activeShiftMachines.filter(m => m.runStatus === 'RUN').length / Math.max(1, activeShiftMachines.length)) * 100)}% Active
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-xs text-stone-700">
+                        {(() => {
+                          const running = activeShiftMachines.filter(m => m.spindleSpeed > 0);
+                          return running.length > 0 ? `${Math.round(running.reduce((a, b) => a + b.spindleSpeed, 0) / running.length).toLocaleString('en-IN')} rpm avg` : '-';
+                        })()}
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-emerald-800 text-xs font-black">
+                        {activeShiftMachines.reduce((a, b) => a + b.actualKg, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-xs text-stone-700">
+                        {activeShiftMachines.reduce((a, b) => a + b.emLeftMin, 0).toFixed(2)} min
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-xs text-stone-700">
+                        {activeShiftMachines.reduce((a, b) => a + b.emRightMin, 0).toFixed(2)} min
+                      </td>
+                      <td className="py-3 px-3.5 text-right font-mono text-xs font-black text-stone-900">
+                        {activeShiftMachines.reduce((a, b) => a + b.emTotalMin, 0).toFixed(2)} min
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono text-xs font-bold text-amber-900">
+                        {activeShiftMachines.reduce((a, b) => a + b.endBreakCount, 0)} breaks
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono text-xs">
+                        {(() => {
+                          const withW = activeShiftMachines.filter(m => m.wastePct > 0);
+                          return withW.length > 0 ? `${(withW.reduce((a, b) => a + b.wastePct, 0) / withW.length).toFixed(2)}%` : '-';
+                        })()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

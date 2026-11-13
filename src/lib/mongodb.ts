@@ -1,6 +1,5 @@
 import { MongoClient, Db } from 'mongodb';
 import { transferAndCleanupDatabase } from '@/lib/dbMigration';
-import { migrateFromOldDatabases } from '@/lib/oldDbMigration';
 
 const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/scm-spinning';
 const options = {};
@@ -184,22 +183,7 @@ export async function ensureDatabaseInitialized(db: Db): Promise<void> {
         console.warn('[MongoDB Init] Transfer and cleanup warning:', cleanupErr);
       }
 
-      // 5. Automatic Old Database Discovery & Migration (One-time or on empty tables)
-      // If spinning tables (machines, workers, reports) are empty, search old DBs (spinning_monitor, etc.)
-      const currentMachineCount = await db.collection('machines').countDocuments().catch(() => 0);
-      const currentWorkerCount = await db.collection('workers').countDocuments().catch(() => 0);
-      const currentReportCount = await db.collection('reports').countDocuments().catch(() => 0);
-      if (currentMachineCount === 0 || currentWorkerCount === 0 || currentReportCount === 0) {
-        try {
-          console.log(`[MongoDB Init] Core spinning tables are empty in ${db.databaseName} (machines: ${currentMachineCount}, workers: ${currentWorkerCount}, reports: ${currentReportCount}). Checking for historical data in old databases...`);
-          const migrationSummary = await migrateFromOldDatabases(db);
-          console.log('[MongoDB Init] Migration from old databases result:', JSON.stringify(migrationSummary.transferredCounts));
-        } catch (migErr) {
-          console.warn('[MongoDB Init] Migration from old databases warning:', migErr);
-        }
-      }
-
-      // 6. Ensure 24x7 Server Background Daemon is running (45s EM/Status/Prod, 5m Shift/Entities)
+      // 5. Ensure 24x7 Server Background Daemon is running (45s EM/Status/Prod, 5m Shift/Entities)
       if (typeof window === 'undefined') {
         try {
           const { startServerDaemon } = await import('@/lib/serverDaemon');

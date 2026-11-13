@@ -1,7 +1,6 @@
 import { getLightweightMachineStatuses, fetchAndSyncAllShiftsFromRailway } from '@/lib/iot/iotEmService';
 import { fetchLiveRenderStream, syncShiftEndNonMachineIotData, cleanupInterimIotHistories } from '@/lib/iot/iotDb';
 import { getIotDb } from '@/lib/mongodb';
-import { migrateFromOldDatabases } from '@/lib/oldDbMigration';
 
 export interface ServerDaemonStatus {
   isRunning: boolean;
@@ -171,18 +170,7 @@ export async function run5mSyncCycle(): Promise<{ success: boolean; message: str
       await syncShiftEndNonMachineIotData(today, currentShift);
     } catch (_) {}
 
-    // 3. Database Health Check: If core spinning collections are empty, trigger old DB migration
-    try {
-      const db = await getIotDb();
-      const mCount = await db.collection('machines').countDocuments().catch(() => 0);
-      const wCount = await db.collection('workers').countDocuments().catch(() => 0);
-      if (mCount === 0 || wCount === 0) {
-        addLog('Core spinning tables empty; triggering automatic migration from old databases...');
-        await migrateFromOldDatabases(db);
-      }
-    } catch (_) {}
-
-    // 4. Cleanup interim temporary histories to prevent collection bloat
+    // 3. Periodic temporary history cleanup
     try {
       await cleanupInterimIotHistories();
     } catch (_) {}
