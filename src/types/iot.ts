@@ -642,6 +642,7 @@ export interface IotMonthDateShiftRow {
   totalMachineCount: number;
   wastePercentage: number;
   activeMachinesSummary: string;
+  machines?: IotDailyProductionMachineRow[];
 }
 
 export interface IotDailyProductionResponse {

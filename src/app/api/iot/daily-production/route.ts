@@ -243,10 +243,16 @@ export async function GET(req: NextRequest) {
       let sWasteSum = 0;
       let sWasteCount = 0;
       const sActiveList: string[] = [];
+      const shiftMachineRows: IotDailyProductionMachineRow[] = [];
+      let mIdx = 1;
 
       for (const m of rawMachines) {
         const iotId = String(m.machine || m.machineId || '').toUpperCase().trim();
         const spinId = iotToSpinning[iotId] || iotId;
+        const shed = inferShed(spinId, iotId, registryMap);
+        const count = String(m.count || '-');
+        const runStatus = String(m.runStatus || 'STOP').toUpperCase();
+        const speed = Number(m.spindleSpeedCurrent || 0);
         const actualKg = Number((Number(m.shiftProduction) || 0).toFixed(2));
         const targetKg = Number((Number(m.shiftTargetProduction) || 0).toFixed(2));
         const wastePct = Number((Number(m.shiftWaste) || 0).toFixed(2));
@@ -256,6 +262,12 @@ export async function GET(req: NextRequest) {
         const emLeftMin = Number(Number(sideL?.endMendingTime || 0).toFixed(2));
         const emRightMin = Number(Number(sideR?.endMendingTime || 0).toFixed(2));
         const emTotalMin = Number((emLeftMin + emRightMin).toFixed(2));
+        const endBreakCount = Number(
+          m.totalEndBreakCount ??
+          ((Number(sideL?.endBreakCount) || 0) + (Number(sideR?.endBreakCount) || 0))
+        );
+        const machineVarianceKg = Number((actualKg - targetKg).toFixed(2));
+        const machineAchievementPct = targetKg > 0 ? Number(((actualKg / targetKg) * 100).toFixed(1)) : 0;
 
         sProd += actualKg;
         sTarget += targetKg;
@@ -265,10 +277,34 @@ export async function GET(req: NextRequest) {
           sWasteCount++;
         }
 
-        if (String(m.runStatus || '').toUpperCase() === 'RUN') {
+        if (runStatus === 'RUN') {
           sActiveList.push(spinId);
         }
+
+        shiftMachineRows.push({
+          sNo: mIdx++,
+          spinningFrame: spinId,
+          iotMachine: iotId,
+          shed,
+          count,
+          runStatus,
+          spindleSpeed: speed,
+          targetKg,
+          actualKg,
+          varianceKg: machineVarianceKg,
+          achievementPct: machineAchievementPct,
+          wastePct,
+          emTotalMin,
+          emLeftMin,
+          emRightMin,
+          endBreakCount,
+          hourWiseProduction: Array.isArray(m.hourWiseProduction) ? m.hourWiseProduction : []
+        });
       }
+
+      // Sort machines in this shift by spinning frame
+      shiftMachineRows.sort((a, b) => a.spinningFrame.localeCompare(b.spinningFrame, undefined, { numeric: true }));
+      shiftMachineRows.forEach((r, idx) => { r.sNo = idx + 1; });
 
       // Overall EM calculation: Fleet average of actual machine end mending times
       const overallEm = sActiveList.length > 0
@@ -300,7 +336,8 @@ export async function GET(req: NextRequest) {
         activeMachineCount: sActiveList.length,
         totalMachineCount: rawMachines.length,
         wastePercentage: avgWaste,
-        activeMachinesSummary: sActiveList.slice(0, 15).join(', ') + (sActiveList.length > 15 ? '...' : '')
+        activeMachinesSummary: sActiveList.slice(0, 15).join(', ') + (sActiveList.length > 15 ? '...' : ''),
+        machines: shiftMachineRows
       });
     }
 
