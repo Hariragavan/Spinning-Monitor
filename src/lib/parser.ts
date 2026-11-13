@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion, MachineEmData, Shed } from '../types';
-import { parseUniversalDate, getYesterdayUniversalDate, shiftUniversalDate } from './utils';
+import { parseUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, getMachineShed } from './utils';
 export { getYesterdayUniversalDate, shiftUniversalDate };
 
 export const normalizeDateValue = (val: any): string => {
@@ -145,9 +145,15 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
   const shed = targetShed || report.shed || 'Shed 1';
   const normShed = normalizeShedName(shed) || 'Shed 1';
 
-  // Filter entries and summaries strictly to target shed
-  const filteredEntries = (report.entries || []).filter(e => !e.shed || normalizeShedName(e.shed) === normShed);
-  const filteredSummaries = (report.summaries || []).filter(s => !s.shed || normalizeShedName(s.shed) === normShed);
+  // Filter entries and summaries strictly to target shed by checking both entry shed and machine frame shed
+  const filteredEntries = (report.entries || []).filter(e => {
+    const frameShed = getMachineShed(e.frameNo, (e.shed as Shed) || normShed);
+    return frameShed === normShed;
+  });
+  const filteredSummaries = (report.summaries || []).filter(s => {
+    const frameShed = getMachineShed(s.frameNo, (s.shed as Shed) || normShed);
+    return frameShed === normShed;
+  });
 
   const existingFrames = Array.from(new Set(filteredEntries.map(e => e.frameNo))).filter(Boolean);
   const machines = existingFrames;

@@ -113,3 +113,4 @@ export function useKeepAwake(isActive: boolean = false): { isLocked: boolean } {
 
   return { isLocked };
 }
+

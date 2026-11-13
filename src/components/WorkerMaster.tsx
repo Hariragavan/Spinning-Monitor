@@ -31,7 +31,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   onImportWorkers,
   currentShed = 'Shed 1'
 }) => {
-  const [selectedShedTab, setSelectedShedTab] = useState<string>(currentShed || 'All Sheds');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [photoFilter, setPhotoFilter] = useState<'all' | 'has_photo' | 'no_photo'>('all');
@@ -44,7 +43,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   const [editingWorker, setEditingWorker] = useState<Sider | null>(null);
   const [formName, setFormName] = useState('');
   const [formTNo, setFormTNo] = useState('');
-  const [formShed, setFormShed] = useState<string>(currentShed || 'Shed 1');
   const [formDept, setFormDept] = useState('Sider');
   const [formPhotoUrl, setFormPhotoUrl] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -139,13 +137,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     stopCamera();
   };
 
-  // Sync tab with currentShed
-  useEffect(() => {
-    if (currentShed && currentShed !== 'All') {
-      setSelectedShedTab(currentShed);
-    }
-  }, [currentShed]);
-
   // Normalize department names consistently
   const normalizeDept = (d?: string): string => {
     if (!d) return 'Sider';
@@ -159,31 +150,28 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
   };
 
-  // Workers scoped to currently selected Shed Tab
-  const workersInShedScope = useMemo(() => {
-    if (selectedShedTab === 'All Sheds') return workers;
-    return workers.filter(w => normalizeShed(w.shed) === normalizeShed(selectedShedTab));
-  }, [workers, selectedShedTab]);
+  // Common Employee Master: All registered workers across mill
+  const workersInShedScope = workers;
 
-  // Department counts scoped to active shed tab
+  // Department counts across all workers
   const categoriesMap = useMemo(() => {
     const map = new Map<string, number>();
-    workersInShedScope.forEach(w => {
+    workers.forEach(w => {
       const dept = normalizeDept(w.department);
       map.set(dept, (map.get(dept) || 0) + 1);
     });
     return map;
-  }, [workersInShedScope]);
+  }, [workers]);
 
   // Active categories list
   const activeCategories = useMemo(() => {
     const presentCats = new Set<string>();
-    workersInShedScope.forEach(w => {
+    workers.forEach(w => {
       presentCats.add(normalizeDept(w.department));
     });
     const standard = ['Sider', 'Gaiter', 'AI Linkconer', 'Fitter'];
     return Array.from(new Set([...standard, ...Array.from(presentCats)]));
-  }, [workersInShedScope]);
+  }, [workers]);
 
   // Validates if worker has an authentic photo (not dummy picsum or placeholder)
   const isWorkerPhotoValid = (url?: string): boolean => {
@@ -196,14 +184,14 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   };
 
   const totalWithPhoto = useMemo(() => {
-    return workersInShedScope.filter(w => isWorkerPhotoValid(w.photoUrl)).length;
-  }, [workersInShedScope]);
+    return workers.filter(w => isWorkerPhotoValid(w.photoUrl)).length;
+  }, [workers]);
 
-  const totalWithoutPhoto = workersInShedScope.length - totalWithPhoto;
+  const totalWithoutPhoto = workers.length - totalWithPhoto;
 
   // Filtered list
   const filteredWorkers = useMemo(() => {
-    return workersInShedScope.filter(w => {
+    return workers.filter(w => {
       // Search query (Name, TNo, Department)
       const q = searchTerm.toLowerCase();
       const matchSearch = 
@@ -225,7 +213,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
       return true;
     });
-  }, [workersInShedScope, searchTerm, selectedCategory, photoFilter]);
+  }, [workers, searchTerm, selectedCategory, photoFilter]);
 
   // Select All handling
   const allFilteredSelected = filteredWorkers.length > 0 && filteredWorkers.every(w => selectedIds.includes(w.id));
@@ -245,11 +233,9 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
   // Add / Edit Modal trigger
   const handleOpenAdd = () => {
-    const activeShed = selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1');
     setEditingWorker(null);
     setFormName('');
     setFormTNo('');
-    setFormShed(activeShed);
     setFormDept('Sider');
     setFormPhotoUrl('');
     setValidationError(null);
@@ -260,7 +246,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     setEditingWorker(worker);
     setFormName(worker.name);
     setFormTNo(worker.tNo);
-    setFormShed(worker.shed || currentShed || 'Shed 1');
     setFormDept(worker.department || 'Sider');
     setFormPhotoUrl(worker.photoUrl || '');
     setValidationError(null);
@@ -274,15 +259,13 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
     }
 
     const cleanTNo = formTNo.trim().toUpperCase();
-    const cleanShed = formShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
 
     const duplicate = workers.find(w => 
       w.id !== editingWorker?.id && 
-      w.tNo.trim().toUpperCase() === cleanTNo &&
-      (w.shed || 'Shed 1') === cleanShed
+      w.tNo.trim().toUpperCase() === cleanTNo
     );
     if (duplicate) {
-      setValidationError(`TK. NO "${cleanTNo}" is already assigned to ${duplicate.name.toUpperCase()} in ${cleanShed}.`);
+      setValidationError(`TK. NO "${cleanTNo}" is already assigned to ${duplicate.name.toUpperCase()}.`);
       return;
     }
 
@@ -291,7 +274,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
         ...editingWorker,
         name: formName.trim().toUpperCase(),
         tNo: cleanTNo,
-        shed: cleanShed,
         department: formDept,
         photoUrl: formPhotoUrl
       });
@@ -299,7 +281,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
       onAdd({
         name: formName.trim().toUpperCase(),
         tNo: cleanTNo,
-        shed: cleanShed,
         department: formDept,
         photoUrl: formPhotoUrl
       });
@@ -350,8 +331,8 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   // Backup / Exports
   const handleBackupXlsx = () => {
     const data = [
-      ['TicketNo', 'Name', 'Department', 'Shed'],
-      ...workers.map(w => [w.tNo, w.name, w.department || 'Sider', w.shed || 'Shed 1'])
+      ['TicketNo', 'Name', 'Department'],
+      ...workers.map(w => [w.tNo, w.name, w.department || 'Sider'])
     ];
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -390,7 +371,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
               name: String(item.name || '').trim().toUpperCase(),
               tNo: String(item.tNo || item.ticketNo || '').trim().toUpperCase(),
               department: item.department || 'Sider',
-              shed: item.shed || currentShed || 'Shed 1',
               photoUrl: cleanPhoto
             };
           }).filter(w => w.name && w.tNo);
@@ -414,7 +394,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
             name: String(rawName || '').trim().toUpperCase(),
             tNo: String(rawTNo || '').trim().toUpperCase(),
             department: String(rawDept || 'Sider').trim(),
-            shed: String(rawShed).trim(),
             photoUrl: cleanPhoto
           };
         }).filter(w => w.name && w.tNo);
@@ -564,10 +543,10 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
             </span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-black font-mono text-stone-900">
-                {workersInShedScope.length}
+                {workers.length}
               </span>
               <span className="text-xs font-bold text-stone-500">
-                {selectedShedTab === 'All Sheds' ? 'Registered' : selectedShedTab}
+                Registered
               </span>
             </div>
           </div>
@@ -581,7 +560,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                 {totalWithPhoto}
               </span>
               <span className="text-xs font-bold text-emerald-600">
-                {workersInShedScope.length > 0 ? `${Math.round((totalWithPhoto / workersInShedScope.length) * 100)}%` : '0%'}
+                {workers.length > 0 ? `${Math.round((totalWithPhoto / workers.length) * 100)}%` : '0%'}
               </span>
             </div>
           </div>
@@ -600,7 +579,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
           <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-200/80">
             <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 block mb-0.5">
-              Categories ({selectedShedTab})
+              Categories
             </span>
             <div className="flex flex-wrap gap-1 mt-1">
               {activeCategories.filter(cat => (categoriesMap.get(cat) || 0) > 0).map(cat => (
@@ -685,28 +664,8 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
       {/* 4. FILTERS & SEARCH ROW */}
       <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          {/* SHED TABS */}
-          <div className="inline-flex items-center bg-stone-100 p-1 rounded-2xl border border-stone-200 overflow-x-auto max-w-full">
-            {['All Sheds', 'Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => {
-              const isSelected = selectedShedTab === s;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setSelectedShedTab(s)}
-                  className={cn(
-                    "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer whitespace-nowrap",
-                    isSelected ? "bg-white text-emerald-800 shadow-2xs" : "text-stone-500 hover:text-stone-900"
-                  )}
-                >
-                  {s}
-                </button>
-              );
-            })}
-          </div>
-
           {/* SEARCH BAR */}
-          <div className="relative flex-1 max-w-md">
+          <div className="relative flex-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
             <input
               type="text"
@@ -740,7 +699,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                   : "bg-stone-100 text-stone-600 hover:text-stone-900"
               )}
             >
-              All Categories ({workersInShedScope.length})
+              All Categories ({workers.length})
             </button>
             {activeCategories.map(cat => (
               <button
@@ -835,9 +794,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                     />
 
                     <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 rounded-lg bg-stone-100 text-stone-700 text-[10px] font-black border border-stone-200">
-                        {worker.shed || 'Shed 1'}
-                      </span>
                       <span className={cn("px-2 py-0.5 rounded-lg text-[10px] font-black border uppercase tracking-wider", getDeptColor(worker.department))}>
                         {worker.department || 'Sider'}
                       </span>
@@ -965,7 +921,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                   <th className="px-3 py-2 w-16">Photo</th>
                   <th className="px-4 py-2 w-28">Ticket No</th>
                   <th className="px-4 py-2">Employee Name</th>
-                  <th className="px-4 py-2 w-28">Shed</th>
                   <th className="px-4 py-2 w-36">Category</th>
                   <th className="px-4 py-2 w-32">Status</th>
                   <th className="px-4 py-2 w-36 text-right">Actions</th>
@@ -1010,11 +965,6 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                       </td>
                       <td className="px-4 py-2 font-black text-stone-900 uppercase">
                         {worker.name}
-                      </td>
-                      <td className="px-4 py-2">
-                        <span className="px-2.5 py-1 rounded-lg bg-stone-100 text-stone-700 text-[10px] font-black border border-stone-200">
-                          {worker.shed || 'Shed 1'}
-                        </span>
                       </td>
                       <td className="px-4 py-2">
                         <span className={cn("px-2.5 py-1 rounded-lg text-[10px] font-black border uppercase tracking-wider", getDeptColor(worker.department))}>
@@ -1074,7 +1024,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
 
                 {filteredWorkers.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-stone-400 font-bold uppercase tracking-wider text-xs">
+                    <td colSpan={7} className="py-12 text-center text-stone-400 font-bold uppercase tracking-wider text-xs">
                       No staff records found.
                     </td>
                   </tr>
@@ -1182,35 +1132,18 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
                 />
               </div>
 
-              {/* TICKET NUMBER & SHED ROW */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                    Ticket Number (T.No) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 104"
-                    value={formTNo}
-                    onChange={(e) => setFormTNo(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none uppercase"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
-                    Assigned Shed
-                  </label>
-                  <select
-                    value={formShed}
-                    onChange={(e) => setFormShed(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none cursor-pointer"
-                  >
-                    {['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'].map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </div>
+              {/* TICKET NUMBER */}
+              <div>
+                <label className="block text-[11px] font-black uppercase tracking-wider text-stone-700 mb-1">
+                  Ticket Number (T.No) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 104"
+                  value={formTNo}
+                  onChange={(e) => setFormTNo(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-black text-stone-900 focus:bg-white focus:border-emerald-500 outline-none uppercase"
+                />
               </div>
 
               {/* CATEGORY (DEPARTMENT) - FULL WIDTH */}

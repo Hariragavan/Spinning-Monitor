@@ -27,19 +27,11 @@ export async function POST(req: Request) {
 
     if (body.action === 'batch') {
       const workers: Sider[] = body.workers || [];
-      const shed = body.shed;
 
-      if (shed && shed !== 'All') {
-        // Only replace workers belonging to this shed
-        await db.collection('workers').deleteMany({ shed });
-        if (workers.length > 0) {
-          await db.collection('workers').insertMany(workers.map(w => ({ ...w, shed })));
-        }
-      } else {
-        await db.collection('workers').deleteMany({});
-        if (workers.length > 0) {
-          await db.collection('workers').insertMany(workers);
-        }
+      // Workers are common across all sheds: replace all workers globally
+      await db.collection('workers').deleteMany({});
+      if (workers.length > 0) {
+        await db.collection('workers').insertMany(workers);
       }
       return NextResponse.json({ success: true, count: workers.length });
     }
@@ -72,13 +64,8 @@ export async function DELETE(req: Request) {
     const all = searchParams.get('all');
 
     if (all === 'true') {
-      if (shed && shed !== 'All') {
-        await db.collection('workers').deleteMany({ shed });
-        return NextResponse.json({ success: true, message: `All workers for ${shed} deleted` });
-      } else {
-        await db.collection('workers').deleteMany({});
-        return NextResponse.json({ success: true, message: 'All workers deleted' });
-      }
+      await db.collection('workers').deleteMany({});
+      return NextResponse.json({ success: true, message: 'All workers deleted' });
     }
 
     if (id) {

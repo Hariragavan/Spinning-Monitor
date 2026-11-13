@@ -23,7 +23,7 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
+import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, getMachineShed, resolveEffectiveMappingForDate } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 
 // Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
@@ -389,19 +389,12 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       return filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     };
 
-    // 1. Primary Source: machines registered in Machine Master for this shed
+    // Primary Source: machines registered in Machine Master for this shed
     const fromRegistry = (machinesProp || []).filter(m => {
       if (!m) return false;
-      if (normalizeShed(m.shed || 'Shed 1') !== targetNorm) return false;
-      const fNo = String(m.rfNo || (m as any).frameNo || (m as any).machineId || '').trim().toUpperCase();
-      const numMatch = fNo.match(/\d+/);
-      const num = numMatch ? parseInt(numMatch[0], 10) : null;
-      if (num !== null) {
-        if (targetNorm === 'Shed 1' && (num < 1 || num > 24)) return false;
-        if (targetNorm === 'Shed 2' && (num < 25 || num > 44)) return false;
-        if (targetNorm === 'Shed 3' && (num < 45 && num !== 23)) return false;
-      }
-      return true;
+      const fNo = String(m.rfNo || (m as any).frameNo || (m as any).machineId || '').trim();
+      const mShed = getMachineShed(fNo, normalizeShed(m.shed || 'Shed 1'));
+      return mShed === targetNorm;
     });
     fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
 
@@ -415,31 +408,20 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
       if (!f || String(f).toUpperCase().startsWith('RF')) return;
       const clean = String(f).trim();
-      const numMatch = clean.match(/\d+/);
-      const frameNum = numMatch ? parseInt(numMatch[0], 10) : null;
-      
-      // Filter by shed when Machine Master is unpopulated:
-      // Shed 1: frames 1-24
-      // Shed 2: frames 25-46
-      // Shed 3: frames > 46
-      // KTTM: frame name includes KT
-      if (frameNum !== null) {
-        if (targetNorm === 'Shed 1' && (frameNum < 1 || frameNum > 24)) return;
-        if (targetNorm === 'Shed 2' && (frameNum < 25 || frameNum > 46)) return;
-        if (targetNorm === 'Shed 3' && frameNum <= 46) return;
-        if (targetNorm === 'KTTM' && !clean.toUpperCase().includes('KT')) return;
+      if (getMachineShed(clean, targetNorm as Shed) === targetNorm) {
+        addClean(clean);
       }
-      addClean(clean);
     });
 
     // b. Spinning frame numbers from history reports belonging to this shed
     (effectiveHistory || []).forEach(report => {
       if (!report || !report.date || !Array.isArray(report.entries)) return;
-      if (normalizeShed(report.shed || 'Shed 1') !== targetNorm) return;
       const parts = parseUniversalDateParts(report.date);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
         report.entries.forEach(e => {
-          if (e && e.frameNo) addClean(e.frameNo);
+          if (e && e.frameNo && getMachineShed(e.frameNo, (e.shed as Shed) || targetNorm as Shed) === targetNorm) {
+            addClean(e.frameNo);
+          }
         });
       }
     });
