@@ -277,18 +277,42 @@ export function getActiveRule(
 export function calculateIncentive(entry: ProductionEntry, rules: IncentiveRule[], reportDate?: string, shed?: string): number {
   const effectiveShed = entry.shed || shed;
   const rule = getActiveRule(entry.count, 'Sider', rules, reportDate, effectiveShed);
-  if (rule && rule.payouts && rule.payouts.length > 0) {
-    const sortedPayouts = [...rule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
-    const actualGps = Math.round(Number(entry.gpsActual || 0));
-    const rawGps = Number(entry.gpsActual || 0);
-    const bestPayout = sortedPayouts.find((p) => {
-      const threshold = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
-      return actualGps >= threshold || rawGps >= threshold;
-    });
-    if (bestPayout) return bestPayout.amount;
-    return 0;
+  const actualGps = Math.round(Number(entry.gpsActual || 0));
+  const rawGps = Number(entry.gpsActual || 0);
+
+  if (rule) {
+    // 1. Check rule.payouts format
+    if (rule.payouts && Array.isArray(rule.payouts) && rule.payouts.length > 0) {
+      const sortedPayouts = [...rule.payouts].sort((a, b) => {
+        const tA = b.fromGps !== undefined ? b.fromGps : b.gpsThreshold;
+        const tB = a.fromGps !== undefined ? a.fromGps : a.gpsThreshold;
+        return tA - tB;
+      });
+      const bestPayout = sortedPayouts.find((p) => {
+        const threshold = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
+        return actualGps >= threshold || rawGps >= threshold;
+      });
+      if (bestPayout && bestPayout.amount > 0) return bestPayout.amount;
+    }
+
+    // 2. Check rule.rules or rule.slabs format: [ { minGps, maxGps, amount } ]
+    const altRules: any[] = (rule as any).rules || (rule as any).slabs || [];
+    if (Array.isArray(altRules) && altRules.length > 0) {
+      const sortedAlt = [...altRules].sort((a, b) => {
+        const minA = a.minGps !== undefined ? a.minGps : (a.fromGps || 0);
+        const minB = b.minGps !== undefined ? b.minGps : (b.fromGps || 0);
+        return minB - minA;
+      });
+      const matched = sortedAlt.find((r) => {
+        const min = r.minGps !== undefined ? r.minGps : (r.fromGps ?? 0);
+        const max = r.maxGps !== undefined ? r.maxGps : (r.toGps ?? 9999);
+        return (actualGps >= min || rawGps >= min) && (actualGps <= max || rawGps <= max);
+      });
+      if (matched && matched.amount > 0) return matched.amount;
+    }
   }
 
+  // 3. Fallback to entry.incentiveAmount if provided on the entry
   if (entry.incentiveAmount !== undefined && entry.incentiveAmount !== null && entry.incentiveAmount > 0) {
     return entry.incentiveAmount;
   }
