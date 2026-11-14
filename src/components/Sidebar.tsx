@@ -60,11 +60,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },
       { id: 'sider-monthly-performance', label: 'Sider Monthly Performance', icon: FileText },
       { id: 'operator-em-format', label: 'Operator EM Format', icon: FileText },
-    ]
-  },
-  {
-    title: 'AI & Maintenance',
-    items: [
       { id: 'ai-maintenance', label: 'AI & Maintenance', icon: Wrench },
     ]
   },
