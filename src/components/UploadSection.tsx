@@ -81,30 +81,9 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     }
     return Array.isArray(dates) ? dates : [];
   });
-  const [leaveSelectedDate, setLeaveSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  // Empty by default until user explicitly selects and updates a date for the leave announcement
+  const [leaveSelectedDate, setLeaveSelectedDate] = useState<string>('');
   const [selectedLeaveFilter, setSelectedLeaveFilter] = useState('');
-
-  // Sync leave dates when history changes
-  useEffect(() => {
-    if (history && history.length > 0) {
-      const historyLeaves = history
-        .filter(r => (!r.entries || r.entries.length === 0) && (!r.totalProductionActual || r.totalProductionActual === 0) && r.date)
-        .map(r => r.date);
-      if (historyLeaves.length > 0) {
-        setLeaveDates(prev => {
-          const combined = Array.from(new Set([...prev, ...historyLeaves])).sort((a, b) => {
-            const pA = a.split(/[/.-]/).reverse().join('-');
-            const pB = b.split(/[/.-]/).reverse().join('-');
-            return pB.localeCompare(pA);
-          });
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('spinning_leave_dates', JSON.stringify(combined));
-          }
-          return combined;
-        });
-      }
-    }
-  }, [history]);
 
   const handleMarkLeave = () => {
     if (!leaveSelectedDate) {
@@ -139,6 +118,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('spinning_leave_dates', JSON.stringify(updated));
     }
+    // Reset date entry to empty after marking
+    setLeaveSelectedDate('');
 
     showToast('success', 'Successfully uploaded', `Marked ${formattedDate} as Leave.`);
   };
@@ -153,6 +134,17 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       setSelectedLeaveFilter('');
     }
     showToast('success', 'Successfully uploaded', `Removed ${dateToRemove} from Leave dates.`);
+  };
+
+  const handleClearAllLeaves = () => {
+    if (window.confirm('Clear all registered leave announcements?')) {
+      setLeaveDates([]);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('spinning_leave_dates');
+      }
+      setSelectedLeaveFilter('');
+      showToast('success', 'Successfully uploaded', 'All leave announcement entries cleared.');
+    }
   };
 
   const downloadTemplate = (type: 'daily_report' | 'incentive' | 'worker' | 'em') => {
@@ -1385,7 +1377,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </motion.div>
       )}
 
-      {/* Leave & Factory Holiday Registry (Replaces Zero-Production Event & Ingestion Status) */}
+      {/* Leave Announcement & Factory Holiday Registry */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
           <div className="flex items-center gap-3">
@@ -1394,10 +1386,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-black text-stone-900 uppercase tracking-tight">
-                Leave &amp; Factory Holiday Registry
+                Leave Announcement &amp; Factory Holiday Registry
               </h3>
               <p className="text-xs text-stone-500 font-bold mt-0.5">
-                Mark dates as leave or maintenance and inspect all registered leave dates in dropdown
+                Record factory leave announcements or maintenance days with zero production
               </p>
             </div>
           </div>
@@ -1405,6 +1397,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <span className="px-3 py-1 bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-black uppercase tracking-wider">
               {leaveDates.length} Leave Dates Marked
             </span>
+            {leaveDates.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllLeaves}
+                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-[11px] font-black uppercase tracking-wider cursor-pointer transition-all"
+                title="Clear all marked leave announcements"
+              >
+                Clear All
+              </button>
+            )}
           </div>
         </div>
 
@@ -1412,7 +1414,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           {/* Date Picker & Mark as Leave Button */}
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
             <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500">
-              1. Select Date to Mark as Leave
+              1. Leave Announcement Date Entry
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -1425,13 +1427,19 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
               <button
                 type="button"
                 onClick={handleMarkLeave}
-                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95 whitespace-nowrap"
+                disabled={!leaveSelectedDate}
+                className={cn(
+                  "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs whitespace-nowrap",
+                  leaveSelectedDate
+                    ? "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer active:scale-95"
+                    : "bg-stone-200 text-stone-400 cursor-not-allowed"
+                )}
               >
                 Mark as Leave
               </button>
             </div>
             <p className="text-[11px] text-stone-400 font-medium">
-              Selected date will be saved to the database as a factory holiday with zero output.
+              The date entry stays empty until you select a date. Click &apos;Mark as Leave&apos; to register the announcement.
             </p>
           </div>
 
@@ -1439,7 +1447,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
             <div className="flex items-center justify-between">
               <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500">
-                2. Marked Leave Dates Dropdown
+                2. Marked Leave Announcements Dropdown
               </label>
               {leaveDates.length > 0 && (
                 <span className="text-[10px] font-bold text-emerald-700">
@@ -1455,11 +1463,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 className="flex-1 bg-white border border-stone-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-stone-800 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer"
               >
                 <option value="">
-                  {leaveDates.length === 0 ? 'No dates marked as leave yet' : `Select Leave Date (${leaveDates.length} Marked)`}
+                  {leaveDates.length === 0 ? 'No leave announcement dates marked yet' : `Select Leave Date (${leaveDates.length} Marked)`}
                 </option>
                 {leaveDates.map((d) => (
                   <option key={d} value={d}>
-                    📅 {d} — Holiday / Leave
+                    📅 {d} — Holiday / Leave Announcement
                   </option>
                 ))}
               </select>
