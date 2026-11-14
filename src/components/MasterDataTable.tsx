@@ -8,6 +8,7 @@ import {
 import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, isCountNameMatching } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
+import { CountSummary } from './CountSummary';
 
 interface MasterDataTableProps {
   report: DailyReport;
@@ -476,7 +477,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
                   : "text-stone-500 hover:text-stone-900"
               )}
             >
-              Running Counts
+              Count Summary
             </button>
             <button
               onClick={() => setViewMode('workers')}
@@ -835,51 +836,16 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
         </div>
       )}
 
-      {/* VIEW 3: RUNNING COUNTS SUMMARY */}
+      {/* VIEW 3: COUNT SUMMARY */}
       {viewMode === 'counts' && (
-        <div className="mt-4 overflow-x-auto rounded-2xl border border-stone-200/80">
-          <table className={cn("w-full border-collapse text-left", isTvMode ? "text-lg" : "text-xs")}>
-            <thead>
-              <tr className="bg-stone-900 text-stone-50 uppercase tracking-wider font-black">
-                <th className="py-3 px-4 text-left">Yarn Count</th>
-                <th className="py-3 px-4 text-left">Active Machines</th>
-                <th className="py-3 px-3 text-center">STD GPSS</th>
-                <th className="py-3 px-3 text-center">Achieved Avg GPSS</th>
-                <th className="py-3 px-3 text-center">40s Converted GPSS</th>
-                <th className="py-3 px-4 text-right">Total Production (Kg)</th>
-                <th className="py-3 px-3 text-center">Mill Share</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100 font-medium">
-              {runningCountsData.map((item) => (
-                <tr key={item.count} className="hover:bg-stone-50/80 transition-colors">
-                  <td className="py-3 px-4 font-black text-stone-900 text-sm">
-                    {item.count}
-                  </td>
-                  <td className="py-3 px-4 font-bold text-stone-600">
-                    {item.frames}
-                  </td>
-                  <td className="py-3 px-3 text-center font-mono tabular-nums text-stone-500 font-bold">
-                    {item.stdGps}
-                  </td>
-                  <td className="py-3 px-3 text-center font-mono tabular-nums font-black text-emerald-700">
-                    {item.avgGps}
-                  </td>
-                  <td className="py-3 px-3 text-center font-mono tabular-nums font-black text-stone-900">
-                    {item.avg40sGps}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono tabular-nums font-black text-stone-900">
-                    {item.totalProduction.toLocaleString('en-IN')} kg
-                  </td>
-                  <td className="py-3 px-3 text-center">
-                    <span className="px-2 py-0.5 bg-stone-100 text-stone-800 rounded-full font-bold text-[11px]">
-                      {item.sharePercent}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-4">
+          <CountSummary
+            report={report}
+            countConversions={countConversions}
+            isTvMode={isTvMode}
+            onSelectDate={onSelectDate}
+            availableDates={availableDates}
+          />
         </div>
       )}
 

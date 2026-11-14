@@ -73,6 +73,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, count: reports.length });
     }
 
+    if (body.action === 'clear_date') {
+      const { date } = body;
+      if (!date) {
+        return NextResponse.json({ success: false, error: 'date required' }, { status: 400 });
+      }
+
+      // Wipe strictly the uploaded report and daily production logs for this date
+      // Strictly DO NOT touch iot_em, iot_devices, iot_shiftwise_data, or other telemetry collections
+      const repRes = await db.collection('reports').deleteMany({ date });
+      let deletedLogsCount = 0;
+      try {
+        const logRes = await db.collection('dailyproductionlogs').deleteMany({ date });
+        deletedLogsCount = logRes.deletedCount || 0;
+      } catch {}
+
+      return NextResponse.json({
+        success: true,
+        deletedReports: repRes.deletedCount || 0,
+        deletedProductionLogs: deletedLogsCount,
+        date
+      });
+    }
+
     if (body.action === 'clear_month') {
       const { month, year } = body; // month 1-12, year number
       const targetMonth = Number(month);
@@ -148,8 +171,11 @@ export async function DELETE(req: Request) {
     }
 
     if (date) {
-      await db.collection('reports').deleteOne({ date });
-      return NextResponse.json({ success: true, message: `Report for ${date} deleted` });
+      await db.collection('reports').deleteMany({ date });
+      try {
+        await db.collection('dailyproductionlogs').deleteMany({ date });
+      } catch {}
+      return NextResponse.json({ success: true, message: `Report and production data for ${date} deleted` });
     }
 
     return NextResponse.json({ success: false, error: 'date or all=true required' }, { status: 400 });

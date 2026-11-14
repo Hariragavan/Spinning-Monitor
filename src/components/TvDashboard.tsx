@@ -11,7 +11,7 @@ import {
   FileSpreadsheet, Sun
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed, MachineMasterItem } from '../types';
-import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate, isCountNameMatching } from '../lib/utils';
+import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate, isCountNameMatching, normalizeShed } from '../lib/utils';
 import { ensureSixMachines, createDefaultReportForShed, getTodayUniversalDate } from '../lib/parser';
 import { useKeepAwake } from '../lib/useKeepAwake';
 
@@ -478,9 +478,16 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
   // Safety Fallback: Use dailyReport, ensure 6 machines so frames are always populated cleanly
   const safeDailyReport = useMemo(() => {
-    const report = dailyReport || createDefaultReportForShed(selectedShed, getYesterdayUniversalDate());
+    if (dailyReport && dailyReport.date) {
+      return ensureSixMachines(dailyReport, selectedShed);
+    }
+    const fallbackDate = (availableDates && availableDates.length > 0)
+      ? availableDates[0]
+      : (history && history.length > 0 ? history[0]?.date : getYesterdayUniversalDate());
+    const matched = history?.find(r => r.date === fallbackDate && normalizeShed(r.shed) === normalizeShed(selectedShed));
+    const report = matched || createDefaultReportForShed(selectedShed, fallbackDate);
     return ensureSixMachines(report, selectedShed);
-  }, [dailyReport, selectedShed]);
+  }, [dailyReport, selectedShed, availableDates, history]);
 
   // 3. Active Main Pages & Sub-pages based on settings
   const activeMainPages = useMemo(() => {

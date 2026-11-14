@@ -433,10 +433,15 @@ export default function Home() {
     const dateSet = new Set<string>();
     if (activeDailyReport?.date) dateSet.add(activeDailyReport.date);
     currentShedHistory.forEach(r => {
-      if (r.date) dateSet.add(r.date);
+      // Include dates that have actual production entries or frame summaries
+      if (r.date && ((r.entries && r.entries.length > 0) || (r.summaries && r.summaries.length > 0))) {
+        dateSet.add(r.date);
+      }
     });
-    dateSet.add(getYesterdayUniversalDate());
-    dateSet.add(getTodayUniversalDate());
+    // Fallback if no dates have data at all yet
+    if (dateSet.size === 0) {
+      dateSet.add(getYesterdayUniversalDate());
+    }
 
     return Array.from(dateSet).filter(Boolean).sort((a, b) => {
       const pA = a.split('/').map(Number);
@@ -525,6 +530,11 @@ export default function Home() {
   });
 
   const [isTvMode, setIsTvMode] = useState(false);
+  const isTvModeRef = useRef(isTvMode);
+  useEffect(() => {
+    isTvModeRef.current = isTvMode;
+  }, [isTvMode]);
+
   // Keep TV screen awake and prevent standby while TV Mode is active
   useKeepAwake(isTvMode);
   const [isTvSettingsOpen, setIsTvSettingsOpen] = useState(false);
@@ -536,14 +546,19 @@ export default function Home() {
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
 
+  // Sub-tab states for navigation sections
+  const [dailyIncentiveSubTab, setDailyIncentiveSubTab] = useState<'worker' | 'machine'>('worker');
+  const [aiMaintenanceSubTab, setAiMaintenanceSubTab] = useState<'incentive' | 'abstract' | 'performance' | 'fitter'>('incentive');
+
   const [rollbackDate, setRollbackDate] = useState(() => getTodayUniversalDate());
   const [rollbackMode, setRollbackMode] = useState<'after' | 'upto' | 'august'>('after');
   const [clearMonth, setClearMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'));
   const [clearYear, setClearYear] = useState(() => String(new Date().getFullYear()));
+  const [clearSelectedDate, setClearSelectedDate] = useState<string>(() => getYesterdayUniversalDate());
 
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
     isOpen: boolean;
-    type: 'all' | 'month' | 'workers';
+    type: 'all' | 'month' | 'date' | 'workers';
     title: string;
     description: string;
     targetInfo?: string;
@@ -596,32 +611,57 @@ export default function Home() {
       const currentSelectedDate = dailyReportRef.current?.date || yesterdayStr;
       const currentShed = selectedShedRef.current || 'Shed 1';
 
+      // Helper to find the lastly updated report with valid data
+      const getLatestUpdatedReport = (history: DailyReport[], shed: string): DailyReport | null => {
+        if (!history || history.length === 0) return null;
+        const normShed = normalizeShed(shed);
+        const validReports = history.filter(r => {
+          if (normalizeShed(r.shed) !== normShed) return false;
+          const hasEntries = Array.isArray(r.entries) && r.entries.some(e => (e.productionActual || 0) > 0 || (e.gpsActual || 0) > 0 || (e.frameNo && e.count));
+          const hasSummaries = Array.isArray(r.summaries) && r.summaries.some(s => (s.actualProd || 0) > 0 || (s.avgGps || 0) > 0);
+          return hasEntries || hasSummaries;
+        });
+
+        const pool = validReports.length > 0 ? validReports : history.filter(r => normalizeShed(r.shed) === normShed);
+        const candidates = pool.length > 0 ? pool : history;
+
+        return [...candidates].sort((a, b) => {
+          const ta = parseUniversalDate(a.date)?.getTime() || 0;
+          const tb = parseUniversalDate(b.date)?.getTime() || 0;
+          return tb - ta;
+        })[0] || null;
+      };
+
       if (options.isInitial) {
-        let initialReport: DailyReport | null = null;
-        if (loadedHistory && loadedHistory.length > 0) {
-          initialReport = loadedHistory.find(r => r.date === yesterdayStr && normalizeShed(r.shed) === normalizeShed(currentShed))
-            || null;
-        }
-        if (!initialReport && data.dailyReport && data.dailyReport.date === yesterdayStr && normalizeShed(data.dailyReport.shed) === normalizeShed(currentShed)) {
-          initialReport = data.dailyReport;
-        }
-        if (initialReport) {
-          setDailyReport(ensureSixMachines(initialReport, currentShed));
+        const latestReport = getLatestUpdatedReport(loadedHistory, currentShed);
+        if (latestReport) {
+          setDailyReport(ensureSixMachines(latestReport, currentShed));
+        } else if (data.dailyReport && normalizeShed(data.dailyReport.shed) === normalizeShed(currentShed)) {
+          setDailyReport(ensureSixMachines(data.dailyReport, currentShed));
         } else {
           setDailyReport(createDefaultReportForShed(currentShed, yesterdayStr));
         }
       } else {
-        // Background refresh: preserve user's current selected date and shed
-        let updatedReport: DailyReport | null = null;
-        if (loadedHistory && loadedHistory.length > 0) {
-          updatedReport = loadedHistory.find(r => r.date === currentSelectedDate && normalizeShed(r.shed) === normalizeShed(currentShed))
-            || null;
-        }
-        if (!updatedReport && data.dailyReport && data.dailyReport.date === currentSelectedDate && normalizeShed(data.dailyReport.shed) === normalizeShed(currentShed)) {
-          updatedReport = data.dailyReport;
-        }
-        if (updatedReport) {
-          setDailyReport(ensureSixMachines(updatedReport, currentShed));
+        // Background refresh:
+        // In TV mode, or if newly entered data is present, automatically show the lastly updated date's data
+        const latestReport = getLatestUpdatedReport(loadedHistory, currentShed);
+        const isTv = isTvModeRef.current;
+        if (isTv && latestReport && latestReport.date !== currentSelectedDate) {
+          setDailyReport(ensureSixMachines(latestReport, currentShed));
+        } else {
+          let updatedReport: DailyReport | null = null;
+          if (loadedHistory && loadedHistory.length > 0) {
+            updatedReport = loadedHistory.find(r => r.date === currentSelectedDate && normalizeShed(r.shed) === normalizeShed(currentShed))
+              || null;
+          }
+          if (!updatedReport && data.dailyReport && data.dailyReport.date === currentSelectedDate && normalizeShed(data.dailyReport.shed) === normalizeShed(currentShed)) {
+            updatedReport = data.dailyReport;
+          }
+          if (updatedReport) {
+            setDailyReport(ensureSixMachines(updatedReport, currentShed));
+          } else if (isTv && latestReport) {
+            setDailyReport(ensureSixMachines(latestReport, currentShed));
+          }
         }
       }
 
@@ -1361,23 +1401,21 @@ export default function Home() {
     }
   };
 
-  // Auto-detect calendar day rollover at midnight: switch date and refresh data automatically
+  // Auto-detect calendar day rollover at midnight: silently check for updates without advancing date to an empty tomorrow
   const calendarDayRef = useRef(getTodayUniversalDate());
   useEffect(() => {
     const checkMidnightRollover = () => {
       const currentToday = getTodayUniversalDate();
       if (currentToday !== calendarDayRef.current) {
-        console.log(`[Midnight Rollover] Calendar day changed from ${calendarDayRef.current} to ${currentToday}. Auto-refreshing for next date...`);
+        console.log(`[Midnight Rollover] Calendar day changed from ${calendarDayRef.current} to ${currentToday}. Silently checking for newly uploaded data...`);
         calendarDayRef.current = currentToday;
-        const nextTargetDate = getYesterdayUniversalDate();
-        handleTopDateChange(nextTargetDate);
-        refreshAllData({ isInitial: true });
+        refreshAllData({ silent: true });
       }
     };
 
-    const midnightTimer = setInterval(checkMidnightRollover, 20000);
+    const midnightTimer = setInterval(checkMidnightRollover, 60000);
     return () => clearInterval(midnightTimer);
-  }, [handleTopDateChange, refreshAllData]);
+  }, [refreshAllData]);
 
   const changeReportDate = (oldDate: string, newDate: string) => {
     if (oldDate === newDate) return;
@@ -1720,6 +1758,16 @@ export default function Home() {
     });
   };
 
+  const promptDeleteDateData = () => {
+    setDeleteConfirmModal({
+      isOpen: true,
+      type: 'date',
+      title: 'Delete Particular Date Data',
+      description: `Are you sure you want to delete all uploaded report records for ${clearSelectedDate}? This will permanently wipe uploaded Google Sheet production data for this date. The IoT section and EM data will NOT be touched.`,
+      targetInfo: `Target Date: ${clearSelectedDate}`
+    });
+  };
+
   const promptDeleteMonthData = () => {
     const monthName = getClearMonthName(clearMonth);
     setDeleteConfirmModal({
@@ -1769,6 +1817,24 @@ export default function Home() {
           show: true,
           title: 'Entire Database Erased',
           message: 'All machines, counts, incentive rules, workers, reports, and production logs have been completely wiped from the database.',
+          success: true
+        });
+      } else if (deleteConfirmModal.type === 'date') {
+        await apiClient.clearDateData(clearSelectedDate);
+        setReportHistory(prev => prev.filter(r => r.date !== clearSelectedDate));
+        const refreshed = await apiClient.fetchInitialData();
+        if (refreshed.history) setReportHistory(refreshed.history);
+        if (dailyReport && dailyReport.date === clearSelectedDate) {
+          const fallbackDate = refreshed.history && refreshed.history.length > 0 
+            ? refreshed.history[0]?.date 
+            : getYesterdayUniversalDate();
+          setDailyReport(createDefaultReportForShed(selectedShed, fallbackDate));
+        }
+        setDeleteConfirmModal(prev => ({ ...prev, isOpen: false, isProcessing: false }));
+        setSyncResultModal({
+          show: true,
+          title: 'Day Data Cleared',
+          message: `All uploaded records for ${clearSelectedDate} have been wiped from the database. IoT section and EM data were preserved.`,
           success: true
         });
       } else if (deleteConfirmModal.type === 'month') {
@@ -2267,37 +2333,74 @@ export default function Home() {
         );
 
       case 'daily-incentive':
+      case 'daily-incentive-machine': {
+        const effectiveSubTab = activeTab === 'daily-incentive-machine' ? 'machine' : dailyIncentiveSubTab;
         return (
-          <DailyIncentive
-            report={activeDailyReport}
-            workers={currentShedWorkers}
-            rules={currentShedRules}
-            isTvMode={isTvMode}
-            onUpdateEntry={(entry) => {
-              updateActiveReport(prev => {
-                const newEntries = prev.entries.map(e => e.frameNo === entry.frameNo && e.shift === entry.shift ? { ...e, ...entry, shed: selectedShed } : e);
-                return { ...prev, shed: selectedShed, entries: newEntries, timestamp: Date.now() };
-              });
-            }}
-            onSelectDate={handleTopDateChange}
-            onChangeReportDate={changeReportDate}
-            shed={selectedShed}
-          />
-        );
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            {/* Top Navigation Switcher: Worker Wise vs Machine Wise */}
+            <div className="flex items-center justify-between bg-white px-5 py-3 rounded-2xl border border-stone-200/80 shadow-xs">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDailyIncentiveSubTab('worker')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2",
+                    effectiveSubTab === 'worker'
+                      ? "bg-stone-900 text-white shadow-sm ring-1 ring-stone-900"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+                  )}
+                >
+                  <Coins size={14} /> Daily Incentive (Worker Wise)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDailyIncentiveSubTab('machine')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2",
+                    effectiveSubTab === 'machine'
+                      ? "bg-stone-900 text-white shadow-sm ring-1 ring-stone-900"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+                  )}
+                >
+                  <Grid3X3 size={14} /> Daily Incentive (Machine Wise)
+                </button>
+              </div>
+              <span className="text-[11px] font-bold text-stone-500 hidden sm:inline">
+                Mode: <strong className="text-stone-900">{effectiveSubTab === 'worker' ? 'Worker Daily Incentive' : 'Machine Daily Incentive'}</strong>
+              </span>
+            </div>
 
-      case 'daily-incentive-machine':
-        return (
-          <MachineDailyIncentive
-            report={activeDailyReport}
-            workers={currentShedWorkers}
-            rules={currentShedRules}
-            isTvMode={isTvMode}
-            onSelectDate={handleTopDateChange}
-            machineSiderCounts={settings.machineSiderCounts}
-            shed={selectedShed}
-            machines={currentShedMachines}
-          />
+            {effectiveSubTab === 'worker' ? (
+              <DailyIncentive
+                report={activeDailyReport}
+                workers={currentShedWorkers}
+                rules={currentShedRules}
+                isTvMode={isTvMode}
+                onUpdateEntry={(entry) => {
+                  updateActiveReport(prev => {
+                    const newEntries = prev.entries.map(e => e.frameNo === entry.frameNo && e.shift === entry.shift ? { ...e, ...entry, shed: selectedShed } : e);
+                    return { ...prev, shed: selectedShed, entries: newEntries, timestamp: Date.now() };
+                  });
+                }}
+                onSelectDate={handleTopDateChange}
+                onChangeReportDate={changeReportDate}
+                shed={selectedShed}
+              />
+            ) : (
+              <MachineDailyIncentive
+                report={activeDailyReport}
+                workers={currentShedWorkers}
+                rules={currentShedRules}
+                isTvMode={isTvMode}
+                onSelectDate={handleTopDateChange}
+                machineSiderCounts={settings.machineSiderCounts}
+                shed={selectedShed}
+                machines={currentShedMachines}
+              />
+            )}
+          </motion.div>
         );
+      }
 
       case 'assignments':
         return (
@@ -2375,31 +2478,6 @@ export default function Home() {
         );
       }
 
-      case 'ai-month-view': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
-        return (
-          <AiMonthlyGrid
-            history={currentShedHistory}
-            workers={currentShedWorkers}
-            rules={currentShedRules}
-            selectedMonth={tvActiveMonth}
-            selectedYear={tvActiveYear}
-            onMonthChange={setSelectedMonth}
-            onYearChange={setSelectedYear}
-            isTvMode={isTvMode}
-            frozenMonths={frozenMonths}
-            onToggleFreezeMonth={handleToggleFreezeMonth}
-            onEditDate={(date) => {
-              const report = currentShedHistory.find(r => r.date === date);
-              if (report) setDailyReport(report);
-              else createBlankReport(date);
-              setActiveTab('daily-incentive');
-            }}
-          />
-        );
-      }
-
       case 'month-abstract': {
         const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
         const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
@@ -2419,22 +2497,137 @@ export default function Home() {
         );
       }
 
-      case 'ai-month-abstract': {
+      case 'ai-maintenance':
+      case 'ai-month-view':
+      case 'ai-month-abstract':
+      case 'ai-monthly-performance':
+      case 'fitter-monthly-performance': {
         const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
         const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
+
+        const effectiveSubTab = activeTab === 'ai-month-view' ? 'incentive' :
+          activeTab === 'ai-month-abstract' ? 'abstract' :
+          activeTab === 'ai-monthly-performance' ? 'performance' :
+          activeTab === 'fitter-monthly-performance' ? 'fitter' : aiMaintenanceSubTab;
+
         return (
-          <AiMonthAbstract
-            history={currentShedHistory}
-            workers={currentShedWorkers}
-            rules={currentShedRules}
-            month={tvActiveMonth}
-            year={tvActiveYear}
-            isTvMode={isTvMode}
-            onPagesDetermined={setSubPagesCount}
-            tvPageInterval={settings.tvPageIntervals?.['ai-month-abstract']}
-            frozenMonths={frozenMonths}
-            onToggleFreezeMonth={handleToggleFreezeMonth}
-          />
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            {/* Top Navigation Switcher for AI & Maintenance Sub-Pages */}
+            <div className="flex items-center justify-between bg-white px-5 py-3 rounded-2xl border border-stone-200/80 shadow-xs">
+              <div className="flex items-center gap-2 overflow-x-auto">
+                <button
+                  type="button"
+                  onClick={() => setAiMaintenanceSubTab('incentive')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap",
+                    effectiveSubTab === 'incentive'
+                      ? "bg-stone-900 text-white shadow-sm ring-1 ring-stone-900"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+                  )}
+                >
+                  <Calendar size={14} /> AI Monthly Incentive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiMaintenanceSubTab('abstract')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap",
+                    effectiveSubTab === 'abstract'
+                      ? "bg-stone-900 text-white shadow-sm ring-1 ring-stone-900"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+                  )}
+                >
+                  <BarChart3 size={14} /> AI Monthly Abstract
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiMaintenanceSubTab('performance')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap",
+                    effectiveSubTab === 'performance'
+                      ? "bg-stone-900 text-white shadow-sm ring-1 ring-stone-900"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+                  )}
+                >
+                  <FileText size={14} /> AI Monthly Performance
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiMaintenanceSubTab('fitter')}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap",
+                    effectiveSubTab === 'fitter'
+                      ? "bg-stone-900 text-white shadow-sm ring-1 ring-stone-900"
+                      : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+                  )}
+                >
+                  <Wrench size={14} /> Fitter Monthly Performance
+                </button>
+              </div>
+            </div>
+
+            {effectiveSubTab === 'incentive' && (
+              <AiMonthlyGrid
+                history={currentShedHistory}
+                workers={currentShedWorkers}
+                rules={currentShedRules}
+                selectedMonth={tvActiveMonth}
+                selectedYear={tvActiveYear}
+                onMonthChange={setSelectedMonth}
+                onYearChange={setSelectedYear}
+                isTvMode={isTvMode}
+                frozenMonths={frozenMonths}
+                onToggleFreezeMonth={handleToggleFreezeMonth}
+                onEditDate={(date) => {
+                  const report = currentShedHistory.find(r => r.date === date);
+                  if (report) setDailyReport(report);
+                  else createBlankReport(date);
+                  setActiveTab('daily-incentive');
+                }}
+              />
+            )}
+
+            {effectiveSubTab === 'abstract' && (
+              <AiMonthAbstract
+                history={currentShedHistory}
+                workers={currentShedWorkers}
+                rules={currentShedRules}
+                month={tvActiveMonth}
+                year={tvActiveYear}
+                isTvMode={isTvMode}
+                onPagesDetermined={setSubPagesCount}
+                tvPageInterval={settings.tvPageIntervals?.['ai-month-abstract']}
+                frozenMonths={frozenMonths}
+                onToggleFreezeMonth={handleToggleFreezeMonth}
+              />
+            )}
+
+            {effectiveSubTab === 'performance' && (
+              <AiMonthlyPerformance
+                history={currentShedHistory}
+                workers={currentShedWorkers}
+                rules={currentShedRules}
+                isTvMode={isTvMode}
+                month={tvActiveMonth}
+                year={tvActiveYear}
+              />
+            )}
+
+            {effectiveSubTab === 'fitter' && (
+              <FitterMonthlyPerformance
+                history={currentShedHistory}
+                workers={currentShedWorkers}
+                isTvMode={isTvMode}
+                month={tvActiveMonth}
+                year={tvActiveYear}
+                onUpdateReport={(updatedReport) => {
+                  setReportHistory(prev => prev.map(r => r.date === updatedReport.date && normalizeShed(r.shed) === normalizeShed(selectedShed) ? updatedReport : r));
+                  if (dailyReport.date === updatedReport.date) setDailyReport(updatedReport);
+                  apiClient.saveDailyReport(updatedReport).catch(() => {});
+                }}
+              />
+            )}
+          </motion.div>
         );
       }
 
@@ -2508,40 +2701,6 @@ export default function Home() {
               onPagesDetermined={setSubPagesCount}
             />
           </ErrorBoundary>
-        );
-      }
-
-      case 'ai-monthly-performance': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
-        return (
-          <AiMonthlyPerformance
-            history={currentShedHistory}
-            workers={currentShedWorkers}
-            rules={currentShedRules}
-            isTvMode={isTvMode}
-            month={tvActiveMonth}
-            year={tvActiveYear}
-          />
-        );
-      }
-
-      case 'fitter-monthly-performance': {
-        const tvActiveMonth = (isTvMode && settings.tvMonth && settings.tvMonth > 0) ? settings.tvMonth : selectedMonth;
-        const tvActiveYear = (isTvMode && settings.tvYear && settings.tvYear > 0) ? settings.tvYear : selectedYear;
-        return (
-          <FitterMonthlyPerformance
-            history={currentShedHistory}
-            workers={currentShedWorkers}
-            isTvMode={isTvMode}
-            month={tvActiveMonth}
-            year={tvActiveYear}
-            onUpdateReport={(updatedReport) => {
-              setReportHistory(prev => prev.map(r => r.date === updatedReport.date && normalizeShed(r.shed) === normalizeShed(selectedShed) ? updatedReport : r));
-              if (dailyReport.date === updatedReport.date) setDailyReport(updatedReport);
-              apiClient.saveDailyReport(updatedReport).catch(() => {});
-            }}
-          />
         );
       }
 
@@ -3315,8 +3474,45 @@ export default function Home() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* 1. Delete Monthly Data */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* 1. Delete Particular Date Data */}
+                <div className="bg-white rounded-2xl border-2 border-rose-100 p-6 flex flex-col justify-between shadow-sm hover:border-rose-300 transition-all">
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center border border-rose-200/60">
+                        <Calendar size={20} />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2.5 py-1 bg-rose-100 text-rose-800 rounded-lg">
+                        Selective Day
+                      </span>
+                    </div>
+                    <h4 className="text-base font-black text-stone-900 tracking-tight mb-1">Delete Particular Date</h4>
+                    <p className="text-xs text-stone-500 mb-5">
+                      Select a date to wipe only that day's uploaded Google Sheets report data. IoT & EM data are strictly preserved.
+                    </p>
+
+                    <div className="space-y-3 mb-6 bg-stone-50 p-3.5 rounded-xl border border-stone-200">
+                      <div>
+                        <label className="text-[10px] font-black text-stone-500 uppercase tracking-wider block mb-1">Select Date</label>
+                        <CalendarDatePicker
+                          value={clearSelectedDate}
+                          onChange={(val) => setClearSelectedDate(val)}
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={promptDeleteDateData}
+                    className="w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-rose-600/20 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Trash2 size={15} /> Delete {clearSelectedDate} Data
+                  </button>
+                </div>
+
+                {/* 2. Delete Monthly Data */}
                 <div className="bg-white rounded-2xl border-2 border-red-100 p-6 flex flex-col justify-between shadow-sm hover:border-red-300 transition-all">
                   <div>
                     <div className="flex items-center justify-between mb-4">

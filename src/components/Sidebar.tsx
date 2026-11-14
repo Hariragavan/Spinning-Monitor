@@ -36,10 +36,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'all-data', label: 'All Data Master Table', icon: Table },
       { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
-      { id: 'count-summary', label: 'Count Summary', icon: Layers },
       { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
       { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
-      { id: 'daily-incentive-machine', label: 'Daily Incentive (Machine)', icon: Grid3X3 },
     ]
   },
   {
@@ -59,7 +57,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'monthly-count-gpss', label: 'Monthly Count GPSS', icon: FileSpreadsheet },
       { id: 'month-view', label: 'Monthly Incentive Grid', icon: Calendar },
-      { id: 'month-abstract', label: 'Monthly Abstract', icon: BarChart3 },
       { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },
       { id: 'sider-monthly-performance', label: 'Sider Monthly Performance', icon: FileText },
       { id: 'operator-em-format', label: 'Operator EM Format', icon: FileText },
@@ -68,20 +65,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'AI & Maintenance',
     items: [
-      { id: 'ai-month-view', label: 'AI Monthly Incentive', icon: Calendar },
-      { id: 'ai-month-abstract', label: 'AI Monthly Abstract', icon: BarChart3 },
-      { id: 'ai-monthly-performance', label: 'AI Monthly Performance', icon: FileText },
-      { id: 'fitter-monthly-performance', label: 'Fitter Monthly Performance', icon: Wrench },
-    ]
-  },
-  {
-    title: 'Performance & Awards',
-    items: [
-      { id: 'running-count-incentives', label: 'Incentive Based in GPS', icon: Coins },
-      { id: 'best-shift', label: 'Best Shift', icon: Star },
-      { id: 'best', label: 'Best Sider of the Month', icon: Trophy },
-      { id: 'best-operators-em', label: 'Best 2 Operators EM', icon: Trophy },
-      { id: 'em-outliers-compare', label: 'EM Outliers Compare', icon: AlertTriangle },
+      { id: 'ai-maintenance', label: 'AI & Maintenance', icon: Wrench },
     ]
   },
   {
@@ -189,7 +173,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
 
             {section.items.map((item) => {
-              const isActive = activeTab === item.id;
+              const isActive = activeTab === item.id ||
+                (item.id === 'all-data' && activeTab === 'count-summary') ||
+                (item.id === 'daily-incentive' && activeTab === 'daily-incentive-machine') ||
+                (item.id === 'ai-maintenance' && ['ai-maintenance', 'ai-month-view', 'ai-month-abstract', 'ai-monthly-performance', 'fitter-monthly-performance'].includes(activeTab));
               const Icon = item.icon;
 
               if (isCollapsed) {

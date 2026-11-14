@@ -87,6 +87,15 @@ export const apiClient = {
     }
   },
 
+  async clearDateData(date: string): Promise<boolean> {
+    const res = await fetch('/api/reports/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clear_date', date })
+    });
+    return res.ok;
+  },
+
   async clearMonthData(month: string | number, year: string | number): Promise<boolean> {
     const res = await fetch('/api/reports/history', {
       method: 'POST',
