@@ -175,23 +175,14 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
       const liveShiftDate = `${yStr}-${mStr}-${dStr}`;
       const liveShiftName = `Shift ${liveShiftNum}`;
 
-      // Normalize report.date if present (e.g. "15/11/2026" or "2026-11-15")
-      let reportDateYmd = '';
-      if (report?.date) {
-        const parts = parseUniversalDateParts(report.date);
-        if (parts) {
-          reportDateYmd = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
-        }
-      }
-      const primaryTargetDate = reportDateYmd || liveShiftDate;
+      // IoT TV Patrol is strictly live for today's current shift
+      const primaryTargetDate = liveShiftDate;
 
-      // Direct live employee metrics from Railway API:
+      // Direct live employee metrics from Railway API strictly for current date:
       // https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date
-      const fetchRailwayEmployeeData = async (dStr?: string) => {
+      const fetchRailwayEmployeeData = async (dStr: string) => {
         try {
-          const url = dStr 
-            ? `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`
-            : `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?_t=${Date.now()}`;
+          const url = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
           const res = await fetch(url, { cache: 'no-store' });
           if (res.ok) {
             const json = await res.json();
@@ -212,21 +203,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         iotApi.getMachineMappings().catch(() => [] as MachineMapping[])
       ]);
 
-      // Fetch employee performance from Railway API
-      let employeeMetrics: EmployeeMetric[] = await fetchRailwayEmployeeData(primaryTargetDate);
-
-      // If primary date has no records yet (e.g. today before taps are uploaded), try previous day (e.g. Nov 15)
-      if (!employeeMetrics.length) {
-        const prevObj = new Date(shiftDateObj);
-        prevObj.setDate(prevObj.getDate() - 1);
-        const prevYmd = `${prevObj.getFullYear()}-${String(prevObj.getMonth() + 1).padStart(2, '0')}-${String(prevObj.getDate()).padStart(2, '0')}`;
-        employeeMetrics = await fetchRailwayEmployeeData(prevYmd);
-      }
-
-      // If still empty, fetch without date parameter
-      if (!employeeMetrics.length) {
-        employeeMetrics = await fetchRailwayEmployeeData();
-      }
+      // Fetch employee performance strictly for today's live shift (no past-date fallbacks)
+      const employeeMetrics: EmployeeMetric[] = await fetchRailwayEmployeeData(primaryTargetDate);
 
       const lightMachines = lightStatus?.machines || [];
       const liveMachines = liveOverview?.machines || [];
@@ -332,8 +310,6 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
         // 2. Resolve Paired Telemetry Machine from Settings (holds live status, speed, production, EM left/right)
         let telemetryName = (frameToTelemetryMap[frameNo] || '').trim().toUpperCase();
-        const cleanNum = frameNo.replace(/\D/g, '');
-        const naturalRf = cleanNum ? `RF${cleanNum.padStart(2, '0')}` : '';
 
         // 2 Devices for this IoT Machine (D1 for Left / LH side, D2 for Right / RH side)
         const devMap = deviceMappings.find(dm => 
@@ -356,15 +332,19 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d1DeviceId = stationList[0] || 'IOT_D1';
         const d2DeviceId = stationList[1] || 'IOT_D2';
 
-        // Telemetry lookup: match paired telemetry machine (RF44), natural RF44, or frameNo in lightMachines and liveMachines
+        // Telemetry lookup: match paired telemetry machine (RF44 / RF09), natural RF, or frameNo
+        const cleanNum = frameNo.replace(/\D/g, '');
+        const frameInt = cleanNum ? parseInt(cleanNum, 10) : NaN;
+        const naturalRf = !isNaN(frameInt) ? `RF${String(frameInt).padStart(2, '0')}` : '';
+
         const matchFinder = (m: any) => {
           const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
           if (!mId) return false;
           if (telemetryName && mId === telemetryName) return true;
           if (naturalRf && (mId === naturalRf || mId === `RF${cleanNum}`)) return true;
           if (mId === frameNo) return true;
-          const mNum = mId.replace(/\D/g, '');
-          return Boolean(cleanNum && mNum && mNum === cleanNum);
+          const mInt = parseInt(mId.replace(/\D/g, ''), 10);
+          return Boolean(!isNaN(frameInt) && !isNaN(mInt) && frameInt === mInt);
         };
 
         const lightM = lightMachines.find(matchFinder);
@@ -373,7 +353,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
         let yarnCount = String(lightM?.count || liveM?.count || reportEntry?.count || '').trim() || '-';
 
-        // Machine Live Running Status: RUNNING, DOFFING, STOPPED from paired telemetry machine (RF44)
+        // Machine Live Running Status: RUNNING, DOFFING, STOPPED from paired telemetry machine (RF44 / RF09)
         let machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED' = 'RUNNING';
         const rawRunStatus = String(lightM?.runStatus || liveM?.runStatus || (liveM as any)?.status || '').toUpperCase();
         if (rawRunStatus.includes('DOFF')) {
@@ -414,7 +394,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           }
         }
 
-        // EM Left and EM Right from paired telemetry machine (RF44)
+        // EM Left and EM Right from paired telemetry machine (RF44 / RF09)
         const sideL = (liveM?.sides || []).find((s: any) => String(s.side).toUpperCase() === 'L');
         const sideR = (liveM?.sides || []).find((s: any) => String(s.side).toUpperCase() === 'R');
 
@@ -435,7 +415,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
         const emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
 
-        // Auto-select operator for Device 1 (D1) and Device 2 (D2) for this live shift from API & Card Taps
+        // Auto-select operator for Device 1 (D1) and Device 2 (D2) for this live shift strictly from today's taps
         const resolveDeviceAuto = (devId: string, sideIndex: number) => {
           const cleanDevId = devId.trim().toUpperCase();
           const defaultSide = sideIndex === 0 ? 'LH' : 'RH';
@@ -453,10 +433,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             else side = devObj.side;
           }
 
-          // 1. Settings override (if any)
-          const override = devOpMapFromSettings[cleanDevId];
-
-          // 2. Employee metrics for this device directly from live Railway API
+          // Check employee metrics for this device strictly from today's live shift
           const met = employeeMetrics.find(m => 
             (m.machineId && m.machineId.toUpperCase() === cleanDevId) || 
             (devObj?.deviceId && m.machineId && m.machineId.toUpperCase() === devObj.deviceId.toUpperCase()) ||
@@ -464,41 +441,29 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           );
 
           const metTaps = Array.isArray(met?.taps) ? met.taps : [];
+          const hasTapsToday = metTaps.length > 0 || Number(met?.roundsCompleted || met?.rounds || 0) > 0;
 
-          // 3. Resolve raw operator name and ID
-          let rawName = 
-            override?.employeeName || 
-            met?.employeeName || 
-            devObj?.assignedEmployeeName || 
-            (devObj as any)?.employeeName || 
-            '';
-
-          let rawId = 
-            override?.employeeId || 
-            met?.employeeId || 
-            devObj?.assignedEmployeeId || 
-            (devObj as any)?.employeeId || 
-            '';
-
-          // 4. Fallback: check employees list assignedDeviceIds
-          if (!rawName) {
-            const emp = iotEmployees.find(e => 
-              e.assignedDeviceIds && e.assignedDeviceIds.some(aid => 
-                aid.toUpperCase() === cleanDevId || 
-                (devObj?.deviceId && aid.toUpperCase() === devObj.deviceId.toUpperCase())
-              )
-            );
-            if (emp) {
-              rawName = emp.employeeName;
-              rawId = emp.employeeId;
-            }
+          if (!hasTapsToday) {
+            return {
+              deviceId: devId,
+              side,
+              operatorName: 'No operator is active',
+              operatorToken: '—',
+              operatorPhoto: undefined,
+              isAssigned: false,
+              tapsCount: 0,
+              rounds: 0,
+              startTimeIso: null,
+              endTimeIso: null,
+              lastTapTime: '',
+              lastTapTimestamp: 0,
+              metric: null
+            };
           }
 
-          // 5. Fallback: report entry sider
-          if (!rawName && sideIndex === 0 && reportEntry) {
-            rawName = reportEntry.siderName || (reportEntry.siderIds && reportEntry.siderIds[0]) || '';
-            rawId = (reportEntry.siderIds && reportEntry.siderIds[0]) || '';
-          }
+          // If operator has tapped and initiated activation today:
+          let rawName = met?.employeeName || '';
+          let rawId = met?.employeeId || '';
 
           // Parse Name(Token) format (e.g. "Mangal(33786)" -> Name: Mangal, Token: 33786)
           let extName = rawName ? String(rawName).trim() : '';
@@ -512,33 +477,12 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           // Match in Employee Master
           const matched = resolveWorkerMaster(extToken) || resolveWorkerMaster(rawId) || resolveWorkerMaster(extName);
           const operatorName = matched?.name || extName || (rawId ? `Operator #${rawId}` : 'OPERATOR');
-          const operatorToken = matched?.tNo || extToken || rawId || '-';
+          const operatorToken = matched?.tNo || extToken || rawId || '—';
           const operatorPhoto = matched?.photoUrl;
-          const isAssigned = Boolean(
-            matched ||
-            (extName && extName.toLowerCase() !== 'unassigned' && extName !== 'null') ||
-            (extToken && extToken.toLowerCase() !== 'unassigned' && extToken !== 'null')
-          );
 
           // Real Live Taps from Railway API
-          let tapsCount = 0;
-          if (metTaps.length > 0) {
-            tapsCount = metTaps.length;
-          } else if (met?.roundsCompleted !== undefined && Number(met.roundsCompleted) > 0) {
-            tapsCount = Number(met.roundsCompleted);
-          } else if (met?.rounds !== undefined && Number(met.rounds) > 0) {
-            tapsCount = Number(met.rounds);
-          }
-
-          // Device rounds from Railway API
-          let devRounds = 0;
-          if (met?.roundsCompleted !== undefined && Number(met.roundsCompleted) > 0) {
-            devRounds = Number(met.roundsCompleted);
-          } else if (met?.rounds !== undefined && Number(met.rounds) > 0) {
-            devRounds = Number(met.rounds);
-          } else if (tapsCount > 0) {
-            devRounds = tapsCount;
-          }
+          const tapsCount = metTaps.length > 0 ? metTaps.length : Number(met?.rounds || 0);
+          const devRounds = Number(met?.roundsCompleted ?? met?.rounds ?? (tapsCount > 0 ? tapsCount : 0));
 
           // Activity Window start & end times directly from Railway API taps
           const startTimeIso = metTaps.length > 0 ? (metTaps[0].time as string) : null;
@@ -562,7 +506,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             operatorName,
             operatorToken,
             operatorPhoto,
-            isAssigned,
+            isAssigned: true,
             tapsCount,
             rounds: devRounds,
             startTimeIso,
@@ -576,6 +520,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d1 = resolveDeviceAuto(d1DeviceId, 0);
         const d2 = resolveDeviceAuto(d2DeviceId, 1);
 
+        const isAnyOperatorActive = d1.isAssigned || d2.isAssigned;
+
         let d1Taps = d1.tapsCount;
         let d2Taps = d2.tapsCount;
         let totalTaps = d1Taps + d2Taps;
@@ -586,11 +532,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d2TargetTaps = 60;
 
         // Rounds: from device rounds or max rounds completed
-        let completedRounds = Math.max(
-          d1.rounds || 0,
-          d2.rounds || 0,
-          Math.round(totalTaps / 2)
-        );
+        let completedRounds = isAnyOperatorActive
+          ? Math.max(d1.rounds || 0, d2.rounds || 0, Math.round(totalTaps / 2))
+          : 0;
 
         // Activity Window: earliest tap to latest tap across D1 & D2 (e.g. 06:03 AM – 12:08 PM)
         const formatTimeAmPm = (iso?: string | null) => {
@@ -606,38 +550,46 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const earliestStart = validStartTimes.length > 0 ? validStartTimes.sort()[0] : null;
         const latestEnd = validEndTimes.length > 0 ? validEndTimes.sort().reverse()[0] : null;
 
-        let activityWindow = '';
-        if (earliestStart && latestEnd) {
-          activityWindow = `${formatTimeAmPm(earliestStart)} – ${formatTimeAmPm(latestEnd)}`;
-        } else {
-          activityWindow = liveWindowLabel;
+        let activityWindow = '0';
+        if (isAnyOperatorActive) {
+          if (earliestStart && latestEnd) {
+            activityWindow = `${formatTimeAmPm(earliestStart)} – ${formatTimeAmPm(latestEnd)}`;
+          } else {
+            activityWindow = liveWindowLabel;
+          }
         }
 
         // Overall last tap time between D1 and D2
-        let lastTapTime = latestEnd ? formatTimeAmPm(latestEnd) : '';
-        if (!lastTapTime) {
-          const d1Ts = d1.lastTapTimestamp || 0;
-          const d2Ts = d2.lastTapTimestamp || 0;
-          if (d1Ts > 0 || d2Ts > 0) {
-            lastTapTime = d1Ts >= d2Ts ? d1.lastTapTime : d2.lastTapTime;
+        let lastTapTime = 'No Taps Recorded';
+        if (isAnyOperatorActive) {
+          if (latestEnd) {
+            lastTapTime = formatTimeAmPm(latestEnd);
+          } else {
+            const d1Ts = d1.lastTapTimestamp || 0;
+            const d2Ts = d2.lastTapTimestamp || 0;
+            if (d1Ts > 0 || d2Ts > 0) {
+              lastTapTime = d1Ts >= d2Ts ? d1.lastTapTime : d2.lastTapTime;
+            }
           }
-        }
-        if (!lastTapTime) {
-          lastTapTime = totalTaps > 0 ? 'Recorded' : 'No Taps Recorded';
+          if (!lastTapTime && totalTaps > 0) {
+            lastTapTime = 'Recorded';
+          }
         }
 
         // Calculate performance score directly based on completed rounds (max 60)
-        let performanceScore = completedRounds > 0 
+        let performanceScore = (isAnyOperatorActive && completedRounds > 0) 
           ? Math.min(100, Math.max(0, Math.round((completedRounds / expectedRounds) * 100))) 
           : 0;
 
         // Best Performer condition: proper rounds completed (cadence >= 75% or 45+ rounds)
-        const isBestPerformer = performanceScore >= 75 && machineLiveStatus !== 'STOPPED';
+        const isBestPerformer = isAnyOperatorActive && performanceScore >= 75 && machineLiveStatus !== 'STOPPED';
 
         // MAX INCENTIVE: Incentive amount for this count from Incentive Master
         let maxIncentive = 0;
-        if (rules && rules.length > 0 && yarnCount && yarnCount !== '-') {
-          const cleanCount = yarnCount.trim().toLowerCase();
+        const countCandidates = [yarnCount, reportEntry?.count].filter(Boolean) as string[];
+        for (const testCount of countCandidates) {
+          if (maxIncentive > 0 || !testCount || testCount === '-') continue;
+          const cleanCount = testCount.trim().toLowerCase();
           const cleanDigits = cleanCount.match(/\d+/)?.[0] || '';
 
           // 1. Direct or normalized match in Incentive Master rules
@@ -702,7 +654,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
 
         // EARNED INCENTIVE: Calculated based on performance score and max incentive
-        let earnedIncentive = maxIncentive > 0 && performanceScore > 0 
+        let earnedIncentive = (isAnyOperatorActive && maxIncentive > 0 && performanceScore > 0) 
           ? Math.round(maxIncentive * (performanceScore / 100)) 
           : 0;
 
@@ -725,12 +677,16 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         // Check if dual operators exist across the 2 devices
         const hasDualOperators = Boolean(
           d1.isAssigned && d2.isAssigned && 
-          d1.operatorToken !== '-' && d2.operatorToken !== '-' &&
+          d1.operatorToken !== '—' && d2.operatorToken !== '—' &&
           (d1.operatorToken !== d2.operatorToken || d1.operatorName.toLowerCase() !== d2.operatorName.toLowerCase())
         );
 
         // Primary operator display details
-        const primary = d1.isAssigned ? d1 : (d2.isAssigned ? d2 : d1);
+        const primary = d1.isAssigned ? d1 : (d2.isAssigned ? d2 : {
+          operatorName: 'No operator is active',
+          operatorToken: '—',
+          operatorPhoto: undefined
+        });
 
         builtSlides.push({
           id: `slide-${frameNo}-${iotName}`,
@@ -768,7 +724,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           emLeft,
           emRight,
           emAvg,
-          activityWindow: liveWindowLabel,
+          activityWindow,
           liveShiftNum,
           liveShiftName,
           lastTapTime,
@@ -940,9 +896,11 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 ? "bg-red-50/95 border-red-500 shadow-red-300/60"
                 : currentSlide.isBestPerformer
                   ? "border-emerald-500 shadow-emerald-200/50 bg-gradient-to-br from-white via-emerald-50/20 to-white"
-                  : currentSlide.performanceScore < 40
-                    ? "border-red-600 shadow-red-200/60 bg-gradient-to-br from-white via-red-50/25 to-white animate-[redAlertBlink_1.2s_ease-in-out_infinite]"
-                    : "border-slate-300 shadow-slate-200/50 bg-white"
+                  : currentSlide.operatorName === 'No operator is active'
+                    ? "border-slate-300 shadow-slate-200/50 bg-white"
+                    : currentSlide.performanceScore < 40
+                      ? "border-red-600 shadow-red-200/60 bg-gradient-to-br from-white via-red-50/25 to-white animate-[redAlertBlink_1.2s_ease-in-out_infinite]"
+                      : "border-slate-300 shadow-slate-200/50 bg-white"
           )}
         >
           {/* Custom style for red alert blinking when worst / lagging performer */}
@@ -965,7 +923,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           {currentSlide.isBestPerformer && currentSlide.machineLiveStatus === 'RUNNING' && <ClapCelebration />}
 
           {/* 🚨 Flashing Red Emergency Banner for WORST / LAGGING PERFORMER */}
-          {(currentSlide.performanceScore < 40 || currentSlide.machineLiveStatus === 'STOPPED') && currentSlide.machineLiveStatus !== 'DOFFING' && (
+          {(currentSlide.performanceScore < 40 || currentSlide.machineLiveStatus === 'STOPPED') && 
+            currentSlide.machineLiveStatus !== 'DOFFING' && 
+            currentSlide.operatorName !== 'No operator is active' && (
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -1063,13 +1023,17 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               {/* Operator Photo Box */}
               <div className={cn(
                 "w-full max-w-[380px] h-[360px] sm:h-[400px] xl:h-[430px] rounded-3xl overflow-hidden border-4 shadow-2xl bg-slate-100 relative flex items-center justify-center transition-all",
-                currentSlide.isBestPerformer ? "border-emerald-500 shadow-emerald-200/80" : "border-red-500 shadow-red-200/80"
+                currentSlide.isBestPerformer 
+                  ? "border-emerald-500 shadow-emerald-200/80" 
+                  : currentSlide.operatorName === 'No operator is active'
+                    ? "border-slate-300 shadow-slate-200/50"
+                    : "border-red-500 shadow-red-200/80"
               )}>
                 {currentSlide.operatorPhoto ? (
                   <img 
                     src={currentSlide.operatorPhoto} 
                     alt={currentSlide.operatorName} 
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover" 
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center text-slate-400">
@@ -1089,10 +1053,16 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">
                   OPERATOR NAME
                 </span>
-                <h2 className="text-xl sm:text-3xl font-black text-stone-900 uppercase tracking-tight truncate">
+                <h2 className={cn(
+                  "text-xl sm:text-3xl font-black uppercase tracking-tight truncate",
+                  currentSlide.operatorName === 'No operator is active' ? "text-slate-400 italic text-lg sm:text-2xl" : "text-stone-900"
+                )}>
                   {currentSlide.operatorName}
                 </h2>
-                <div className="text-sm sm:text-base font-mono font-black text-emerald-700 mt-1">
+                <div className={cn(
+                  "text-sm sm:text-base font-mono font-black mt-1",
+                  currentSlide.operatorName === 'No operator is active' ? "text-slate-400" : "text-emerald-700"
+                )}>
                   T. NO: {currentSlide.operatorToken}
                 </div>
 
@@ -1205,7 +1175,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                   </div>
 
                   <div className="text-xs font-bold text-slate-500">
-                    Calculated from {currentSlide.performanceScore}% round cadence
+                    {currentSlide.operatorName === 'No operator is active'
+                      ? 'No active operator taps'
+                      : `Calculated from ${currentSlide.performanceScore}% round cadence`}
                   </div>
                 </div>
 
@@ -1235,11 +1207,15 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                     </div>
                     <span className={cn(
                       "px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border",
-                      currentSlide.isBestPerformer 
-                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                        : "bg-red-100 text-red-800 border-red-300"
+                      currentSlide.operatorName === 'No operator is active'
+                        ? "bg-slate-100 text-slate-600 border-slate-300"
+                        : currentSlide.isBestPerformer 
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : "bg-red-100 text-red-800 border-red-300"
                     )}>
-                      {currentSlide.isBestPerformer ? 'Best Performer' : 'Lagging Cadence'}
+                      {currentSlide.operatorName === 'No operator is active'
+                        ? 'No Operator Active'
+                        : currentSlide.isBestPerformer ? 'Best Performer' : 'Lagging Cadence'}
                     </span>
                   </div>
 
@@ -1247,14 +1223,20 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                   <div className="my-2">
                     <span className={cn(
                       "text-6xl sm:text-7xl xl:text-8xl font-black tracking-tight tabular-nums drop-shadow-sm",
-                      currentSlide.isBestPerformer ? "text-emerald-600" : "text-red-600"
+                      currentSlide.isBestPerformer 
+                        ? "text-emerald-600" 
+                        : currentSlide.operatorName === 'No operator is active'
+                          ? "text-slate-400"
+                          : "text-red-600"
                     )}>
                       {currentSlide.performanceScore}%
                     </span>
                   </div>
 
                   <div className="text-xs font-bold text-slate-500">
-                    Live shift patrol cadence across LH &amp; RH
+                    {currentSlide.operatorName === 'No operator is active'
+                      ? 'Waiting for operator RFID card tap'
+                      : 'Live shift patrol cadence across LH & RH'}
                   </div>
                 </div>
               </div>
@@ -1298,7 +1280,11 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                       ACTIVE WIND TIME
                     </span>
                     <div className="text-sm sm:text-base font-bold text-slate-700 font-mono">
-                      {currentSlide.activityWindow} <span className="text-xs text-slate-400">({currentSlide.liveShiftName})</span>
+                      {currentSlide.operatorName === 'No operator is active' ? (
+                        <span>0 <span className="text-xs text-slate-400 font-sans font-normal">(No data)</span></span>
+                      ) : (
+                        <span>{currentSlide.activityWindow} <span className="text-xs text-slate-400">({currentSlide.liveShiftName})</span></span>
+                      )}
                     </div>
                   </div>
 
@@ -1333,7 +1319,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 className={cn(
                   "h-2 rounded-full transition-all cursor-pointer",
                   idx === currentIndex 
-                    ? (s.isBestPerformer ? "w-8 bg-emerald-500" : "w-8 bg-red-600")
+                    ? (s.isBestPerformer ? "w-8 bg-emerald-500" : s.operatorName === 'No operator is active' ? "w-8 bg-slate-700" : "w-8 bg-red-600")
                     : "w-2 bg-slate-300 hover:bg-slate-400"
                 )}
                 title={`Go to Machine ${s.frameNo} (${s.operatorName})`}

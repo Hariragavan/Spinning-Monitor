@@ -335,19 +335,7 @@ export const iotApi = {
     );
     if (localRes?.data && localRes.data.length > 0) return localRes.data;
 
-    // Fallback: If filtered call returned empty, fetch latest unfiltered metrics so live activity is never dropped
-    if (params.has('date') || params.has('shiftName')) {
-      try {
-        const unfilt = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
-          `/api/iot/dashboard/employee`,
-          { method: 'GET' },
-          { success: true, data: [] }
-        );
-        if (unfilt?.data && unfilt.data.length > 0) return unfilt.data;
-      } catch { }
-    }
-
-    return localRes.data || list;
+    return localRes?.data || [];
   },
 
   // 3. Machines & Mappings (https://iot-machine-backend.onrender.com/api)

@@ -14,6 +14,7 @@ import { Sider, MachineMasterItem, SystemSettings } from '@/types';
 import { iotApi } from '@/lib/iot/iotApi';
 import { apiClient } from '@/lib/api';
 import { employeeLabel } from '@/lib/iot/employeeDisplay';
+import { cn } from '@/lib/utils';
 
 export interface IotConfigurationProps {
   workers?: Sider[];
@@ -71,12 +72,18 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
 
   const loadData = async () => {
     try {
+      const now = new Date();
+      const yStr = now.getFullYear();
+      const mStr = String(now.getMonth() + 1).padStart(2, '0');
+      const dStr = String(now.getDate()).padStart(2, '0');
+      const todayDate = `${yStr}-${mStr}-${dStr}`;
+
       const [e, d, m, maps, perf, lightStatus] = await Promise.all([
         iotApi.getEmployees(),
         iotApi.getDevices(),
         iotApi.getMachines(),
         iotApi.getMachineMappings().catch(() => []),
-        iotApi.getEmployeePerformance().catch(() => []),
+        iotApi.getEmployeePerformance({ date: todayDate }).catch(() => []),
         iotApi.getLightweightMachineStatus().catch(() => null)
       ]);
       setEmployees(e || []);
@@ -291,10 +298,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
   ) => {
     const cleanStation = stationId.trim().toUpperCase();
 
-    // 1. Check local state override
-    const override = deviceOperators[cleanStation];
-
-    // 2. Find device object in devices list
+    // 1. Find device object in devices list
     const devObj = devices.find(d => 
       (d.deviceId && d.deviceId.trim().toUpperCase() === cleanStation) ||
       (d.machineId && d.machineId.trim().toUpperCase() === cleanStation)
@@ -309,39 +313,44 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
       else side = devObj.side;
     }
 
-    // 3. Extract raw operator identifier and name from device object (API has assignedEmployeeName / assignedEmployeeId)
-    let rawName = override?.employeeName || devObj?.assignedEmployeeName || (devObj as any)?.employeeName || (devObj as any)?.operatorName || '';
-    let rawId = override?.employeeId || devObj?.assignedEmployeeId || (devObj as any)?.employeeId || (devObj as any)?.operatorId || '';
+    // 2. Strictly check employee metrics for today's active card taps / initiation
+    const met = employeeMetrics.find(m => 
+      m.machineId && (
+        m.machineId.trim().toUpperCase() === cleanStation ||
+        (devObj?.deviceId && m.machineId.trim().toUpperCase() === devObj.deviceId.trim().toUpperCase())
+      )
+    );
 
-    // 4. Fallback: check employees list for assignedDeviceIds
-    if (!rawName) {
-      const emp = employees.find(e => 
-        e.assignedDeviceIds && e.assignedDeviceIds.some(did => 
-          did.trim().toUpperCase() === cleanStation || 
-          (devObj?.deviceId && did.trim().toUpperCase() === devObj.deviceId.trim().toUpperCase())
-        )
-      );
-      if (emp) {
-        rawName = emp.employeeName;
-        rawId = emp.employeeId;
-      }
+    const hasTapsToday = Boolean(
+      met && (
+        (Array.isArray(met.taps) && met.taps.length > 0) ||
+        (met.roundsCompleted !== undefined && Number(met.roundsCompleted) > 0) ||
+        (met.rounds !== undefined && Number(met.rounds) > 0)
+      )
+    );
+
+    if (!hasTapsToday) {
+      return {
+        deviceId: stationId,
+        side,
+        rawName: '',
+        rawId: '',
+        displayName: 'No operator is active',
+        displayToken: '',
+        photoUrl: undefined,
+        isAssigned: false,
+        isActiveToday: false,
+        tapsCount: 0,
+        rounds: 0,
+        matchedWorker: null
+      };
     }
 
-    // 5. Fallback: check employee metrics
-    if (!rawName) {
-      const met = employeeMetrics.find(m => 
-        m.machineId && (
-          m.machineId.trim().toUpperCase() === cleanStation ||
-          (devObj?.deviceId && m.machineId.trim().toUpperCase() === devObj.deviceId.trim().toUpperCase())
-        )
-      );
-      if (met) {
-        rawName = met.employeeName || '';
-        rawId = met.employeeId || '';
-      }
-    }
+    // Operator has tapped and initiated activation today:
+    let rawName = met?.employeeName || '';
+    let rawId = met?.employeeId || '';
 
-    // 6. Parse Name(Token) format, e.g. "Sambari(24673)" or numeric "1819705349"
+    // Parse Name(Token) format, e.g. "Mangal(33786)" or numeric "1819705349"
     let extractedName = rawName ? String(rawName).trim() : '';
     let extractedToken = rawId ? String(rawId).trim() : '';
 
@@ -351,7 +360,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
       extractedToken = parenMatch[2].trim();
     }
 
-    // 7. Match with masterWorkers (Employee Master) for official Photo & Token
+    // Match with masterWorkers (Employee Master) for official Photo & Token
     const matchedWorker = masterWorkers.find(w => {
       const wTok = (w.tNo || '').trim().toLowerCase();
       const wId = (w.id || '').trim().toLowerCase();
@@ -368,14 +377,11 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
       );
     });
 
-    const displayName = matchedWorker?.name || extractedName || (rawId ? `Operator #${rawId}` : 'Unassigned');
+    const displayName = matchedWorker?.name || extractedName || (rawId ? `Operator #${rawId}` : 'Operator');
     const displayToken = matchedWorker?.tNo || extractedToken || rawId || '';
     const photoUrl = matchedWorker?.photoUrl;
-    const isAssigned = Boolean(
-      matchedWorker ||
-      (extractedName && extractedName.toLowerCase() !== 'unassigned' && extractedName !== 'null') ||
-      (extractedToken && extractedToken.toLowerCase() !== 'unassigned' && extractedToken !== 'null')
-    );
+    const tapsCount = Array.isArray(met?.taps) ? met.taps.length : Number(met?.rounds || 0);
+    const rounds = Number(met?.roundsCompleted ?? met?.rounds ?? 0);
 
     return {
       deviceId: stationId,
@@ -385,7 +391,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
       displayName,
       displayToken,
       photoUrl,
-      isAssigned,
+      isAssigned: true,
+      isActiveToday: true,
+      tapsCount,
+      rounds,
       matchedWorker
     };
   };
@@ -1137,9 +1146,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                     ? m.stationIds 
                     : ['IOT_D1', 'IOT_D2'];
 
-                  // Paired Telemetry Machine from Settings (e.g. SP044 -> RF44)
+                  // Paired Telemetry Machine from Settings (e.g. SP044 -> RF44, SP009 -> RF09)
                   const cleanNum = currentSelectedFrame.replace(/\D/g, '');
-                  const naturalRf = cleanNum ? `RF${cleanNum.padStart(2, '0')}` : '';
+                  const frameInt = cleanNum ? parseInt(cleanNum, 10) : NaN;
+                  const naturalRf = !isNaN(frameInt) ? `RF${String(frameInt).padStart(2, '0')}` : '';
                   const pairedTelemetry = (
                     systemSettings?.iotMachineMapping?.[currentSelectedFrame] ||
                     systemSettings?.machineToMachineMapping?.[currentSelectedFrame] ||
@@ -1153,8 +1163,8 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                     if (pairedTelemetry && lmId === pairedTelemetry) return true;
                     if (naturalRf && (lmId === naturalRf || lmId === `RF${cleanNum}`)) return true;
                     if (lmId === currentSelectedFrame) return true;
-                    const lmNum = lmId.replace(/\D/g, '');
-                    return Boolean(cleanNum && lmNum && lmNum === cleanNum);
+                    const lmInt = parseInt(lmId.replace(/\D/g, ''), 10);
+                    return Boolean(!isNaN(frameInt) && !isNaN(lmInt) && frameInt === lmInt);
                   });
 
                   // Live Taps & Patrol Rounds from this IoT machine's devices (via employeeMetrics)
@@ -1258,27 +1268,39 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                                   </div>
 
                                   {/* Operator Photo */}
-                                  <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-500 shadow-2xs shrink-0 flex items-center justify-center bg-stone-100">
-                                    {devInfo.photoUrl ? (
+                                  <div className={cn(
+                                    "w-9 h-9 rounded-full overflow-hidden border-2 shadow-2xs shrink-0 flex items-center justify-center bg-stone-100",
+                                    devInfo.isActiveToday ? "border-emerald-500" : "border-stone-300"
+                                  )}>
+                                    {devInfo.isActiveToday && devInfo.photoUrl ? (
                                       <img 
                                         src={devInfo.photoUrl} 
                                         alt={devInfo.displayName} 
                                         className="w-full h-full object-cover" 
                                       />
                                     ) : (
-                                      <div className="w-full h-full flex items-center justify-center bg-emerald-100 text-emerald-800 text-[11px] font-black">
-                                        {devInfo.isAssigned && devInfo.displayName ? devInfo.displayName.slice(0, 2).toUpperCase() : '👤'}
+                                      <div className={cn(
+                                        "w-full h-full flex items-center justify-center text-[11px] font-black",
+                                        devInfo.isActiveToday ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-500"
+                                      )}>
+                                        {devInfo.isActiveToday && devInfo.displayName ? devInfo.displayName.slice(0, 2).toUpperCase() : '—'}
                                       </div>
                                     )}
                                   </div>
 
                                   {/* Operator Name & Token */}
                                   <div className="min-w-0">
-                                    <div className="text-xs font-black text-stone-900 truncate">
+                                    <div className={cn(
+                                      "text-xs font-black truncate",
+                                      devInfo.isActiveToday ? "text-stone-900" : "text-stone-400 italic"
+                                    )}>
                                       {devInfo.displayName}
                                     </div>
-                                    <div className="text-[10px] font-mono font-bold text-emerald-700">
-                                      {devInfo.isAssigned && devInfo.displayToken ? `T.No: ${devInfo.displayToken}` : 'Auto-detected'}
+                                    <div className={cn(
+                                      "text-[10px] font-mono font-bold",
+                                      devInfo.isActiveToday ? "text-emerald-700" : "text-stone-400"
+                                    )}>
+                                      {devInfo.isActiveToday && devInfo.displayToken ? `T.No: ${devInfo.displayToken}` : 'No taps today'}
                                     </div>
                                   </div>
                                 </div>
