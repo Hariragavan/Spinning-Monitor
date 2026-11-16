@@ -267,18 +267,40 @@ export function transformCommonToOverview(
       : [];
 
     const rawSides: any[] = Array.isArray(m.sides) ? m.sides : [];
+    const refTimeStr = String(m.dataTime || dataTime || '');
     const findSide = (sideKey: 'L' | 'R'): SpinfoMachineSide => {
       const found = rawSides.find(s => String(s.side).toUpperCase() === sideKey);
       const endMendingTime = Number(found?.endMendingTime ?? 0);
       const endMendingTimeUnit = String(found?.endMendingTimeUnit || stdEndMendingTimeUnit);
       const rawBreaks: any[] = Array.isArray(found?.endBreaks) ? found.endBreaks : [];
       const endBreaks = rawBreaks.map(eb => {
-        const createdTime = String(eb.createdTime || eb.timestamp || dataTime);
+        const createdTime = String(eb.createdTime || eb.timestamp || refTimeStr || '');
+        let durationMinutes = Number(endMendingTime.toFixed(2));
+
+        if (typeof eb.durationMinutes === 'number' && eb.durationMinutes > 0) {
+          durationMinutes = Number(eb.durationMinutes.toFixed(2));
+        } else if (typeof eb.endMendingTime === 'number' && eb.endMendingTime > 0) {
+          durationMinutes = Number(eb.endMendingTime.toFixed(2));
+        } else if (createdTime && refTimeStr) {
+          try {
+            const dtMs = new Date(refTimeStr.replace(' ', 'T')).getTime();
+            const ctMs = new Date(createdTime.replace(' ', 'T')).getTime();
+            if (!isNaN(dtMs) && !isNaN(ctMs)) {
+              const diffMs = dtMs - ctMs;
+              if (diffMs > 0) {
+                durationMinutes = Number((diffMs / 60000).toFixed(2));
+              } else if (diffMs === 0) {
+                durationMinutes = 0.5;
+              }
+            }
+          } catch (_) {}
+        }
+
         return {
           spindleNo: Number(eb.spindleNo),
           createdTime,
           breakCount: 1,
-          durationMinutes: endMendingTime,
+          durationMinutes,
           timestamp: createdTime
         };
       });

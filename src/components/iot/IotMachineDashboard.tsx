@@ -1602,7 +1602,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                       <td><strong>Spindle #{b.spindleNo}</strong></td>
                                       <td>
                                         <span style={{ color: '#0369a1', fontWeight: 700 }}>
-                                          {(b.durationMinutes || emLeft).toFixed(2)} min
+                                          {Number(b.durationMinutes ?? emLeft).toFixed(2)} min
                                         </span>
                                       </td>
                                       <td>{b.timestamp}</td>
@@ -1648,7 +1648,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                       <td><strong>Spindle #{b.spindleNo}</strong></td>
                                       <td>
                                         <span style={{ color: '#0369a1', fontWeight: 700 }}>
-                                          {(b.durationMinutes || emRight).toFixed(2)} min
+                                          {Number(b.durationMinutes ?? emRight).toFixed(2)} min
                                         </span>
                                       </td>
                                       <td>{b.timestamp}</td>

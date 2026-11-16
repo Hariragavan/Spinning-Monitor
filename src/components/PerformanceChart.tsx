@@ -54,7 +54,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
   const chartData = (report.summaries || []).map(s => ({
     name: s.frameNo,
     Target: s.targetProd,
-    Actual: s.actualProd,
+    Achieved: s.actualProd,
     Efficiency: s.avgUtil // Using avgUtil for efficiency trends
   }));
 
@@ -62,7 +62,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
     <div className={cn("grid grid-cols-1 lg:grid-cols-2 gap-12 mb-12 min-w-0", isTvMode && "gap-6 mb-6")}>
       <div className={cn("bg-white rounded-3xl border border-stone-200 shadow-sm transition-all hover:shadow-md min-w-0 flex flex-col", isTvMode ? "p-8 md:p-10" : "p-8")}>
         <h3 className={cn("font-black text-stone-900 uppercase tracking-tight mb-6", isTvMode ? "text-2xl md:text-3xl" : "text-sm")}>
-          Production Analysis (Actual vs Target)
+          Production Analysis (Target vs Achieved)
         </h3>
         <ChartContainer minHeight={chartHeight}>
           {({ width, height }) => (
@@ -75,9 +75,15 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
                 itemStyle={{ color: '#fafaf9' }}
                 cursor={{ fill: '#f5f5f4' }}
               />
-              <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '24px', fontSize: isTvMode ? '14px' : '10px', fontWeight: '900', textTransform: 'uppercase' }} />
-              <Bar dataKey="Target" fill="#86efac" radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
-              <Bar dataKey="Actual" fill="#047857" radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
+              <Legend 
+                verticalAlign="top" 
+                align="right" 
+                iconType="circle" 
+                formatter={(value) => <span style={{ color: '#000000', fontWeight: 900, textTransform: 'uppercase' }}>{value}</span>}
+                wrapperStyle={{ paddingBottom: '24px', fontSize: isTvMode ? '14px' : '10px', fontWeight: '900', color: '#000000' }} 
+              />
+              <Bar dataKey="Target" fill="#dcfce7" stroke="#86efac" strokeWidth={1.5} radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
+              <Bar dataKey="Achieved" fill="#047857" radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
             </BarChart>
           )}
         </ChartContainer>
@@ -97,7 +103,13 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
                 contentStyle={{ backgroundColor: '#1c1917', border: 'none', borderRadius: '12px', color: '#fafaf9' }}
                 itemStyle={{ color: '#fafaf9' }}
               />
-              <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '24px', fontSize: isTvMode ? '14px' : '10px', fontWeight: '900', textTransform: 'uppercase' }} />
+              <Legend 
+                verticalAlign="top" 
+                align="right" 
+                iconType="circle" 
+                formatter={(value) => <span style={{ color: '#000000', fontWeight: 900, textTransform: 'uppercase' }}>{value}</span>}
+                wrapperStyle={{ paddingBottom: '24px', fontSize: isTvMode ? '14px' : '10px', fontWeight: '900', color: '#000000' }} 
+              />
               <Line type="monotone" dataKey="Efficiency" stroke="#047857" strokeWidth={isTvMode ? 5 : 3} dot={{ r: isTvMode ? 6 : 4, fill: '#047857', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 9, strokeWidth: 0 }} />
             </LineChart>
           )}
