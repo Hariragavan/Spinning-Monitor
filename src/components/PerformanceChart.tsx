@@ -76,7 +76,7 @@ export const PerformanceChart: React.FC<PerformanceChartProps> = ({ report, isTv
                 cursor={{ fill: '#f5f5f4' }}
               />
               <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '24px', fontSize: isTvMode ? '14px' : '10px', fontWeight: '900', textTransform: 'uppercase' }} />
-              <Bar dataKey="Target" fill="#e7e5e4" radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
+              <Bar dataKey="Target" fill="#86efac" radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
               <Bar dataKey="Actual" fill="#047857" radius={[6, 6, 0, 0]} barSize={isTvMode ? 52 : 32} />
             </BarChart>
           )}

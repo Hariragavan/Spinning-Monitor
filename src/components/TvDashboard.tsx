@@ -8,7 +8,7 @@ import {
   Calendar, Clock, Check, Users, Gauge, Layers, Star, Zap,
   Award, ArrowUpRight, Sparkles, Medal, UserCheck, Coins, FileText, Target,
   Wrench, AlertTriangle, ArrowLeft, RefreshCw, ChevronDown, Scan,
-  FileSpreadsheet, Sun
+  FileSpreadsheet, Sun, Lock, Unlock
 } from 'lucide-react';
 import { DailyReport, Sider, IncentiveRule, Shift, SystemSettings, MachineEmData, CountConversion, FrozenMonthRecord, Shed, MachineMasterItem } from '../types';
 import { cn, parseUniversalDateParts, parseUniversalDate, shiftUniversalDate, getYesterdayUniversalDate, isCountNameMatching, normalizeShed } from '../lib/utils';
@@ -426,6 +426,9 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   const mainStageRef = useRef<HTMLElement | null>(null);
   const contentWrapperRef = useRef<HTMLDivElement | null>(null);
 
+  // IoT Page Lock state: when locked, TV auto-rotation continuously runs only the IoT page (default: unlocked)
+  const [isIotLocked, setIsIotLocked] = useState<boolean>(false);
+
   const scanAndAutoAlign = useCallback(() => {
     if (!isAutoAlign) {
       setAlignScale(1);
@@ -610,6 +613,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
 
   // 6. Navigation Helpers
   const goToNext = useCallback(() => {
+    // If IoT page is locked and active, continuously stay on the IoT page
+    if (isIotLocked && currentMain.id === 'main-iot-performance') {
+      return;
+    }
     if (safeSubIndex < currentMain.subPages.length - 1) {
       setSubIndex(safeSubIndex + 1);
     } else {
@@ -618,7 +625,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       setSubIndex(0);
     }
     setSubPagesCount(1);
-  }, [safeSubIndex, currentMain.subPages.length, mainIndex, availableMainPages.length]);
+  }, [isIotLocked, currentMain.id, safeSubIndex, currentMain.subPages.length, mainIndex, availableMainPages.length]);
 
   const goToPrev = useCallback(() => {
     if (safeSubIndex > 0) {
@@ -704,6 +711,11 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   useEffect(() => {
     if (isPaused) return;
 
+    // When IoT page is locked and active, keep running only IoT page (no TV chapter auto-rotation)
+    if (isIotLocked && currentMain.id === 'main-iot-performance') {
+      return;
+    }
+
     const interval = setInterval(() => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
@@ -715,7 +727,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPaused, goToNext, currentSubDuration]);
+  }, [isPaused, goToNext, currentSubDuration, isIotLocked, currentMain.id]);
 
   // 7.5. Smooth TV Auto-Scroll for Content Exceeding Page Height (Tables, Ledger, Cards)
   useEffect(() => {
@@ -1336,8 +1348,39 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           )}
         </div>
 
-        {/* Right: Auto Align Button, Quick Refresh Button, Countdown Timer, Clock */}
+        {/* Right: Lock Button (IoT only), Quick Refresh Button, Auto Align Button, Countdown Timer, Clock */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Lock Button — ONLY FOR IOT PAGE (default: unlocked) */}
+          {currentMain.id === 'main-iot-performance' && (
+            <button
+              type="button"
+              onClick={() => setIsIotLocked(prev => !prev)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-2xs border",
+                isIotLocked
+                  ? "bg-amber-500 text-white border-amber-600 shadow-amber-500/20"
+                  : "bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200"
+              )}
+              title={
+                isIotLocked
+                  ? "IoT TV Patrol is LOCKED: Continuously running only this IoT page. Click to unlock rotation."
+                  : "Click to lock and continuously run only this IoT TV Patrol page."
+              }
+            >
+              {isIotLocked ? (
+                <>
+                  <Lock size={14} className="text-white shrink-0" />
+                  <span>Locked</span>
+                </>
+              ) : (
+                <>
+                  <Unlock size={14} className="text-stone-500 shrink-0" />
+                  <span className="hidden sm:inline">Unlock</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Quick Refresh Button (Symbol Only) */}
           {onRefresh && (
             <button
@@ -1380,18 +1423,25 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
           {/* Subpage Countdown Badge */}
           <div className="flex items-center gap-2.5 bg-stone-50 px-3 py-1.5 rounded-2xl border border-stone-200">
             <div className="text-right">
-              <div className="text-[9.5px] font-black uppercase tracking-widest text-stone-400 leading-tight">Next</div>
-              <div className="text-sm md:text-base font-black text-emerald-700 tabular-nums leading-tight">{timeRemaining}s</div>
+              <div className="text-[9.5px] font-black uppercase tracking-widest text-stone-400 leading-tight">
+                {isIotLocked && currentMain.id === 'main-iot-performance' ? 'Status' : 'Next'}
+              </div>
+              <div className="text-sm md:text-base font-black text-emerald-700 tabular-nums leading-tight">
+                {isIotLocked && currentMain.id === 'main-iot-performance' ? 'LOCKED' : `${timeRemaining}s`}
+              </div>
             </div>
             <div className="relative w-6 h-6 flex items-center justify-center">
               <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="14" fill="none" className="stroke-stone-200" strokeWidth="3" />
                 <circle
                   cx="18" cy="18" r="14" fill="none"
-                  className="stroke-emerald-600 transition-all duration-1000 ease-linear"
+                  className={cn(
+                    "transition-all duration-1000 ease-linear",
+                    isIotLocked && currentMain.id === 'main-iot-performance' ? "stroke-amber-500 animate-pulse" : "stroke-emerald-600"
+                  )}
                   strokeWidth="3.5"
                   strokeDasharray={88}
-                  strokeDashoffset={88 - (88 * progressPercent) / 100}
+                  strokeDashoffset={isIotLocked && currentMain.id === 'main-iot-performance' ? 0 : 88 - (88 * progressPercent) / 100}
                   strokeLinecap="round"
                 />
               </svg>
@@ -1409,8 +1459,13 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       {/* 2. PROGRESS LINE (Directly below header, snug to text) */}
       <div className="w-full h-0.5 bg-stone-200 relative z-30 overflow-hidden">
         <div 
-          className="h-full bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-400 transition-all duration-1000 ease-linear"
-          style={{ width: `${progressPercent}%` }}
+          className={cn(
+            "h-full transition-all duration-1000 ease-linear",
+            isIotLocked && currentMain.id === 'main-iot-performance'
+              ? "w-full bg-amber-500"
+              : "bg-gradient-to-r from-emerald-600 via-teal-500 to-emerald-400"
+          )}
+          style={{ width: isIotLocked && currentMain.id === 'main-iot-performance' ? '100%' : `${progressPercent}%` }}
         />
       </div>
 

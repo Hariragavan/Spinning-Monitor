@@ -48,6 +48,7 @@ export const KPIStats: React.FC<KPIStatsProps> = ({ report, isTvMode = false, la
     { 
       label: 'Total Production', 
       value: `${Math.round(report.totalProductionActual).toLocaleString()} kg`, 
+      targetValue: report.totalProductionTarget > 0 ? `${Math.round(report.totalProductionTarget).toLocaleString()} kg` : undefined,
       icon: TrendingUp, 
       color: 'text-emerald-500',
       bgColor: 'bg-emerald-50',
@@ -101,13 +102,29 @@ export const KPIStats: React.FC<KPIStatsProps> = ({ report, isTvMode = false, la
           </div>
           
           <div className="relative z-10 flex items-baseline justify-between mt-auto">
-            <div 
-              className={cn(
-                "font-black text-stone-900 tracking-tight tabular-nums leading-none", 
-                isTvMode ? "text-4xl md:text-5xl lg:text-6xl" : "text-2xl md:text-3xl"
+            <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+              <div 
+                className={cn(
+                  "font-black text-stone-900 tracking-tight tabular-nums leading-none", 
+                  isTvMode ? "text-4xl md:text-5xl lg:text-6xl" : "text-2xl md:text-3xl"
+                )}
+              >
+                {stat.value}
+              </div>
+              {stat.targetValue && (
+                <div 
+                  className={cn(
+                    "font-bold tracking-tight tabular-nums",
+                    isTvMode ? "text-base md:text-xl text-stone-400" : "text-xs md:text-sm text-stone-400"
+                  )}
+                  title={`Target: ${stat.targetValue}`}
+                >
+                  <span className={cn("font-black uppercase text-stone-400 mr-1", isTvMode ? "text-xs" : "text-[10px]")}>
+                    Target:
+                  </span>
+                  <span>{stat.targetValue}</span>
+                </div>
               )}
-            >
-              {stat.value}
             </div>
             <div className="flex items-center gap-2">
               <span className={cn("rounded-full animate-pulse", isTvMode ? "w-2.5 h-2.5" : "w-1.5 h-1.5", stat.color.replace('text-', 'bg-'))} />
