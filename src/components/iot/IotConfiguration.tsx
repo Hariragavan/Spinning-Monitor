@@ -135,6 +135,35 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
             pMap[v.trim().toUpperCase()] = k.trim().toUpperCase();
           }
         });
+
+        // Also merge from machinePairs array if available
+        if (Array.isArray(settingsData?.machinePairs)) {
+          settingsData.machinePairs.forEach((pair: any) => {
+            if (pair?.spinningFrame && pair?.iotMachine) {
+              pMap[pair.spinningFrame.trim().toUpperCase()] = pair.iotMachine.trim().toUpperCase();
+              pMap[pair.iotMachine.trim().toUpperCase()] = pair.spinningFrame.trim().toUpperCase();
+            }
+          });
+        }
+
+        // Persistent localStorage check so mapped pairs persist permanently until changed
+        if (typeof window !== 'undefined') {
+          try {
+            const savedLocal = localStorage.getItem('iotMachineMapping') || localStorage.getItem('iot_machine_mapping');
+            if (savedLocal) {
+              const parsed = JSON.parse(savedLocal);
+              if (parsed && typeof parsed === 'object') {
+                Object.entries(parsed).forEach(([k, v]: [string, any]) => {
+                  if (k && v) {
+                    pMap[k.trim().toUpperCase()] = String(v).trim().toUpperCase();
+                    pMap[String(v).trim().toUpperCase()] = k.trim().toUpperCase();
+                  }
+                });
+              }
+            }
+          } catch (_) {}
+        }
+
         setProductionMappings(pMap);
 
         if (settingsData?.iotDeviceOperatorMapping) {
@@ -148,14 +177,18 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
     }
   };
 
-  const handleProductionFrameSelect = (iotKey: string, frameNo: string) => {
+  const handleProductionFrameSelect = (iotKey: string, frameNo: string, altKey?: string) => {
     setProductionMappings(prev => {
       const updated = { ...prev };
       const cleanKey = iotKey.trim().toUpperCase();
+      const cleanAlt = altKey ? altKey.trim().toUpperCase() : '';
       if (!frameNo) {
         delete updated[cleanKey];
+        if (cleanAlt) delete updated[cleanAlt];
       } else {
-        updated[cleanKey] = frameNo.trim().toUpperCase();
+        const val = frameNo.trim().toUpperCase();
+        updated[cleanKey] = val;
+        if (cleanAlt) updated[cleanAlt] = val;
       }
       return updated;
     });
@@ -171,10 +204,30 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
       mappings.forEach(m => {
         const iotName = m.name?.trim().toUpperCase();
         const iotId = m.mappingId?.trim().toUpperCase();
-        const mappedFrame = productionMappings[iotName] || productionMappings[iotId];
+        const mappedFrame = (iotName ? productionMappings[iotName] : '') || 
+                            (iotId ? productionMappings[iotId] : '') ||
+                            productionMappings[m.name] || 
+                            productionMappings[m.mappingId];
+
         if (mappedFrame && mappedFrame !== 'NONE') {
-          cleanIotMap[mappedFrame] = iotName || iotId;
-          pairs.push({ spinningFrame: mappedFrame, iotMachine: iotName || iotId });
+          const frameUpper = mappedFrame.trim().toUpperCase();
+          const targetIot = (iotName || iotId).trim().toUpperCase();
+          cleanIotMap[frameUpper] = targetIot;
+          pairs.push({ spinningFrame: frameUpper, iotMachine: targetIot });
+        }
+      });
+
+      // Preserve any explicitly set pairs in productionMappings that start with standard frames
+      Object.entries(productionMappings).forEach(([k, v]) => {
+        if (k && v && v !== 'NONE') {
+          const cleanK = k.trim().toUpperCase();
+          const cleanV = v.trim().toUpperCase();
+          if ((cleanV.startsWith('SP') || cleanV.startsWith('K')) && !cleanIotMap[cleanV]) {
+            cleanIotMap[cleanV] = cleanK;
+            if (!pairs.some(p => p.spinningFrame === cleanV)) {
+              pairs.push({ spinningFrame: cleanV, iotMachine: cleanK });
+            }
+          }
         }
       });
 
@@ -193,13 +246,20 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
         iotDeviceOperatorMapping: deviceOperators
       };
 
+      // 1. Save to global app settings & backend database
       if (onUpdateSettings) {
         await onUpdateSettings(updatedSettings);
-      } else {
-        await apiClient.saveSettings(updatedSettings);
+      }
+      await apiClient.saveSettings(updatedSettings).catch(() => null);
+
+      // 2. Persist to localStorage as reliable backup
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('iotMachineMapping', JSON.stringify(cleanIotMap));
+        localStorage.setItem('iotMachinePairs', JSON.stringify(pairs));
+        localStorage.setItem('iot_machine_mapping', JSON.stringify(cleanIotMap));
       }
 
-      showMsg('Production machine assignments saved successfully.');
+      showMsg('Machine pairs saved successfully and will persist permanently until changed.');
     } catch (err: any) {
       showMsg('Failed to save machine assignments: ' + (err?.message || 'Error'), 'error');
     } finally {
@@ -1050,7 +1110,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
               <tbody>
                 {mappings.map(m => {
                   const iotKey = (m.mappingId || m.name || '').trim().toUpperCase();
-                  const currentSelectedFrame = productionMappings[iotKey] || productionMappings[m.name?.trim().toUpperCase()] || '';
+                  const currentSelectedFrame = 
+                    productionMappings[iotKey] || 
+                    productionMappings[m.name?.trim().toUpperCase()] || 
+                    productionMappings[m.mappingId?.trim().toUpperCase()] || '';
 
                   // Every IoT Machine typically manages 2 devices (e.g. IOT_D1 Left and IOT_D2 Right)
                   const stations = (m.stationIds && m.stationIds.length > 0) 
@@ -1094,7 +1157,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                       <td>
                         <select
                           value={currentSelectedFrame}
-                          onChange={(e) => handleProductionFrameSelect(iotKey, e.target.value)}
+                          onChange={(e) => handleProductionFrameSelect(iotKey, e.target.value, m.name)}
                           className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all cursor-pointer"
                         >
                           <option value="">-- Assign Production Frame --</option>
