@@ -324,38 +324,30 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
         // 2. Resolve Paired RF Machine strictly from Settings (holds live status, speed, production, EM left/right)
         const cleanNum = frameNo.replace(/\D/g, '');
-        const frameInt = cleanNum ? parseInt(cleanNum, 10) : NaN;
-        const naturalRf = !isNaN(frameInt) ? `RF${String(frameInt).padStart(2, '0')}` : '';
+        const normalizeRf = (raw?: string | null): string => {
+          if (!raw) return '';
+          const digits = raw.replace(/\D/g, '');
+          if (!digits) return '';
+          const num = parseInt(digits, 10);
+          if (isNaN(num)) return '';
+          return `RF${String(num).padStart(2, '0')}`;
+        };
 
         let pairedRfNo = '';
 
         // Priority 1: Check date-specific effective mapping from Settings for today's active date
         if (effectiveDateMap) {
           const mapped = resolveMappedDevice(effectiveDateMap, frameNo);
-          if (mapped) {
-            const cleanMapped = mapped.trim().toUpperCase();
-            if (cleanMapped.startsWith('RF')) {
-              pairedRfNo = cleanMapped;
-            } else {
-              const num = parseInt(cleanMapped.replace(/\D/g, ''), 10);
-              if (!isNaN(num)) pairedRfNo = `RF${String(num).padStart(2, '0')}`;
-            }
-          }
+          const norm = normalizeRf(mapped);
+          if (norm) pairedRfNo = norm;
         }
 
         // Priority 2: Direct lookup in settings.iotMachineMapping or machineToMachineMapping
         if (!pairedRfNo) {
           const direct = resolveMappedDevice(effectiveSettings?.iotMachineMapping, frameNo) ||
                          resolveMappedDevice(effectiveSettings?.machineToMachineMapping, frameNo);
-          if (direct) {
-            const cleanDirect = direct.trim().toUpperCase();
-            if (cleanDirect.startsWith('RF')) {
-              pairedRfNo = cleanDirect;
-            } else {
-              const num = parseInt(cleanDirect.replace(/\D/g, ''), 10);
-              if (!isNaN(num)) pairedRfNo = `RF${String(num).padStart(2, '0')}`;
-            }
-          }
+          const norm = normalizeRf(direct);
+          if (norm) pairedRfNo = norm;
         }
 
         // Priority 3: Lookup in machinePairs from settings or localStorage
@@ -364,13 +356,10 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
             if (sFrame === frameNo || sFrame.replace(/\D/g, '') === cleanNum) {
               const tel = String(pair?.telemetryMachine || pair?.iotMachine || '').trim().toUpperCase();
-              if (tel && tel.startsWith('RF')) {
-                pairedRfNo = tel;
-                break;
-              } else if (tel && tel !== 'NONE' && tel !== 'UNASSIGNED') {
-                const num = parseInt(tel.replace(/\D/g, ''), 10);
-                if (!isNaN(num)) {
-                  pairedRfNo = `RF${String(num).padStart(2, '0')}`;
+              if (tel && tel !== 'NONE' && tel !== 'UNASSIGNED') {
+                const norm = normalizeRf(tel);
+                if (norm) {
+                  pairedRfNo = norm;
                   break;
                 }
               }
@@ -379,8 +368,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
 
         // Priority 4: Natural RF fallback from spinning frame number (e.g. SP009 -> RF09, SP044 -> RF44)
-        if (!pairedRfNo && naturalRf) {
-          pairedRfNo = naturalRf;
+        if (!pairedRfNo && cleanNum) {
+          pairedRfNo = normalizeRf(cleanNum);
         }
 
         // 2 Devices for this IoT Machine (D1 for Left / LH side, D2 for Right / RH side)
@@ -403,6 +392,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
         const d1DeviceId = stationList[0] || 'IOT_D1';
         const d2DeviceId = stationList[1] || 'IOT_D2';
+
+        const naturalRf = normalizeRf(cleanNum);
 
         // Telemetry lookup using tiered priority order (NEVER allow natural fallback to preempt pairedRfNo!)
         const findTelemetryMachine = (list: any[]) => {
