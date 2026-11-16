@@ -10,6 +10,7 @@ import {
 import { iotApi, IOT_COMMON_API_URL } from '@/lib/iot/iotApi';
 import { getSampleSpinfoOverview, buildMachineDetailFromCommon } from '@/lib/iot/sampleIotData';
 import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
+import { FourSpindleRollAnimation } from '@/components/CountWiseFrames';
 
 const INITIAL_OVERVIEW: SpinfoOverviewResponse = getSampleSpinfoOverview();
 
@@ -277,18 +278,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     setSelectedMachineDetail(null);
   }, []);
 
-  // Keyboard navigation for modals (ESC key)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (emModalOpen) closeEmModal();
-        if (modalOpen) closeModal();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [modalOpen, emModalOpen, closeModal, closeEmModal]);
-
   // Available counts from live JSON machines[]
   const availableCounts = useMemo(() => {
     if (!overview?.machines) return [];
@@ -351,6 +340,26 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     const target = direction === -1 ? prevMachineId : nextMachineId;
     if (target) openMachineModal(target);
   };
+
+  // Keyboard navigation for modals (ESC key to close, Left/Right arrow keys for Next/Prev machine)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (emModalOpen) closeEmModal();
+        if (modalOpen) closeModal();
+      } else if (modalOpen) {
+        if (e.key === 'ArrowLeft' && hasPrevMachine) {
+          e.preventDefault();
+          navigateMachine(-1);
+        } else if (e.key === 'ArrowRight' && hasNextMachine) {
+          e.preventDefault();
+          navigateMachine(1);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [modalOpen, emModalOpen, closeModal, closeEmModal, hasPrevMachine, hasNextMachine]);
 
   const maxHourlyProduction = useMemo(() => {
     if (!overview?.hourlyProduction?.chart?.length) return 20;
@@ -701,7 +710,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               </div>
             </div>
 
-            {/* 7. Shift Production (shiftProduction, shiftTargetProduction, productionUnit) */}
+            {/* 7. Shift Production (shiftProduction, productionUnit) */}
             <div
               className={`kpi-card ${activeKpi === 'PRODUCTION_YIELD' ? 'active' : ''}`}
               onClick={() => setActiveKpi('PRODUCTION_YIELD')}
@@ -713,9 +722,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 <span className="unit">{overview.machines[0]?.productionUnit || 'kg'}</span>
               </div>
               <div className="kpi-subtext">
-                {overview.performanceAndCare.yieldAchievedPercent ?? 0}% of{' '}
-                {(overview.performanceAndCare.targetProductionKg ?? 0).toLocaleString()}{' '}
-                {overview.machines[0]?.productionUnit || 'kg'} target
+                Total Cumulative Shift Output
               </div>
             </div>
 
@@ -787,15 +794,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               </div>
               <div className="chart-stats-group">
                 <div className="stat-item">
-                  <span className="stat-label">SHIFT TOTAL</span>
+                  <span className="stat-label">TOTAL PRODUCTION</span>
                   <span className="stat-value">
-                    {(overview.hourlyProduction.shiftTotalKg ?? 0).toLocaleString()} {overview.machines[0]?.productionUnit || 'kg'}
-                  </span>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-label">SHIFT TARGET</span>
-                  <span className="stat-value">
-                    {(overview.hourlyProduction.totalTarget ?? 0).toLocaleString()} {overview.machines[0]?.productionUnit || 'kg'}
+                    {(overview.hourlyProduction.shiftTotalKg ?? overview.performanceAndCare.productionYieldKg ?? 0).toLocaleString()} {overview.machines[0]?.productionUnit || 'kg'}
                   </span>
                 </div>
                 <div className="stat-item">
@@ -864,7 +865,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   : activeKpi === 'AVERAGE_RPM'
                   ? `Highest RPM first · Avg running speed ${(overview.performanceAndCare.averageRpm ?? 0).toLocaleString()} rpm`
                   : activeKpi === 'PRODUCTION_YIELD'
-                  ? `Highest production first · Total ${(overview.performanceAndCare.productionYieldKg ?? 0).toFixed(2)} / ${(overview.performanceAndCare.targetProductionKg ?? 0).toFixed(1)} kg`
+                  ? `Highest production first · Total ${(overview.performanceAndCare.productionYieldKg ?? 0).toFixed(2)} kg`
                   : activeKpi === 'SHIFT_WASTE'
                   ? `Highest waste first · Average shift waste ${(overview.performanceAndCare.avgShiftWaste ?? 0).toFixed(2)}%`
                   : activeKpi === 'END_MENDING_TIME'
@@ -1047,7 +1048,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                           ></div>
                         </div>
                         <div className="card-footer-sub">
-                          {m.yieldPercent}% of {m.shiftTargetProduction} {m.productionUnit || 'kg'} target · {m.hourWiseProduction?.length || 0} hrs logged
+                          {m.hourWiseProduction?.length || 0} hrs logged · Count {m.count}
                         </div>
                       </>
                     )}
@@ -1109,8 +1110,8 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         <strong>{(m.spindleSpeedCurrent || 0).toLocaleString()} {m.spindleSpeedUnit || 'rpm'}</strong>
                       </div>
                       <div>
-                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>PROD / TARGET</span>
-                        <strong>{m.shiftProduction}/{m.shiftTargetProduction} {m.productionUnit || 'kg'}</strong>
+                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>SHIFT PROD</span>
+                        <strong>{m.shiftProduction} {m.productionUnit || 'kg'}</strong>
                       </div>
                       <div>
                         <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>WASTE</span>
@@ -1144,7 +1145,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       <th>COUNT</th>
                       <th>SPINDLE SPEED</th>
                       <th>SHIFT PRODUCTION</th>
-                      <th>TARGET %</th>
                       <th>SHIFT WASTE</th>
                       <th>LEFT SIDE (L)</th>
                       <th>RIGHT SIDE (R)</th>
@@ -1187,16 +1187,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             </strong>
                           </td>
                           <td>
-                            <strong>{(m.shiftProduction || 0).toFixed(2)}</strong>
-                            <span style={{ fontSize: '0.7rem', color: '#64748b' }}>
-                              {' '}
-                              / {m.shiftTargetProduction} {m.productionUnit || 'kg'}
-                            </span>
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: 700, color: (m.yieldPercent || 0) >= 45 ? '#15803d' : '#b45309' }}>
-                              {m.yieldPercent}%
-                            </span>
+                            <strong>{(m.shiftProduction || 0).toFixed(2)} {m.productionUnit || 'kg'}</strong>
                           </td>
                           <td>
                             <strong>{(m.shiftWaste || 0).toFixed(2)}{m.wasteUnit || '%'}</strong>
@@ -1249,9 +1240,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             <div className="slide-popup-header">
               <div className="slide-popup-top-bar">
                 <div className="modal-title-wrap">
-                  <span className="modal-eyebrow">
-                    {overview.source || 'MAG SPinFO'} · MACHINE TELEMETRY DETAIL
-                  </span>
                   <div className="modal-heading-row">
                     <h1 className="modal-machine-title">
                       {selectedMachineDetail?.machine?.machineId || activeMachineId}
@@ -1269,27 +1257,14 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 </div>
 
                 <div className="slide-header-controls">
-                  <span
-                    className={`status-pill ${
-                      selectedMachineDetail?.machine?.runStatus === 'RUN'
-                        ? 'running'
-                        : selectedMachineDetail?.machine?.runStatus === 'DOFF'
-                        ? 'doffing'
-                        : 'stopped'
-                    }`}
-                  >
-                    {selectedMachineDetail?.machine?.runStatus || 'RUN'} ·{' '}
-                    {selectedMachineDetail?.machine?.statusBadge || 'Running'}
-                  </span>
-
-                  {/* Machine Quick Nav Switchers */}
+                  {/* Machine Quick Nav Switchers (Keyboard Left/Right Arrow enabled) */}
                   <div className="machine-nav-pills">
                     <button
                       type="button"
                       className="btn-nav-machine"
                       disabled={!hasPrevMachine}
                       onClick={() => navigateMachine(-1)}
-                      title="Previous machine"
+                      title="Previous machine (Left Arrow ‹)"
                     >
                       ‹ {prevMachineId || 'Prev'}
                     </button>
@@ -1298,7 +1273,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       className="btn-nav-machine"
                       disabled={!hasNextMachine}
                       onClick={() => navigateMachine(1)}
-                      title="Next machine"
+                      title="Next machine (Right Arrow ›)"
                     >
                       {nextMachineId || 'Next'} ›
                     </button>
@@ -1310,31 +1285,107 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 </div>
               </div>
 
-              {/* Telemetry packet metadata bar (Strictly from /api/common JSON root fields) */}
-              <div className="operator-meta-bar">
-                <div className="meta-item">
-                  <span className="meta-label">CUSTOMER</span>
-                  <span className="meta-val">{overview.customer || 'SPACE TEXTILES PRIVATE LIMITED'}</span>
-                  <span className="meta-sub">{overview.city || 'COIMBATORE'}</span>
-                </div>
+              {/* Top metadata bar: EM (Overall), Date & Time, Spindle Animation at right corner */}
+              {(() => {
+                const sideL = selectedMachineDetail?.machine?.sides?.find(s => s.side === 'L');
+                const sideR = selectedMachineDetail?.machine?.sides?.find(s => s.side === 'R');
+                const emL = Number(sideL?.endMendingTime ?? 0);
+                const emR = Number(sideR?.endMendingTime ?? 0);
+                const ovEm = (emL > 0 || emR > 0)
+                  ? ((emL + emR) / 2).toFixed(2)
+                  : (selectedMachineDetail?.overview?.keyFigures?.endMending?.value
+                      ? String(selectedMachineDetail.overview.keyFigures.endMending.value).replace(/[^\d.]/g, '') || '0.00'
+                      : '0.00');
+                const rawStatus = String(selectedMachineDetail?.machine?.runStatus || 'STOP').toUpperCase();
+                const animStatus: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE' =
+                  rawStatus === 'RUN' ? 'RUN' : rawStatus === 'DOFF' ? 'DOFF' : rawStatus === 'OFFLINE' ? 'OFFLINE' : 'STOP';
 
-                <div className="meta-item">
-                  <span className="meta-label">MESSAGE ID</span>
-                  <span className="badge-active">{overview.msgId || '-'}</span>
-                </div>
+                return (
+                  <div className="operator-meta-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
+                      <div className="meta-item">
+                        <span className="meta-label">EM (OVERALL)</span>
+                        <span className="meta-val" style={{ color: '#0369a1', fontWeight: 800 }}>
+                          {ovEm} min
+                        </span>
+                        <span className="meta-sub" style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                          LH: {emL.toFixed(2)}m · RH: {emR.toFixed(2)}m
+                        </span>
+                      </div>
 
-                <div className="meta-item">
-                  <span className="meta-label">DATA TIME</span>
-                  <span className="meta-val">{overview.dataTime || '-'}</span>
-                </div>
+                      <div className="meta-item">
+                        <span className="meta-label">DATE & TIME</span>
+                        <span className="meta-val">{overview.dataTime || (selectedMachineDetail?.machine as any)?.lastUpdated || '-'}</span>
+                        <span className="meta-sub">Telemetry Sync</span>
+                      </div>
+                    </div>
 
-                <div className="meta-item">
-                  <span className="meta-label">STD END MENDING</span>
-                  <span className="meta-val">
-                    {stdMendingTime} {stdMendingUnit} (Part {overview.part ?? 1}/{overview.parts ?? 1})
-                  </span>
-                </div>
-              </div>
+                    {/* Spindle animation widget at right corner after Date & Time */}
+                    <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.4rem 0.85rem',
+                          borderRadius: '12px',
+                          border: `1.5px solid ${
+                            animStatus === 'DOFF'
+                              ? '#facc15'
+                              : animStatus === 'STOP' || animStatus === 'OFFLINE'
+                              ? '#fca5a5'
+                              : '#86efac'
+                          }`,
+                          background:
+                            animStatus === 'DOFF'
+                              ? '#fef9c3'
+                              : animStatus === 'STOP' || animStatus === 'OFFLINE'
+                              ? '#fef2f2'
+                              : '#f0fdf4'
+                        }}
+                      >
+                        <FourSpindleRollAnimation status={animStatus} />
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span
+                            style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              letterSpacing: '0.05em',
+                              textTransform: 'uppercase',
+                              color:
+                                animStatus === 'DOFF'
+                                  ? '#854d0e'
+                                  : animStatus === 'STOP' || animStatus === 'OFFLINE'
+                                  ? '#991b1b'
+                                  : '#166534'
+                            }}
+                          >
+                            {animStatus === 'DOFF' ? 'DOFFING' : animStatus === 'STOP' || animStatus === 'OFFLINE' ? 'STOPPED' : 'RUNNING'}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              color:
+                                animStatus === 'DOFF'
+                                  ? '#a16207'
+                                  : animStatus === 'STOP' || animStatus === 'OFFLINE'
+                                  ? '#b91c1c'
+                                  : '#15803d'
+                            }}
+                          >
+                            {animStatus === 'DOFF'
+                              ? 'Reloading Spindles'
+                              : animStatus === 'STOP' || animStatus === 'OFFLINE'
+                              ? 'Halted'
+                              : `${(selectedMachineDetail?.machine?.spindleSpeedCurrent || 0).toLocaleString()} RPM`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 3 Sub-Tabs Navigation strictly matching JSON payload */}
               <div className="modal-tabs-nav">
@@ -1433,8 +1484,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                   `${selectedMachineDetail.machine.shiftProduction} ${selectedMachineDetail.machine.productionUnit || 'kg'}`}
                               </div>
                               <div className="tile-sub">
-                                {selectedMachineDetail.overview?.keyFigures?.productionYield?.sub ??
-                                  `Target: ${selectedMachineDetail.machine.shiftTargetProduction} ${selectedMachineDetail.machine.productionUnit || 'kg'}`}
+                                Actual recorded output
                               </div>
                             </div>
 
@@ -1457,37 +1507,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               <div className="tile-sub">
                                 {selectedMachineDetail.overview?.keyFigures?.endMending?.sub ??
                                   `Std: ${stdMendingTime} ${stdMendingUnit}`}
-                              </div>
-                            </div>
-
-                            {/* 7: Run Status */}
-                            <div className="key-tile">
-                              <div className="tile-label">RUN STATUS</div>
-                              <div className="tile-number text-primary">
-                                {selectedMachineDetail.machine.runStatus}
-                              </div>
-                              <div className="tile-sub">{selectedMachineDetail.machine.statusBadge}</div>
-                            </div>
-
-                            {/* 8: Hour-Wise Logged */}
-                            <div className="key-tile">
-                              <div className="tile-label">HOURS LOGGED</div>
-                              <div className="tile-number">
-                                {selectedMachineDetail.machine.hourWiseProduction?.length || 0} /{' '}
-                                {overview.totalShiftHours ?? 8} hrs
-                              </div>
-                              <div className="tile-sub">hourWiseProduction entries</div>
-                            </div>
-
-                            {/* 9: Target Achievement */}
-                            <div className="key-tile">
-                              <div className="tile-label">TARGET ACHIEVED</div>
-                              <div className="tile-number text-success">
-                                {selectedMachineDetail.machine.yieldPercent ?? 0}%
-                              </div>
-                              <div className="tile-sub">
-                                of {selectedMachineDetail.machine.shiftTargetProduction}{' '}
-                                {selectedMachineDetail.machine.productionUnit || 'kg'}
                               </div>
                             </div>
                           </div>
@@ -1546,106 +1565,111 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     </div>
                   )}
 
-                  {/* TAB 2: END BREAKS (Left Side L & Right Side R from sides[]) */}
-                  {activeModalTab === 'end_breaks' && (
-                    <div className="tab-pane">
-                      <div className="end-breaks-tables-grid">
-                        {/* Left Side Table */}
-                        <div className="breaks-table-card">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                            <h4 className="table-card-title" style={{ margin: 0 }}>
-                              Left Side (L) End Breaks ({selectedMachineDetail.endBreaks?.leftSide?.length || 0})
-                            </h4>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
-                              endMendingTime: {selectedMachineDetail.machine.sides?.find(s => s.side === 'L')?.endMendingTime ?? 0}{' '}
-                              {selectedMachineDetail.machine.sides?.find(s => s.side === 'L')?.endMendingTimeUnit || 'min'}
-                            </span>
-                          </div>
-                          <div className="table-scroll-container">
-                            <table className="data-table">
-                              <thead>
-                                <tr>
-                                  <th>SIDE</th>
-                                  <th>SPINDLE NO</th>
-                                  <th>END MENDING TIME</th>
-                                  <th>CREATED TIME</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(selectedMachineDetail.endBreaks?.leftSide || []).map((b, i) => (
-                                  <tr key={`lb-${b.spindleNo}-${i}`}>
-                                    <td><strong>L</strong></td>
-                                    <td><strong>Spindle #{b.spindleNo}</strong></td>
-                                    <td>
-                                      <span style={{ color: '#0369a1', fontWeight: 700 }}>
-                                        {b.durationMinutes} {stdMendingUnit}
-                                      </span>
-                                    </td>
-                                    <td>{b.timestamp}</td>
-                                  </tr>
-                                ))}
-                                {(!selectedMachineDetail.endBreaks?.leftSide ||
-                                  selectedMachineDetail.endBreaks.leftSide.length === 0) && (
-                                  <tr>
-                                    <td colSpan={4} className="empty-cell">
-                                      No end breaks recorded on Left Side (L).
-                                    </td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
+                  {/* TAB 2: END BREAKS (Left Side L on TOP & Right Side R on BOTTOM) */}
+                  {activeModalTab === 'end_breaks' && (() => {
+                    const sideL = selectedMachineDetail.machine.sides?.find(s => s.side === 'L');
+                    const sideR = selectedMachineDetail.machine.sides?.find(s => s.side === 'R');
+                    const emLeft = Number(sideL?.endMendingTime ?? 0);
+                    const emRight = Number(sideR?.endMendingTime ?? 0);
 
-                        {/* Right Side Table */}
-                        <div className="breaks-table-card">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                            <h4 className="table-card-title" style={{ margin: 0 }}>
-                              Right Side (R) End Breaks ({selectedMachineDetail.endBreaks?.rightSide?.length || 0})
-                            </h4>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
-                              endMendingTime: {selectedMachineDetail.machine.sides?.find(s => s.side === 'R')?.endMendingTime ?? 0}{' '}
-                              {selectedMachineDetail.machine.sides?.find(s => s.side === 'R')?.endMendingTimeUnit || 'min'}
-                            </span>
-                          </div>
-                          <div className="table-scroll-container">
-                            <table className="data-table">
-                              <thead>
-                                <tr>
-                                  <th>SIDE</th>
-                                  <th>SPINDLE NO</th>
-                                  <th>END MENDING TIME</th>
-                                  <th>CREATED TIME</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(selectedMachineDetail.endBreaks?.rightSide || []).map((b, i) => (
-                                  <tr key={`rb-${b.spindleNo}-${i}`}>
-                                    <td><strong>R</strong></td>
-                                    <td><strong>Spindle #{b.spindleNo}</strong></td>
-                                    <td>
-                                      <span style={{ color: '#0369a1', fontWeight: 700 }}>
-                                        {b.durationMinutes} {stdMendingUnit}
-                                      </span>
-                                    </td>
-                                    <td>{b.timestamp}</td>
-                                  </tr>
-                                ))}
-                                {(!selectedMachineDetail.endBreaks?.rightSide ||
-                                  selectedMachineDetail.endBreaks.rightSide.length === 0) && (
+                    return (
+                      <div className="tab-pane">
+                        <div className="end-breaks-tables-grid" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                          {/* Left Side Table (TOP) */}
+                          <div className="breaks-table-card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                              <h4 className="table-card-title" style={{ margin: 0 }}>
+                                Left Side (L) End Breaks ({selectedMachineDetail.endBreaks?.leftSide?.length || 0})
+                              </h4>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                                endMendingTime: {emLeft.toFixed(2)} min
+                              </span>
+                            </div>
+                            <div className="table-scroll-container">
+                              <table className="data-table">
+                                <thead>
                                   <tr>
-                                    <td colSpan={4} className="empty-cell">
-                                      No end breaks recorded on Right Side (R).
-                                    </td>
+                                    <th>SIDE</th>
+                                    <th>SPINDLE NO</th>
+                                    <th>END MENDING TIME</th>
+                                    <th>CREATED TIME</th>
                                   </tr>
-                                )}
-                              </tbody>
-                            </table>
+                                </thead>
+                                <tbody>
+                                  {(selectedMachineDetail.endBreaks?.leftSide || []).map((b, i) => (
+                                    <tr key={`lb-${b.spindleNo}-${i}`}>
+                                      <td><strong>L</strong></td>
+                                      <td><strong>Spindle #{b.spindleNo}</strong></td>
+                                      <td>
+                                        <span style={{ color: '#0369a1', fontWeight: 700 }}>
+                                          {(b.durationMinutes || emLeft).toFixed(2)} min
+                                        </span>
+                                      </td>
+                                      <td>{b.timestamp}</td>
+                                    </tr>
+                                  ))}
+                                  {(!selectedMachineDetail.endBreaks?.leftSide ||
+                                    selectedMachineDetail.endBreaks.leftSide.length === 0) && (
+                                    <tr>
+                                      <td colSpan={4} className="empty-cell">
+                                        No end breaks recorded on Left Side (L).
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+
+                          {/* Right Side Table (DOWN) */}
+                          <div className="breaks-table-card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                              <h4 className="table-card-title" style={{ margin: 0 }}>
+                                Right Side (R) End Breaks ({selectedMachineDetail.endBreaks?.rightSide?.length || 0})
+                              </h4>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                                endMendingTime: {emRight.toFixed(2)} min
+                              </span>
+                            </div>
+                            <div className="table-scroll-container">
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>SIDE</th>
+                                    <th>SPINDLE NO</th>
+                                    <th>END MENDING TIME</th>
+                                    <th>CREATED TIME</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(selectedMachineDetail.endBreaks?.rightSide || []).map((b, i) => (
+                                    <tr key={`rb-${b.spindleNo}-${i}`}>
+                                      <td><strong>R</strong></td>
+                                      <td><strong>Spindle #{b.spindleNo}</strong></td>
+                                      <td>
+                                        <span style={{ color: '#0369a1', fontWeight: 700 }}>
+                                          {(b.durationMinutes || emRight).toFixed(2)} min
+                                        </span>
+                                      </td>
+                                      <td>{b.timestamp}</td>
+                                    </tr>
+                                  ))}
+                                  {(!selectedMachineDetail.endBreaks?.rightSide ||
+                                    selectedMachineDetail.endBreaks.rightSide.length === 0) && (
+                                    <tr>
+                                      <td colSpan={4} className="empty-cell">
+                                        No end breaks recorded on Right Side (R).
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* TAB 3: HOUR-WISE PRODUCTION & SPEED (Strictly from hourWiseProduction & machine telemetry) */}
                   {activeModalTab === 'speed_production' && (
@@ -1698,8 +1722,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div className="cstat-item">
                               <span className="cstat-lbl">SHIFT PRODUCTION</span>
                               <span className="cstat-val">
-                                {selectedMachineDetail.machine?.shiftProduction} /{' '}
-                                {selectedMachineDetail.machine?.shiftTargetProduction}{' '}
+                                {selectedMachineDetail.machine?.shiftProduction}{' '}
                                 {selectedMachineDetail.machine?.productionUnit || 'kg'}
                               </span>
                             </div>

@@ -1307,7 +1307,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         <div className="flex items-center gap-2 sm:gap-3 px-2 truncate min-w-0">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-900 shadow-2xs shrink-0">
             <span className="text-xs md:text-sm font-black uppercase tracking-widest text-emerald-700">
-              PAGE {mainIndex + 1} OF {availableMainPages.length}
+              {currentMain.id === 'main-iot-performance' ? 'IOT LIVE PATROL' : `PAGE ${mainIndex + 1} OF ${availableMainPages.length}`}
             </span>
           </div>
 

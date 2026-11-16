@@ -1107,7 +1107,54 @@ export const iotApi = {
         cache: 'no-store'
       });
       if (res.ok) {
-        return await res.json();
+        const json = await res.json();
+        if (json && Array.isArray(json.machines) && json.machines.length > 0) {
+          return json;
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: direct fetch from Railway live common API
+    try {
+      const liveCommon = await fetchLiveCommonPayload();
+      if (liveCommon && Array.isArray(liveCommon.machines) && liveCommon.machines.length > 0) {
+        const machines = liveCommon.machines.map((m: any, idx: number) => {
+          const id = String(m.machine || m.machineId || `RF${String(idx + 1).padStart(2, '0')}`);
+          const rawStatus = String(m.runStatus || 'STOP').toUpperCase();
+          const runStatus = rawStatus === 'RUN' ? 'RUN' : rawStatus === 'DOFF' ? 'DOFF' : rawStatus === 'OFFLINE' ? 'OFFLINE' : 'STOP';
+          const speed = Number(m.spindleSpeedCurrent ?? m.speed ?? 0);
+          const count = String(m.count || '');
+          const shiftProduction = Number(m.shiftProduction ?? m.production ?? 0);
+          const sideL = (m.sides || []).find((s: any) => s.side === 'L');
+          const sideR = (m.sides || []).find((s: any) => s.side === 'R');
+          const emLeft = Number(sideL?.endMendingTime ?? 0);
+          const emRight = Number(sideR?.endMendingTime ?? 0);
+          return {
+            machine: id,
+            runStatus,
+            statusBadge: runStatus === 'RUN' ? 'Running' : runStatus === 'DOFF' ? 'Doffing' : 'Stopped',
+            speed,
+            speedUnit: String(m.spindleSpeedUnit || 'rpm'),
+            count,
+            production: shiftProduction,
+            shiftProduction,
+            gps: Number(m.gps ?? 0),
+            emLeft,
+            emRight,
+            emTotal: Number((emLeft + emRight).toFixed(2)),
+            lastUpdated: String(liveCommon.dataTime || new Date().toISOString())
+          };
+        });
+        return {
+          success: true,
+          timestamp: new Date().toISOString(),
+          totalMachines: machines.length,
+          running: machines.filter((m: any) => m.runStatus === 'RUN').length,
+          stopped: machines.filter((m: any) => m.runStatus === 'STOP').length,
+          doffing: machines.filter((m: any) => m.runStatus === 'DOFF').length,
+          offline: machines.filter((m: any) => m.runStatus === 'OFFLINE').length,
+          machines
+        };
       }
     } catch (_) {}
 

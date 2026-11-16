@@ -1964,9 +1964,9 @@
 
 /* Tab 2: End breaks */
 .end-breaks-tables-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .breaks-table-card {

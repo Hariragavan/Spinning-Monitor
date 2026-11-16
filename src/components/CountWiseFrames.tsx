@@ -80,10 +80,10 @@ export const FourSpindleRollAnimation: React.FC<{
   const isDoffing = status === 'DOFF';
   const isStopped = status === 'STOP' || status === 'OFFLINE';
 
-  const yarnBaseColor = isDoffing ? '#d97706' : isStopped ? '#94a3b8' : '#059669';
-  const tapeColor = isDoffing ? '#d97706' : isStopped ? '#94a3b8' : '#059669';
-  const coilHighlightColor = isDoffing ? '#fef3c7' : isStopped ? '#e2e8f0' : '#ffffff';
-  const coilShadowColor = isDoffing ? '#78350f' : isStopped ? '#64748b' : '#064e3b';
+  const yarnBaseColor = isDoffing ? '#d97706' : isStopped ? '#ef4444' : '#059669';
+  const tapeColor = isDoffing ? '#d97706' : isStopped ? '#ef4444' : '#059669';
+  const coilHighlightColor = isDoffing ? '#fef3c7' : isStopped ? '#fee2e2' : '#ffffff';
+  const coilShadowColor = isDoffing ? '#78350f' : isStopped ? '#991b1b' : '#064e3b';
 
   return (
     <div className={cn("inline-flex items-center select-none shrink-0", className)}>

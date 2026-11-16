@@ -292,13 +292,48 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const cleanK = (k || '').trim().toUpperCase();
         const cleanV = (v || '').trim().toUpperCase();
         if (cleanK && cleanK !== 'NONE' && cleanK !== 'UNASSIGNED') {
-          if (cleanK.startsWith('SP') || cleanK.startsWith('K')) {
+          if (cleanK.startsWith('SP') || cleanK.startsWith('K') || cleanK.startsWith('RF')) {
             candidateFrames.add(cleanK);
-          } else if (cleanV.startsWith('SP') || cleanV.startsWith('K')) {
+          } else if (cleanV.startsWith('SP') || cleanV.startsWith('K') || cleanV.startsWith('RF')) {
             candidateFrames.add(cleanV);
           }
         }
       });
+
+      // Also read machinePairs from settings and localStorage
+      if (Array.isArray(settings?.machinePairs)) {
+        settings.machinePairs.forEach((pair: any) => {
+          const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
+          const iotM = String(pair?.iotMachine || '').trim().toUpperCase();
+          const telM = String(pair?.telemetryMachine || '').trim().toUpperCase();
+          if (sFrame && sFrame !== 'NONE' && sFrame !== 'UNASSIGNED') {
+            candidateFrames.add(sFrame);
+            if (iotM && iotM !== 'NONE') frameToIotMap[sFrame] = iotM;
+            if (telM && telM !== 'NONE') frameToTelemetryMap[sFrame] = telM;
+          }
+        });
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          const savedPairs = localStorage.getItem('iotMachinePairs');
+          if (savedPairs) {
+            const parsed = JSON.parse(savedPairs);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((pair: any) => {
+                const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
+                const iotM = String(pair?.iotMachine || '').trim().toUpperCase();
+                const telM = String(pair?.telemetryMachine || '').trim().toUpperCase();
+                if (sFrame && sFrame !== 'NONE' && sFrame !== 'UNASSIGNED') {
+                  candidateFrames.add(sFrame);
+                  if (iotM && iotM !== 'NONE') frameToIotMap[sFrame] = iotM;
+                  if (telM && telM !== 'NONE') frameToTelemetryMap[sFrame] = telM;
+                }
+              });
+            }
+          }
+        } catch (_) {}
+      }
 
       candidateFrames.forEach(frameNo => {
         // 1. Resolve IoT Machine Unit (holds RFID devices, card taps, and completed rounds)
@@ -351,7 +386,11 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const liveM = liveMachines.find(matchFinder);
 
         const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
-        let yarnCount = String(lightM?.count || liveM?.count || reportEntry?.count || '').trim() || '-';
+        let rawCount = String(lightM?.count || liveM?.count || reportEntry?.count || '').trim();
+        if (rawCount && /\bch\s*\d+$/i.test(rawCount)) {
+          rawCount = rawCount.replace(/\s*ch\s*\d+$/i, ' CH');
+        }
+        let yarnCount = rawCount || '-';
 
         // Machine Live Running Status: RUNNING, DOFFING, STOPPED from paired telemetry machine (RF44 / RF09)
         let machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED' = 'RUNNING';
