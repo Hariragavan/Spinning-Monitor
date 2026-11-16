@@ -9,7 +9,7 @@ import {
 import { DailyReport, MachineMasterItem, Sider, SystemSettings, Shed, IncentiveRule } from '@/types';
 import { Employee, EmployeeMetric, MachineMapping, DeviceHealth } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import { cn, calculateIncentive, getActiveRule } from '@/lib/utils';
+import { cn, calculateIncentive, getActiveRule, parseUniversalDateParts } from '@/lib/utils';
 
 export interface IotTvPerformanceProps {
   report?: DailyReport;
@@ -175,30 +175,58 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
       const liveShiftDate = `${yStr}-${mStr}-${dStr}`;
       const liveShiftName = `Shift ${liveShiftNum}`;
 
-      // 2. Fetch live IoT devices, employee metrics, mappings, and live machine telemetry
-      const [lightStatus, liveOverview, rawEmpMetrics, devices, iotEmployees, deviceMappings] = await Promise.all([
+      // Normalize report.date if present (e.g. "15/11/2026" or "2026-11-15")
+      let reportDateYmd = '';
+      if (report?.date) {
+        const parts = parseUniversalDateParts(report.date);
+        if (parts) {
+          reportDateYmd = `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+        }
+      }
+      const primaryTargetDate = reportDateYmd || liveShiftDate;
+
+      // Direct live employee metrics from Railway API:
+      // https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date
+      const fetchRailwayEmployeeData = async (dStr?: string) => {
+        try {
+          const url = dStr 
+            ? `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`
+            : `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?_t=${Date.now()}`;
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json?.data) && json.data.length > 0) {
+              return json.data;
+            }
+          }
+        } catch (_) {}
+        return [];
+      };
+
+      // 2. Fetch live IoT devices, mappings, and live machine telemetry
+      const [lightStatus, liveOverview, devices, iotEmployees, deviceMappings] = await Promise.all([
         iotApi.getLightweightMachineStatus().catch(() => null),
         iotApi.getSpinfoOverview({ shift: String(liveShiftNum), fromDate: liveShiftDate }).catch(() => null),
-        iotApi.getEmployeePerformance({ date: liveShiftDate, shiftName: liveShiftName }).catch(() => [] as EmployeeMetric[]),
         iotApi.getDevices().catch(() => [] as DeviceHealth[]),
         iotApi.getEmployees().catch(() => [] as Employee[]),
         iotApi.getMachineMappings().catch(() => [] as MachineMapping[])
       ]);
 
-      // Strictly only use today's live shift metrics, never old historical data
-      const employeeMetrics = rawEmpMetrics || [];
+      // Fetch employee performance from Railway API
+      let employeeMetrics: EmployeeMetric[] = await fetchRailwayEmployeeData(primaryTargetDate);
 
-      // Also fetch live card taps strictly for today's live shift
-      let recentCardTaps: any[] = [];
-      try {
-        const ctRes = await fetch(`/api/iot/card-taps?date=${liveShiftDate}&shift=${liveShiftNum}&limit=500&_t=${Date.now()}`, { cache: 'no-store' });
-        if (ctRes.ok) {
-          const ctJson = await ctRes.json();
-          if (Array.isArray(ctJson?.data)) {
-            recentCardTaps = ctJson.data.filter((t: any) => t.shiftDate === liveShiftDate);
-          }
-        }
-      } catch (_) {}
+      // If primary date has no records yet (e.g. today before taps are uploaded), try previous day (e.g. Nov 15)
+      if (!employeeMetrics.length) {
+        const prevObj = new Date(shiftDateObj);
+        prevObj.setDate(prevObj.getDate() - 1);
+        const prevYmd = `${prevObj.getFullYear()}-${String(prevObj.getMonth() + 1).padStart(2, '0')}-${String(prevObj.getDate()).padStart(2, '0')}`;
+        employeeMetrics = await fetchRailwayEmployeeData(prevYmd);
+      }
+
+      // If still empty, fetch without date parameter
+      if (!employeeMetrics.length) {
+        employeeMetrics = await fetchRailwayEmployeeData();
+      }
 
       const lightMachines = lightStatus?.machines || [];
       const liveMachines = liveOverview?.machines || [];
@@ -428,28 +456,18 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           // 1. Settings override (if any)
           const override = devOpMapFromSettings[cleanDevId];
 
-          // 2. Recent live card taps for this device strictly for liveShiftDate
-          const matchingTaps = recentCardTaps.filter(t => 
-            (t.shiftDate === liveShiftDate) && (
-              (t.machineId && t.machineId.toUpperCase() === cleanDevId) ||
-              (t.deviceId && t.deviceId.toUpperCase() === cleanDevId) ||
-              (devObj?.deviceId && t.deviceId && t.deviceId.toUpperCase() === devObj.deviceId.toUpperCase())
-            )
-          );
-          const latestLiveTap = matchingTaps.length > 0 ? matchingTaps[0] : null;
-
-          // 3. Employee metrics for this device strictly for liveShiftDate
+          // 2. Employee metrics for this device directly from live Railway API
           const met = employeeMetrics.find(m => 
             (m.machineId && m.machineId.toUpperCase() === cleanDevId) || 
             (devObj?.deviceId && m.machineId && m.machineId.toUpperCase() === devObj.deviceId.toUpperCase()) ||
             (m.machineId && m.machineId.toUpperCase() === iotName)
           );
-          const lastMetTap = met?.taps && met.taps.length > 0 ? met.taps[met.taps.length - 1] : null;
 
-          // 4. Resolve raw operator name and ID
+          const metTaps = Array.isArray(met?.taps) ? met.taps : [];
+
+          // 3. Resolve raw operator name and ID
           let rawName = 
             override?.employeeName || 
-            latestLiveTap?.employeeName || 
             met?.employeeName || 
             devObj?.assignedEmployeeName || 
             (devObj as any)?.employeeName || 
@@ -457,13 +475,12 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
           let rawId = 
             override?.employeeId || 
-            latestLiveTap?.employeeId || 
             met?.employeeId || 
             devObj?.assignedEmployeeId || 
             (devObj as any)?.employeeId || 
             '';
 
-          // 5. Fallback: check employees list assignedDeviceIds
+          // 4. Fallback: check employees list assignedDeviceIds
           if (!rawName) {
             const emp = iotEmployees.find(e => 
               e.assignedDeviceIds && e.assignedDeviceIds.some(aid => 
@@ -477,7 +494,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             }
           }
 
-          // 6. Fallback: report entry sider
+          // 5. Fallback: report entry sider
           if (!rawName && sideIndex === 0 && reportEntry) {
             rawName = reportEntry.siderName || (reportEntry.siderIds && reportEntry.siderIds[0]) || '';
             rawId = (reportEntry.siderIds && reportEntry.siderIds[0]) || '';
@@ -503,31 +520,35 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             (extToken && extToken.toLowerCase() !== 'unassigned' && extToken !== 'null')
           );
 
-          // Real Live Taps strictly for today (0 if none)
+          // Real Live Taps from Railway API
           let tapsCount = 0;
-          if (latestLiveTap?.cardTap !== undefined && Number(latestLiveTap.cardTap) > 0) {
-            tapsCount = Number(latestLiveTap.cardTap);
-          } else if (lastMetTap?.cardTap !== undefined && Number(lastMetTap.cardTap) > 0) {
-            tapsCount = Number(lastMetTap.cardTap);
-          } else if (matchingTaps.length > 0) {
-            tapsCount = matchingTaps.length;
+          if (metTaps.length > 0) {
+            tapsCount = metTaps.length;
+          } else if (met?.roundsCompleted !== undefined && Number(met.roundsCompleted) > 0) {
+            tapsCount = Number(met.roundsCompleted);
+          } else if (met?.rounds !== undefined && Number(met.rounds) > 0) {
+            tapsCount = Number(met.rounds);
           }
 
-          // Device rounds
+          // Device rounds from Railway API
           let devRounds = 0;
           if (met?.roundsCompleted !== undefined && Number(met.roundsCompleted) > 0) {
             devRounds = Number(met.roundsCompleted);
+          } else if (met?.rounds !== undefined && Number(met.rounds) > 0) {
+            devRounds = Number(met.rounds);
           } else if (tapsCount > 0) {
-            devRounds = Math.round(tapsCount / 2);
+            devRounds = tapsCount;
           }
 
-          // Last tap timestamp formatted (e.g. "08:34 AM")
-          let lastTapIso = latestLiveTap?.tapTime || (lastMetTap as any)?.tapTime;
+          // Activity Window start & end times directly from Railway API taps
+          const startTimeIso = metTaps.length > 0 ? (metTaps[0].time as string) : null;
+          const endTimeIso = metTaps.length > 0 ? (metTaps[metTaps.length - 1].time as string) : null;
+
           let lastTapDisplay = '';
           let lastTapTimestamp = 0;
-          if (lastTapIso) {
+          if (endTimeIso) {
             try {
-              const d = new Date(lastTapIso);
+              const d = new Date(endTimeIso);
               if (!isNaN(d.getTime())) {
                 lastTapDisplay = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
                 lastTapTimestamp = d.getTime();
@@ -544,6 +565,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             isAssigned,
             tapsCount,
             rounds: devRounds,
+            startTimeIso,
+            endTimeIso,
             lastTapTime: lastTapDisplay,
             lastTapTimestamp,
             metric: met
@@ -562,19 +585,42 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d1TargetTaps = 60;
         const d2TargetTaps = 60;
 
-        // Rounds: from device rounds or calculated from taps (2 taps = 1 round)
+        // Rounds: from device rounds or max rounds completed
         let completedRounds = Math.max(
           d1.rounds || 0,
           d2.rounds || 0,
           Math.round(totalTaps / 2)
         );
 
+        // Activity Window: earliest tap to latest tap across D1 & D2 (e.g. 06:03 AM – 12:08 PM)
+        const formatTimeAmPm = (iso?: string | null) => {
+          if (!iso) return '';
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return '';
+          return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+        };
+
+        const validStartTimes = [d1.startTimeIso, d2.startTimeIso].filter(Boolean) as string[];
+        const validEndTimes = [d1.endTimeIso, d2.endTimeIso].filter(Boolean) as string[];
+
+        const earliestStart = validStartTimes.length > 0 ? validStartTimes.sort()[0] : null;
+        const latestEnd = validEndTimes.length > 0 ? validEndTimes.sort().reverse()[0] : null;
+
+        let activityWindow = '';
+        if (earliestStart && latestEnd) {
+          activityWindow = `${formatTimeAmPm(earliestStart)} – ${formatTimeAmPm(latestEnd)}`;
+        } else {
+          activityWindow = liveWindowLabel;
+        }
+
         // Overall last tap time between D1 and D2
-        let lastTapTime = '';
-        const d1Ts = d1.lastTapTimestamp || 0;
-        const d2Ts = d2.lastTapTimestamp || 0;
-        if (d1Ts > 0 || d2Ts > 0) {
-          lastTapTime = d1Ts >= d2Ts ? d1.lastTapTime : d2.lastTapTime;
+        let lastTapTime = latestEnd ? formatTimeAmPm(latestEnd) : '';
+        if (!lastTapTime) {
+          const d1Ts = d1.lastTapTimestamp || 0;
+          const d2Ts = d2.lastTapTimestamp || 0;
+          if (d1Ts > 0 || d2Ts > 0) {
+            lastTapTime = d1Ts >= d2Ts ? d1.lastTapTime : d2.lastTapTime;
+          }
         }
         if (!lastTapTime) {
           lastTapTime = totalTaps > 0 ? 'Recorded' : 'No Taps Recorded';

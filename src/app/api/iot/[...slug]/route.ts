@@ -34,7 +34,7 @@ import {
   syncEmFromHistory
 } from '@/lib/iot/iotEmService';
 
-const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend.onrender.com/api';
+const REMOTE_IOT_API = process.env.IOT_REMOTE_API || 'https://iot-machine-backend-production.up.railway.app/api';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
