@@ -1022,8 +1022,8 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
             <div>
               <h3 className="card-title">IoT Machine to Production Machine Assignment</h3>
               <p className="card-subtitle">
-                Assign each IoT Machine profile to its physical spinning production frame (e.g. SP009, SP010). 
-                Operator photo and token number are automatically resolved from Employee Master.
+                Assign each IoT Machine profile to its physical spinning production frame (e.g. SP009, SP44). 
+                Operators for each device are automatically detected from the IoT API for the current live shift and matched with Employee Master.
               </p>
             </div>
             <div className="mapping-actions flex items-center gap-2">
@@ -1043,7 +1043,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                 <tr>
                   <th style={{ width: '22%' }}>IoT Machine</th>
                   <th style={{ width: '25%' }}>Production Machine (SP009..)</th>
-                  <th style={{ width: '40%' }}>Connected Devices &amp; Operators (from IoT API &amp; Master)</th>
+                  <th style={{ width: '40%' }}>Live Shift Operators per Device (Auto-Detected from API)</th>
                   <th style={{ width: '13%' }}>Status</th>
                 </tr>
               </thead>
