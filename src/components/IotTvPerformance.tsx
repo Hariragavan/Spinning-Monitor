@@ -689,9 +689,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           )}
 
           {/* TOP BANNER RIBBON (SP44 + Count | Max Incentive | Speed | Production) */}
-          <div className="flex flex-wrap items-center justify-between gap-6 pb-6 border-b border-slate-200 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6 items-center pb-6 border-b border-slate-200 mb-6">
             {/* Top-Left: Machine No & Yarn Count (in Black) & Current GPS */}
-            <div>
+            <div className="lg:col-span-5">
               <h1 className="text-5xl sm:text-7xl font-black text-stone-900 tracking-tight leading-none">
                 {currentSlide.frameNo}
               </h1>
@@ -706,49 +706,49 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               </div>
             </div>
 
-            {/* Top-Right Metrics: MAX INCENTIVE | SPEED | PRODUCTION (BIG AS BEFORE) */}
-            <div className="flex flex-wrap items-center gap-8 sm:gap-12">
+            {/* Top-Right Metrics: MAX INCENTIVE | SPEED | PRODUCTION spread evenly */}
+            <div className="lg:col-span-7 grid grid-cols-3 gap-4 sm:gap-6">
               {/* 1. Max Incentive */}
-              <div className="flex flex-col items-center sm:items-start">
+              <div className="flex flex-col items-start p-3 sm:p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 shadow-2xs">
                 <span className="text-xs sm:text-sm font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1.5 mb-1">
                   <span>💰</span> MAX INCENTIVE
                 </span>
-                <span className="text-4xl sm:text-6xl font-black text-emerald-600 tabular-nums">
+                <span className="text-3xl sm:text-5xl xl:text-6xl font-black text-emerald-600 tabular-nums">
                   ₹{currentSlide.maxIncentive.toLocaleString('en-IN')}
                 </span>
               </div>
 
               {/* 2. Speed (RPM) */}
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-start p-3 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xs">
                 <span className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5 mb-1">
                   <span>⚡</span> SPEED
                 </span>
-                <div className="text-4xl sm:text-6xl font-black text-stone-900 tabular-nums flex items-baseline gap-1.5">
+                <div className="text-3xl sm:text-5xl xl:text-6xl font-black text-stone-900 tabular-nums flex items-baseline gap-1">
                   <span>{currentSlide.rpm.toLocaleString()}</span>
-                  <span className="text-base sm:text-xl font-bold text-slate-400">RPM</span>
+                  <span className="text-xs sm:text-base font-bold text-slate-400">RPM</span>
                 </div>
               </div>
 
               {/* 3. Production (kg) */}
-              <div className="flex flex-col items-center sm:items-end">
+              <div className="flex flex-col items-start p-3 sm:p-4 rounded-2xl bg-slate-50 border border-slate-200 shadow-2xs">
                 <span className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-500 flex items-center gap-1.5 mb-1">
                   <span>📦</span> PRODUCTION
                 </span>
-                <div className="text-4xl sm:text-6xl font-black text-stone-900 tabular-nums flex items-baseline gap-1.5">
+                <div className="text-3xl sm:text-5xl xl:text-6xl font-black text-stone-900 tabular-nums flex items-baseline gap-1">
                   <span>{currentSlide.productionKg.toFixed(1)}</span>
-                  <span className="text-base sm:text-xl font-bold text-slate-400">KG</span>
+                  <span className="text-xs sm:text-base font-bold text-slate-400">KG</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* MAIN GRID: EXACT MATCH TO USER'S HANDWRITTEN SKETCH (BIGGER IMAGE SIZE) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* LEFT COLUMN: BIGGER OPERATOR PHOTO + NAME & T. NO (Stacked) */}
-            <div className="lg:col-span-4 xl:col-span-4 flex flex-col items-center">
-              {/* Operator Photo Box - SUBSTANTIALLY BIGGER */}
+          {/* MAIN GRID: OPERATOR PHOTO (LEFT) & 3 EXPANDED BIG TELEMETRY ROWS (RIGHT) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 xl:gap-8 items-stretch">
+            {/* LEFT COLUMN: BIGGER OPERATOR PHOTO + NAME & T. NO (Full Height) */}
+            <div className="lg:col-span-4 xl:col-span-4 flex flex-col justify-between items-center h-full">
+              {/* Operator Photo Box */}
               <div className={cn(
-                "w-64 h-80 sm:w-72 sm:h-96 md:w-80 md:h-[400px] xl:w-96 xl:h-[440px] rounded-3xl overflow-hidden border-4 shadow-2xl bg-slate-100 relative flex items-center justify-center transition-all",
+                "w-full max-w-[380px] h-[360px] sm:h-[400px] xl:h-[430px] rounded-3xl overflow-hidden border-4 shadow-2xl bg-slate-100 relative flex items-center justify-center transition-all",
                 currentSlide.isBestPerformer ? "border-emerald-500 shadow-emerald-200/80" : "border-red-500 shadow-red-200/80"
               )}>
                 {currentSlide.operatorPhoto ? (
@@ -770,8 +770,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 </div>
               </div>
 
-              {/* Name & T. NO Box (Directly below the photo, matching the sketch width) */}
-              <div className="w-64 sm:w-72 md:w-80 xl:w-96 mt-4 p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl text-center shadow-md">
+              {/* Name & T. NO Box (Directly below the photo) */}
+              <div className="w-full max-w-[380px] mt-4 p-5 bg-slate-50 border-2 border-slate-200 rounded-3xl text-center shadow-md">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">
                   OPERATOR NAME
                 </span>
@@ -796,175 +796,197 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               </div>
             </div>
 
-            {/* RIGHT COLUMN: TELEMETRY & PERFORMANCE SCORE */}
-            <div className="lg:col-span-8 xl:col-span-8 flex flex-col space-y-5">
-              {/* SUB-ROW 1: [Rounds (Max 60)] | [Total Taps (Max 120)] | [D1: Taps / D2: Taps (Max 60 each)] */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* RIGHT COLUMN: 3 BIG EXPANDED ROWS (Stretches Full Height, No Bottom Gap) */}
+            <div className="lg:col-span-8 xl:col-span-8 flex flex-col justify-between gap-5 h-full">
+              {/* LINE 1 (flex-1): [Rounds (Max 60)] | [Total Taps (Max 120)] | [Device Taps D1 / D2] */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
                 {/* Box 1: Rounds (Max 60 per shift) */}
-                <div className="p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-md">
-                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 mb-1">
+                <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl flex flex-col items-center justify-between text-center shadow-md">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500">
                     ROUNDS
                   </span>
-                  <div className="text-3xl sm:text-5xl font-black text-stone-900 tabular-nums">
-                    {currentSlide.completedRounds} <span className="text-xl sm:text-2xl text-slate-400 font-bold">/ {currentSlide.expectedRounds}</span>
+                  <div className="text-4xl sm:text-6xl xl:text-7xl font-black text-stone-900 tabular-nums my-auto py-1">
+                    {currentSlide.completedRounds} <span className="text-2xl sm:text-3xl xl:text-4xl text-slate-400 font-bold">/ {currentSlide.expectedRounds}</span>
                   </div>
-                  <span className="text-[11px] font-bold text-emerald-600 uppercase mt-1">
+                  <span className="text-[11px] font-bold text-emerald-600 uppercase">
                     Max: {currentSlide.expectedRounds} Rounds / Shift
                   </span>
                 </div>
 
                 {/* Box 2: Total Taps / Target Taps (Max 120 per shift) */}
-                <div className="p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center shadow-md">
-                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 mb-1">
+                <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl flex flex-col items-center justify-between text-center shadow-md">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500">
                     TOTAL TAPS / TARGET TAPS
                   </span>
-                  <div className="text-3xl sm:text-5xl font-black text-stone-900 tabular-nums">
-                    {currentSlide.totalTaps} <span className="text-xl sm:text-2xl text-slate-400 font-bold">/ {currentSlide.targetTaps}</span>
+                  <div className="text-4xl sm:text-6xl xl:text-7xl font-black text-stone-900 tabular-nums my-auto py-1">
+                    {currentSlide.totalTaps} <span className="text-2xl sm:text-3xl xl:text-4xl text-slate-400 font-bold">/ {currentSlide.targetTaps}</span>
                   </div>
-                  <span className="text-[11px] font-bold text-emerald-600 uppercase mt-1">
+                  <span className="text-[11px] font-bold text-emerald-600 uppercase">
                     Max: {currentSlide.targetTaps} Taps / Shift
                   </span>
                 </div>
 
-                {/* Box 3: D1: Taps & D2: Taps Stacked (60 each) */}
-                <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl flex flex-col justify-center space-y-2.5 shadow-md">
-                  <div className="flex items-center justify-between px-3 py-2 bg-white border border-cyan-200 rounded-xl shadow-2xs">
-                    <span className="text-xs font-mono font-black text-cyan-800">
-                      D1: TAPS
-                    </span>
-                    <span className="text-lg sm:text-2xl font-black text-cyan-900 tabular-nums">
-                      {currentSlide.d1Taps} <span className="text-xs font-bold text-slate-400">/ {currentSlide.d1TargetTaps} Taps</span>
-                    </span>
+                {/* Box 3: D1 & D2 Taps Balanced Side-by-Side (No shrinking) */}
+                <div className="p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-3xl flex flex-col justify-between shadow-md">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 text-center mb-1">
+                    DEVICE TAPS (D1 / D2)
+                  </span>
+                  <div className="grid grid-cols-2 gap-2.5 my-auto">
+                    <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl bg-cyan-50 border-2 border-cyan-200 shadow-2xs">
+                      <span className="text-xs font-mono font-black text-cyan-800 uppercase tracking-wider">
+                        D1 (LH)
+                      </span>
+                      <div className="text-2xl sm:text-4xl font-black text-cyan-900 tabular-nums mt-0.5">
+                        {currentSlide.d1Taps}
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400">/ 60 Taps</span>
+                    </div>
+                    <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl bg-amber-50 border-2 border-amber-200 shadow-2xs">
+                      <span className="text-xs font-mono font-black text-amber-800 uppercase tracking-wider">
+                        D2 (RH)
+                      </span>
+                      <div className="text-2xl sm:text-4xl font-black text-amber-900 tabular-nums mt-0.5">
+                        {currentSlide.d2Taps}
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400">/ 60 Taps</span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between px-3 py-2 bg-white border border-amber-200 rounded-xl shadow-2xs">
-                    <span className="text-xs font-mono font-black text-amber-800">
-                      D2: TAPS
-                    </span>
-                    <span className="text-lg sm:text-2xl font-black text-amber-900 tabular-nums">
-                      {currentSlide.d2Taps} <span className="text-xs font-bold text-slate-400">/ {currentSlide.d2TargetTaps} Taps</span>
-                    </span>
-                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 text-center uppercase">
+                    60 Taps Target per Side
+                  </span>
                 </div>
               </div>
 
-              {/* SUB-ROW 2: PERFORMANCE SCORE SECTION (Split 50/50: Left = Earned Incentive, Right = Performance Score) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Left Half: EARNED INCENTIVE */}
+              {/* LINE 2 (flex-1): PERFORMANCE SCORE SECTION (BIG AMOUNT & BIG SCORE) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                {/* Left Half: EARNED INCENTIVE (BIG HERO AMOUNT) */}
                 <div className={cn(
-                  "p-5 sm:p-6 rounded-2xl border-2 shadow-lg flex items-center justify-between transition-all",
+                  "p-6 sm:p-7 rounded-3xl border-3 shadow-xl flex flex-col justify-between transition-all",
                   currentSlide.isBestPerformer
-                    ? "bg-emerald-50/90 border-emerald-500 shadow-emerald-100"
-                    : "bg-red-50/90 border-red-400 shadow-red-100"
+                    ? "bg-gradient-to-br from-emerald-50/90 via-white to-emerald-100/50 border-emerald-500 shadow-emerald-200/50"
+                    : "bg-gradient-to-br from-amber-50/70 via-white to-orange-100/40 border-amber-400 shadow-amber-200/40"
                 )}>
-                  <div className="flex items-center gap-3.5">
-                    <div className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center font-black text-2xl shadow-md shrink-0",
-                      currentSlide.isBestPerformer ? "bg-emerald-500 text-white" : "bg-red-600 text-white"
-                    )}>
-                      💰
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl sm:text-3xl">💰</span>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block leading-tight">
+                          LIVE SHIFT INCENTIVE
+                        </span>
+                        <h3 className="text-base sm:text-xl font-black uppercase tracking-wider text-stone-900 leading-tight">
+                          EARNED INCENTIVE
+                        </h3>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-0.5">
-                        LIVE SHIFT INCENTIVE
-                      </span>
-                      <h3 className="text-lg sm:text-xl font-black uppercase tracking-wider text-stone-900">
-                        EARNED INCENTIVE
-                      </h3>
-                      <p className="text-[11px] font-bold text-slate-500 mt-0.5">
-                        Based on {currentSlide.performanceScore}% round cadence
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className={cn(
-                      "text-4xl sm:text-6xl font-black tracking-tight tabular-nums",
-                      currentSlide.isBestPerformer ? "text-emerald-600" : "text-amber-700"
-                    )}>
-                      ₹{currentSlide.earnedIncentive.toLocaleString('en-IN')}
-                    </span>
-                    <span className="text-[11px] font-bold text-slate-400 block mt-0.5">
+                    <span className="px-3 py-1 rounded-xl bg-slate-100 border border-slate-300 text-slate-700 text-xs font-black uppercase tracking-wider">
                       Max: ₹{currentSlide.maxIncentive.toLocaleString('en-IN')}
                     </span>
                   </div>
+
+                  {/* Giant Big Amount */}
+                  <div className="my-2">
+                    <span className="text-6xl sm:text-7xl xl:text-8xl font-black tracking-tight tabular-nums text-emerald-600 drop-shadow-sm">
+                      ₹{currentSlide.earnedIncentive.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+
+                  <div className="text-xs font-bold text-slate-500">
+                    Calculated from {currentSlide.performanceScore}% round cadence ({currentSlide.completedRounds} / {currentSlide.expectedRounds} Rds)
+                  </div>
                 </div>
 
-                {/* Right Half: PERFORMANCE SCORE */}
+                {/* Right Half: PERFORMANCE SCORE (BIG HERO SCORE) */}
                 <div className={cn(
-                  "p-5 sm:p-6 rounded-2xl border-2 shadow-lg flex items-center justify-between transition-all",
+                  "p-6 sm:p-7 rounded-3xl border-3 shadow-xl flex flex-col justify-between transition-all",
                   currentSlide.isBestPerformer
-                    ? "bg-emerald-50/90 border-emerald-500 shadow-emerald-100"
-                    : "bg-red-50/90 border-red-400 shadow-red-100"
+                    ? "bg-gradient-to-br from-emerald-50/90 via-white to-emerald-100/50 border-emerald-500 shadow-emerald-200/50"
+                    : "bg-gradient-to-br from-red-50/80 via-white to-rose-100/50 border-red-500 shadow-red-200/50"
                 )}>
-                  <div className="flex items-center gap-3.5">
-                    <div className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center font-black text-2xl shadow-md shrink-0",
-                      currentSlide.isBestPerformer ? "bg-emerald-500 text-white" : "bg-red-600 text-white"
-                    )}>
-                      {currentSlide.isBestPerformer ? <Trophy size={26} /> : <AlertTriangle size={26} />}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={cn(
+                        "w-9 h-9 rounded-xl flex items-center justify-center text-white font-black shadow-sm",
+                        currentSlide.isBestPerformer ? "bg-emerald-500" : "bg-red-600"
+                      )}>
+                        {currentSlide.isBestPerformer ? <Trophy size={20} /> : <AlertTriangle size={20} />}
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block leading-tight">
+                          CADENCE RATING
+                        </span>
+                        <h3 className="text-base sm:text-xl font-black uppercase tracking-wider text-stone-900 leading-tight">
+                          PERFORMANCE SCORE
+                        </h3>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-0.5">
-                        CADENCE RATING
-                      </span>
-                      <h3 className="text-lg sm:text-xl font-black uppercase tracking-wider text-stone-900">
-                        PERFORMANCE SCORE
-                      </h3>
-                      <p className="text-[11px] font-bold text-slate-500 mt-0.5">
-                        {currentSlide.completedRounds} of {currentSlide.expectedRounds} rounds completed
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
                     <span className={cn(
-                      "text-4xl sm:text-6xl font-black tracking-tight tabular-nums",
+                      "px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border",
+                      currentSlide.isBestPerformer 
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-red-100 text-red-800 border-red-300"
+                    )}>
+                      {currentSlide.isBestPerformer ? 'Best Performer' : 'Lagging Cadence'}
+                    </span>
+                  </div>
+
+                  {/* Giant Big Score */}
+                  <div className="my-2">
+                    <span className={cn(
+                      "text-6xl sm:text-7xl xl:text-8xl font-black tracking-tight tabular-nums drop-shadow-sm",
                       currentSlide.isBestPerformer ? "text-emerald-600" : "text-red-600"
                     )}>
                       {currentSlide.performanceScore}%
                     </span>
-                    <span className="text-[11px] font-bold text-slate-400 block mt-0.5">
-                      {currentSlide.isBestPerformer ? 'Best Performer' : 'Lagging Cadence'}
-                    </span>
+                  </div>
+
+                  <div className="text-xs font-bold text-slate-500">
+                    {currentSlide.completedRounds} of {currentSlide.expectedRounds} rounds completed across LH &amp; RH
                   </div>
                 </div>
               </div>
 
-              {/* SUB-ROW 3: [E M (LH:EM, RH:EM)] | [ACTIVE WIND TIME] */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* LINE 3 (flex-1): [E M (LH:EM, RH:EM)] | [ACTIVE WIND TIME] */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
                 {/* Box 1: E M (LH: EM, RH: EM) */}
-                <div className="p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl shadow-md flex flex-col justify-center">
-                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 block mb-2 text-center">
+                <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl shadow-md flex flex-col justify-between">
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 text-center mb-1">
                     E M (END-MENDING QUALITY)
                   </span>
-                  <div className="flex items-center justify-around gap-4">
+                  <div className="flex items-center justify-around gap-6 my-auto py-1">
                     <div className="text-center">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-cyan-800 block mb-0.5">
                         LH: EM ({currentSlide.d1DeviceId})
                       </span>
-                      <span className="text-2xl sm:text-4xl font-black text-cyan-800 tabular-nums">
-                        {currentSlide.emLeft.toFixed(2)} <span className="text-xs font-bold text-slate-400">min</span>
-                      </span>
+                      <div className="text-3xl sm:text-5xl font-black text-cyan-900 tabular-nums">
+                        {currentSlide.emLeft.toFixed(2)} <span className="text-xs sm:text-sm font-bold text-slate-400">min</span>
+                      </div>
                     </div>
-                    <span className="text-slate-300 text-3xl font-light">|</span>
+                    <span className="text-slate-300 text-3xl sm:text-4xl font-light">|</span>
                     <div className="text-center">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-amber-800 block mb-0.5">
                         RH: EM ({currentSlide.d2DeviceId})
                       </span>
-                      <span className="text-2xl sm:text-4xl font-black text-amber-800 tabular-nums">
-                        {currentSlide.emRight.toFixed(2)} <span className="text-xs font-bold text-slate-400">min</span>
-                      </span>
+                      <div className="text-3xl sm:text-5xl font-black text-amber-900 tabular-nums">
+                        {currentSlide.emRight.toFixed(2)} <span className="text-xs sm:text-sm font-bold text-slate-400">min</span>
+                      </div>
                     </div>
                   </div>
+                  <span className="text-[10px] font-bold text-slate-400 text-center uppercase">
+                    Live End-Mending Patrol Interval
+                  </span>
                 </div>
 
                 {/* Box 2: Active wind time */}
-                <div className="p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl shadow-md flex flex-col items-center justify-center text-center">
+                <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl shadow-md flex flex-col justify-between items-center text-center">
                   <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 mb-1">
                     ACTIVE WIND TIME
                   </span>
-                  <div className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight font-mono">
-                    {currentSlide.activityWindow}
+                  <div className="my-auto py-1">
+                    <div className="text-2xl sm:text-4xl xl:text-5xl font-black text-stone-900 tracking-tight font-mono">
+                      {currentSlide.activityWindow}
+                    </div>
                   </div>
-                  <span className="text-[11px] font-bold text-slate-400 uppercase mt-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">
                     Live Shift Window ({currentSlide.liveShiftName})
                   </span>
                 </div>
