@@ -7,7 +7,8 @@ import {
   Machine,
   MachineConfiguration,
   MachineMapping,
-  MachineMappingInput
+  MachineMappingInput,
+  EmployeeMetric
 } from '@/types/iot';
 import { Sider, MachineMasterItem, SystemSettings } from '@/types';
 import { iotApi } from '@/lib/iot/iotApi';
@@ -33,6 +34,8 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
   const [devices, setDevices] = useState<DeviceHealth[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [mappings, setMappings] = useState<MachineMapping[]>([]);
+  const [employeeMetrics, setEmployeeMetrics] = useState<EmployeeMetric[]>([]);
+  const [deviceOperators, setDeviceOperators] = useState<Record<string, { employeeId: string; employeeName: string }>>({});
 
   // Production Machine Mapping State (Tab 5)
   const [productionMappings, setProductionMappings] = useState<Record<string, string>>({});
@@ -67,16 +70,18 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
 
   const loadData = async () => {
     try {
-      const [e, d, m, maps] = await Promise.all([
+      const [e, d, m, maps, perf] = await Promise.all([
         iotApi.getEmployees(),
         iotApi.getDevices(),
         iotApi.getMachines(),
-        iotApi.getMachineMappings().catch(() => [])
+        iotApi.getMachineMappings().catch(() => []),
+        iotApi.getEmployeePerformance().catch(() => [])
       ]);
       setEmployees(e || []);
       setDevices(d || []);
       setMachines(m || []);
       setMappings(maps || []);
+      setEmployeeMetrics(perf || []);
 
       if (e && e.length > 0 && !selectedEmployeeId) {
         setSelectedEmployeeId(e[0].employeeId);
@@ -131,6 +136,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
           }
         });
         setProductionMappings(pMap);
+
+        if (settingsData?.iotDeviceOperatorMapping) {
+          setDeviceOperators(settingsData.iotDeviceOperatorMapping);
+        }
       } catch (e) {
         console.error('Failed to load production mapping dependencies:', e);
       }
@@ -180,7 +189,8 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
         }),
         iotMachineMapping: cleanIotMap,
         machineToMachineMapping: cleanIotMap,
-        machinePairs: pairs
+        machinePairs: pairs,
+        iotDeviceOperatorMapping: deviceOperators
       };
 
       if (onUpdateSettings) {
@@ -195,6 +205,162 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  // Resolve operator associated with each specific IoT hardware device
+  const resolveDeviceOperator = (
+    stationId: string,
+    defaultSide: 'LH' | 'RH' = 'LH'
+  ) => {
+    const cleanStation = stationId.trim().toUpperCase();
+
+    // 1. Check local state override
+    const override = deviceOperators[cleanStation];
+
+    // 2. Find device object in devices list
+    const devObj = devices.find(d => 
+      (d.deviceId && d.deviceId.trim().toUpperCase() === cleanStation) ||
+      (d.machineId && d.machineId.trim().toUpperCase() === cleanStation)
+    );
+
+    // Normalize side
+    let side: string = defaultSide;
+    if (devObj?.side) {
+      const sUpper = devObj.side.toUpperCase();
+      if (sUpper.includes('RIGHT') || sUpper === 'RH') side = 'RH';
+      else if (sUpper.includes('LEFT') || sUpper === 'LH') side = 'LH';
+      else side = devObj.side;
+    }
+
+    // 3. Extract raw operator identifier and name from device object (API has assignedEmployeeName / assignedEmployeeId)
+    let rawName = override?.employeeName || devObj?.assignedEmployeeName || (devObj as any)?.employeeName || (devObj as any)?.operatorName || '';
+    let rawId = override?.employeeId || devObj?.assignedEmployeeId || (devObj as any)?.employeeId || (devObj as any)?.operatorId || '';
+
+    // 4. Fallback: check employees list for assignedDeviceIds
+    if (!rawName) {
+      const emp = employees.find(e => 
+        e.assignedDeviceIds && e.assignedDeviceIds.some(did => 
+          did.trim().toUpperCase() === cleanStation || 
+          (devObj?.deviceId && did.trim().toUpperCase() === devObj.deviceId.trim().toUpperCase())
+        )
+      );
+      if (emp) {
+        rawName = emp.employeeName;
+        rawId = emp.employeeId;
+      }
+    }
+
+    // 5. Fallback: check employee metrics
+    if (!rawName) {
+      const met = employeeMetrics.find(m => 
+        m.machineId && (
+          m.machineId.trim().toUpperCase() === cleanStation ||
+          (devObj?.deviceId && m.machineId.trim().toUpperCase() === devObj.deviceId.trim().toUpperCase())
+        )
+      );
+      if (met) {
+        rawName = met.employeeName || '';
+        rawId = met.employeeId || '';
+      }
+    }
+
+    // 6. Parse Name(Token) format, e.g. "Sambari(24673)" or numeric "1819705349"
+    let extractedName = rawName ? String(rawName).trim() : '';
+    let extractedToken = rawId ? String(rawId).trim() : '';
+
+    const parenMatch = extractedName.match(/^([^\(]+)\s*\(([0-9A-Za-z]+)\)$/);
+    if (parenMatch) {
+      extractedName = parenMatch[1].trim();
+      extractedToken = parenMatch[2].trim();
+    }
+
+    // 7. Match with masterWorkers (Employee Master) for official Photo & Token
+    const matchedWorker = masterWorkers.find(w => {
+      const wTok = (w.tNo || '').trim().toLowerCase();
+      const wId = (w.id || '').trim().toLowerCase();
+      const wName = (w.name || '').trim().toLowerCase();
+
+      const cTok = extractedToken.toLowerCase();
+      const cRawId = rawId ? String(rawId).trim().toLowerCase() : '';
+      const cName = extractedName.toLowerCase();
+
+      return (
+        (cTok && (wTok === cTok || wId === cTok)) ||
+        (cRawId && (wTok === cRawId || wId === cRawId)) ||
+        (cName && wName === cName)
+      );
+    });
+
+    const displayName = matchedWorker?.name || extractedName || (rawId ? `Operator #${rawId}` : 'Unassigned');
+    const displayToken = matchedWorker?.tNo || extractedToken || rawId || '';
+    const photoUrl = matchedWorker?.photoUrl;
+    const isAssigned = Boolean(
+      matchedWorker ||
+      (extractedName && extractedName.toLowerCase() !== 'unassigned' && extractedName !== 'null') ||
+      (extractedToken && extractedToken.toLowerCase() !== 'unassigned' && extractedToken !== 'null')
+    );
+
+    return {
+      deviceId: stationId,
+      side,
+      rawName,
+      rawId,
+      displayName,
+      displayToken,
+      photoUrl,
+      isAssigned,
+      matchedWorker
+    };
+  };
+
+  const handleAssignDeviceOperator = async (
+    deviceId: string,
+    employeeId: string,
+    employeeName: string
+  ) => {
+    const cleanStation = deviceId.trim().toUpperCase();
+    const updatedDevOps = {
+      ...deviceOperators,
+      [cleanStation]: { employeeId, employeeName }
+    };
+    setDeviceOperators(updatedDevOps);
+
+    // Update in local devices state
+    setDevices(prev => prev.map(d => {
+      if (
+        (d.deviceId && d.deviceId.toUpperCase() === cleanStation) ||
+        (d.machineId && d.machineId.toUpperCase() === cleanStation)
+      ) {
+        return {
+          ...d,
+          assignedEmployeeId: employeeId,
+          assignedEmployeeName: employeeName
+        };
+      }
+      return d;
+    }));
+
+    // Update backend device config & employee assignments if online
+    try {
+      await iotApi.updateDeviceConfig(deviceId, {
+        assignedEmployeeId: employeeId,
+        assignedEmployeeName: employeeName
+      }).catch(() => null);
+
+      if (employeeId) {
+        await iotApi.assignDevicesToEmployee(employeeId, [deviceId], employeeName).catch(() => null);
+      }
+    } catch (_) {}
+
+    // Update settings
+    if (onUpdateSettings && systemSettings) {
+      await onUpdateSettings({
+        ...systemSettings,
+        iotDeviceOperatorMapping: updatedDevOps
+      });
+    }
+
+    showMsg(`Device ${deviceId} assigned to ${employeeName || employeeId}`);
   };
 
   useEffect(() => {
@@ -875,10 +1041,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '25%' }}>IoT Machine &amp; Connected Devices</th>
-                  <th style={{ width: '30%' }}>Production Machine (SP009..)</th>
-                  <th style={{ width: '30%' }}>Assigned Operator (from Devices &amp; Master)</th>
-                  <th style={{ width: '15%' }}>Status</th>
+                  <th style={{ width: '22%' }}>IoT Machine</th>
+                  <th style={{ width: '25%' }}>Production Machine (SP009..)</th>
+                  <th style={{ width: '40%' }}>Connected Devices &amp; Operators (from IoT API &amp; Master)</th>
+                  <th style={{ width: '13%' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -886,21 +1052,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                   const iotKey = (m.mappingId || m.name || '').trim().toUpperCase();
                   const currentSelectedFrame = productionMappings[iotKey] || productionMappings[m.name?.trim().toUpperCase()] || '';
 
-                  // Find operator who is assigned to this IoT unit's devices
-                  const assignedEmp = employees.find(emp => 
-                    emp.assignedDeviceIds && emp.assignedDeviceIds.some(did => m.stationIds.includes(did))
-                  );
-
-                  // Match with Employee Master (masterWorkers) for Photo & Token
-                  const matchedWorker = masterWorkers.find(w => 
-                    (assignedEmp && w.tNo && w.tNo.trim().toLowerCase() === assignedEmp.employeeId?.trim().toLowerCase()) ||
-                    (assignedEmp && w.id && w.id.trim().toLowerCase() === assignedEmp.employeeId?.trim().toLowerCase()) ||
-                    (assignedEmp && w.name && w.name.trim().toLowerCase() === assignedEmp.employeeName?.trim().toLowerCase())
-                  );
-
-                  const displayName = matchedWorker?.name || assignedEmp?.employeeName || 'No operator assigned to devices';
-                  const displayToken = matchedWorker?.tNo || assignedEmp?.employeeId || '';
-                  const photoUrl = matchedWorker?.photoUrl;
+                  // Every IoT Machine typically manages 2 devices (e.g. IOT_D1 Left and IOT_D2 Right)
+                  const stations = (m.stationIds && m.stationIds.length > 0) 
+                    ? m.stationIds 
+                    : ['IOT_D1', 'IOT_D2'];
 
                   // Unique available frames list
                   const allFrames = Array.from(new Set([
@@ -924,17 +1079,13 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                           </div>
                           <div className="flex flex-wrap items-center gap-1 mt-0.5">
                             <span className="text-[11px] font-semibold text-stone-500">
-                              {m.stationIds.length} {m.stationIds.length === 1 ? 'Device' : 'Devices'}:
+                              {stations.length} {stations.length === 1 ? 'Device' : 'Devices'}:
                             </span>
-                            {m.stationIds.length > 0 ? (
-                              m.stationIds.map(st => (
-                                <span key={st} className="px-1.5 py-0.5 rounded bg-cyan-50 border border-cyan-200 text-[10px] font-mono font-bold text-cyan-800">
-                                  {st}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-[10px] text-stone-400 italic">No devices linked</span>
-                            )}
+                            {stations.map((st, idx) => (
+                              <span key={st} className="px-1.5 py-0.5 rounded bg-cyan-50 border border-cyan-200 text-[10px] font-mono font-bold text-cyan-800">
+                                {st} ({idx === 0 ? 'LH' : 'RH'})
+                              </span>
+                            ))}
                           </div>
                         </div>
                       </td>
@@ -955,37 +1106,78 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                         </select>
                       </td>
 
-                      {/* 3. Assigned Operator (from Devices & Master) */}
+                      {/* 3. Connected Devices & Operators (from IoT API & Master) */}
                       <td>
-                        <div className="flex items-center gap-3">
-                          {/* Operator Photo */}
-                          <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-500 shadow-2xs shrink-0 flex items-center justify-center bg-stone-100">
-                            {photoUrl ? (
-                              <img 
-                                src={photoUrl} 
-                                alt={displayName} 
-                                className="w-full h-full object-cover" 
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-emerald-100 text-emerald-800 text-xs font-black">
-                                {displayName && displayName !== 'No operator assigned to devices' 
-                                  ? displayName.slice(0, 2).toUpperCase() 
-                                  : '👤'}
-                              </div>
-                            )}
-                          </div>
+                        <div className="space-y-2">
+                          {stations.map((st, sIdx) => {
+                            const devInfo = resolveDeviceOperator(st, sIdx === 0 ? 'LH' : 'RH');
+                            return (
+                              <div 
+                                key={st} 
+                                className="flex items-center justify-between gap-3 p-2 bg-stone-50 hover:bg-stone-100/90 rounded-xl border border-stone-200 transition-all"
+                              >
+                                {/* Device Side & ID Badge + Operator */}
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="flex flex-col items-center shrink-0">
+                                    <span className="px-2 py-0.5 rounded bg-cyan-100 text-cyan-900 text-[10px] font-mono font-black border border-cyan-300">
+                                      {devInfo.deviceId}
+                                    </span>
+                                    <span className="text-[9px] font-black text-stone-500 uppercase mt-0.5">
+                                      {devInfo.side} SIDE
+                                    </span>
+                                  </div>
 
-                          {/* Operator Details */}
-                          <div className="min-w-0">
-                            <div className="text-xs font-black text-stone-900 truncate">
-                              {displayName}
-                            </div>
-                            {displayToken && (
-                              <div className="text-[11px] font-mono font-bold text-emerald-700">
-                                T.No: {displayToken}
+                                  {/* Operator Photo */}
+                                  <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-emerald-500 shadow-2xs shrink-0 flex items-center justify-center bg-stone-100">
+                                    {devInfo.photoUrl ? (
+                                      <img 
+                                        src={devInfo.photoUrl} 
+                                        alt={devInfo.displayName} 
+                                        className="w-full h-full object-cover" 
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-emerald-100 text-emerald-800 text-[11px] font-black">
+                                        {devInfo.isAssigned && devInfo.displayName ? devInfo.displayName.slice(0, 2).toUpperCase() : '👤'}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Operator Name & Token */}
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-black text-stone-900 truncate">
+                                      {devInfo.displayName}
+                                    </div>
+                                    <div className="text-[10px] font-mono font-bold text-emerald-700">
+                                      {devInfo.isAssigned && devInfo.displayToken ? `T.No: ${devInfo.displayToken}` : 'No operator'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Quick Operator Selector to Reassign */}
+                                <div className="shrink-0">
+                                  <select
+                                    value={devInfo.matchedWorker?.id || devInfo.rawId || ''}
+                                    onChange={(e) => {
+                                      const selId = e.target.value;
+                                      const matched = masterWorkers.find(w => w.id === selId || w.tNo === selId);
+                                      const emp = employees.find(em => em.employeeId === selId);
+                                      const oName = matched?.name || emp?.employeeName || selId;
+                                      handleAssignDeviceOperator(devInfo.deviceId, selId, oName);
+                                    }}
+                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-stone-300 rounded-lg text-stone-700 hover:border-emerald-500 outline-none cursor-pointer max-w-[125px] truncate"
+                                    title="Assign or reassign operator for this device"
+                                  >
+                                    <option value="">(Change Operator)</option>
+                                    {masterWorkers.map(w => (
+                                      <option key={w.id} value={w.id}>
+                                        {w.name} ({w.tNo || w.id})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
-                            )}
-                          </div>
+                            );
+                          })}
                         </div>
                       </td>
 

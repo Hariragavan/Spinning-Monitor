@@ -8,7 +8,7 @@ import {
   Calendar, ArrowRight, ShieldCheck, Flame, Cpu
 } from 'lucide-react';
 import { DailyReport, MachineMasterItem, Sider, SystemSettings, Shed } from '@/types';
-import { Employee, EmployeeMetric, MachineMapping } from '@/types/iot';
+import { Employee, EmployeeMetric, MachineMapping, DeviceHealth } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
 import { cn } from '@/lib/utils';
 
@@ -20,12 +20,29 @@ export interface IotTvPerformanceProps {
   selectedShed?: Shed;
 }
 
+export interface DeviceOperatorItem {
+  deviceId: string;
+  side: 'LH' | 'RH' | string;
+  position?: number;
+  operatorName: string;
+  operatorToken: string;
+  operatorPhoto?: string;
+  isAssigned: boolean;
+  rounds?: number;
+  expectedRounds?: number;
+  performanceScore?: number;
+  avgGapMinutes?: number;
+  tapsCount?: number;
+}
+
 export interface AssignedMachineSlide {
   id: string;
   frameNo: string;
   iotMachineName: string;
   deviceCount: number;
   deviceIds: string[];
+  devices: DeviceOperatorItem[];
+  hasDualOperators: boolean;
   operatorName: string;
   operatorToken: string;
   operatorPhoto?: string;
@@ -63,8 +80,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
   // Load telemetry and build per-machine assigned slides
   const loadSlideData = useCallback(async () => {
     try {
-      // 1. Fetch live IoT employee metrics, mappings, and live machine telemetry
-      const [employeeMetrics, liveOverview, iotMachines, iotEmployees, deviceMappings] = await Promise.all([
+      // 1. Fetch live IoT devices, employee metrics, mappings, and live machine telemetry
+      const [devices, employeeMetrics, liveOverview, iotMachines, iotEmployees, deviceMappings] = await Promise.all([
+        iotApi.getDevices().catch(() => [] as DeviceHealth[]),
         iotApi.getEmployeePerformance().catch(() => [] as EmployeeMetric[]),
         iotApi.getSpinfoOverview().catch(() => null),
         iotApi.getMachines().catch(() => []),
@@ -74,6 +92,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
       const liveMachines = liveOverview?.machines || [];
       const machineMapFromSettings = settings?.iotMachineMapping || settings?.machineToMachineMapping || {};
+      const devOpMapFromSettings = settings?.iotDeviceOperatorMapping || {};
 
       // Helper to match worker details (photo, token) from Employee Master
       const resolveWorkerMaster = (empIdOrName: string) => {
@@ -125,42 +144,147 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           }
         }
 
-        // Check devices for this IoT unit
-        const devMap = deviceMappings.find(dm => dm.name.trim().toUpperCase() === iotName || dm.mappingId === iotName);
-        const deviceIds = devMap?.stationIds || [];
-
-        // Check operator assigned to this IoT machine / devices
-        let assignedEmp: Employee | undefined = iotEmployees.find(emp => {
-          if (emp.assignedDeviceIds && emp.assignedDeviceIds.length > 0) {
-            return emp.assignedDeviceIds.some(did => deviceIds.includes(did));
+        // Check devices for this IoT unit (typically 2 devices)
+        const devMap = deviceMappings.find(dm => dm.name?.trim().toUpperCase() === iotName || dm.mappingId?.trim().toUpperCase() === iotName);
+        let deviceIds = devMap?.stationIds || [];
+        if (deviceIds.length === 0) {
+          const matchingDevs = devices.filter(d => 
+            (d.machineId && d.machineId.toUpperCase() === iotName) || 
+            (d.machineName && d.machineName.toUpperCase() === iotName)
+          );
+          if (matchingDevs.length > 0) {
+            deviceIds = matchingDevs.map(d => d.deviceId);
+          } else {
+            deviceIds = ['IOT_D1', 'IOT_D2'];
           }
-          return false;
-        });
+        }
 
         // Fallback: check daily report entry for assigned sider
         const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
         const reportSiderName = reportEntry?.siderName || (reportEntry?.siderIds && reportEntry.siderIds[0]);
 
-        const operatorRawName = assignedEmp?.employeeName || reportSiderName || '';
-        const operatorRawToken = assignedEmp?.employeeId || (reportEntry?.siderIds && reportEntry.siderIds[0]) || '';
+        // Resolve each device with its operator from IoT device in API, employees, and master
+        const resolvedDevs: DeviceOperatorItem[] = deviceIds.map((did, idx) => {
+          const cleanDid = did.trim().toUpperCase();
+          const defaultSide = idx === 0 ? 'LH' : 'RH';
+
+          const devObj = devices.find(d => 
+            (d.deviceId && d.deviceId.toUpperCase() === cleanDid) ||
+            (d.machineId && d.machineId.toUpperCase() === cleanDid)
+          );
+
+          let side = defaultSide;
+          if (devObj?.side) {
+            const s = devObj.side.toUpperCase();
+            if (s.includes('RIGHT') || s === 'RH') side = 'RH';
+            else if (s.includes('LEFT') || s === 'LH') side = 'LH';
+            else side = devObj.side;
+          }
+
+          // 1. Check settings override
+          const override = devOpMapFromSettings[cleanDid];
+
+          // 2. Operator info from device object (API has assignedEmployeeName / assignedEmployeeId)
+          let rawName = override?.employeeName || devObj?.assignedEmployeeName || (devObj as any)?.employeeName || (devObj as any)?.operatorName || '';
+          let rawId = override?.employeeId || devObj?.assignedEmployeeId || (devObj as any)?.employeeId || (devObj as any)?.operatorId || '';
+
+          // 3. Fallback from iotEmployees
+          if (!rawName) {
+            const emp = iotEmployees.find(e => 
+              e.assignedDeviceIds && e.assignedDeviceIds.some(aid => 
+                aid.toUpperCase() === cleanDid || 
+                (devObj?.deviceId && aid.toUpperCase() === devObj.deviceId.toUpperCase())
+              )
+            );
+            if (emp) {
+              rawName = emp.employeeName;
+              rawId = emp.employeeId;
+            }
+          }
+
+          // 4. Fallback from employeeMetrics
+          const met = employeeMetrics.find(m => 
+            m.machineId && (
+              m.machineId.toUpperCase() === cleanDid || 
+              (devObj?.deviceId && m.machineId.toUpperCase() === devObj.deviceId.toUpperCase())
+            )
+          );
+          if (!rawName && met) {
+            rawName = met.employeeName || '';
+            rawId = met.employeeId || '';
+          }
+
+          // Fallback to report sider if still unassigned and first device
+          if (!rawName && idx === 0) {
+            rawName = reportSiderName || '';
+            rawId = (reportEntry?.siderIds && reportEntry.siderIds[0]) || '';
+          }
+
+          // Parse Name(Token) format, e.g. "Sambari(24673)"
+          let extName = rawName ? String(rawName).trim() : '';
+          let extToken = rawId ? String(rawId).trim() : '';
+          const match = extName.match(/^([^\(]+)\s*\(([0-9A-Za-z]+)\)$/);
+          if (match) {
+            extName = match[1].trim();
+            extToken = match[2].trim();
+          }
+
+          // Match in Employee Master (workers)
+          const matched = resolveWorkerMaster(extToken) || resolveWorkerMaster(rawId) || resolveWorkerMaster(extName);
+          const operatorName = matched?.name || extName || (rawId ? `Operator #${rawId}` : 'Unassigned');
+          const operatorToken = matched?.tNo || extToken || rawId || '-';
+          const operatorPhoto = matched?.photoUrl;
+          const isAssigned = Boolean(
+            matched ||
+            (extName && extName.toLowerCase() !== 'unassigned' && extName !== 'null') ||
+            (extToken && extToken.toLowerCase() !== 'unassigned' && extToken !== 'null')
+          );
+
+          // Metrics for this device
+          const rounds = Number(met?.roundsCompleted ?? met?.rounds ?? 10);
+          const expectedRounds = Number(met?.expectedRounds ?? 10);
+          let devScore = Number(met?.performancePercent ?? 0);
+          if (!devScore || devScore <= 0) {
+            devScore = Math.min(100, Math.round((rounds / Math.max(1, expectedRounds)) * 100));
+          }
+          const avgGapMinutes = Number(met?.avgGapMinutes || 14.0);
+          const tapsCount = Number(met?.taps?.length || (rounds * 2 + 5));
+
+          return {
+            deviceId: did,
+            side,
+            operatorName,
+            operatorToken,
+            operatorPhoto,
+            isAssigned,
+            rounds,
+            expectedRounds,
+            performanceScore: devScore,
+            avgGapMinutes,
+            tapsCount
+          };
+        });
 
         // "SHOW THE MACHINE WHEN ONLY MACHINE IS ASSIGNED"
-        // If neither an operator is assigned nor a valid mapped production frame exists, skip!
-        const isAssigned = Boolean(
-          (operatorRawName && operatorRawName.toLowerCase() !== 'unassigned') ||
-          (operatorRawToken && operatorRawToken.toLowerCase() !== 'unassigned') ||
-          (reportSiderName && reportSiderName.toLowerCase() !== 'unassigned')
-        );
+        const isAnyDeviceAssigned = resolvedDevs.some(d => d.isAssigned);
+        const isMachineMappedInSettings = Boolean(machineMapFromSettings[frameNo] || machineMapFromSettings[iotName]);
+        const hasActiveReport = Boolean(reportEntry && reportSiderName && reportSiderName.toLowerCase() !== 'unassigned');
 
-        if (!isAssigned) {
+        if (!isAnyDeviceAssigned && !isMachineMappedInSettings && !hasActiveReport) {
           return; // Skip unassigned machines!
         }
 
-        // Match with Employee Master for Photo & Token
-        const matchedWorker = resolveWorkerMaster(operatorRawToken) || resolveWorkerMaster(operatorRawName);
-        const operatorName = matchedWorker?.name || operatorRawName || 'OPERATOR';
-        const operatorToken = matchedWorker?.tNo || operatorRawToken || '-';
-        const operatorPhoto = matchedWorker?.photoUrl || undefined;
+        // Check if dual operators exist across the devices
+        const assignedDevs = resolvedDevs.filter(d => d.isAssigned);
+        const hasDualOperators = assignedDevs.length >= 2 && (
+          assignedDevs[0].operatorToken !== assignedDevs[1].operatorToken ||
+          assignedDevs[0].operatorName.toLowerCase() !== assignedDevs[1].operatorName.toLowerCase()
+        );
+
+        const primaryDev = assignedDevs[0] || resolvedDevs[0];
+        const operatorName = primaryDev?.operatorName || 'OPERATOR';
+        const operatorToken = primaryDev?.operatorToken || '-';
+        const operatorPhoto = primaryDev?.operatorPhoto;
 
         // Telemetry: RPM, Production, Count, EM
         const liveM = liveMachines.find((m: any) => {
@@ -172,27 +296,29 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const rpm = Number(liveM?.spindleSpeedCurrent || liveM?.speed || 16500);
         const productionKg = Number(reportEntry?.productionActual || liveM?.shiftProduction || 76.5);
 
-        // Employee Metrics: rounds, taps, gaps
-        const empMetric = employeeMetrics.find(m => 
-          (m.employeeId && operatorRawToken && m.employeeId.trim().toUpperCase() === operatorRawToken.trim().toUpperCase()) ||
-          (m.employeeName && operatorName && m.employeeName.trim().toLowerCase() === operatorName.trim().toLowerCase())
+        // Blended rounds and gaps across devices
+        const completedRounds = Math.round(
+          resolvedDevs.reduce((sum, d) => sum + (d.rounds || 0), 0) / Math.max(1, resolvedDevs.length)
+        );
+        const expectedRounds = 10;
+        const totalTaps = resolvedDevs.reduce((sum, d) => sum + (d.tapsCount || 0), 0);
+        const avgGapMinutes = Number(
+          (resolvedDevs.reduce((sum, d) => sum + (d.avgGapMinutes || 14), 0) / Math.max(1, resolvedDevs.length)).toFixed(1)
         );
 
-        const completedRounds = Number(empMetric?.roundsCompleted ?? empMetric?.rounds ?? 10);
-        const expectedRounds = Number(empMetric?.expectedRounds ?? 10);
-        const totalTaps = Number(empMetric?.taps?.length || (completedRounds * 2 + 5));
-        const avgGapMinutes = Number(empMetric?.avgGapMinutes || 14.0);
-
         // Activity Window
+        const activeMetric = employeeMetrics.find(m => 
+          resolvedDevs.some(d => d.deviceId.toUpperCase() === m.machineId?.toUpperCase())
+        );
         let activityWindow = '06:03 AM – 02:00 PM';
-        if (empMetric?.taps && empMetric.taps.length > 0) {
-          const firstTap = empMetric.taps[0]?.time;
-          const lastTap = empMetric.taps[empMetric.taps.length - 1]?.time;
+        if (activeMetric?.taps && activeMetric.taps.length > 0) {
+          const firstTap = activeMetric.taps[0]?.time;
+          const lastTap = activeMetric.taps[activeMetric.taps.length - 1]?.time;
           if (firstTap && lastTap) {
             activityWindow = `${firstTap} – ${lastTap}`;
           }
-        } else if (empMetric?.lastActiveTime) {
-          activityWindow = `06:00 AM – ${empMetric.lastActiveTime}`;
+        } else if (activeMetric?.lastActiveTime) {
+          activityWindow = `06:00 AM – ${activeMetric.lastActiveTime}`;
         }
 
         // EM Left & Right
@@ -200,8 +326,10 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const emRight = typeof liveM?.emRight === 'number' ? liveM.emRight : 1.40;
         const emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
 
-        // Performance Score
-        let performanceScore = empMetric?.performancePercent ?? 0;
+        // Blended Performance Score
+        let performanceScore = Math.round(
+          resolvedDevs.reduce((sum, d) => sum + (d.performanceScore || 85), 0) / Math.max(1, resolvedDevs.length)
+        );
         if (!performanceScore || performanceScore <= 0) {
           performanceScore = Math.min(100, Math.round((completedRounds / Math.max(1, expectedRounds)) * 100));
         }
@@ -215,6 +343,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           iotMachineName: iotName,
           deviceCount: deviceIds.length || 2,
           deviceIds: deviceIds.length > 0 ? deviceIds : ['IOT_D1', 'IOT_D2'],
+          devices: resolvedDevs,
+          hasDualOperators,
           operatorName,
           operatorToken,
           operatorPhoto,
@@ -436,62 +566,152 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
           {/* HERO SECTION: OPERATOR PHOTO, MACHINE & GIANT PERFORMANCE SCORE */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center pb-8 border-b border-white/10 mb-8">
-            {/* Left: Operator Photo + Identity */}
-            <div className="lg:col-span-8 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
-              {/* Photo Frame */}
-              <div className="relative shrink-0">
-                <div className={cn(
-                  "w-28 h-28 sm:w-36 sm:h-36 rounded-3xl overflow-hidden border-4 shadow-2xl flex items-center justify-center bg-stone-800",
-                  currentSlide.isBestPerformer ? "border-emerald-500/80 shadow-emerald-900/50" : "border-rose-500/70 shadow-rose-900/40"
-                )}>
-                  {currentSlide.operatorPhoto ? (
-                    <img 
-                      src={currentSlide.operatorPhoto} 
-                      alt={currentSlide.operatorName} 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-stone-800 text-stone-400">
-                      <User size={48} className="text-stone-400 mb-1" />
-                      <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">NO PHOTO</span>
+            {/* Left: Operators with Devices Showcase */}
+            {currentSlide.hasDualOperators ? (
+              <div className="lg:col-span-8 flex flex-col gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {currentSlide.devices.slice(0, 2).map((dev, dIdx) => (
+                    <div 
+                      key={dev.deviceId}
+                      className="flex items-center gap-4 p-4 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-md shadow-xl"
+                    >
+                      {/* Photo Frame */}
+                      <div className="relative shrink-0">
+                        <div className={cn(
+                          "w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden border-2 shadow-lg flex items-center justify-center bg-stone-800",
+                          dIdx === 0 ? "border-cyan-400" : "border-amber-400"
+                        )}>
+                          {dev.operatorPhoto ? (
+                            <img 
+                              src={dev.operatorPhoto} 
+                              alt={dev.operatorName} 
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-stone-800 text-stone-400">
+                              <User size={32} className="text-stone-400 mb-0.5" />
+                              <span className="text-[9px] font-black uppercase text-stone-500">NO PHOTO</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Side Badge */}
+                        <div className={cn(
+                          "absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-black shadow-md",
+                          dIdx === 0 ? "bg-cyan-400" : "bg-amber-400"
+                        )}>
+                          {dev.side}
+                        </div>
+                      </div>
+
+                      {/* Operator & Device Details */}
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md text-[10px] font-mono font-black border",
+                            dIdx === 0 ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40" : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                          )}>
+                            {dev.deviceId} ({dev.side} SIDE)
+                          </span>
+                        </div>
+                        <h2 className="text-base sm:text-xl font-black uppercase tracking-tight text-white truncate">
+                          {dev.operatorName}
+                        </h2>
+                        <div className="text-xs font-mono font-bold text-stone-300">
+                          T.NO: {dev.operatorToken}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs pt-0.5">
+                          <span className="text-emerald-400 font-mono font-bold">{dev.performanceScore}% Score</span>
+                          <span className="text-stone-600">•</span>
+                          <span className="text-stone-300 font-mono">{dev.rounds} Rounds</span>
+                        </div>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
 
-                {/* Status Dot */}
-                <div className="absolute -bottom-2 -right-2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-black text-[10px] font-black uppercase tracking-wider shadow-md flex items-center gap-1 border border-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
-                  ACTIVE
-                </div>
-              </div>
-
-              {/* Operator & Machine Credentials */}
-              <div className="flex-1 space-y-2">
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                  <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white">
-                    {currentSlide.operatorName}
-                  </h1>
-                  <span className="px-3 py-1 rounded-xl bg-white/15 text-stone-200 text-xs sm:text-sm font-mono font-black tracking-wider border border-white/10">
-                    T.NO: {currentSlide.operatorToken}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm font-bold text-stone-300">
-                  <span className="px-3 py-1 rounded-xl bg-stone-800/80 border border-stone-700/80 text-emerald-400 font-mono font-black">
+                {/* Machine Header Ribbon below dual cards */}
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-stone-300">
+                  <span className="px-3 py-1 rounded-xl bg-stone-800/90 border border-stone-700/80 text-emerald-400 font-mono font-black">
                     MACHINE: {currentSlide.frameNo}
                   </span>
-                  <span className="px-3 py-1 rounded-xl bg-stone-800/80 border border-stone-700/80 text-stone-300 font-mono">
+                  <span className="px-3 py-1 rounded-xl bg-stone-800/90 border border-stone-700/80 text-stone-300 font-mono">
                     IOT UNIT: {currentSlide.iotMachineName} ({currentSlide.deviceCount} Devices)
                   </span>
+                  <span className="text-stone-400 text-xs font-normal">
+                    Dual operators assigned across frame Left (LH) &amp; Right (RH) devices
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* Single / Common Operator Hero Card */
+              <div className="lg:col-span-8 flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
+                {/* Photo Frame */}
+                <div className="relative shrink-0">
+                  <div className={cn(
+                    "w-28 h-28 sm:w-36 sm:h-36 rounded-3xl overflow-hidden border-4 shadow-2xl flex items-center justify-center bg-stone-800",
+                    currentSlide.isBestPerformer ? "border-emerald-500/80 shadow-emerald-900/50" : "border-rose-500/70 shadow-rose-900/40"
+                  )}>
+                    {currentSlide.operatorPhoto ? (
+                      <img 
+                        src={currentSlide.operatorPhoto} 
+                        alt={currentSlide.operatorName} 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-stone-800 text-stone-400">
+                        <User size={48} className="text-stone-400 mb-1" />
+                        <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">NO PHOTO</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status Dot */}
+                  <div className="absolute -bottom-2 -right-2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-black text-[10px] font-black uppercase tracking-wider shadow-md flex items-center gap-1 border border-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
+                    ACTIVE
+                  </div>
                 </div>
 
-                <p className="text-xs text-stone-400 font-medium">
-                  {currentSlide.isBestPerformer 
-                    ? "Consistent patrol cadence maintained across spinning frame sensors."
-                    : "Patrol interval exceeds target gap duration. Additional rounds required."}
-                </p>
+                {/* Operator & Machine Credentials */}
+                <div className="flex-1 space-y-2">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white">
+                      {currentSlide.operatorName}
+                    </h1>
+                    <span className="px-3 py-1 rounded-xl bg-white/15 text-stone-200 text-xs sm:text-sm font-mono font-black tracking-wider border border-white/10">
+                      T.NO: {currentSlide.operatorToken}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm font-bold text-stone-300">
+                    <span className="px-3 py-1 rounded-xl bg-stone-800/80 border border-stone-700/80 text-emerald-400 font-mono font-black">
+                      MACHINE: {currentSlide.frameNo}
+                    </span>
+                    <span className="px-3 py-1 rounded-xl bg-stone-800/80 border border-stone-700/80 text-stone-300 font-mono">
+                      IOT UNIT: {currentSlide.iotMachineName}
+                    </span>
+                  </div>
+
+                  {/* Devices linked badge */}
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 pt-1">
+                    <span className="text-xs text-stone-400 font-bold mr-1">Devices:</span>
+                    {currentSlide.devices.map((d) => (
+                      <span key={d.deviceId} className="px-2 py-0.5 rounded-lg bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-bold flex items-center gap-1">
+                        <Cpu size={11} className="text-cyan-400" />
+                        {d.deviceId} ({d.side} SIDE)
+                      </span>
+                    ))}
+                  </div>
+
+                  <p className="text-xs text-stone-400 font-medium">
+                    {currentSlide.isBestPerformer 
+                      ? "Consistent patrol cadence maintained across spinning frame sensors."
+                      : "Patrol interval exceeds target gap duration. Additional rounds required."}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Right: GIANT PERFORMANCE SCORE */}
             <div className="lg:col-span-4 flex flex-col items-center justify-center text-center lg:border-l lg:border-white/10 lg:pl-8">
@@ -513,6 +733,18 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               )}>
                 {currentSlide.completedRounds} / {currentSlide.expectedRounds} ROUNDS ACHIEVED
               </span>
+
+              {/* Sub-scores if dual operators */}
+              {currentSlide.hasDualOperators && currentSlide.devices.length >= 2 && (
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-mono text-cyan-300">
+                    LH: {currentSlide.devices[0].performanceScore}%
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/40 text-[10px] font-mono text-amber-300">
+                    RH: {currentSlide.devices[1].performanceScore}%
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -577,14 +809,18 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
             <div className="flex items-center gap-3 sm:gap-6">
               <div className="text-center sm:text-right">
-                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">EM LEFT (LH)</span>
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">
+                  EM LEFT ({currentSlide.devices[0]?.deviceId || 'LH'})
+                </span>
                 <span className="text-base sm:text-xl font-black text-cyan-400 tabular-nums">
                   {currentSlide.emLeft.toFixed(2)} min
                 </span>
               </div>
               <span className="text-stone-700">|</span>
               <div className="text-center sm:text-right">
-                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">EM RIGHT (RH)</span>
+                <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block">
+                  EM RIGHT ({currentSlide.devices[1]?.deviceId || 'RH'})
+                </span>
                 <span className="text-base sm:text-xl font-cyan-400 font-black tabular-nums">
                   {currentSlide.emRight.toFixed(2)} min
                 </span>

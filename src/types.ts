@@ -169,6 +169,7 @@ export interface SystemSettings {
   machinePairs?: { spinningFrame: string; iotMachine: string }[];
   iotMachineMappingByDate?: Record<string, Record<string, string>>;
   iotMachineAllocationPeriods?: IotMachineAllocationPeriod[];
+  iotDeviceOperatorMapping?: Record<string, { employeeId: string; employeeName: string }>;
 }
 
 export interface IotMachineAllocationPeriod {
