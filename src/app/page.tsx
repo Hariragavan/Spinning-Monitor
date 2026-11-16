@@ -3751,15 +3751,9 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Center Section: Horizontal Slide Bar (Spinning) or Live Stream Pill (IoT) */}
+              {/* Center Section: Horizontal Slide Bar (Spinning) */}
               <div className="flex-1 flex justify-center px-2">
-                {activeTab.startsWith('iot-') ? (
-                  <div className="inline-flex items-center gap-2 bg-blue-50/90 px-3.5 py-1.5 rounded-2xl border border-blue-200/80 shadow-2xs text-blue-950">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                    <span className="text-[11px] font-black uppercase tracking-wider">Live IoT Telemetry Stream</span>
-                    <span className="text-[10px] text-blue-600 font-bold hidden md:inline">• MongoDB Collections Synced</span>
-                  </div>
-                ) : (
+                {!activeTab.startsWith('iot-') && (
                   <div className="inline-flex items-center bg-stone-100/90 p-1 rounded-2xl border border-stone-200/90 shadow-2xs">
                     {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(shed => {
                       const isSelected = selectedShed === shed;
@@ -3783,16 +3777,9 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Right Section: Interactive Date Picker (Spinning Mill) or IoT Live Status Badge (IoT) */}
+              {/* Right Section: Interactive Date Picker (Spinning Mill) */}
               <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                {activeTab.startsWith('iot-') ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/80 text-blue-900 rounded-xl border border-blue-200 text-xs font-bold shadow-2xs">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>Remote IoT API Live</span>
-                    </div>
-                  </div>
-                ) : (
+                {!activeTab.startsWith('iot-') && (
                   <>
                     {/* Date Selection: Left & Right navigation arrows together before date selection */}
                     <div className="flex items-center gap-1.5 bg-stone-100/90 p-0.5 rounded-xl border border-stone-200/90 shadow-2xs">
