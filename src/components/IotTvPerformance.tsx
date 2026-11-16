@@ -9,7 +9,7 @@ import {
 import { DailyReport, MachineMasterItem, Sider, SystemSettings, Shed, IncentiveRule } from '@/types';
 import { Employee, EmployeeMetric, MachineMapping, DeviceHealth } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import { cn, calculateIncentive, getActiveRule, parseUniversalDateParts } from '@/lib/utils';
+import { cn, calculateIncentive, getActiveRule, parseUniversalDateParts, resolveEffectiveMappingForDate, resolveMappedDevice } from '@/lib/utils';
 
 export interface IotTvPerformanceProps {
   report?: DailyReport;
@@ -43,6 +43,7 @@ export interface AssignedMachineSlide {
   earnedIncentive: number;
   incentiveAmount: number;
   machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED';
+  rfMachineNo: string;
   
   // Operator details (Auto-selected from Live Shift API & Employee Master)
   operatorName: string;
@@ -194,14 +195,27 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         return [];
       };
 
-      // 2. Fetch live IoT devices, mappings, and live machine telemetry
-      const [lightStatus, liveOverview, devices, iotEmployees, deviceMappings] = await Promise.all([
+      // 2. Fetch live IoT devices, mappings, fresh settings, and live machine telemetry
+      const [lightStatus, liveOverview, devices, iotEmployees, deviceMappings, freshSettingsRes] = await Promise.all([
         iotApi.getLightweightMachineStatus().catch(() => null),
         iotApi.getSpinfoOverview({ shift: String(liveShiftNum), fromDate: liveShiftDate }).catch(() => null),
         iotApi.getDevices().catch(() => [] as DeviceHealth[]),
         iotApi.getEmployees().catch(() => [] as Employee[]),
-        iotApi.getMachineMappings().catch(() => [] as MachineMapping[])
+        iotApi.getMachineMappings().catch(() => [] as MachineMapping[]),
+        fetch(`/api/settings?_t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null)
       ]);
+
+      const effectiveSettings: SystemSettings = (freshSettingsRes && freshSettingsRes.data)
+        ? freshSettingsRes.data
+        : (settings || ({} as SystemSettings));
+
+      // Resolve effective date-range machine mapping from Settings for today's active date
+      const effectiveDateMap = resolveEffectiveMappingForDate(
+        primaryTargetDate,
+        effectiveSettings?.iotMachineAllocationPeriods || [],
+        effectiveSettings?.iotMachineMappingByDate || {},
+        effectiveSettings?.iotMachineMapping || {}
+      );
 
       // Fetch employee performance strictly for today's live shift (no past-date fallbacks)
       const employeeMetrics: EmployeeMetric[] = await fetchRailwayEmployeeData(primaryTargetDate);
@@ -211,11 +225,11 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
       // 1. Physical Frame -> IoT Machine Unit (strictly from Tab 5 Configuration, e.g. SP044 -> M1)
       const frameToIotMap: Record<string, string> = {
-        ...(settings?.frameToIotProfileMapping || {})
+        ...(effectiveSettings?.frameToIotProfileMapping || {})
       };
 
-      if (settings?.iotProfileToFrameMapping) {
-        Object.entries(settings.iotProfileToFrameMapping).forEach(([k, v]) => {
+      if (effectiveSettings?.iotProfileToFrameMapping) {
+        Object.entries(effectiveSettings.iotProfileToFrameMapping).forEach(([k, v]) => {
           if (k && v) {
             const cleanK = k.trim().toUpperCase();
             const cleanV = String(v).trim().toUpperCase();
@@ -226,6 +240,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
       }
 
       // Check persistent localStorage for Tab 5 assignments
+      let savedPairsFromStorage: any[] = [];
       if (typeof window !== 'undefined') {
         try {
           const savedProfile = localStorage.getItem('frameToIotProfileMapping') || localStorage.getItem('iotProfileToFrameMapping');
@@ -256,22 +271,21 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               });
             }
           }
+          const savedPairs = localStorage.getItem('iotMachinePairs');
+          if (savedPairs) {
+            const parsed = JSON.parse(savedPairs);
+            if (Array.isArray(parsed)) {
+              savedPairsFromStorage = parsed;
+            }
+          }
         } catch (_) {}
       }
 
-      // 2. Physical Frame -> Paired Telemetry Machine in Settings (e.g. SP044 -> RF44)
-      const frameToTelemetryMap: Record<string, string> = {
-        ...(settings?.iotMachineMapping || settings?.machineToMachineMapping || {})
-      };
-      if (Array.isArray(settings?.machinePairs)) {
-        settings.machinePairs.forEach((pair: any) => {
-          if (pair?.spinningFrame && pair?.telemetryMachine) {
-            frameToTelemetryMap[pair.spinningFrame.trim().toUpperCase()] = pair.telemetryMachine.trim().toUpperCase();
-          }
-        });
-      }
-
-      const devOpMapFromSettings = settings?.iotDeviceOperatorMapping || {};
+      // Combine all machine pairs from settings and localStorage
+      const allMachinePairs = [
+        ...(Array.isArray(effectiveSettings?.machinePairs) ? effectiveSettings.machinePairs : []),
+        ...savedPairsFromStorage
+      ];
 
       // Helper to match worker details (photo, token) from Employee Master
       const resolveWorkerMaster = (empIdOrName: string) => {
@@ -300,40 +314,17 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
       });
 
-      // Also read machinePairs from settings and localStorage
-      if (Array.isArray(settings?.machinePairs)) {
-        settings.machinePairs.forEach((pair: any) => {
-          const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
-          const iotM = String(pair?.iotMachine || '').trim().toUpperCase();
-          const telM = String(pair?.telemetryMachine || '').trim().toUpperCase();
-          if (sFrame && sFrame !== 'NONE' && sFrame !== 'UNASSIGNED') {
+      // Also read assigned frames from machinePairs
+      allMachinePairs.forEach((pair: any) => {
+        const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
+        const iotM = String(pair?.iotMachine || '').trim().toUpperCase();
+        if (sFrame && sFrame !== 'NONE' && sFrame !== 'UNASSIGNED') {
+          if (sFrame.startsWith('SP') || sFrame.startsWith('K') || sFrame.startsWith('RF')) {
             candidateFrames.add(sFrame);
             if (iotM && iotM !== 'NONE') frameToIotMap[sFrame] = iotM;
-            if (telM && telM !== 'NONE') frameToTelemetryMap[sFrame] = telM;
           }
-        });
-      }
-
-      if (typeof window !== 'undefined') {
-        try {
-          const savedPairs = localStorage.getItem('iotMachinePairs');
-          if (savedPairs) {
-            const parsed = JSON.parse(savedPairs);
-            if (Array.isArray(parsed)) {
-              parsed.forEach((pair: any) => {
-                const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
-                const iotM = String(pair?.iotMachine || '').trim().toUpperCase();
-                const telM = String(pair?.telemetryMachine || '').trim().toUpperCase();
-                if (sFrame && sFrame !== 'NONE' && sFrame !== 'UNASSIGNED') {
-                  candidateFrames.add(sFrame);
-                  if (iotM && iotM !== 'NONE') frameToIotMap[sFrame] = iotM;
-                  if (telM && telM !== 'NONE') frameToTelemetryMap[sFrame] = telM;
-                }
-              });
-            }
-          }
-        } catch (_) {}
-      }
+        }
+      });
 
       candidateFrames.forEach(frameNo => {
         // 1. Resolve IoT Machine Unit (holds RFID devices, card taps, and completed rounds)
@@ -343,8 +334,66 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           if (rev) iotName = rev[0].trim().toUpperCase();
         }
 
-        // 2. Resolve Paired Telemetry Machine from Settings (holds live status, speed, production, EM left/right)
-        let telemetryName = (frameToTelemetryMap[frameNo] || '').trim().toUpperCase();
+        // 2. Resolve Paired RF Machine strictly from Settings (holds live status, speed, production, EM left/right)
+        const cleanNum = frameNo.replace(/\D/g, '');
+        const frameInt = cleanNum ? parseInt(cleanNum, 10) : NaN;
+        const naturalRf = !isNaN(frameInt) ? `RF${String(frameInt).padStart(2, '0')}` : '';
+
+        let pairedRfNo = '';
+
+        // Priority 1: Check date-specific effective mapping from Settings for today's active date
+        if (effectiveDateMap) {
+          const mapped = resolveMappedDevice(effectiveDateMap, frameNo);
+          if (mapped) {
+            const cleanMapped = mapped.trim().toUpperCase();
+            if (cleanMapped.startsWith('RF')) {
+              pairedRfNo = cleanMapped;
+            } else {
+              const num = parseInt(cleanMapped.replace(/\D/g, ''), 10);
+              if (!isNaN(num)) pairedRfNo = `RF${String(num).padStart(2, '0')}`;
+            }
+          }
+        }
+
+        // Priority 2: Direct lookup in settings.iotMachineMapping or machineToMachineMapping
+        if (!pairedRfNo) {
+          const direct = resolveMappedDevice(effectiveSettings?.iotMachineMapping, frameNo) ||
+                         resolveMappedDevice(effectiveSettings?.machineToMachineMapping, frameNo);
+          if (direct) {
+            const cleanDirect = direct.trim().toUpperCase();
+            if (cleanDirect.startsWith('RF')) {
+              pairedRfNo = cleanDirect;
+            } else {
+              const num = parseInt(cleanDirect.replace(/\D/g, ''), 10);
+              if (!isNaN(num)) pairedRfNo = `RF${String(num).padStart(2, '0')}`;
+            }
+          }
+        }
+
+        // Priority 3: Lookup in machinePairs from settings or localStorage
+        if (!pairedRfNo) {
+          for (const pair of allMachinePairs) {
+            const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
+            if (sFrame === frameNo || sFrame.replace(/\D/g, '') === cleanNum) {
+              const tel = String(pair?.telemetryMachine || pair?.iotMachine || '').trim().toUpperCase();
+              if (tel && tel.startsWith('RF')) {
+                pairedRfNo = tel;
+                break;
+              } else if (tel && tel !== 'NONE' && tel !== 'UNASSIGNED') {
+                const num = parseInt(tel.replace(/\D/g, ''), 10);
+                if (!isNaN(num)) {
+                  pairedRfNo = `RF${String(num).padStart(2, '0')}`;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // Priority 4: Natural RF fallback from spinning frame number (e.g. SP009 -> RF09, SP044 -> RF44)
+        if (!pairedRfNo && naturalRf) {
+          pairedRfNo = naturalRf;
+        }
 
         // 2 Devices for this IoT Machine (D1 for Left / LH side, D2 for Right / RH side)
         const devMap = deviceMappings.find(dm => 
@@ -368,15 +417,20 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d2DeviceId = stationList[1] || 'IOT_D2';
 
         // Telemetry lookup: match paired telemetry machine (RF44 / RF09), natural RF, or frameNo
-        const cleanNum = frameNo.replace(/\D/g, '');
-        const frameInt = cleanNum ? parseInt(cleanNum, 10) : NaN;
-        const naturalRf = !isNaN(frameInt) ? `RF${String(frameInt).padStart(2, '0')}` : '';
-
         const matchFinder = (m: any) => {
           const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
           if (!mId) return false;
-          if (telemetryName && mId === telemetryName) return true;
+          // 1. Strict match on paired RF number from Settings (e.g. RF09)
+          if (pairedRfNo && mId === pairedRfNo) return true;
+          // 2. Numeric match on RF number (e.g. RF09 matches RF9)
+          if (pairedRfNo) {
+            const pInt = parseInt(pairedRfNo.replace(/\D/g, ''), 10);
+            const mInt = parseInt(mId.replace(/\D/g, ''), 10);
+            if (!isNaN(pInt) && !isNaN(mInt) && pInt === mInt && mId.startsWith('RF')) return true;
+          }
+          // 3. Strict match on natural RF
           if (naturalRf && (mId === naturalRf || mId === `RF${cleanNum}`)) return true;
+          // 4. Fallback match frameNo directly
           if (mId === frameNo) return true;
           const mInt = parseInt(mId.replace(/\D/g, ''), 10);
           return Boolean(!isNaN(frameInt) && !isNaN(mInt) && frameInt === mInt);
@@ -730,6 +784,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         builtSlides.push({
           id: `slide-${frameNo}-${iotName}`,
           frameNo,
+          rfMachineNo: pairedRfNo,
           iotMachineName: iotName,
           yarnCount,
           rpm,
@@ -873,7 +928,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           </div>
           <span className="text-slate-300">•</span>
           <span className="text-xs font-black uppercase tracking-wider text-slate-800">
-            MACHINE {currentIndex + 1} OF {slides.length} ({currentSlide.frameNo})
+            MACHINE {currentIndex + 1} OF {slides.length} ({currentSlide.frameNo}{currentSlide.rfMachineNo ? ` · ${currentSlide.rfMachineNo}` : ''})
           </span>
           <span className="text-slate-300">•</span>
           <span className="text-[11px] font-bold text-slate-500 uppercase">
@@ -986,10 +1041,17 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6 items-center pb-6 border-b border-slate-200 mb-6">
             {/* Top-Left: Machine No & Status & Yarn Count & Current GPS */}
             <div className="lg:col-span-5">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-5xl sm:text-7xl font-black text-stone-900 tracking-tight leading-none">
-                  {currentSlide.frameNo}
-                </h1>
+              <div className="flex flex-wrap items-baseline gap-3">
+                <div className="flex items-baseline gap-2.5">
+                  <h1 className="text-5xl sm:text-7xl font-black text-stone-900 tracking-tight leading-none">
+                    {currentSlide.frameNo}
+                  </h1>
+                  {currentSlide.rfMachineNo && (
+                    <span className="text-2xl sm:text-4xl font-extrabold text-stone-400 tracking-tight">
+                      ({currentSlide.rfMachineNo})
+                    </span>
+                  )}
+                </div>
                 {/* Live Status Badge */}
                 {currentSlide.machineLiveStatus === 'DOFFING' ? (
                   <span className="px-3.5 py-1.5 rounded-2xl bg-amber-200 text-amber-950 border-2 border-amber-400 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
@@ -1307,7 +1369,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                     </div>
                   </div>
                   <span className="text-[10px] font-bold text-slate-400 text-center uppercase">
-                    Live End-Mending Patrol Interval
+                    Live End-Mending Patrol Interval{currentSlide.rfMachineNo ? ` (${currentSlide.rfMachineNo})` : ''}
                   </span>
                 </div>
 
