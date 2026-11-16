@@ -4,17 +4,18 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Activity, Trophy, AlertTriangle, Play, Pause, ChevronLeft, 
-  ChevronRight, Clock, User, CheckCircle2, Cpu
+  ChevronRight, Clock, User, CheckCircle2, Sparkles, Flame
 } from 'lucide-react';
-import { DailyReport, MachineMasterItem, Sider, SystemSettings, Shed } from '@/types';
+import { DailyReport, MachineMasterItem, Sider, SystemSettings, Shed, IncentiveRule } from '@/types';
 import { Employee, EmployeeMetric, MachineMapping, DeviceHealth } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import { cn } from '@/lib/utils';
+import { cn, calculateIncentive } from '@/lib/utils';
 
 export interface IotTvPerformanceProps {
   report?: DailyReport;
   machines?: MachineMasterItem[];
   workers?: Sider[];
+  rules?: IncentiveRule[];
   settings?: SystemSettings;
   selectedShed?: Shed;
 }
@@ -37,6 +38,7 @@ export interface AssignedMachineSlide {
   yarnCount: string;
   rpm: number;
   productionKg: number;
+  incentiveAmount: number;
   
   // Operator details (Auto-selected from Live Shift API & Employee Master)
   operatorName: string;
@@ -76,10 +78,77 @@ export interface AssignedMachineSlide {
   isBestPerformer: boolean;
 }
 
+// 👏 Celebratory Clap Animation Component for Best Performers
+const ClapCelebration: React.FC = () => {
+  const clapHands = [
+    { left: '10%', delay: 0.1, scale: 1.3 },
+    { left: '22%', delay: 0.4, scale: 1.6 },
+    { left: '38%', delay: 0.2, scale: 1.4 },
+    { left: '55%', delay: 0.5, scale: 1.7 },
+    { left: '72%', delay: 0.3, scale: 1.5 },
+    { left: '86%', delay: 0.6, scale: 1.3 },
+  ];
+
+  return (
+    <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden">
+      {/* Floating Animated Clapping Hands */}
+      {clapHands.map((item, i) => (
+        <motion.div
+          key={i}
+          initial={{ y: 220, opacity: 0, scale: 0.6, rotate: -20 }}
+          animate={{ 
+            y: [-30, -140, -250],
+            opacity: [0, 1, 0],
+            scale: [item.scale * 0.8, item.scale, item.scale * 1.15],
+            rotate: [i % 2 === 0 ? -25 : 25, i % 2 === 0 ? 20 : -20, 0]
+          }}
+          transition={{
+            duration: 2.6,
+            delay: item.delay,
+            repeat: Infinity,
+            repeatDelay: 0.8,
+            ease: 'easeOut'
+          }}
+          className="absolute bottom-12 select-none text-5xl sm:text-7xl drop-shadow-xl"
+          style={{ left: item.left }}
+        >
+          👏
+        </motion.div>
+      ))}
+
+      {/* Top Floating Clapping Banner with Confetti Sparkles */}
+      <motion.div
+        initial={{ scale: 0, y: -40, opacity: 0 }}
+        animate={{ scale: [0, 1.1, 1], y: 0, opacity: 1 }}
+        transition={{ duration: 0.5, ease: 'backOut' }}
+        className="absolute top-6 right-6 flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white shadow-2xl border-2 border-white/80"
+      >
+        <motion.span 
+          animate={{ scale: [1, 1.4, 1], rotate: [0, -18, 18, 0] }}
+          transition={{ duration: 0.7, repeat: Infinity, ease: 'easeInOut' }}
+          className="text-3xl sm:text-4xl"
+        >
+          👏
+        </motion.span>
+        <div>
+          <div className="text-xs sm:text-sm font-black uppercase tracking-wider leading-none flex items-center gap-1.5">
+            <Sparkles size={14} className="text-amber-300 animate-spin" />
+            OUTSTANDING CADENCE!
+          </div>
+          <div className="text-[10px] font-black text-emerald-100 uppercase tracking-widest mt-1">
+            APPLAUSE FOR BEST PERFORMER
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
   report,
   machines = [],
   workers = [],
+  rules = [],
   settings,
   selectedShed = 'Shed 1'
 }) => {
@@ -323,6 +392,19 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
         const isBestPerformer = completedRounds >= expectedRounds || performanceScore >= 85;
 
+        // INCENTIVE AMOUNT: Calculate from rules or factory performance tier
+        let incentiveAmount = 0;
+        if (reportEntry && rules && rules.length > 0) {
+          incentiveAmount = calculateIncentive(reportEntry, rules, report?.date, reportEntry.shed || selectedShed);
+        }
+        if (incentiveAmount <= 0) {
+          if (performanceScore >= 95) incentiveAmount = 450;
+          else if (performanceScore >= 90) incentiveAmount = 350;
+          else if (performanceScore >= 85) incentiveAmount = 250;
+          else if (performanceScore >= 75) incentiveAmount = 150;
+          else incentiveAmount = 0;
+        }
+
         // Check if dual operators exist across the 2 devices
         const hasDualOperators = Boolean(
           d1.isAssigned && d2.isAssigned && 
@@ -340,6 +422,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           yarnCount,
           rpm,
           productionKg,
+          incentiveAmount,
           operatorName: primary.operatorName,
           operatorToken: primary.operatorToken,
           operatorPhoto: primary.operatorPhoto,
@@ -385,7 +468,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [report, machines, workers, settings, currentIndex]);
+  }, [report, machines, workers, rules, settings, currentIndex, selectedShed]);
 
   useEffect(() => {
     loadSlideData();
@@ -525,22 +608,52 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           exit={{ opacity: 0, scale: 0.98, y: -10 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className={cn(
-            "w-full rounded-3xl p-6 sm:p-8 md:p-10 border-2 shadow-2xl relative overflow-hidden transition-all bg-white",
+            "w-full rounded-3xl p-6 sm:p-8 md:p-10 border-4 shadow-2xl relative overflow-hidden transition-all bg-white",
             currentSlide.isBestPerformer
-              ? "border-emerald-500 shadow-emerald-200/40 bg-gradient-to-br from-white via-emerald-50/20 to-white"
-              : "border-rose-400 shadow-rose-200/40 bg-gradient-to-br from-white via-rose-50/20 to-white"
+              ? "border-emerald-500 shadow-emerald-200/50 bg-gradient-to-br from-white via-emerald-50/20 to-white"
+              : "border-red-600 shadow-red-200/60 bg-gradient-to-br from-white via-red-50/25 to-white animate-[redAlertBlink_1.2s_ease-in-out_infinite]"
           )}
         >
-          {/* Subtle Ambient Glow */}
-          <div 
-            className={cn(
-              "absolute -top-32 -right-32 w-96 h-96 rounded-full blur-3xl pointer-events-none opacity-20",
-              currentSlide.isBestPerformer ? "bg-emerald-400" : "bg-rose-400"
-            )}
-          />
+          {/* Custom style for red alert blinking when worst / lagging performer */}
+          <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes redAlertBlink {
+              0%, 100% {
+                border-color: #dc2626;
+                box-shadow: 0 0 35px rgba(220, 38, 38, 0.45), inset 0 0 15px rgba(220, 38, 38, 0.08);
+                background-color: #ffffff;
+              }
+              50% {
+                border-color: #f87171;
+                box-shadow: 0 0 10px rgba(220, 38, 38, 0.15);
+                background-color: #fef2f2;
+              }
+            }
+          `}} />
 
-          {/* TOP BANNER RIBBON (SP44 + Count | Speed | Production) */}
-          <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200 mb-8">
+          {/* 👏 Clap celebration overlay for BEST PERFORMER */}
+          {currentSlide.isBestPerformer && <ClapCelebration />}
+
+          {/* 🚨 Flashing Red Emergency Banner for WORST / LAGGING PERFORMER */}
+          {!currentSlide.isBestPerformer && (
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-full mb-6 p-3 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-600 text-white flex items-center justify-between px-6 shadow-xl border-2 border-red-400 animate-pulse"
+            >
+              <div className="flex items-center gap-3">
+                <span className="w-3.5 h-3.5 rounded-full bg-white animate-ping" />
+                <span className="text-xs sm:text-sm font-black uppercase tracking-wider">
+                  ⚠️ ATTENTION: LOW ROUNDS / LAGGING CADENCE DETECTED ON THIS FRAME!
+                </span>
+              </div>
+              <span className="text-xs font-mono font-black bg-black/25 px-3 py-1 rounded-xl">
+                {currentSlide.completedRounds} OF {currentSlide.expectedRounds} ROUNDS
+              </span>
+            </motion.div>
+          )}
+
+          {/* TOP BANNER RIBBON (SP44 + Count | Incentive Amount | Speed | Production) */}
+          <div className="flex flex-wrap items-center justify-between gap-6 pb-6 border-b border-slate-200 mb-8">
             {/* Top-Left: Machine No & Yarn Count (e.g. SP44 / SP009) */}
             <div>
               <h1 className="text-4xl sm:text-6xl font-black text-stone-900 tracking-tight leading-none">
@@ -551,35 +664,48 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               </div>
             </div>
 
-            {/* Top-Middle: Speed (RPM) */}
-            <div className="flex flex-col items-center">
-              <span className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-400 mb-0.5">
-                SPEED
-              </span>
-              <span className="text-3xl sm:text-5xl font-black text-stone-900 tabular-nums">
-                {currentSlide.rpm.toLocaleString()} <span className="text-base sm:text-xl font-bold text-slate-400">RPM</span>
-              </span>
-            </div>
+            {/* Top-Right Metrics: INCENTIVE AMOUNT | SPEED | PRODUCTION */}
+            <div className="flex flex-wrap items-center gap-4 sm:gap-8">
+              {/* 1. Incentive Amount */}
+              <div className="flex flex-col items-center sm:items-start px-4 py-2.5 bg-emerald-50 border border-emerald-300/80 rounded-2xl shadow-xs">
+                <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-emerald-800 mb-0.5 flex items-center gap-1">
+                  <span>💰</span> INCENTIVE AMOUNT
+                </span>
+                <span className="text-2xl sm:text-4xl font-black text-emerald-700 tabular-nums">
+                  ₹{currentSlide.incentiveAmount.toLocaleString('en-IN')}
+                </span>
+              </div>
 
-            {/* Top-Right: Production (kg) */}
-            <div className="flex flex-col items-end">
-              <span className="text-xs sm:text-sm font-black uppercase tracking-widest text-slate-400 mb-0.5">
-                PRODUCTION
-              </span>
-              <span className="text-3xl sm:text-5xl font-black text-stone-900 tabular-nums">
-                {currentSlide.productionKg.toFixed(1)} <span className="text-base sm:text-xl font-bold text-slate-400">kg</span>
-              </span>
+              {/* 2. Speed (RPM) */}
+              <div className="flex flex-col items-center px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl shadow-xs">
+                <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-slate-500 mb-0.5 flex items-center gap-1">
+                  <span>⚡</span> SPEED
+                </span>
+                <span className="text-2xl sm:text-4xl font-black text-stone-900 tabular-nums">
+                  {currentSlide.rpm.toLocaleString()} <span className="text-sm sm:text-base font-bold text-slate-400">RPM</span>
+                </span>
+              </div>
+
+              {/* 3. Production (kg) */}
+              <div className="flex flex-col items-center sm:items-end px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl shadow-xs">
+                <span className="text-[11px] sm:text-xs font-black uppercase tracking-widest text-slate-500 mb-0.5 flex items-center gap-1">
+                  <span>📦</span> PRODUCTION
+                </span>
+                <span className="text-2xl sm:text-4xl font-black text-stone-900 tabular-nums">
+                  {currentSlide.productionKg.toFixed(1)} <span className="text-sm sm:text-base font-bold text-slate-400">kg</span>
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* MAIN GRID: EXACT MATCH TO USER'S HANDWRITTEN SKETCH */}
+          {/* MAIN GRID: EXACT MATCH TO USER'S HANDWRITTEN SKETCH (BIGGER IMAGE SIZE) */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* LEFT COLUMN: OPERATOR PHOTO + NAME & T. NO (Stacked) */}
-            <div className="lg:col-span-4 flex flex-col items-center">
-              {/* Operator Photo Box */}
+            {/* LEFT COLUMN: BIGGER OPERATOR PHOTO + NAME & T. NO (Stacked) */}
+            <div className="lg:col-span-4 xl:col-span-4 flex flex-col items-center">
+              {/* Operator Photo Box - SUBSTANTIALLY BIGGER */}
               <div className={cn(
-                "w-52 h-64 sm:w-60 sm:h-72 rounded-3xl overflow-hidden border-4 shadow-xl bg-slate-100 relative flex items-center justify-center transition-all",
-                currentSlide.isBestPerformer ? "border-emerald-500 shadow-emerald-200" : "border-rose-400 shadow-rose-200"
+                "w-64 h-80 sm:w-72 sm:h-96 md:w-80 md:h-[400px] xl:w-96 xl:h-[440px] rounded-3xl overflow-hidden border-4 shadow-2xl bg-slate-100 relative flex items-center justify-center transition-all",
+                currentSlide.isBestPerformer ? "border-emerald-500 shadow-emerald-200/80" : "border-red-500 shadow-red-200/80"
               )}>
                 {currentSlide.operatorPhoto ? (
                   <img 
@@ -589,32 +715,32 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center text-slate-400">
-                    <User size={64} className="mb-2 text-slate-300" />
-                    <span className="text-xs font-black uppercase tracking-wider">NO PHOTO</span>
+                    <User size={84} className="mb-2 text-slate-300" />
+                    <span className="text-sm font-black uppercase tracking-wider text-slate-400">NO PHOTO</span>
                   </div>
                 )}
                 {/* Live Shift Active Badge */}
-                <div className="absolute top-3 right-3 px-3 py-1 rounded-full bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-md flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                <div className="absolute top-4 right-4 px-3.5 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-black uppercase tracking-wider shadow-lg flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                   {currentSlide.liveShiftName}
                 </div>
               </div>
 
-              {/* Name & T. NO Box (Directly below the photo, matching the sketch) */}
-              <div className="w-52 sm:w-60 mt-4 p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-center shadow-md">
+              {/* Name & T. NO Box (Directly below the photo, matching the sketch width) */}
+              <div className="w-64 sm:w-72 md:w-80 xl:w-96 mt-4 p-4 sm:p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl text-center shadow-md">
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-0.5">
                   OPERATOR NAME
                 </span>
-                <h2 className="text-xl sm:text-2xl font-black text-stone-900 uppercase tracking-tight truncate">
+                <h2 className="text-xl sm:text-3xl font-black text-stone-900 uppercase tracking-tight truncate">
                   {currentSlide.operatorName}
                 </h2>
-                <div className="text-xs sm:text-sm font-mono font-black text-emerald-700 mt-1">
+                <div className="text-sm sm:text-base font-mono font-black text-emerald-700 mt-1">
                   T. NO: {currentSlide.operatorToken}
                 </div>
 
                 {/* If 2 separate operators for D1 & D2, show both details */}
                 {currentSlide.hasDualOperators && currentSlide.d1OperatorName && currentSlide.d2OperatorName && (
-                  <div className="mt-2.5 pt-2.5 border-t border-slate-200 text-[11px] font-mono text-slate-600 text-left space-y-1">
+                  <div className="mt-3 pt-3 border-t border-slate-200 text-xs font-mono text-slate-600 text-left space-y-1">
                     <div className="truncate">
                       <span className="font-bold text-cyan-800">D1:</span> {currentSlide.d1OperatorName} ({currentSlide.d1OperatorToken})
                     </div>
@@ -627,7 +753,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             </div>
 
             {/* RIGHT COLUMN: TELEMETRY & PERFORMANCE SCORE */}
-            <div className="lg:col-span-8 flex flex-col space-y-5">
+            <div className="lg:col-span-8 xl:col-span-8 flex flex-col space-y-5">
               {/* SUB-ROW 1: [Rounds] | [Total Taps / Target Taps] | [D1: Taps / D2: Taps] */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Box 1: Rounds */}
@@ -682,12 +808,12 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 "w-full p-5 sm:p-6 rounded-2xl border-2 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4 transition-all",
                 currentSlide.isBestPerformer
                   ? "bg-emerald-50 border-emerald-500 shadow-emerald-100"
-                  : "bg-rose-50 border-rose-400 shadow-rose-100"
+                  : "bg-red-50 border-red-500 shadow-red-100"
               )}>
                 <div className="flex items-center gap-3.5">
                   <div className={cn(
                     "w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl shadow-md shrink-0",
-                    currentSlide.isBestPerformer ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+                    currentSlide.isBestPerformer ? "bg-emerald-500 text-white" : "bg-red-600 text-white"
                   )}>
                     {currentSlide.isBestPerformer ? <Trophy size={28} /> : <AlertTriangle size={28} />}
                   </div>
@@ -709,7 +835,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 <div className="flex items-baseline gap-2">
                   <span className={cn(
                     "text-6xl sm:text-8xl font-black tracking-tight tabular-nums drop-shadow-xs",
-                    currentSlide.isBestPerformer ? "text-emerald-600" : "text-rose-600"
+                    currentSlide.isBestPerformer ? "text-emerald-600" : "text-red-600"
                   )}>
                     {currentSlide.performanceScore}%
                   </span>
@@ -773,7 +899,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                 className={cn(
                   "h-2 rounded-full transition-all cursor-pointer",
                   idx === currentIndex 
-                    ? (s.isBestPerformer ? "w-8 bg-emerald-500" : "w-8 bg-rose-500")
+                    ? (s.isBestPerformer ? "w-8 bg-emerald-500" : "w-8 bg-red-600")
                     : "w-2 bg-slate-300 hover:bg-slate-400"
                 )}
                 title={`Go to Machine ${s.frameNo} (${s.operatorName})`}

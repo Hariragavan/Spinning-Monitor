@@ -2323,6 +2323,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       report={safeDailyReport}
                       machines={machines}
                       workers={workers}
+                      rules={rules}
                       settings={settings}
                       selectedShed={selectedShed as Shed}
                     />
