@@ -38,6 +38,7 @@ import { CountSummary } from './CountSummary';
 import { CountWiseFrames } from './CountWiseFrames';
 import { MonthlyCountGpss } from './MonthlyCountGpss';
 import { CalendarDatePicker } from './CalendarPickers';
+import { IotTvPerformance } from './IotTvPerformance';
 
 export interface TvSubPageDef {
   id: string; // matches component routing key
@@ -344,6 +345,22 @@ export const TV_MAIN_PAGES: TvMainPageDef[] = [
         shortTitle: 'Shift Comparison',
         defaultSeconds: 20,
         description: 'Comparative telemetry across Shift I, Shift II, and Shift III for the selected date'
+      }
+    ]
+  },
+  {
+    id: 'main-iot-performance',
+    chapterNumber: 16,
+    title: 'IoT Machine Patrol & Quality Telemetry',
+    subtitle: 'Assigned operator rounds, patrol performance score & spindle end-mending quality per machine',
+    icon: Activity,
+    subPages: [
+      {
+        id: 'iot-performance',
+        title: 'IoT Machine Patrol Telemetry',
+        shortTitle: 'IoT Patrol',
+        defaultSeconds: 20,
+        description: 'Per-machine live telemetry, operator rounds, activity window, big performance score & LH/RH EM'
       }
     ]
   }
@@ -2296,6 +2313,19 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                         </div>
                       )}
                     </div>
+                  </div>
+                );
+
+              case 'iot-performance':
+                return (
+                  <div className="w-full max-w-full">
+                    <IotTvPerformance
+                      report={safeDailyReport}
+                      machines={machines}
+                      workers={workers}
+                      settings={settings}
+                      selectedShed={selectedShed as Shed}
+                    />
                   </div>
                 );
 

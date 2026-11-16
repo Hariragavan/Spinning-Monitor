@@ -2192,7 +2192,15 @@ export default function Home() {
       case 'iot-configuration':
         return (
           <div className="iot-system-scope w-full">
-            <IotConfiguration />
+            <IotConfiguration
+              workers={workers}
+              machines={machines}
+              systemSettings={settings}
+              onUpdateSettings={async (updated) => {
+                setSettings(updated);
+                await apiClient.saveSettings(updated);
+              }}
+            />
           </div>
         );
       case 'iot-shifts':

@@ -9,16 +9,35 @@ import {
   MachineMapping,
   MachineMappingInput
 } from '@/types/iot';
+import { Sider, MachineMasterItem, SystemSettings } from '@/types';
 import { iotApi } from '@/lib/iot/iotApi';
+import { apiClient } from '@/lib/api';
 import { employeeLabel } from '@/lib/iot/employeeDisplay';
 
-export const IotConfiguration: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'assign_devices' | 'rpm_bounds' | 'machine_config' | 'machine_mapping'>('assign_devices');
+export interface IotConfigurationProps {
+  workers?: Sider[];
+  machines?: MachineMasterItem[];
+  systemSettings?: SystemSettings;
+  onUpdateSettings?: (settings: SystemSettings) => Promise<void>;
+}
+
+export const IotConfiguration: React.FC<IotConfigurationProps> = ({
+  workers = [],
+  machines: machinesProp = [],
+  systemSettings,
+  onUpdateSettings
+}) => {
+  const [activeSubTab, setActiveSubTab] = useState<'assign_devices' | 'rpm_bounds' | 'machine_config' | 'device_mapping' | 'machine_mapping'>('assign_devices');
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [devices, setDevices] = useState<DeviceHealth[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [mappings, setMappings] = useState<MachineMapping[]>([]);
+
+  // Production Machine Mapping State (Tab 5)
+  const [productionMappings, setProductionMappings] = useState<Record<string, string>>({});
+  const [masterWorkers, setMasterWorkers] = useState<Sider[]>(workers);
+  const [productionFrames, setProductionFrames] = useState<MachineMasterItem[]>(machinesProp);
 
   // Tab 1 state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -75,8 +94,106 @@ export const IotConfiguration: React.FC = () => {
         });
         setSequenceText((first.roundDeviceSequence || ['IOT_D1', 'IOT_D2']).join(' -> '));
       }
+
+      // Load Production Machines & Employee Master for Tab 5
+      try {
+        let currentFrames = machinesProp;
+        if (!currentFrames || currentFrames.length === 0) {
+          const mRes = await fetch('/api/machines').then(r => r.json()).catch(() => null);
+          if (mRes?.data && Array.isArray(mRes.data)) {
+            currentFrames = mRes.data;
+            setProductionFrames(mRes.data);
+          }
+        }
+
+        let currentWorkersList = workers;
+        if (!currentWorkersList || currentWorkersList.length === 0) {
+          const wRes = await fetch('/api/workers').then(r => r.json()).catch(() => null);
+          if (wRes?.data && Array.isArray(wRes.data)) {
+            currentWorkersList = wRes.data;
+            setMasterWorkers(wRes.data);
+          }
+        }
+
+        // Load existing mappings from settings
+        let settingsData = systemSettings;
+        if (!settingsData) {
+          const sRes = await fetch('/api/settings').then(r => r.json()).catch(() => null);
+          if (sRes?.data) settingsData = sRes.data;
+        }
+
+        const rawMap = settingsData?.iotMachineMapping || settingsData?.machineToMachineMapping || {};
+        const pMap: Record<string, string> = {};
+        Object.entries(rawMap).forEach(([k, v]) => {
+          if (k && v) {
+            pMap[k.trim().toUpperCase()] = v.trim().toUpperCase();
+            pMap[v.trim().toUpperCase()] = k.trim().toUpperCase();
+          }
+        });
+        setProductionMappings(pMap);
+      } catch (e) {
+        console.error('Failed to load production mapping dependencies:', e);
+      }
     } catch (err) {
       console.error('Failed to load configuration:', err);
+    }
+  };
+
+  const handleProductionFrameSelect = (iotKey: string, frameNo: string) => {
+    setProductionMappings(prev => {
+      const updated = { ...prev };
+      const cleanKey = iotKey.trim().toUpperCase();
+      if (!frameNo) {
+        delete updated[cleanKey];
+      } else {
+        updated[cleanKey] = frameNo.trim().toUpperCase();
+      }
+      return updated;
+    });
+  };
+
+  const saveProductionAssignments = async () => {
+    setSaving(true);
+    try {
+      // Build clean mapping: { [spinningFrame]: iotMachine }
+      const cleanIotMap: Record<string, string> = {};
+      const pairs: { spinningFrame: string; iotMachine: string }[] = [];
+
+      mappings.forEach(m => {
+        const iotName = m.name?.trim().toUpperCase();
+        const iotId = m.mappingId?.trim().toUpperCase();
+        const mappedFrame = productionMappings[iotName] || productionMappings[iotId];
+        if (mappedFrame && mappedFrame !== 'NONE') {
+          cleanIotMap[mappedFrame] = iotName || iotId;
+          pairs.push({ spinningFrame: mappedFrame, iotMachine: iotName || iotId });
+        }
+      });
+
+      const updatedSettings: SystemSettings = {
+        ...(systemSettings || {
+          autoUpdateEnabled: false,
+          lastSyncDate: null,
+          tvInterval: 15,
+          tvSubInterval: 5,
+          machineSiderCounts: {},
+          gaiterCounts: { I: 1, II: 1, III: 1 }
+        }),
+        iotMachineMapping: cleanIotMap,
+        machineToMachineMapping: cleanIotMap,
+        machinePairs: pairs
+      };
+
+      if (onUpdateSettings) {
+        await onUpdateSettings(updatedSettings);
+      } else {
+        await apiClient.saveSettings(updatedSettings);
+      }
+
+      showMsg('Production machine assignments saved successfully.');
+    } catch (err: any) {
+      showMsg('Failed to save machine assignments: ' + (err?.message || 'Error'), 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -297,10 +414,16 @@ export const IotConfiguration: React.FC = () => {
           ▦ 3. Machine Production &amp; Rounds
         </button>
         <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'device_mapping' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('device_mapping')}
+        >
+          📡 4. Device Mapping
+        </button>
+        <button
           className={`tab-btn cursor-pointer ${activeSubTab === 'machine_mapping' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('machine_mapping')}
         >
-          ⇄ 4. Machine Mapping
+          🔄 5. Machine Mapping
         </button>
       </section>
 
@@ -563,13 +686,13 @@ export const IotConfiguration: React.FC = () => {
         </section>
       )}
 
-      {/* Section 4: Machine Mapping */}
-      {activeSubTab === 'machine_mapping' && (
+      {/* Section 4: Device Mapping (Renamed from Machine Mapping) */}
+      {activeSubTab === 'device_mapping' && (
         <section className="card">
           <div className="card-header">
             <div>
-              <h3 className="card-title">{editingMappingId ? `Edit ${editingMappingId}` : 'Map stations to a machine'}</h3>
-              <p className="card-subtitle">Group tap stations into one production machine. Only mapped machines appear in Production Entry.</p>
+              <h3 className="card-title">{editingMappingId ? `Edit ${editingMappingId}` : 'Map Devices & Stations to IoT Machine'}</h3>
+              <p className="card-subtitle">Group hardware sensor and RFID tap stations into an IoT machine profile. Only mapped devices report patrol rounds.</p>
             </div>
             <div className="mapping-actions flex items-center gap-2">
               {editingMappingId && (
@@ -582,7 +705,7 @@ export const IotConfiguration: React.FC = () => {
                 onClick={saveMapping}
                 disabled={saving || !mappingForm.name.trim() || !mappingForm.stationIds.length}
               >
-                💾 {editingMappingId ? 'Save changes' : 'Save mapping'}
+                💾 {editingMappingId ? 'Save changes' : 'Save device mapping'}
               </button>
             </div>
           </div>
@@ -717,7 +840,180 @@ export const IotConfiguration: React.FC = () => {
                 ))}
                 {!mappings.length && (
                   <tr>
-                    <td colSpan={4} className="text-center py-4">No machines mapped yet.</td>
+                    <td colSpan={4} className="text-center py-4">No device mappings created yet. Group device stations above first.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Section 5: Machine Mapping (IoT Machine to Production Machine) */}
+      {activeSubTab === 'machine_mapping' && (
+        <section className="card">
+          <div className="card-header">
+            <div>
+              <h3 className="card-title">IoT Machine to Production Machine Assignment</h3>
+              <p className="card-subtitle">
+                Assign each IoT Machine profile to its physical spinning production frame (e.g. SP009, SP010). 
+                Operator photo and token number are automatically resolved from Employee Master.
+              </p>
+            </div>
+            <div className="mapping-actions flex items-center gap-2">
+              <button
+                className="btn btn-primary cursor-pointer"
+                onClick={saveProductionAssignments}
+                disabled={saving}
+              >
+                💾 Save Machine Assignments
+              </button>
+            </div>
+          </div>
+
+          <div className="table-wrapper mt-4">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '25%' }}>IoT Machine &amp; Connected Devices</th>
+                  <th style={{ width: '30%' }}>Production Machine (SP009..)</th>
+                  <th style={{ width: '30%' }}>Assigned Operator (from Devices &amp; Master)</th>
+                  <th style={{ width: '15%' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mappings.map(m => {
+                  const iotKey = (m.mappingId || m.name || '').trim().toUpperCase();
+                  const currentSelectedFrame = productionMappings[iotKey] || productionMappings[m.name?.trim().toUpperCase()] || '';
+
+                  // Find operator who is assigned to this IoT unit's devices
+                  const assignedEmp = employees.find(emp => 
+                    emp.assignedDeviceIds && emp.assignedDeviceIds.some(did => m.stationIds.includes(did))
+                  );
+
+                  // Match with Employee Master (masterWorkers) for Photo & Token
+                  const matchedWorker = masterWorkers.find(w => 
+                    (assignedEmp && w.tNo && w.tNo.trim().toLowerCase() === assignedEmp.employeeId?.trim().toLowerCase()) ||
+                    (assignedEmp && w.id && w.id.trim().toLowerCase() === assignedEmp.employeeId?.trim().toLowerCase()) ||
+                    (assignedEmp && w.name && w.name.trim().toLowerCase() === assignedEmp.employeeName?.trim().toLowerCase())
+                  );
+
+                  const displayName = matchedWorker?.name || assignedEmp?.employeeName || 'No operator assigned to devices';
+                  const displayToken = matchedWorker?.tNo || assignedEmp?.employeeId || '';
+                  const photoUrl = matchedWorker?.photoUrl;
+
+                  // Unique available frames list
+                  const allFrames = Array.from(new Set([
+                    ...productionFrames.map(pf => pf.rfNo || (pf as any).frameNo).filter(Boolean),
+                    'SP009', 'SP010', 'SP011', 'SP012', 'SP013', 'SP014', 'SP015', 'SP016', 'SP017', 'SP018',
+                    'SP024', 'SP028', 'SP039', 'SP040', 'SP041', 'SP042', 'SP043', 'SP044',
+                    'SP023', 'SP045', 'SP046', 'SP047', 'SP048', 'SP049', 'SP050', 'SP051', 'SP052', 'SP053', 'SP054', 'SP055',
+                    'K01', 'K02', 'K03', 'K04', 'K05', 'K06'
+                  ])).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+                  return (
+                    <tr key={m.mappingId}>
+                      {/* 1. IoT Machine Name & Connected Devices */}
+                      <td>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <strong className="text-stone-900 text-sm font-black">{m.name}</strong>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-stone-100 border border-stone-200 text-stone-600">
+                              {m.mappingId}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                            <span className="text-[11px] font-semibold text-stone-500">
+                              {m.stationIds.length} {m.stationIds.length === 1 ? 'Device' : 'Devices'}:
+                            </span>
+                            {m.stationIds.length > 0 ? (
+                              m.stationIds.map(st => (
+                                <span key={st} className="px-1.5 py-0.5 rounded bg-cyan-50 border border-cyan-200 text-[10px] font-mono font-bold text-cyan-800">
+                                  {st}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-[10px] text-stone-400 italic">No devices linked</span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 2. Production Machine Assignment Dropdown */}
+                      <td>
+                        <select
+                          value={currentSelectedFrame}
+                          onChange={(e) => handleProductionFrameSelect(iotKey, e.target.value)}
+                          className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl text-xs font-black text-stone-900 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all cursor-pointer"
+                        >
+                          <option value="">-- Assign Production Frame --</option>
+                          {allFrames.map(f => (
+                            <option key={f} value={f}>
+                              {f}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* 3. Assigned Operator (from Devices & Master) */}
+                      <td>
+                        <div className="flex items-center gap-3">
+                          {/* Operator Photo */}
+                          <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-500 shadow-2xs shrink-0 flex items-center justify-center bg-stone-100">
+                            {photoUrl ? (
+                              <img 
+                                src={photoUrl} 
+                                alt={displayName} 
+                                className="w-full h-full object-cover" 
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-emerald-100 text-emerald-800 text-xs font-black">
+                                {displayName && displayName !== 'No operator assigned to devices' 
+                                  ? displayName.slice(0, 2).toUpperCase() 
+                                  : '👤'}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Operator Details */}
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-stone-900 truncate">
+                              {displayName}
+                            </div>
+                            {displayToken && (
+                              <div className="text-[11px] font-mono font-bold text-emerald-700">
+                                T.No: {displayToken}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 4. Mapping Status */}
+                      <td>
+                        {currentSelectedFrame ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                            {currentSelectedFrame} Linked
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                            Unassigned
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {!mappings.length && (
+                  <tr>
+                    <td colSpan={4} className="text-center py-8 text-stone-500">
+                      <p className="text-sm font-bold">No IoT Machine Profiles Found</p>
+                      <p className="text-xs text-stone-400 mt-1">
+                        Please create an IoT Machine profile and map devices in <strong>Tab 4: Device Mapping</strong> first.
+                      </p>
+                    </td>
                   </tr>
                 )}
               </tbody>
