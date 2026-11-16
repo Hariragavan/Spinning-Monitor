@@ -44,6 +44,9 @@ export interface MachineRunningStatusItem {
   speed: number;
   speedUnit: string;
   count: string;
+  production?: number;
+  shiftProduction?: number;
+  gps?: number;
   emLeft?: number;
   emRight?: number;
   emTotal?: number;
@@ -246,6 +249,8 @@ export async function getLightweightMachineStatuses(): Promise<{
         const speed = Number(m.spindleSpeedCurrent ?? 0);
         const speedUnit = String(m.spindleSpeedUnit || 'rpm');
         const count = String(m.count || '');
+        const shiftProduction = Number(m.shiftProduction ?? m.production ?? 0);
+        const gps = Number(m.gps ?? m.currentGps ?? 0);
 
         const sideL = (m.sides || []).find((s: any) => s.side === 'L');
         const sideR = (m.sides || []).find((s: any) => s.side === 'R');
@@ -263,6 +268,9 @@ export async function getLightweightMachineStatuses(): Promise<{
           speed,
           speedUnit,
           count,
+          production: shiftProduction,
+          shiftProduction,
+          gps,
           emLeft,
           emRight,
           emTotal,

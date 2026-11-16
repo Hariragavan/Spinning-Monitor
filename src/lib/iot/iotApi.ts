@@ -325,7 +325,7 @@ export const iotApi = {
       const res = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
         `${this.baseUrl}/dashboard/employee?${params.toString()}`
       );
-      if (res?.data) return res.data;
+      if (res?.data && res.data.length > 0) return res.data;
     } catch { }
 
     const localRes = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
@@ -333,6 +333,20 @@ export const iotApi = {
       { method: 'GET' },
       { success: true, data: list }
     );
+    if (localRes?.data && localRes.data.length > 0) return localRes.data;
+
+    // Fallback: If filtered call returned empty, fetch latest unfiltered metrics so live activity is never dropped
+    if (params.has('date') || params.has('shiftName')) {
+      try {
+        const unfilt = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
+          `/api/iot/dashboard/employee`,
+          { method: 'GET' },
+          { success: true, data: [] }
+        );
+        if (unfilt?.data && unfilt.data.length > 0) return unfilt.data;
+      } catch { }
+    }
+
     return localRes.data || list;
   },
 
@@ -1089,6 +1103,9 @@ export const iotApi = {
       speed: number;
       speedUnit: string;
       count: string;
+      production?: number;
+      shiftProduction?: number;
+      gps?: number;
       emLeft?: number;
       emRight?: number;
       emTotal?: number;
