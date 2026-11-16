@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DailyReport, CountConversion, Sider, Shift, MachineEmData, SystemSettings } from '../types';
 import { cn, resolveWorker, normalizeToCanonicalDate, getMachineEmValue, resolveEffectiveMappingForDate } from '../lib/utils';
 import { useKeepAwake } from '../lib/useKeepAwake';
+import { iotApi } from '../lib/iot/iotApi';
 import { 
   Activity, Gauge, Users, Zap, Calendar, ChevronLeft, ChevronRight, 
   Layers, CheckCircle2, TrendingUp, UserCheck, ShieldCheck, Play, Pause,
@@ -73,8 +74,16 @@ const isCountMatch = (a: string, b: string): boolean => {
  */
 export const FourSpindleRollAnimation: React.FC<{
   className?: string;
-}> = ({ className }) => {
+  status?: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE';
+}> = ({ className, status = 'RUN' }) => {
   const spindleCenters = [11, 29, 47, 65];
+  const isDoffing = status === 'DOFF';
+  const isStopped = status === 'STOP' || status === 'OFFLINE';
+
+  const yarnBaseColor = isDoffing ? '#d97706' : isStopped ? '#94a3b8' : '#059669';
+  const tapeColor = isDoffing ? '#d97706' : isStopped ? '#94a3b8' : '#059669';
+  const coilHighlightColor = isDoffing ? '#fef3c7' : isStopped ? '#e2e8f0' : '#ffffff';
+  const coilShadowColor = isDoffing ? '#78350f' : isStopped ? '#64748b' : '#064e3b';
 
   return (
     <div className={cn("inline-flex items-center select-none shrink-0", className)}>
@@ -94,11 +103,23 @@ export const FourSpindleRollAnimation: React.FC<{
               0% { stroke-dashoffset: 0; }
               100% { stroke-dashoffset: 12; }
             }
+            @keyframes doffingReload {
+              0% { transform: translateY(0px); opacity: 1; }
+              30% { transform: translateY(-16px); opacity: 0.2; }
+              35% { transform: translateY(-22px); opacity: 0; }
+              45% { transform: translateY(18px); opacity: 0; }
+              56% { transform: translateY(6px); opacity: 0.7; }
+              76% { transform: translateY(0px); opacity: 1; }
+              100% { transform: translateY(0px); opacity: 1; }
+            }
             .spindle-yarn-scroll {
-              animation: rollYarnDown 0.38s linear infinite;
+              animation: ${isStopped || isDoffing ? 'none' : 'rollYarnDown 0.38s linear infinite'};
             }
             .spindle-tape-scroll {
-              animation: tapeDriveRoll 0.38s linear infinite;
+              animation: ${isStopped || isDoffing ? 'none' : 'tapeDriveRoll 0.38s linear infinite'};
+            }
+            .spindle-bobbin-doff {
+              animation: ${isDoffing ? 'doffingReload 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite' : 'none'};
             }
           `}</style>
 
@@ -120,7 +141,7 @@ export const FourSpindleRollAnimation: React.FC<{
           y1="25.5"
           x2="71"
           y2="25.5"
-          stroke="#059669"
+          stroke={tapeColor}
           strokeWidth="1.2"
           strokeDasharray="3 2"
           className="spindle-tape-scroll"
@@ -133,46 +154,49 @@ export const FourSpindleRollAnimation: React.FC<{
             <line x1={cx} y1={1.5} x2={cx} y2={5} stroke="#334155" strokeWidth="1.5" strokeLinecap="round" />
             <circle cx={cx} cy={1.5} r="0.8" fill="#0f172a" />
 
-            {/* Bobbin Top Crown Collar */}
-            <path d={`M ${cx - 3} 5 L ${cx + 3} 5 L ${cx + 3.5} 7 L ${cx - 3.5} 7 Z`} fill="#64748b" />
+            {/* Bobbin Package (With Doffing Reload animation if DOFFING) */}
+            <g className={isDoffing ? "spindle-bobbin-doff" : undefined}>
+              {/* Bobbin Top Crown Collar */}
+              <path d={`M ${cx - 3} 5 L ${cx + 3} 5 L ${cx + 3.5} 7 L ${cx - 3.5} 7 Z`} fill={isDoffing ? '#b45309' : '#64748b'} />
 
-            {/* Wound Yarn Cop Body (Clipped to tapered bobbin) */}
-            <g clipPath={`url(#bobbin-clip-${idx})`}>
-              {/* Base Yarn Body (Emerald Green) */}
-              <rect x={cx - 6} y={6} width={12} height={19} fill="#059669" />
+              {/* Wound Yarn Cop Body (Clipped to tapered bobbin) */}
+              <g clipPath={`url(#bobbin-clip-${idx})`}>
+                {/* Base Yarn Body */}
+                <rect x={cx - 6} y={6} width={12} height={19} fill={yarnBaseColor} />
 
-              {/* Animated Rolling Thread Windings (Moving down continuously) */}
-              <g className="spindle-yarn-scroll">
-                {[-12, -4, 4, 12, 20, 28].map((yOffset, sIdx) => (
-                  <g key={sIdx}>
-                    {/* White highlight yarn coil */}
-                    <line
-                      x1={cx - 6}
-                      y1={yOffset}
-                      x2={cx + 6}
-                      y2={yOffset + 3.5}
-                      stroke="#ffffff"
-                      strokeWidth="1.1"
-                      strokeOpacity="0.85"
-                    />
-                    {/* Deep green shadow coil */}
-                    <line
-                      x1={cx - 6}
-                      y1={yOffset + 2}
-                      x2={cx + 6}
-                      y2={yOffset + 5.5}
-                      stroke="#064e3b"
-                      strokeWidth="1"
-                      strokeOpacity="0.75"
-                    />
-                  </g>
-                ))}
+                {/* Animated Rolling Thread Windings (Moving down continuously if RUNNING) */}
+                <g className="spindle-yarn-scroll">
+                  {[-12, -4, 4, 12, 20, 28].map((yOffset, sIdx) => (
+                    <g key={sIdx}>
+                      {/* Highlight yarn coil */}
+                      <line
+                        x1={cx - 6}
+                        y1={yOffset}
+                        x2={cx + 6}
+                        y2={yOffset + 3.5}
+                        stroke={coilHighlightColor}
+                        strokeWidth="1.1"
+                        strokeOpacity="0.85"
+                      />
+                      {/* Shadow coil */}
+                      <line
+                        x1={cx - 6}
+                        y1={yOffset + 2}
+                        x2={cx + 6}
+                        y2={yOffset + 5.5}
+                        stroke={coilShadowColor}
+                        strokeWidth="1"
+                        strokeOpacity="0.75"
+                      />
+                    </g>
+                  ))}
+                </g>
+
+                {/* 3D Cylindrical Light Reflection Overlay */}
+                <rect x={cx - 1.5} y={7} width={2.2} height={17} fill="#ffffff" fillOpacity={isStopped ? "0.15" : "0.32"} />
+                <line x1={cx - 4} y1={7} x2={cx - 4.8} y2={24} stroke={coilShadowColor} strokeWidth="0.8" strokeOpacity="0.6" />
+                <line x1={cx + 4} y1={7} x2={cx + 4.8} y2={24} stroke={coilShadowColor} strokeWidth="0.8" strokeOpacity="0.6" />
               </g>
-
-              {/* 3D Cylindrical Light Reflection Overlay */}
-              <rect x={cx - 1.5} y={7} width={2.2} height={17} fill="#ffffff" fillOpacity="0.32" />
-              <line x1={cx - 4} y1={7} x2={cx - 4.8} y2={24} stroke="#064e3b" strokeWidth="0.8" strokeOpacity="0.6" />
-              <line x1={cx + 4} y1={7} x2={cx + 4.8} y2={24} stroke="#064e3b" strokeWidth="0.8" strokeOpacity="0.6" />
             </g>
 
             {/* Spindle Wharve (Pulleys connected to tape) */}
@@ -286,6 +310,91 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
       settings?.iotMachineMapping
     );
   }, [report.date, settings]);
+
+  // 2b. Live machine running status from IoT endpoint (RUN, DOFF, STOP)
+  const [liveMachineStatuses, setLiveMachineStatuses] = useState<
+    Record<string, { runStatus: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE'; statusBadge: string; speed: number }>
+  >({});
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveStatuses = async () => {
+      try {
+        const data = await iotApi.getLightweightMachineStatus();
+        if (data?.machines && Array.isArray(data.machines) && isMounted) {
+          const map: Record<string, { runStatus: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE'; statusBadge: string; speed: number }> = {};
+          data.machines.forEach(m => {
+            const key = (m.machine || '').trim().toUpperCase();
+            if (key) {
+              map[key] = {
+                runStatus: m.runStatus,
+                statusBadge: m.statusBadge,
+                speed: m.speed || 0
+              };
+            }
+          });
+          setLiveMachineStatuses(map);
+        }
+      } catch (_) {}
+    };
+
+    fetchLiveStatuses();
+    const interval = setInterval(fetchLiveStatuses, 30000); // 30s live status poll
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Helper to determine live machine status for any frame
+  const getFrameLiveStatus = useCallback((frameNo: string): 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE' => {
+    if (!frameNo) return 'RUN';
+    const cleanFrame = frameNo.trim().toUpperCase();
+    const cleanNum = cleanFrame.replace(/\D/g, '');
+
+    // 1. Check mapped IoT machine from effectiveMapping or settings
+    const mappedIot = (
+      effectiveMapping?.[frameNo] ||
+      effectiveMapping?.[cleanFrame] ||
+      (settings?.iotMachineMapping as any)?.[frameNo] ||
+      (settings?.iotMachineMapping as any)?.[cleanFrame] ||
+      (settings?.machineToMachineMapping as any)?.[frameNo] ||
+      (settings?.machineToMachineMapping as any)?.[cleanFrame] ||
+      ''
+    ).trim().toUpperCase();
+
+    // Candidates to match against live status keys
+    const candidates = [
+      mappedIot,
+      cleanFrame,
+      `MACHINE-${cleanNum}`,
+      `RF${cleanNum.padStart(2, '0')}`,
+      `SP${cleanNum.padStart(2, '0')}`,
+      `SP${cleanNum.padStart(3, '0')}`,
+      cleanNum
+    ].filter(Boolean);
+
+    for (const cand of candidates) {
+      if (liveMachineStatuses[cand]) {
+        return liveMachineStatuses[cand].runStatus;
+      }
+    }
+
+    // Secondary scan across keys
+    for (const [key, val] of Object.entries(liveMachineStatuses)) {
+      const keyUpper = key.toUpperCase();
+      const keyNum = keyUpper.replace(/\D/g, '');
+      if (
+        (mappedIot && keyUpper === mappedIot) ||
+        keyUpper === cleanFrame ||
+        (cleanNum && keyNum === cleanNum)
+      ) {
+        return val.runStatus;
+      }
+    }
+
+    return 'RUN';
+  }, [effectiveMapping, settings, liveMachineStatuses]);
 
   // 3. Group Frames by Running Count
   const countGroups: CountGroup[] = useMemo(() => {
@@ -789,10 +898,21 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
           const isHighAchiever = frame.targetRatio >= 90;
           const isModerate = frame.targetRatio >= 75 && frame.targetRatio < 90;
 
+          const frameStatus = getFrameLiveStatus(frame.frameNo);
+          const isDoffing = frameStatus === 'DOFF';
+          const isStopped = frameStatus === 'STOP' || frameStatus === 'OFFLINE';
+
           return (
             <div
               key={frame.frameNo}
-              className="bg-stone-100 hover:bg-stone-100/90 rounded-2xl border-2 border-stone-300 shadow-xs hover:shadow-md hover:border-emerald-400 transition-all p-4 md:p-5 flex flex-col justify-between"
+              className={cn(
+                "rounded-2xl border-2 shadow-xs hover:shadow-md transition-all p-4 md:p-5 flex flex-col justify-between",
+                isDoffing
+                  ? "bg-amber-100 hover:bg-amber-100/90 border-amber-400"
+                  : isStopped
+                  ? "bg-red-50 hover:bg-red-50/90 border-red-300"
+                  : "bg-stone-100 hover:bg-stone-100/90 border-stone-300 hover:border-emerald-400"
+              )}
             >
               {/* Card Header: Frame No & Status */}
               <div>
@@ -806,10 +926,22 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                         <span className="font-mono font-black text-stone-900 text-sm md:text-base">
                           {frame.frameNo}
                         </span>
-                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          <span>RUNNING</span>
-                        </span>
+                        {isDoffing ? (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-200 text-amber-900 border border-amber-400 text-[9px] font-black uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span>
+                            <span>DOFFING</span>
+                          </span>
+                        ) : isStopped ? (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-red-100 text-red-800 border border-red-300 text-[9px] font-black uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            <span>STOPPED</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>RUNNING</span>
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] font-mono font-black text-stone-900 block mt-0.5">
                         {frame.count} · ×{activeGroup.factor.toFixed(4)}
@@ -817,14 +949,30 @@ export const CountWiseFrames: React.FC<CountWiseFramesProps> = ({
                     </div>
                   </div>
 
-                  {/* Top Right: Animated 4-Spindle Roll Animation (No circles) */}
+                  {/* Top Right: Animated 4-Spindle Roll Animation (Updates lively) */}
                   <div
-                    className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-white border border-stone-300 shadow-2xs group hover:border-emerald-400 transition-all cursor-default"
-                    title={`Machine ${frame.frameNo} - 4-Spindle Roll Active`}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2 py-1 rounded-xl border shadow-2xs group transition-all cursor-default",
+                      isDoffing
+                        ? "bg-amber-50 border-amber-300"
+                        : isStopped
+                        ? "bg-red-50 border-red-200"
+                        : "bg-white border-stone-300 hover:border-emerald-400"
+                    )}
+                    title={`Machine ${frame.frameNo} - ${isDoffing ? 'Doffing' : isStopped ? 'Stopped' : '4-Spindle Roll Active'}`}
                   >
-                    <FourSpindleRollAnimation />
-                    <span className="text-[10px] font-black uppercase font-mono tracking-wider text-emerald-800 hidden sm:inline-block">
-                      SPINNING
+                    <FourSpindleRollAnimation status={frameStatus} />
+                    <span
+                      className={cn(
+                        "text-[10px] font-black uppercase font-mono tracking-wider hidden sm:inline-block",
+                        isDoffing
+                          ? "text-amber-800 font-bold"
+                          : isStopped
+                          ? "text-red-700 font-bold"
+                          : "text-emerald-800"
+                      )}
+                    >
+                      {isDoffing ? 'DOFFING' : isStopped ? 'STOPPED' : 'SPINNING'}
                     </span>
                   </div>
                 </div>

@@ -1211,32 +1211,9 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                                       {devInfo.displayName}
                                     </div>
                                     <div className="text-[10px] font-mono font-bold text-emerald-700">
-                                      {devInfo.isAssigned && devInfo.displayToken ? `T.No: ${devInfo.displayToken}` : 'No operator'}
+                                      {devInfo.isAssigned && devInfo.displayToken ? `T.No: ${devInfo.displayToken}` : 'Auto-detected'}
                                     </div>
                                   </div>
-                                </div>
-
-                                {/* Quick Operator Selector to Reassign */}
-                                <div className="shrink-0">
-                                  <select
-                                    value={devInfo.matchedWorker?.id || devInfo.rawId || ''}
-                                    onChange={(e) => {
-                                      const selId = e.target.value;
-                                      const matched = masterWorkers.find(w => w.id === selId || w.tNo === selId);
-                                      const emp = employees.find(em => em.employeeId === selId);
-                                      const oName = matched?.name || emp?.employeeName || selId;
-                                      handleAssignDeviceOperator(devInfo.deviceId, selId, oName);
-                                    }}
-                                    className="text-[10px] font-bold px-2 py-1 bg-white border border-stone-300 rounded-lg text-stone-700 hover:border-emerald-500 outline-none cursor-pointer max-w-[125px] truncate"
-                                    title="Assign or reassign operator for this device"
-                                  >
-                                    <option value="">(Change Operator)</option>
-                                    {masterWorkers.map(w => (
-                                      <option key={w.id} value={w.id}>
-                                        {w.name} ({w.tNo || w.id})
-                                      </option>
-                                    ))}
-                                  </select>
                                 </div>
                               </div>
                             );

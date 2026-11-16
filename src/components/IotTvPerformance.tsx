@@ -42,6 +42,7 @@ export interface AssignedMachineSlide {
   maxIncentive: number;
   earnedIncentive: number;
   incentiveAmount: number;
+  machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED';
   
   // Operator details (Auto-selected from Live Shift API & Employee Master)
   operatorName: string;
@@ -55,15 +56,15 @@ export interface AssignedMachineSlide {
   d2OperatorToken?: string;
   d2OperatorPhoto?: string;
 
-  // Rounds & Taps matching user's sketch (Max 60 rounds, 120 taps per shift)
+  // Rounds & Taps matching user's sketch
   completedRounds: number;
-  expectedRounds: number; // 60
+  expectedRounds: number;
   totalTaps: number;
-  targetTaps: number; // 120
+  targetTaps: number;
   d1Taps: number;
   d2Taps: number;
-  d1TargetTaps: number; // 60
-  d2TargetTaps: number; // 60
+  d1TargetTaps: number;
+  d2TargetTaps: number;
   d1DeviceId: string;
   d2DeviceId: string;
 
@@ -228,16 +229,19 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
       const builtSlides: AssignedMachineSlide[] = [];
 
       // ONLY SHOW MACHINES THAT ARE ASSIGNED
-      // User only assigns machines in Settings / Machine Allocation (e.g. SP44 -> Machine-1)
-      const assignedFrames = Object.keys(machineMapFromSettings);
-
-      // If settings mapping is empty, also check deviceMappings with matching physical frames or report entries
-      const candidateFrames = new Set<string>(assignedFrames.map(f => f.trim().toUpperCase()));
-      if (candidateFrames.size === 0) {
-        (report?.entries || []).forEach(e => {
-          if (e.frameNo) candidateFrames.add(e.frameNo.trim().toUpperCase());
-        });
-      }
+      // Extract explicitly assigned frames (e.g. SP044 -> Machine-1)
+      const candidateFrames = new Set<string>();
+      Object.entries(machineMapFromSettings).forEach(([k, v]) => {
+        const cleanK = (k || '').trim().toUpperCase();
+        const cleanV = (v || '').trim().toUpperCase();
+        if (cleanK && cleanV && cleanV !== 'NONE' && cleanV !== 'UNASSIGNED') {
+          if (cleanK.startsWith('SP') || cleanK.startsWith('K')) {
+            candidateFrames.add(cleanK);
+          } else if (cleanV.startsWith('SP') || cleanV.startsWith('K')) {
+            candidateFrames.add(cleanV);
+          }
+        }
+      });
 
       candidateFrames.forEach(frameNo => {
         // Resolve IoT Machine Unit name
@@ -277,14 +281,27 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
         const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
         const yarnCount = reportEntry?.count || liveM?.count || '030/1-PH-PC';
-        const rpm = Number(liveM?.spindleSpeedCurrent || liveM?.speed || 16500);
-        const productionKg = Number(reportEntry?.productionActual || liveM?.shiftProduction || 76.5);
+        let rpm = Number(liveM?.spindleSpeedCurrent || liveM?.speed || 16500);
+        let productionKg = Number(reportEntry?.productionActual || liveM?.shiftProduction || 76.5);
         const gpsActual = Number(reportEntry?.gpsActual || liveM?.gps || (liveM as any)?.currentGps || 124.5);
 
         // EM Left (D1) and EM Right (D2)
         const emLeft = typeof liveM?.emLeft === 'number' ? liveM.emLeft : 1.25;
         const emRight = typeof liveM?.emRight === 'number' ? liveM.emRight : 1.40;
         const emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
+
+        // Machine Live Running Status: RUNNING, DOFFING, STOPPED
+        let machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED' = 'RUNNING';
+        const rawRunStatus = String(liveM?.runStatus || (liveM as any)?.status || '').toUpperCase();
+        if (rawRunStatus.includes('DOFF')) {
+          machineLiveStatus = 'DOFFING';
+        } else if (rawRunStatus === 'STOP' || rawRunStatus === 'OFFLINE' || rawRunStatus.includes('STOP')) {
+          machineLiveStatus = 'STOPPED';
+        } else if (rawRunStatus === 'RUN' || rawRunStatus.includes('RUN') || rpm > 500) {
+          machineLiveStatus = 'RUNNING';
+        } else if (rpm === 0 && !reportEntry) {
+          machineLiveStatus = 'STOPPED';
+        }
 
         // Auto-select operator for Device 1 (D1) and Device 2 (D2) for this live shift from API
         const resolveDeviceAuto = (devId: string, sideIndex: number) => {
@@ -381,9 +398,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d1 = resolveDeviceAuto(d1DeviceId, 0);
         const d2 = resolveDeviceAuto(d2DeviceId, 1);
 
-        const d1Taps = d1.tapsCount;
-        const d2Taps = d2.tapsCount;
-        const totalTaps = d1Taps + d2Taps;
+        let d1Taps = d1.tapsCount;
+        let d2Taps = d2.tapsCount;
+        let totalTaps = d1Taps + d2Taps;
         
         // Shift Standards: Max 60 rounds, 120 total taps (60 each device)
         const expectedRounds = 60;
@@ -404,10 +421,10 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
 
         // Calculate performance score directly based on completed rounds (max 60)
-        const performanceScore = Math.min(100, Math.max(0, Math.round((completedRounds / expectedRounds) * 100)));
+        let performanceScore = Math.min(100, Math.max(0, Math.round((completedRounds / expectedRounds) * 100)));
 
         // Best Performer condition: proper rounds completed (cadence >= 75% or 45+ rounds)
-        const isBestPerformer = performanceScore >= 75;
+        const isBestPerformer = performanceScore >= 75 && machineLiveStatus !== 'STOPPED';
 
         // MAX INCENTIVE: Incentive of the machine that is assigned for the current GPS
         let maxIncentive = 0;
@@ -434,7 +451,20 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
 
         // EARNED INCENTIVE: Calculated based on performance score and max incentive
-        const earnedIncentive = Math.round(maxIncentive * (performanceScore / 100));
+        let earnedIncentive = Math.round(maxIncentive * (performanceScore / 100));
+
+        // When STOPPED: all data becomes 0 as requested
+        if (machineLiveStatus === 'STOPPED') {
+          rpm = 0;
+          productionKg = 0;
+          maxIncentive = 0;
+          earnedIncentive = 0;
+          performanceScore = 0;
+          completedRounds = 0;
+          totalTaps = 0;
+          d1Taps = 0;
+          d2Taps = 0;
+        }
 
         // Check if dual operators exist across the 2 devices
         const hasDualOperators = Boolean(
@@ -457,6 +487,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           maxIncentive,
           earnedIncentive,
           incentiveAmount: maxIncentive,
+          machineLiveStatus,
           operatorName: primary.operatorName,
           operatorToken: primary.operatorToken,
           operatorPhoto: primary.operatorPhoto,
@@ -508,7 +539,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
   useEffect(() => {
     loadSlideData();
-    const interval = setInterval(loadSlideData, 30000); // 30s live refresh
+    const interval = setInterval(loadSlideData, 60000); // 1-minute live refresh
     return () => clearInterval(interval);
   }, [loadSlideData]);
 
@@ -584,7 +615,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs font-black uppercase tracking-widest text-emerald-700">
-              LIVE TV TELEMETRY
+              LIVE TV TELEMETRY (1-MIN REFRESH)
             </span>
           </div>
           <span className="text-slate-300">•</span>
@@ -635,7 +666,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         </div>
       </div>
 
-      {/* 2. MAIN TV SLIDE CARD (White Background, Layout EXACT to User's Sketch) */}
+      {/* 2. MAIN TV SLIDE CARD (White Background, Yellow if Doffing, Light Red if Stopped) */}
       <AnimatePresence mode="wait">
         <motion.div
           key={currentSlide.id}
@@ -644,10 +675,14 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           exit={{ opacity: 0, scale: 0.98, y: -10 }}
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className={cn(
-            "w-full rounded-3xl p-6 sm:p-8 md:p-10 border-4 shadow-2xl relative overflow-hidden transition-all bg-white",
-            currentSlide.isBestPerformer
-              ? "border-emerald-500 shadow-emerald-200/50 bg-gradient-to-br from-white via-emerald-50/20 to-white"
-              : "border-red-600 shadow-red-200/60 bg-gradient-to-br from-white via-red-50/25 to-white animate-[redAlertBlink_1.2s_ease-in-out_infinite]"
+            "w-full rounded-3xl p-6 sm:p-8 md:p-10 border-4 shadow-2xl relative overflow-hidden transition-all",
+            currentSlide.machineLiveStatus === 'DOFFING'
+              ? "bg-amber-100/95 border-amber-500 shadow-amber-300/60"
+              : currentSlide.machineLiveStatus === 'STOPPED'
+                ? "bg-red-50/95 border-red-500 shadow-red-300/60"
+                : currentSlide.isBestPerformer
+                  ? "border-emerald-500 shadow-emerald-200/50 bg-gradient-to-br from-white via-emerald-50/20 to-white"
+                  : "border-red-600 shadow-red-200/60 bg-gradient-to-br from-white via-red-50/25 to-white animate-[redAlertBlink_1.2s_ease-in-out_infinite]"
           )}
         >
           {/* Custom style for red alert blinking when worst / lagging performer */}
@@ -667,10 +702,10 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           `}} />
 
           {/* 👏 Clap celebration overlay for BEST PERFORMER */}
-          {currentSlide.isBestPerformer && <ClapCelebration />}
+          {currentSlide.isBestPerformer && currentSlide.machineLiveStatus === 'RUNNING' && <ClapCelebration />}
 
           {/* 🚨 Flashing Red Emergency Banner for WORST / LAGGING PERFORMER */}
-          {!currentSlide.isBestPerformer && (
+          {!currentSlide.isBestPerformer && currentSlide.machineLiveStatus !== 'DOFFING' && (
             <motion.div 
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -679,22 +714,41 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               <div className="flex items-center gap-3">
                 <span className="w-3.5 h-3.5 rounded-full bg-white animate-ping" />
                 <span className="text-xs sm:text-sm font-black uppercase tracking-wider">
-                  ⚠️ ATTENTION: LOW ROUNDS / LAGGING CADENCE DETECTED ON THIS FRAME!
+                  ⚠️ ATTENTION: {currentSlide.machineLiveStatus === 'STOPPED' ? 'MACHINE IS STOPPED (ALL DATA ZERO)' : 'LOW ROUNDS / LAGGING CADENCE DETECTED ON THIS FRAME!'}
                 </span>
               </div>
               <span className="text-xs font-mono font-black bg-black/25 px-3 py-1 rounded-xl">
-                {currentSlide.completedRounds} OF {currentSlide.expectedRounds} ROUNDS
+                {currentSlide.completedRounds} ROUNDS COMPLETED
               </span>
             </motion.div>
           )}
 
-          {/* TOP BANNER RIBBON (SP44 + Count | Max Incentive | Speed | Production) */}
+          {/* TOP BANNER RIBBON (SP44 + Status + Count | Max Incentive | Speed | Production) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6 items-center pb-6 border-b border-slate-200 mb-6">
-            {/* Top-Left: Machine No & Yarn Count (in Black) & Current GPS */}
+            {/* Top-Left: Machine No & Status & Yarn Count & Current GPS */}
             <div className="lg:col-span-5">
-              <h1 className="text-5xl sm:text-7xl font-black text-stone-900 tracking-tight leading-none">
-                {currentSlide.frameNo}
-              </h1>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-5xl sm:text-7xl font-black text-stone-900 tracking-tight leading-none">
+                  {currentSlide.frameNo}
+                </h1>
+                {/* Live Status Badge */}
+                {currentSlide.machineLiveStatus === 'DOFFING' ? (
+                  <span className="px-3.5 py-1.5 rounded-2xl bg-amber-200 text-amber-950 border-2 border-amber-400 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-600 animate-ping" />
+                    DOFFING
+                  </span>
+                ) : currentSlide.machineLiveStatus === 'STOPPED' ? (
+                  <span className="px-3.5 py-1.5 rounded-2xl bg-red-100 text-red-900 border-2 border-red-400 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-600" />
+                    STOPPED
+                  </span>
+                ) : (
+                  <span className="px-3.5 py-1.5 rounded-2xl bg-emerald-100 text-emerald-900 border-2 border-emerald-400 font-black text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
+                    RUNNING
+                  </span>
+                )}
+              </div>
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <span className="text-xl sm:text-2xl font-black text-black">
                   COUNT: {currentSlide.yarnCount}
@@ -798,31 +852,31 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
             {/* RIGHT COLUMN: 3 BIG EXPANDED ROWS (Stretches Full Height, No Bottom Gap) */}
             <div className="lg:col-span-8 xl:col-span-8 flex flex-col justify-between gap-5 h-full">
-              {/* LINE 1 (flex-1): [Rounds (Max 60)] | [Total Taps (Max 120)] | [Device Taps D1 / D2] */}
+              {/* LINE 1 (flex-1): [Rounds] | [Total Taps] | [Device Taps D1 / D2] */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
-                {/* Box 1: Rounds (Max 60 per shift) */}
+                {/* Box 1: Rounds */}
                 <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl flex flex-col items-center justify-between text-center shadow-md">
                   <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500">
                     ROUNDS
                   </span>
                   <div className="text-4xl sm:text-6xl xl:text-7xl font-black text-stone-900 tabular-nums my-auto py-1">
-                    {currentSlide.completedRounds} <span className="text-2xl sm:text-3xl xl:text-4xl text-slate-400 font-bold">/ {currentSlide.expectedRounds}</span>
+                    {currentSlide.completedRounds}
                   </div>
                   <span className="text-[11px] font-bold text-emerald-600 uppercase">
-                    Max: {currentSlide.expectedRounds} Rounds / Shift
+                    Live Completed Rounds
                   </span>
                 </div>
 
-                {/* Box 2: Total Taps / Target Taps (Max 120 per shift) */}
+                {/* Box 2: Total Taps */}
                 <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl flex flex-col items-center justify-between text-center shadow-md">
                   <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500">
-                    TOTAL TAPS / TARGET TAPS
+                    TOTAL TAPS
                   </span>
                   <div className="text-4xl sm:text-6xl xl:text-7xl font-black text-stone-900 tabular-nums my-auto py-1">
-                    {currentSlide.totalTaps} <span className="text-2xl sm:text-3xl xl:text-4xl text-slate-400 font-bold">/ {currentSlide.targetTaps}</span>
+                    {currentSlide.totalTaps}
                   </div>
                   <span className="text-[11px] font-bold text-emerald-600 uppercase">
-                    Max: {currentSlide.targetTaps} Taps / Shift
+                    Live Shift Taps
                   </span>
                 </div>
 
@@ -839,7 +893,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                       <div className="text-2xl sm:text-4xl font-black text-cyan-900 tabular-nums mt-0.5">
                         {currentSlide.d1Taps}
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400">/ 60 Taps</span>
+                      <span className="text-[10px] font-bold text-slate-400">Taps</span>
                     </div>
                     <div className="flex flex-col items-center justify-center p-2.5 sm:p-3 rounded-2xl bg-amber-50 border-2 border-amber-200 shadow-2xs">
                       <span className="text-xs font-mono font-black text-amber-800 uppercase tracking-wider">
@@ -848,11 +902,11 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                       <div className="text-2xl sm:text-4xl font-black text-amber-900 tabular-nums mt-0.5">
                         {currentSlide.d2Taps}
                       </div>
-                      <span className="text-[10px] font-bold text-slate-400">/ 60 Taps</span>
+                      <span className="text-[10px] font-bold text-slate-400">Taps</span>
                     </div>
                   </div>
                   <span className="text-[10px] font-bold text-slate-400 text-center uppercase">
-                    60 Taps Target per Side
+                    Live Device Taps
                   </span>
                 </div>
               </div>
@@ -891,7 +945,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                   </div>
 
                   <div className="text-xs font-bold text-slate-500">
-                    Calculated from {currentSlide.performanceScore}% round cadence ({currentSlide.completedRounds} / {currentSlide.expectedRounds} Rds)
+                    Calculated from {currentSlide.performanceScore}% round cadence
                   </div>
                 </div>
 
@@ -940,7 +994,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                   </div>
 
                   <div className="text-xs font-bold text-slate-500">
-                    {currentSlide.completedRounds} of {currentSlide.expectedRounds} rounds completed across LH &amp; RH
+                    Live shift patrol cadence across LH &amp; RH
                   </div>
                 </div>
               </div>
