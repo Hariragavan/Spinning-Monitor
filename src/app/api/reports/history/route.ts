@@ -5,6 +5,10 @@ import { getHistoricalAprilData } from '@/lib/historicalData';
 import { parseUniversalDate, parseUniversalDateParts } from '@/lib/utils';
 import { ensureSixMachines } from '@/lib/parser';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 export async function GET(req: Request) {
   try {
     const db = await getDb();
@@ -34,6 +38,8 @@ export async function GET(req: Request) {
         ...ensureSixMachines(r, r.shed || 'Shed 1'),
         shed: r.shed || 'Shed 1'
       }))
+    }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch history' }, { status: 500 });

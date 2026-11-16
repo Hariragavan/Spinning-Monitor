@@ -662,6 +662,44 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     }
   };
 
+  // 6.5. Periodic 45s TV Auto-Refresh from Server to detect new report uploads
+  useEffect(() => {
+    if (!onRefresh) return;
+    const refreshTimer = setInterval(() => {
+      onRefresh();
+    }, 45000);
+    return () => clearInterval(refreshTimer);
+  }, [onRefresh]);
+
+  // 6.6. Future Date Auto-Switching
+  // If uploaded data for a newer/future date arrives in history, automatically switch to that date!
+  useEffect(() => {
+    if (!history || history.length === 0 || !onSelectDate) return;
+    const curTime = parseUniversalDate(safeDailyReport.date)?.getTime() || 0;
+    if (!curTime) return;
+
+    const futureReports = history.filter(r => {
+      if (normalizeShed(r.shed) !== normalizeShed(selectedShed)) return false;
+      const hasData = (Array.isArray(r.entries) && r.entries.length > 0) || (Array.isArray(r.summaries) && r.summaries.length > 0);
+      if (!hasData) return false;
+      const rTime = parseUniversalDate(r.date)?.getTime() || 0;
+      return rTime > curTime;
+    });
+
+    if (futureReports.length > 0) {
+      futureReports.sort((a, b) => {
+        const ta = parseUniversalDate(a.date)?.getTime() || 0;
+        const tb = parseUniversalDate(b.date)?.getTime() || 0;
+        return tb - ta;
+      });
+      const newestFuture = futureReports[0];
+      if (newestFuture.date && newestFuture.date !== safeDailyReport.date) {
+        console.log(`[TV Dashboard] Future date data detected (${newestFuture.date} > ${safeDailyReport.date}). Auto-switching TV date.`);
+        onSelectDate(newestFuture.date);
+      }
+    }
+  }, [history, safeDailyReport.date, selectedShed, onSelectDate]);
+
   // 7. Auto-Rotation Timer
   useEffect(() => {
     if (isPaused) return;

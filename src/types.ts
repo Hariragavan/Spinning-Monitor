@@ -166,7 +166,9 @@ export interface SystemSettings {
   shed40sFormulas?: Record<string, string>;
   iotMachineMapping?: Record<string, string>;
   machineToMachineMapping?: Record<string, string>;
-  machinePairs?: { spinningFrame: string; iotMachine: string }[];
+  machinePairs?: { spinningFrame: string; iotMachine: string; telemetryMachine?: string }[];
+  iotProfileToFrameMapping?: Record<string, string>;
+  frameToIotProfileMapping?: Record<string, string>;
   iotMachineMappingByDate?: Record<string, Record<string, string>>;
   iotMachineAllocationPeriods?: IotMachineAllocationPeriod[];
   iotDeviceOperatorMapping?: Record<string, { employeeId: string; employeeName: string }>;

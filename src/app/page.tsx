@@ -637,7 +637,23 @@ export default function Home() {
         // In TV mode, or if newly entered data is present, automatically show the lastly updated date's data
         const latestReport = getLatestUpdatedReport(loadedHistory, currentShed);
         const isTv = isTvModeRef.current;
-        if (isTv && latestReport && latestReport.date !== currentSelectedDate) {
+
+        // Check if there is a future date with uploaded data newer than currentSelectedDate
+        const curTime = parseUniversalDate(currentSelectedDate)?.getTime() || 0;
+        const futureReport = loadedHistory
+          .filter(r => {
+            if (normalizeShed(r.shed) !== normalizeShed(currentShed)) return false;
+            const hasData = (Array.isArray(r.entries) && r.entries.length > 0) || (Array.isArray(r.summaries) && r.summaries.length > 0);
+            if (!hasData) return false;
+            const rTime = parseUniversalDate(r.date)?.getTime() || 0;
+            return rTime > curTime;
+          })
+          .sort((a, b) => (parseUniversalDate(b.date)?.getTime() || 0) - (parseUniversalDate(a.date)?.getTime() || 0))[0];
+
+        if (futureReport) {
+          // Future date data uploaded! Switch directly to this future date
+          setDailyReport(ensureSixMachines(futureReport, currentShed));
+        } else if (isTv && latestReport && latestReport.date !== currentSelectedDate) {
           setDailyReport(ensureSixMachines(latestReport, currentShed));
         } else {
           let updatedReport: DailyReport | null = null;

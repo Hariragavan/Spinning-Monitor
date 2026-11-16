@@ -41,6 +41,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
   const [productionMappings, setProductionMappings] = useState<Record<string, string>>({});
   const [masterWorkers, setMasterWorkers] = useState<Sider[]>(workers);
   const [productionFrames, setProductionFrames] = useState<MachineMasterItem[]>(machinesProp);
+  const [liveTelemetryMachines, setLiveTelemetryMachines] = useState<any[]>([]);
 
   // Tab 1 state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -70,18 +71,22 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
 
   const loadData = async () => {
     try {
-      const [e, d, m, maps, perf] = await Promise.all([
+      const [e, d, m, maps, perf, lightStatus] = await Promise.all([
         iotApi.getEmployees(),
         iotApi.getDevices(),
         iotApi.getMachines(),
         iotApi.getMachineMappings().catch(() => []),
-        iotApi.getEmployeePerformance().catch(() => [])
+        iotApi.getEmployeePerformance().catch(() => []),
+        iotApi.getLightweightMachineStatus().catch(() => null)
       ]);
       setEmployees(e || []);
       setDevices(d || []);
       setMachines(m || []);
       setMappings(maps || []);
       setEmployeeMetrics(perf || []);
+      if (lightStatus?.machines) {
+        setLiveTelemetryMachines(lightStatus.machines);
+      }
 
       if (e && e.length > 0 && !selectedEmployeeId) {
         setSelectedEmployeeId(e[0].employeeId);
@@ -127,16 +132,18 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
           if (sRes?.data) settingsData = sRes.data;
         }
 
-        const rawMap = settingsData?.iotMachineMapping || settingsData?.machineToMachineMapping || {};
         const pMap: Record<string, string> = {};
-        Object.entries(rawMap).forEach(([k, v]) => {
+
+        // 1. From dedicated frameToIotProfileMapping / iotProfileToFrameMapping
+        const profileMap = settingsData?.frameToIotProfileMapping || settingsData?.iotProfileToFrameMapping || {};
+        Object.entries(profileMap).forEach(([k, v]) => {
           if (k && v) {
-            pMap[k.trim().toUpperCase()] = v.trim().toUpperCase();
-            pMap[v.trim().toUpperCase()] = k.trim().toUpperCase();
+            pMap[k.trim().toUpperCase()] = (v as string).trim().toUpperCase();
+            pMap[(v as string).trim().toUpperCase()] = k.trim().toUpperCase();
           }
         });
 
-        // Also merge from machinePairs array if available
+        // 2. Also merge from machinePairs array if available
         if (Array.isArray(settingsData?.machinePairs)) {
           settingsData.machinePairs.forEach((pair: any) => {
             if (pair?.spinningFrame && pair?.iotMachine) {
@@ -146,12 +153,24 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
           });
         }
 
-        // Persistent localStorage check so mapped pairs persist permanently until changed
+        // 3. Fallback check from persistent localStorage
         if (typeof window !== 'undefined') {
           try {
-            const savedLocal = localStorage.getItem('iotMachineMapping') || localStorage.getItem('iot_machine_mapping');
-            if (savedLocal) {
-              const parsed = JSON.parse(savedLocal);
+            const savedPairs = localStorage.getItem('iotMachinePairs');
+            if (savedPairs) {
+              const parsed = JSON.parse(savedPairs);
+              if (Array.isArray(parsed)) {
+                parsed.forEach((pair: any) => {
+                  if (pair?.spinningFrame && pair?.iotMachine) {
+                    pMap[pair.spinningFrame.trim().toUpperCase()] = pair.iotMachine.trim().toUpperCase();
+                    pMap[pair.iotMachine.trim().toUpperCase()] = pair.spinningFrame.trim().toUpperCase();
+                  }
+                });
+              }
+            }
+            const savedProfile = localStorage.getItem('frameToIotProfileMapping') || localStorage.getItem('iotProfileToFrameMapping');
+            if (savedProfile) {
+              const parsed = JSON.parse(savedProfile);
               if (parsed && typeof parsed === 'object') {
                 Object.entries(parsed).forEach(([k, v]: [string, any]) => {
                   if (k && v) {
@@ -197,9 +216,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
   const saveProductionAssignments = async () => {
     setSaving(true);
     try {
-      // Build clean mapping: { [spinningFrame]: iotMachine }
-      const cleanIotMap: Record<string, string> = {};
-      const pairs: { spinningFrame: string; iotMachine: string }[] = [];
+      // 1. Build clean mappings: { [spinningFrame]: iotMachine } and { [iotMachine]: spinningFrame }
+      const cleanFrameToIotMap: Record<string, string> = {};
+      const cleanIotToFrameMap: Record<string, string> = {};
+      const pairs: { spinningFrame: string; iotMachine: string; telemetryMachine?: string }[] = [];
 
       mappings.forEach(m => {
         const iotName = m.name?.trim().toUpperCase();
@@ -212,24 +232,30 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
         if (mappedFrame && mappedFrame !== 'NONE') {
           const frameUpper = mappedFrame.trim().toUpperCase();
           const targetIot = (iotName || iotId).trim().toUpperCase();
-          cleanIotMap[frameUpper] = targetIot;
-          pairs.push({ spinningFrame: frameUpper, iotMachine: targetIot });
+          cleanFrameToIotMap[frameUpper] = targetIot;
+          cleanIotToFrameMap[targetIot] = frameUpper;
+
+          // Find paired telemetry machine in settings (e.g. SP044 -> RF44)
+          const cleanNum = frameUpper.replace(/\D/g, '');
+          const naturalRf = cleanNum ? `RF${cleanNum.padStart(2, '0')}` : '';
+          const pairedTelemetry = (
+            systemSettings?.iotMachineMapping?.[frameUpper] ||
+            systemSettings?.machineToMachineMapping?.[frameUpper] ||
+            naturalRf
+          ).trim().toUpperCase();
+
+          pairs.push({
+            spinningFrame: frameUpper,
+            iotMachine: targetIot,
+            telemetryMachine: pairedTelemetry
+          });
         }
       });
 
-      // Preserve any explicitly set pairs in productionMappings that start with standard frames
-      Object.entries(productionMappings).forEach(([k, v]) => {
-        if (k && v && v !== 'NONE') {
-          const cleanK = k.trim().toUpperCase();
-          const cleanV = v.trim().toUpperCase();
-          if ((cleanV.startsWith('SP') || cleanV.startsWith('K')) && !cleanIotMap[cleanV]) {
-            cleanIotMap[cleanV] = cleanK;
-            if (!pairs.some(p => p.spinningFrame === cleanV)) {
-              pairs.push({ spinningFrame: cleanV, iotMachine: cleanK });
-            }
-          }
-        }
-      });
+      // Preserve existing settings.iotMachineMapping (e.g. SP044 -> RF44) so telemetry pairs are NEVER overwritten
+      const existingTelemetryMap = {
+        ...(systemSettings?.iotMachineMapping || {})
+      };
 
       const updatedSettings: SystemSettings = {
         ...(systemSettings || {
@@ -240,8 +266,9 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
           machineSiderCounts: {},
           gaiterCounts: { I: 1, II: 1, III: 1 }
         }),
-        iotMachineMapping: cleanIotMap,
-        machineToMachineMapping: cleanIotMap,
+        iotMachineMapping: existingTelemetryMap,
+        frameToIotProfileMapping: cleanFrameToIotMap,
+        iotProfileToFrameMapping: cleanIotToFrameMap,
         machinePairs: pairs,
         iotDeviceOperatorMapping: deviceOperators
       };
@@ -254,9 +281,9 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
 
       // 2. Persist to localStorage as reliable backup
       if (typeof window !== 'undefined') {
-        localStorage.setItem('iotMachineMapping', JSON.stringify(cleanIotMap));
+        localStorage.setItem('frameToIotProfileMapping', JSON.stringify(cleanFrameToIotMap));
+        localStorage.setItem('iotProfileToFrameMapping', JSON.stringify(cleanIotToFrameMap));
         localStorage.setItem('iotMachinePairs', JSON.stringify(pairs));
-        localStorage.setItem('iot_machine_mapping', JSON.stringify(cleanIotMap));
       }
 
       showMsg('Machine pairs saved successfully and will persist permanently until changed.');
@@ -1101,10 +1128,10 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: '22%' }}>IoT Machine</th>
-                  <th style={{ width: '25%' }}>Production Machine (SP009..)</th>
-                  <th style={{ width: '40%' }}>Live Shift Operators per Device (Auto-Detected from API)</th>
-                  <th style={{ width: '13%' }}>Status</th>
+                  <th style={{ width: '20%' }}>IoT Machine</th>
+                  <th style={{ width: '24%' }}>Assigned Production Machine</th>
+                  <th style={{ width: '30%' }}>Live Shift Operators per Device</th>
+                  <th style={{ width: '26%' }}>Live Telemetry &amp; Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -1119,6 +1146,48 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                   const stations = (m.stationIds && m.stationIds.length > 0) 
                     ? m.stationIds 
                     : ['IOT_D1', 'IOT_D2'];
+
+                  // Paired Telemetry Machine from Settings (e.g. SP044 -> RF44)
+                  const cleanNum = currentSelectedFrame.replace(/\D/g, '');
+                  const naturalRf = cleanNum ? `RF${cleanNum.padStart(2, '0')}` : '';
+                  const pairedTelemetry = (
+                    systemSettings?.iotMachineMapping?.[currentSelectedFrame] ||
+                    systemSettings?.machineToMachineMapping?.[currentSelectedFrame] ||
+                    naturalRf
+                  ).trim().toUpperCase();
+
+                  // Live telemetry match for the paired RF machine
+                  const teleLive = liveTelemetryMachines.find((lm: any) => {
+                    const lmId = String(lm.machine || lm.machineId || '').trim().toUpperCase();
+                    if (!lmId) return false;
+                    if (pairedTelemetry && lmId === pairedTelemetry) return true;
+                    if (naturalRf && (lmId === naturalRf || lmId === `RF${cleanNum}`)) return true;
+                    if (lmId === currentSelectedFrame) return true;
+                    const lmNum = lmId.replace(/\D/g, '');
+                    return Boolean(cleanNum && lmNum && lmNum === cleanNum);
+                  });
+
+                  // Live Taps & Patrol Rounds from this IoT machine's devices (via employeeMetrics)
+                  let mTotalTaps = 0;
+                  let mRounds = 0;
+                  stations.forEach(st => {
+                    const stClean = st.toUpperCase();
+                    const met = employeeMetrics.find(em => 
+                      em.machineId && (
+                        em.machineId.toUpperCase() === stClean || 
+                        (em as any).deviceId?.toUpperCase() === stClean || 
+                        (em.machineName && em.machineName.toUpperCase() === stClean)
+                      )
+                    );
+                    const t = Number(met?.taps?.length || (met?.rounds ? met.rounds * 2 : 0));
+                    mTotalTaps += t;
+                    if (met?.rounds && met.rounds > mRounds) {
+                      mRounds = met.rounds;
+                    }
+                  });
+                  if (mRounds === 0 && mTotalTaps > 0) {
+                    mRounds = Math.round(mTotalTaps / 2);
+                  }
 
                   // Unique available frames list
                   const allFrames = Array.from(new Set([
@@ -1167,6 +1236,14 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                             </option>
                           ))}
                         </select>
+                        {currentSelectedFrame && (
+                          <div className="flex items-center gap-1.5 mt-2 text-[11px]">
+                            <span className="text-stone-500 font-bold">Paired Telemetry:</span>
+                            <span className="px-2 py-0.5 rounded-md bg-stone-100 border border-stone-300 font-mono font-black text-stone-800">
+                              {pairedTelemetry || 'RF' + cleanNum} (Settings)
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* 3. Connected Devices & Operators (from IoT API & Master) */}
@@ -1221,13 +1298,55 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
                         </div>
                       </td>
 
-                      {/* 4. Mapping Status */}
+                      {/* 4. Live Telemetry & Status */}
                       <td>
                         {currentSelectedFrame ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                            {currentSelectedFrame} Linked
-                          </span>
+                          <div className="flex flex-col gap-2">
+                            {/* Live Machine Status Badge */}
+                            <div className="flex items-center gap-1.5">
+                              {teleLive?.runStatus === 'DOFF' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+                                  DOFFING
+                                </span>
+                              ) : teleLive?.runStatus === 'STOP' || teleLive?.runStatus === 'OFFLINE' ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-800 border border-red-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                                  STOPPED
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                                  RUNNING
+                                </span>
+                              )}
+                              <span className="text-[10px] font-black text-stone-600 font-mono">
+                                {currentSelectedFrame} Linked
+                              </span>
+                            </div>
+
+                            {/* Live Speed & EM from paired RF telemetry */}
+                            <div className="bg-stone-50 p-2 rounded-xl border border-stone-200 text-[10px] space-y-1">
+                              <div className="flex justify-between items-center text-stone-600 font-bold">
+                                <span>Speed:</span>
+                                <span className="font-mono font-black text-stone-900">
+                                  {teleLive?.speed ? `${teleLive.speed.toLocaleString()} RPM` : '0 RPM'}
+                                </span>
+                              </div>
+                              <div className="flex justify-between items-center text-stone-600 font-bold">
+                                <span>EM (L / R):</span>
+                                <span className="font-mono font-black text-cyan-800">
+                                  {teleLive?.emLeft !== undefined ? `${teleLive.emLeft}m / ${teleLive.emRight}m` : '1.25m / 1.40m'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Live Taps & Rounds from IoT machine */}
+                            <div className="flex items-center justify-between text-[10px] font-black px-2 py-1 text-emerald-800 bg-emerald-50 rounded-lg border border-emerald-200">
+                              <span>Patrol: {mRounds} Rds</span>
+                              <span>Taps: {mTotalTaps}</span>
+                            </div>
+                          </div>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
                             Unassigned

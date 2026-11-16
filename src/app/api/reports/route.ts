@@ -4,6 +4,10 @@ import { DailyReport } from '@/types';
 import { ensureSixMachines, mockData, getTodayUniversalDate, createDefaultReportForShed } from '@/lib/parser';
 import { parseUniversalDate } from '@/lib/utils';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 export async function GET(req: Request) {
   try {
     const db = await getDb();
@@ -15,15 +19,17 @@ export async function GET(req: Request) {
       ? { $or: [{ shed: 'Shed 1' }, { shed: { $exists: false } }] }
       : { shed };
 
+    const noCacheHeaders = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' };
+
     if (date) {
       const report = await db.collection<DailyReport>('reports').findOne(
         { date, ...shedFilter },
         { projection: { _id: 0 } }
       );
       if (report) {
-        return NextResponse.json({ success: true, data: ensureSixMachines(report, shed) });
+        return NextResponse.json({ success: true, data: ensureSixMachines(report, shed) }, { headers: noCacheHeaders });
       }
-      return NextResponse.json({ success: false, message: 'Report not found' }, { status: 404 });
+      return NextResponse.json({ success: false, message: 'Report not found' }, { status: 404, headers: noCacheHeaders });
     }
 
     // Default: Check if today's report exists for this shed
@@ -33,12 +39,12 @@ export async function GET(req: Request) {
       { projection: { _id: 0 } }
     );
     if (todayReport) {
-      return NextResponse.json({ success: true, data: ensureSixMachines(todayReport, shed) });
+      return NextResponse.json({ success: true, data: ensureSixMachines(todayReport, shed) }, { headers: noCacheHeaders });
     }
 
     // Fresh day: return fresh blank report for today for this shed
     const freshReport = createDefaultReportForShed(shed, todayStr);
-    return NextResponse.json({ success: true, data: freshReport });
+    return NextResponse.json({ success: true, data: freshReport }, { headers: noCacheHeaders });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch report' }, { status: 500 });
   }
