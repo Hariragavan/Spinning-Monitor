@@ -59,14 +59,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'rfNo or frameNo is required' }, { status: 400 });
     }
 
+    const mShed = machine.shed || 'Shed 1';
     const normalizedMachine = {
       ...machine,
+      shed: mShed,
       frameNo: rfNo,
       rfNo
     };
 
     await db.collection('machines').updateOne(
-      { frameNo: rfNo },
+      { frameNo: rfNo, shed: mShed },
       { $set: normalizedMachine },
       { upsert: true }
     );

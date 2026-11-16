@@ -44,7 +44,7 @@ import { IotMachineMatchingSettings } from '@/components/IotMachineMatchingSetti
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, getMachineShed, isSameShed, calculateUpdatedAllocationPeriods } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, isSameShed, calculateUpdatedAllocationPeriods } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching, extractCountNumber } from '@/lib/utils';
@@ -331,10 +331,7 @@ export default function Home() {
       .map(r => ({
         ...r,
         shed: selectedShed,
-        entries: (r.entries || []).filter(e => {
-          const mShed = getMachineShed(e.frameNo, (e.shed as Shed) || activeNorm);
-          return mShed === activeNorm;
-        })
+        entries: (r.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm)
       }));
   }, [reportHistory, selectedShed]);
 
@@ -385,14 +382,8 @@ export default function Home() {
     }
 
     // Strictly enforce shed and filter out foreign shed entries
-    const cleanEntries = (rep.entries || []).filter(e => {
-      const mShed = getMachineShed(e.frameNo, (e.shed as Shed) || activeNorm);
-      return mShed === activeNorm;
-    });
-    const cleanSummaries = (rep.summaries || []).filter(s => {
-      const mShed = getMachineShed(s.frameNo, (s.shed as Shed) || activeNorm);
-      return mShed === activeNorm;
-    });
+    const cleanEntries = (rep.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm);
+    const cleanSummaries = (rep.summaries || []).filter(s => !s.shed || normalizeShed(s.shed) === activeNorm);
     rep = {
       ...rep,
       shed: selectedShed,

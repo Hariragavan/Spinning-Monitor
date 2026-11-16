@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { DailyReport, ProductionEntry, FrameDailySummary, Shift, Sider, CountConversion, MachineEmData, Shed } from '../types';
-import { parseUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, getMachineShed } from './utils';
+import { parseUniversalDate, getYesterdayUniversalDate, shiftUniversalDate } from './utils';
 export { getYesterdayUniversalDate, shiftUniversalDate };
 
 export const normalizeDateValue = (val: any): string => {
@@ -84,9 +84,9 @@ export const detectShedSections = (grid: any[][], defaultShed: Shed = 'Shed 1'):
 
   if (rfHeaderRows.length === 0) return [];
 
-  const detected: { shed: Shed; headerRowIdx: number; sectionStart: number }[] = [];
+  const detected: { shed: Shed; explicitShed: Shed | null; headerRowIdx: number; sectionStart: number }[] = [];
 
-  rfHeaderRows.forEach((item, idx) => {
+  rfHeaderRows.forEach((item) => {
     let matchedShed: Shed | null = null;
     let titleRow = Math.max(0, item.rowIdx - 4);
 
@@ -106,35 +106,37 @@ export const detectShedSections = (grid: any[][], defaultShed: Shed = 'Shed 1'):
       if (matchedShed) break;
     }
 
-    const standardOrder: Shed[] = ['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'];
-    let finalShed: Shed;
-    if (matchedShed) {
-      finalShed = matchedShed;
-    } else if (rfHeaderRows.length > 1 && idx < standardOrder.length) {
-      finalShed = standardOrder[idx];
-    } else {
-      finalShed = defaultShed;
-    }
-
     detected.push({
-      shed: finalShed,
+      shed: matchedShed || defaultShed,
+      explicitShed: matchedShed,
       headerRowIdx: item.rowIdx,
       sectionStart: titleRow
     });
   });
 
-  const sections: ShedSection[] = [];
-  for (let i = 0; i < detected.length; i++) {
-    const startRow = detected[i].sectionStart;
-    const endRow = i < detected.length - 1 ? detected[i + 1].sectionStart : grid.length;
-    sections.push({
-      shed: detected[i].shed,
-      startRow,
-      endRow
-    });
+  // Check if multiple distinct sheds were explicitly declared in this sheet
+  const explicitSheds = Array.from(new Set(detected.map(d => d.explicitShed).filter(Boolean))) as Shed[];
+  if (explicitSheds.length > 1) {
+    const sections: ShedSection[] = [];
+    for (let i = 0; i < detected.length; i++) {
+      const startRow = detected[i].sectionStart;
+      const endRow = i < detected.length - 1 ? detected[i + 1].sectionStart : grid.length;
+      sections.push({
+        shed: detected[i].shed,
+        startRow,
+        endRow
+      });
+    }
+    return sections;
   }
 
-  return sections;
+  // Single shed sheet: entire grid belongs to explicitShed (if found) or defaultShed
+  const singleShed = explicitSheds[0] || defaultShed;
+  return [{
+    shed: singleShed,
+    startRow: 0,
+    endRow: grid.length
+  }];
 };
 
 export const getShedMachines = (shed?: string): string[] => {
@@ -145,17 +147,22 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
   const shed = targetShed || report.shed || 'Shed 1';
   const normShed = normalizeShedName(shed) || 'Shed 1';
 
-  // Filter entries and summaries strictly to target shed by checking both entry shed and machine frame shed
+  // Filter entries and summaries strictly to target shed without arbitrary machine-number guessing
   const filteredEntries = (report.entries || []).filter(e => {
-    const frameShed = getMachineShed(e.frameNo, (e.shed as Shed) || normShed);
-    return frameShed === normShed;
+    const eShed = normalizeShedName(e.shed);
+    return !eShed || eShed === normShed;
   });
   const filteredSummaries = (report.summaries || []).filter(s => {
-    const frameShed = getMachineShed(s.frameNo, (s.shed as Shed) || normShed);
-    return frameShed === normShed;
+    const sShed = normalizeShedName(s.shed);
+    return !sShed || sShed === normShed;
   });
 
-  const existingFrames = Array.from(new Set(filteredEntries.map(e => e.frameNo))).filter(Boolean);
+  const existingFrames = Array.from(
+    new Set([
+      ...filteredEntries.map(e => e.frameNo),
+      ...filteredSummaries.map(s => s.frameNo)
+    ])
+  ).filter(Boolean);
   const machines = existingFrames;
 
   const shifts: Shift[] = ['I', 'II', 'III'];
@@ -675,12 +682,16 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[], ta
 
     const lowerFrame = frameNoRaw.toLowerCase();
     // Check for Total / Grand Total row at the bottom
-    if (lowerFrame === 'total' || lowerFrame === 'grand total' || lowerFrame === 'grand tot' || lowerFrame.includes('date')) {
+    if (lowerFrame === 'total' || lowerFrame === 'grand total' || lowerFrame === 'grand tot') {
       const fileTarget = Number(row[colMap.targetProd]);
       const fileAch = Number(row[colMap.totalAch]);
       if (!isNaN(fileTarget) && fileTarget > 0) fileTotalTarget = fileTarget;
       if (!isNaN(fileAch) && fileAch > 0) fileTotalAchieved = fileAch;
       break;
+    }
+
+    if (lowerFrame.includes('date') || lowerFrame.includes('production statement') || lowerFrame.includes('page') || lowerFrame.includes('shift')) {
+      continue;
     }
 
     // Normalize machine name: clean whitespace

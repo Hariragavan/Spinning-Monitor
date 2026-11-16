@@ -58,6 +58,8 @@ export async function POST(req: Request) {
     const reportWithTs = {
       ...report,
       shed,
+      entries: (report.entries || []).map(e => ({ ...e, shed })),
+      summaries: (report.summaries || []).map(s => ({ ...s, shed })),
       timestamp: report.timestamp || Date.now()
     };
 

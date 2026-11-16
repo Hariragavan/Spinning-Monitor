@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 import { parseExcelReport, parseWorkerMaster } from '../lib/parser';
 import { parseMachineEmWorkbook } from '../lib/googleSheets';
 import { DailyReport, Sider, CountConversion, ProductionEntry, FrameDailySummary, MachineEmData, Shed } from '../types';
-import { cn, parseUniversalDateParts } from '../lib/utils';
+import { cn, parseUniversalDateParts, normalizeShed } from '../lib/utils';
 import { CalendarDatePicker } from './CalendarPickers';
 
 interface UploadSectionProps {
@@ -308,9 +308,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           // Multi-shed or monthly dataset
           const firstDate = reportData[0]?.date || `${selectedDate.split('-')[2]}/${selectedDate.split('-')[1]}/${selectedDate.split('-')[0]}`;
           const detectedSheds = Array.from(new Set(reportData.map(r => r.shed))).filter(Boolean) as Shed[];
+          const initialShed = detectedSheds.find(s => normalizeShed(s) === normalizeShed(targetShed)) || detectedSheds[0] || (targetShed as Shed);
           const shedTitle = detectedSheds.length > 1
             ? `${detectedSheds.length} Sheds (${detectedSheds.join(', ')})`
-            : (detectedSheds[0] || targetShed);
+            : initialShed;
 
           // Aggregate emData across all reports in the array
           const aggregatedEm: MachineEmData = {};
@@ -326,9 +327,17 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             category: category as any,
             categoryTitle: category === 'daily_report' ? `Production Statement (${shedTitle})` : 'Incentive Amount Sheet',
             fileName: file.name,
-            shed: (detectedSheds[0] || targetShed) as Shed,
+            shed: initialShed,
             date: firstDate,
-            monthlyReports: reportData.map(r => ({ ...r, shed: (r.shed || targetShed) as Shed })),
+            monthlyReports: reportData.map(r => {
+              const repShed = (r.shed || targetShed) as Shed;
+              return {
+                ...r,
+                shed: repShed,
+                entries: (r.entries || []).map(e => ({ ...e, shed: repShed })),
+                summaries: (r.summaries || []).map(s => ({ ...s, shed: repShed }))
+              };
+            }),
             emData: Object.keys(aggregatedEm).length > 0 ? aggregatedEm : undefined
           });
           return;
@@ -350,8 +359,17 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         const [year, month, day] = finalDate.split('-');
         const formattedDate = `${day}/${month}/${year}`;
 
+        const finalReport: DailyReport = {
+          ...report,
+          shed: targetShed,
+          date: formattedDate,
+          entries: (report.entries || []).map(e => ({ ...e, shed: targetShed })),
+          summaries: (report.summaries || []).map(s => ({ ...s, shed: targetShed })),
+          emData: report.emData
+        };
+
         if (category === 'incentive_report') {
-          const validEntries = report.entries.filter(e => 
+          const validEntries = finalReport.entries.filter(e => 
             (e.incentiveAmount !== undefined && e.incentiveAmount > 0) || 
             (e.siderName && e.siderName.trim() !== '') ||
             (e.siderId && e.siderId.trim() !== '')
@@ -363,12 +381,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             fileName: file.name,
             shed: targetShed,
             date: formattedDate,
-            dailyReport: {
-              ...report,
-              shed: targetShed,
-              date: formattedDate
-            },
-            incentiveEntries: validEntries.length > 0 ? validEntries : report.entries
+            dailyReport: finalReport,
+            incentiveEntries: validEntries.length > 0 ? validEntries : finalReport.entries
           });
         } else {
           setPreviewModal({
@@ -377,12 +391,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             fileName: file.name,
             shed: targetShed,
             date: formattedDate,
-            dailyReport: {
-              ...report,
-              shed: targetShed,
-              date: formattedDate
-            },
-            emData: report.emData
+            dailyReport: finalReport,
+            emData: finalReport.emData
           });
         }
       }
@@ -463,7 +473,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
     try {
       const activeReport = monthlyReports
-        ? (monthlyReports.find(r => r.shed === shed) || monthlyReports[0])
+        ? (monthlyReports.find(r => normalizeShed(r.shed) === normalizeShed(shed)) || monthlyReports[0])
         : dailyReport;
 
       if (!activeReport) return;
@@ -655,15 +665,16 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       }
       s.targetProd += (e.productionTarget || 0);
       s.actualProd += (e.productionActual || 0);
-      if (e.shift === 'I') {
+      const sh = String(e.shift || '').trim().toUpperCase();
+      if (sh === 'I' || sh === '1' || sh === 'SHIFT 1' || sh === 'SHIFT I') {
         s.shiftProductionKg.I = e.productionActual || 0;
         s.shiftGps.I = e.gpsActual || 0;
         s.shiftUtil.I = e.utility || 0;
-      } else if (e.shift === 'II') {
+      } else if (sh === 'II' || sh === '2' || sh === 'SHIFT 2' || sh === 'SHIFT II') {
         s.shiftProductionKg.II = e.productionActual || 0;
         s.shiftGps.II = e.gpsActual || 0;
         s.shiftUtil.II = e.utility || 0;
-      } else if (e.shift === 'III') {
+      } else if (sh === 'III' || sh === '3' || sh === 'SHIFT 3' || sh === 'SHIFT III') {
         s.shiftProductionKg.III = e.productionActual || 0;
         s.shiftGps.III = e.gpsActual || 0;
         s.shiftUtil.III = e.utility || 0;
@@ -677,14 +688,14 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       s.avgUtil = utilVals.length > 0 ? Number((utilVals.reduce((a, b) => a + b, 0) / utilVals.length).toFixed(1)) : 0;
     });
 
-    return Array.from(frameMap.values()).sort((a, b) => a.frameNo.localeCompare(b.frameNo));
+    return Array.from(frameMap.values()).sort((a, b) => a.frameNo.localeCompare(b.frameNo, undefined, { numeric: true }));
   };
 
   const renderModalKpis = (modal: ExtractedPreview) => {
     // 1. Daily Report (Production Statement) - Show KPIs for the ACTIVE SHED
     if (modal.category === 'daily_report') {
       const activeRep = modal.monthlyReports
-        ? (modal.monthlyReports.find(r => r.shed === modal.shed) || modal.monthlyReports[0])
+        ? (modal.monthlyReports.find(r => normalizeShed(r.shed) === normalizeShed(modal.shed)) || modal.monthlyReports[0])
         : modal.dailyReport;
 
       const distinctSheds = modal.monthlyReports
@@ -890,7 +901,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     // 1. Production Statement (daily_report) - Show extracted frame data for the selected shed!
     if (modal.category === 'daily_report') {
       const activeReport = modal.monthlyReports
-        ? (modal.monthlyReports.find(r => r.shed === modal.shed) || modal.monthlyReports[0])
+        ? (modal.monthlyReports.find(r => normalizeShed(r.shed) === normalizeShed(modal.shed)) || modal.monthlyReports[0])
         : modal.dailyReport;
 
       const summaries = getReportSummaries(activeReport);
@@ -1552,9 +1563,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                   </span>
                   <div className="flex items-center bg-white p-0.5 rounded-xl border border-stone-200 shadow-2xs">
                     {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as const).map(s => {
-                      const repForShed = previewModal.monthlyReports?.find(r => r.shed === s) || (previewModal.dailyReport?.shed === s ? previewModal.dailyReport : null);
+                      const repForShed = previewModal.monthlyReports?.find(r => normalizeShed(r.shed) === normalizeShed(s)) || 
+                        (normalizeShed(previewModal.dailyReport?.shed) === normalizeShed(s) ? previewModal.dailyReport : null);
                       const mCount = repForShed ? (repForShed.summaries?.length || new Set(repForShed.entries?.map(e => e.frameNo)).size) : 0;
-                      const isSelected = previewModal.shed === s;
+                      const isSelected = normalizeShed(previewModal.shed) === normalizeShed(s);
                       return (
                         <button
                           key={s}

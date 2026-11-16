@@ -23,26 +23,16 @@ export function isSameShed(shedA?: string | null, shedB?: string | null): boolea
 }
 
 /**
- * Returns the exact mill shed for a machine frame number:
- * - K01-K06 (or containing KT) -> KTTM
- * - SP023 -> Shed 3
- * - SP001 - SP024 (1 to 24) -> Shed 1
- * - SP025 - SP044 (25 to 44) -> Shed 2
- * - SP045 - SP056 (45+) -> Shed 3
+ * Returns the exact mill shed for a machine frame number.
+ * Respects the explicit/fallback shed without guessing or reassigning
+ * machines to another shed based on machine number.
  */
 export function getMachineShed(frameNo: any, fallbackShed: Shed = 'Shed 1'): Shed {
-  if (!frameNo) return fallbackShed;
+  if (fallbackShed) return (normalizeShed(fallbackShed) || 'Shed 1') as Shed;
+  if (!frameNo) return 'Shed 1';
   const f = String(frameNo).trim().toUpperCase();
   if (f.startsWith('K') || f.includes('KT')) return 'KTTM';
-  if (f === 'SP023' || f === '23') return 'Shed 3';
-  const numMatch = f.match(/\d+/);
-  if (numMatch) {
-    const num = parseInt(numMatch[0], 10);
-    if (num >= 1 && num <= 24) return 'Shed 1';
-    if (num >= 25 && num <= 44) return 'Shed 2';
-    if (num >= 45) return 'Shed 3';
-  }
-  return fallbackShed;
+  return 'Shed 1';
 }
 
 export function isWorkerInList(idOrName: string, workers: Sider[]): boolean {

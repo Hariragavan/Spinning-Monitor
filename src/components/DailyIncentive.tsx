@@ -203,13 +203,6 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
         if (e.shift !== shift) return false;
         const cleanFrame = (e.frameNo || '').trim();
         if (/^\d+$/.test(cleanFrame)) return false; // Ignore bare unpadded numbers (9, 10, 11)
-        const numMatch = cleanFrame.match(/\d+/);
-        const num = numMatch ? parseInt(numMatch[0], 10) : null;
-        if (num !== null) {
-          if (activeNorm === 'Shed 1' && (num < 1 || num > 24)) return false;
-          if (activeNorm === 'Shed 2' && (num < 25 || num > 44)) return false;
-          if (activeNorm === 'Shed 3' && (num < 45 && num !== 23)) return false;
-        }
         return !e.shed || normalizeShed(e.shed) === activeNorm;
       });
       if (shiftEntries.length === 0) return;

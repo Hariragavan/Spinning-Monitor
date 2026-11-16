@@ -80,27 +80,14 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
       }
     }
 
-    // 2. Fallback to report entries, but strictly enforce shed machine boundary rules:
-    // Shed 1: frames 1-24 (SP001 - SP024)
-    // Shed 2: frames 25-44 (SP025 - SP044)
-    // Shed 3: frames 45-56, SP023
-    // KTTM: frame name includes KT or starts with K
+    // 2. Fallback to report entries belonging to the current shed
     const shedEntries = (report.entries || []).filter(e => {
       if (!e.frameNo) return false;
       const clean = e.frameNo.trim();
       if (/^\d+$/.test(clean)) return false; // Ignore bare unpadded numbers (9, 10, 11)
-      const fUpper = clean.toUpperCase();
-      const numMatch = fUpper.match(/\d+/);
-      const num = numMatch ? parseInt(numMatch[0], 10) : null;
-      if (num !== null) {
-        if (activeNorm === 'Shed 1' && (num < 1 || num > 24)) return false;
-        if (activeNorm === 'Shed 2' && (num < 25 || num > 44)) return false;
-        if (activeNorm === 'Shed 3' && (num < 45 && num !== 23)) return false;
-        if (activeNorm === 'KTTM' && !fUpper.startsWith('K')) return false;
-      }
       return !e.shed || normalizeShed(e.shed) === activeNorm;
     });
-    const unique = Array.from(new Set(shedEntries.map(e => e.frameNo))).filter(Boolean).sort();
+    const unique = Array.from(new Set(shedEntries.map(e => e.frameNo))).filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return unique;
   }, [report.entries, shed, report.shed, machinesProp]);
 

@@ -23,7 +23,7 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, getMachineShed, resolveEffectiveMappingForDate } from '../lib/utils';
+import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 
 // Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
@@ -392,8 +392,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     // Primary Source: machines registered in Machine Master for this shed
     const fromRegistry = (machinesProp || []).filter(m => {
       if (!m) return false;
-      const fNo = String(m.rfNo || (m as any).frameNo || (m as any).machineId || '').trim();
-      const mShed = getMachineShed(fNo, normalizeShed(m.shed || 'Shed 1'));
+      const mShed = normalizeShed(m.shed || 'Shed 1');
       return mShed === targetNorm;
     });
     fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
@@ -408,18 +407,17 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
       if (!f || String(f).toUpperCase().startsWith('RF')) return;
       const clean = String(f).trim();
-      if (getMachineShed(clean, targetNorm as Shed) === targetNorm) {
-        addClean(clean);
-      }
+      addClean(clean);
     });
 
     // b. Spinning frame numbers from history reports belonging to this shed
     (effectiveHistory || []).forEach(report => {
       if (!report || !report.date || !Array.isArray(report.entries)) return;
+      if (normalizeShed(report.shed) !== targetNorm) return;
       const parts = parseUniversalDateParts(report.date);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
         report.entries.forEach(e => {
-          if (e && e.frameNo && getMachineShed(e.frameNo, (e.shed as Shed) || targetNorm as Shed) === targetNorm) {
+          if (e && e.frameNo && (!e.shed || normalizeShed(e.shed) === targetNorm)) {
             addClean(e.frameNo);
           }
         });
