@@ -314,18 +314,6 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         }
       });
 
-      // Also read assigned frames from machinePairs
-      allMachinePairs.forEach((pair: any) => {
-        const sFrame = String(pair?.spinningFrame || '').trim().toUpperCase();
-        const iotM = String(pair?.iotMachine || '').trim().toUpperCase();
-        if (sFrame && sFrame !== 'NONE' && sFrame !== 'UNASSIGNED') {
-          if (sFrame.startsWith('SP') || sFrame.startsWith('K') || sFrame.startsWith('RF')) {
-            candidateFrames.add(sFrame);
-            if (iotM && iotM !== 'NONE') frameToIotMap[sFrame] = iotM;
-          }
-        }
-      });
-
       candidateFrames.forEach(frameNo => {
         // 1. Resolve IoT Machine Unit (holds RFID devices, card taps, and completed rounds)
         let iotName = (frameToIotMap[frameNo] || frameNo).trim().toUpperCase();
@@ -416,28 +404,51 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const d1DeviceId = stationList[0] || 'IOT_D1';
         const d2DeviceId = stationList[1] || 'IOT_D2';
 
-        // Telemetry lookup: match paired telemetry machine (RF44 / RF09), natural RF, or frameNo
-        const matchFinder = (m: any) => {
-          const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
-          if (!mId) return false;
-          // 1. Strict match on paired RF number from Settings (e.g. RF09)
-          if (pairedRfNo && mId === pairedRfNo) return true;
-          // 2. Numeric match on RF number (e.g. RF09 matches RF9)
+        // Telemetry lookup using tiered priority order (NEVER allow natural fallback to preempt pairedRfNo!)
+        const findTelemetryMachine = (list: any[]) => {
+          if (!Array.isArray(list) || list.length === 0) return undefined;
+
+          // Tier 1: Exact match on configured paired RF number from Settings (e.g. RF44)
           if (pairedRfNo) {
+            const exact = list.find(m => {
+              const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
+              return mId === pairedRfNo;
+            });
+            if (exact) return exact;
+
+            // Tier 2: Numeric match on paired RF number (e.g. RF44 matches RF044)
             const pInt = parseInt(pairedRfNo.replace(/\D/g, ''), 10);
-            const mInt = parseInt(mId.replace(/\D/g, ''), 10);
-            if (!isNaN(pInt) && !isNaN(mInt) && pInt === mInt && mId.startsWith('RF')) return true;
+            if (!isNaN(pInt)) {
+              const numMatch = list.find(m => {
+                const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
+                const mInt = parseInt(mId.replace(/\D/g, ''), 10);
+                return !isNaN(mInt) && mInt === pInt && mId.startsWith('RF');
+              });
+              if (numMatch) return numMatch;
+            }
           }
-          // 3. Strict match on natural RF
-          if (naturalRf && (mId === naturalRf || mId === `RF${cleanNum}`)) return true;
-          // 4. Fallback match frameNo directly
-          if (mId === frameNo) return true;
-          const mInt = parseInt(mId.replace(/\D/g, ''), 10);
-          return Boolean(!isNaN(frameInt) && !isNaN(mInt) && frameInt === mInt);
+
+          // Tier 3: If and ONLY IF no pairedRfNo was configured, fallback to natural RF (e.g. RF09)
+          if (!pairedRfNo && naturalRf) {
+            const nat = list.find(m => {
+              const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
+              return mId === naturalRf || mId === `RF${cleanNum}`;
+            });
+            if (nat) return nat;
+          }
+
+          // Tier 4: Direct frameNo match
+          const directFrame = list.find(m => {
+            const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
+            return mId === frameNo;
+          });
+          if (directFrame) return directFrame;
+
+          return undefined;
         };
 
-        const lightM = lightMachines.find(matchFinder);
-        const liveM = liveMachines.find(matchFinder);
+        const lightM = findTelemetryMachine(lightMachines);
+        const liveM = findTelemetryMachine(liveMachines);
 
         const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
         let rawCount = String(lightM?.count || liveM?.count || reportEntry?.count || '').trim();
