@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
   iotMachineMapping: {},
   machineToMachineMapping: {},
   machinePairs: [],
+  frameToIotProfileMapping: {},
+  iotProfileToFrameMapping: {},
   iotMachineMappingByDate: {},
   iotMachineAllocationPeriods: [],
 };

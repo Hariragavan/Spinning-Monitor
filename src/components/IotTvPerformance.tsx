@@ -76,10 +76,11 @@ export interface AssignedMachineSlide {
   emRight: number;
   emAvg: number;
 
-  // Active Wind Time
+  // Active Wind Time & Last Tap Time
   activityWindow: string;
   liveShiftNum: number;
   liveShiftName: string;
+  lastTapTime?: string;
 
   isBestPerformer: boolean;
 }
@@ -184,20 +185,17 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         iotApi.getMachineMappings().catch(() => [] as MachineMapping[])
       ]);
 
-      // If strict date/shift metrics are empty, fetch latest unfiltered metrics
-      let employeeMetrics = rawEmpMetrics;
-      if (!employeeMetrics || employeeMetrics.length === 0) {
-        employeeMetrics = await iotApi.getEmployeePerformance().catch(() => [] as EmployeeMetric[]);
-      }
+      // Strictly only use today's live shift metrics, never old historical data
+      const employeeMetrics = rawEmpMetrics || [];
 
-      // Also fetch live card taps for actual shift tap counters
+      // Also fetch live card taps strictly for today's live shift
       let recentCardTaps: any[] = [];
       try {
-        const ctRes = await fetch(`/api/iot/card-taps?limit=200&_t=${Date.now()}`, { cache: 'no-store' });
+        const ctRes = await fetch(`/api/iot/card-taps?date=${liveShiftDate}&shift=${liveShiftNum}&limit=500&_t=${Date.now()}`, { cache: 'no-store' });
         if (ctRes.ok) {
           const ctJson = await ctRes.json();
           if (Array.isArray(ctJson?.data)) {
-            recentCardTaps = ctJson.data;
+            recentCardTaps = ctJson.data.filter((t: any) => t.shiftDate === liveShiftDate);
           }
         }
       } catch (_) {}
@@ -205,20 +203,23 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
       const lightMachines = lightStatus?.machines || [];
       const liveMachines = liveOverview?.machines || [];
 
-      // 1. Physical Frame -> IoT Machine Unit (from Tab 5 Configuration, e.g. SP044 -> M1)
+      // 1. Physical Frame -> IoT Machine Unit (strictly from Tab 5 Configuration, e.g. SP044 -> M1)
       const frameToIotMap: Record<string, string> = {
         ...(settings?.frameToIotProfileMapping || {})
       };
 
-      if (Array.isArray(settings?.machinePairs)) {
-        settings.machinePairs.forEach((pair: any) => {
-          if (pair?.spinningFrame && pair?.iotMachine) {
-            frameToIotMap[pair.spinningFrame.trim().toUpperCase()] = pair.iotMachine.trim().toUpperCase();
+      if (settings?.iotProfileToFrameMapping) {
+        Object.entries(settings.iotProfileToFrameMapping).forEach(([k, v]) => {
+          if (k && v) {
+            const cleanK = k.trim().toUpperCase();
+            const cleanV = String(v).trim().toUpperCase();
+            if (cleanK.startsWith('SP') || cleanK.startsWith('K')) frameToIotMap[cleanK] = cleanV;
+            else if (cleanV.startsWith('SP') || cleanV.startsWith('K')) frameToIotMap[cleanV] = cleanK;
           }
         });
       }
 
-      // Check persistent localStorage for IoT Profile to Frame mappings
+      // Check persistent localStorage for Tab 5 assignments
       if (typeof window !== 'undefined') {
         try {
           const savedProfile = localStorage.getItem('frameToIotProfileMapping') || localStorage.getItem('iotProfileToFrameMapping');
@@ -235,31 +236,21 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
               });
             }
           }
-          const savedPairs = localStorage.getItem('iotMachinePairs');
-          if (savedPairs) {
-            const parsedPairs = JSON.parse(savedPairs);
-            if (Array.isArray(parsedPairs)) {
-              parsedPairs.forEach((p: any) => {
-                if (p?.spinningFrame && p?.iotMachine) {
-                  frameToIotMap[p.spinningFrame.trim().toUpperCase()] = p.iotMachine.trim().toUpperCase();
+          const savedProd = localStorage.getItem('productionMappings') || localStorage.getItem('production_mappings');
+          if (savedProd) {
+            const parsed = JSON.parse(savedProd);
+            if (parsed && typeof parsed === 'object') {
+              Object.entries(parsed).forEach(([k, v]: [string, any]) => {
+                if (k && v) {
+                  const cleanK = k.trim().toUpperCase();
+                  const cleanV = String(v).trim().toUpperCase();
+                  if (cleanK.startsWith('SP') || cleanK.startsWith('K')) frameToIotMap[cleanK] = cleanV;
+                  else if (cleanV.startsWith('SP') || cleanV.startsWith('K')) frameToIotMap[cleanV] = cleanK;
                 }
               });
             }
           }
         } catch (_) {}
-      }
-
-      // Fallback: If frameToIotMap is empty, inspect settings.iotMachineMapping / machineToMachineMapping
-      if (Object.keys(frameToIotMap).length === 0) {
-        Object.entries(settings?.iotMachineMapping || settings?.machineToMachineMapping || {}).forEach(([k, v]) => {
-          const cleanK = (k || '').trim().toUpperCase();
-          const cleanV = (v || '').trim().toUpperCase();
-          if (cleanK.startsWith('SP') || cleanK.startsWith('K')) {
-            frameToIotMap[cleanK] = cleanV;
-          } else if (cleanV.startsWith('SP') || cleanV.startsWith('K')) {
-            frameToIotMap[cleanV] = cleanK;
-          }
-        });
       }
 
       // 2. Physical Frame -> Paired Telemetry Machine in Settings (e.g. SP044 -> RF44)
@@ -289,7 +280,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
       const builtSlides: AssignedMachineSlide[] = [];
 
-      // ONLY SHOW MACHINES THAT ARE EXPLICITLY ASSIGNED IN CONFIGURATION
+      // ONLY SHOW MACHINES THAT ARE EXPLICITLY ASSIGNED IN CONFIGURATION (Tab 5)
       const candidateFrames = new Set<string>();
       Object.entries(frameToIotMap).forEach(([k, v]) => {
         const cleanK = (k || '').trim().toUpperCase();
@@ -302,13 +293,6 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           }
         }
       });
-
-      if (candidateFrames.size === 0) {
-        Object.keys(frameToIotMap).forEach(k => {
-          const clean = k.trim().toUpperCase();
-          if (clean && clean !== 'NONE' && clean !== 'UNASSIGNED') candidateFrames.add(clean);
-        });
-      }
 
       candidateFrames.forEach(frameNo => {
         // 1. Resolve IoT Machine Unit (holds RFID devices, card taps, and completed rounds)
@@ -359,10 +343,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const liveM = liveMachines.find(matchFinder);
 
         const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
-        let yarnCount = String(lightM?.count || liveM?.count || reportEntry?.count || '030/1-PH-PC');
-        if ((!yarnCount || yarnCount === '-') && reportEntry?.count) {
-          yarnCount = reportEntry.count;
-        }
+        let yarnCount = String(lightM?.count || liveM?.count || reportEntry?.count || '').trim() || '-';
 
         // Machine Live Running Status: RUNNING, DOFFING, STOPPED from paired telemetry machine (RF44)
         let machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED' = 'RUNNING';
@@ -380,25 +361,29 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           rpm = Number(lightM?.speed ?? liveM?.spindleSpeedCurrent ?? liveM?.speed ?? 0);
         }
 
-        let productionKg = Number(
-          lightM?.shiftProduction ?? 
-          lightM?.production ?? 
-          liveM?.shiftProduction ?? 
-          (liveM as any)?.production ?? 
-          reportEntry?.productionActual ?? 
-          0
-        );
+        let productionKg = 0;
+        if (machineLiveStatus !== 'STOPPED') {
+          productionKg = Number(
+            lightM?.shiftProduction ?? 
+            lightM?.production ?? 
+            liveM?.shiftProduction ?? 
+            (liveM as any)?.production ?? 
+            0
+          );
+        }
 
-        let gpsActual = Number(
-          lightM?.gps || 
-          liveM?.gps || 
-          (liveM as any)?.currentGps || 
-          reportEntry?.gpsActual || 
-          0
-        );
-        if (gpsActual <= 0 && productionKg > 0) {
-          const spindles = Number((reportEntry as any)?.spindles || 1200);
-          gpsActual = Number(((productionKg * 1000) / spindles / 8).toFixed(1));
+        let gpsActual = 0;
+        if (machineLiveStatus !== 'STOPPED') {
+          if (typeof lightM?.gps === 'number' && lightM.gps > 0) {
+            gpsActual = lightM.gps;
+          } else if (typeof liveM?.gps === 'number' && liveM.gps > 0) {
+            gpsActual = liveM.gps;
+          } else if (reportEntry?.gpsActual && reportEntry.gpsActual > 0) {
+            gpsActual = reportEntry.gpsActual;
+          } else if (productionKg > 0) {
+            const spindles = Number((reportEntry as any)?.spindles || 1200);
+            gpsActual = Number(((productionKg * 1000) / spindles / 8).toFixed(1));
+          }
         }
 
         // EM Left and EM Right from paired telemetry machine (RF44)
@@ -407,16 +392,18 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
         let emLeft = 0;
         let emRight = 0;
-        if (typeof lightM?.emLeft === 'number' && lightM.emLeft > 0) {
-          emLeft = lightM.emLeft;
-        } else if (typeof sideL?.endMendingTime === 'number' && sideL.endMendingTime > 0) {
-          emLeft = Number(sideL.endMendingTime);
-        }
+        if (machineLiveStatus !== 'STOPPED') {
+          if (typeof lightM?.emLeft === 'number' && lightM.emLeft > 0) {
+            emLeft = lightM.emLeft;
+          } else if (typeof sideL?.endMendingTime === 'number' && sideL.endMendingTime > 0) {
+            emLeft = Number(sideL.endMendingTime);
+          }
 
-        if (typeof lightM?.emRight === 'number' && lightM.emRight > 0) {
-          emRight = lightM.emRight;
-        } else if (typeof sideR?.endMendingTime === 'number' && sideR.endMendingTime > 0) {
-          emRight = Number(sideR.endMendingTime);
+          if (typeof lightM?.emRight === 'number' && lightM.emRight > 0) {
+            emRight = lightM.emRight;
+          } else if (typeof sideR?.endMendingTime === 'number' && sideR.endMendingTime > 0) {
+            emRight = Number(sideR.endMendingTime);
+          }
         }
         const emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
 
@@ -441,15 +428,17 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           // 1. Settings override (if any)
           const override = devOpMapFromSettings[cleanDevId];
 
-          // 2. Recent live card taps for this device (from /api/iot/card-taps)
+          // 2. Recent live card taps for this device strictly for liveShiftDate
           const matchingTaps = recentCardTaps.filter(t => 
-            (t.machineId && t.machineId.toUpperCase() === cleanDevId) ||
-            (t.deviceId && t.deviceId.toUpperCase() === cleanDevId) ||
-            (devObj?.deviceId && t.deviceId && t.deviceId.toUpperCase() === devObj.deviceId.toUpperCase())
+            (t.shiftDate === liveShiftDate) && (
+              (t.machineId && t.machineId.toUpperCase() === cleanDevId) ||
+              (t.deviceId && t.deviceId.toUpperCase() === cleanDevId) ||
+              (devObj?.deviceId && t.deviceId && t.deviceId.toUpperCase() === devObj.deviceId.toUpperCase())
+            )
           );
           const latestLiveTap = matchingTaps.length > 0 ? matchingTaps[0] : null;
 
-          // 3. Employee metrics for this device (from /dashboard/employee)
+          // 3. Employee metrics for this device strictly for liveShiftDate
           const met = employeeMetrics.find(m => 
             (m.machineId && m.machineId.toUpperCase() === cleanDevId) || 
             (devObj?.deviceId && m.machineId && m.machineId.toUpperCase() === devObj.deviceId.toUpperCase()) ||
@@ -514,7 +503,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             (extToken && extToken.toLowerCase() !== 'unassigned' && extToken !== 'null')
           );
 
-          // Real Live Taps for this device
+          // Real Live Taps strictly for today (0 if none)
           let tapsCount = 0;
           if (latestLiveTap?.cardTap !== undefined && Number(latestLiveTap.cardTap) > 0) {
             tapsCount = Number(latestLiveTap.cardTap);
@@ -522,12 +511,29 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             tapsCount = Number(lastMetTap.cardTap);
           } else if (matchingTaps.length > 0) {
             tapsCount = matchingTaps.length;
-          } else if (met?.taps?.length) {
-            tapsCount = met.taps.length;
           }
 
           // Device rounds
-          const devRounds = Number(met?.roundsCompleted ?? met?.rounds ?? Math.round(tapsCount / 2));
+          let devRounds = 0;
+          if (met?.roundsCompleted !== undefined && Number(met.roundsCompleted) > 0) {
+            devRounds = Number(met.roundsCompleted);
+          } else if (tapsCount > 0) {
+            devRounds = Math.round(tapsCount / 2);
+          }
+
+          // Last tap timestamp formatted (e.g. "08:34 AM")
+          let lastTapIso = latestLiveTap?.tapTime || (lastMetTap as any)?.tapTime;
+          let lastTapDisplay = '';
+          let lastTapTimestamp = 0;
+          if (lastTapIso) {
+            try {
+              const d = new Date(lastTapIso);
+              if (!isNaN(d.getTime())) {
+                lastTapDisplay = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                lastTapTimestamp = d.getTime();
+              }
+            } catch (_) {}
+          }
 
           return {
             deviceId: devId,
@@ -538,6 +544,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             isAssigned,
             tapsCount,
             rounds: devRounds,
+            lastTapTime: lastTapDisplay,
+            lastTapTimestamp,
             metric: met
           };
         };
@@ -549,7 +557,6 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         let d2Taps = d2.tapsCount;
         let totalTaps = d1Taps + d2Taps;
         
-        // Shift Standards: Max 60 rounds, 120 total taps (60 each device)
         const expectedRounds = 60;
         const targetTaps = 120;
         const d1TargetTaps = 60;
@@ -561,45 +568,103 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           d2.rounds || 0,
           Math.round(totalTaps / 2)
         );
-        completedRounds = Math.min(60, Math.max(0, completedRounds));
+
+        // Overall last tap time between D1 and D2
+        let lastTapTime = '';
+        const d1Ts = d1.lastTapTimestamp || 0;
+        const d2Ts = d2.lastTapTimestamp || 0;
+        if (d1Ts > 0 || d2Ts > 0) {
+          lastTapTime = d1Ts >= d2Ts ? d1.lastTapTime : d2.lastTapTime;
+        }
+        if (!lastTapTime) {
+          lastTapTime = totalTaps > 0 ? 'Recorded' : 'No Taps Recorded';
+        }
 
         // Calculate performance score directly based on completed rounds (max 60)
-        let performanceScore = Math.min(100, Math.max(0, Math.round((completedRounds / expectedRounds) * 100)));
+        let performanceScore = completedRounds > 0 
+          ? Math.min(100, Math.max(0, Math.round((completedRounds / expectedRounds) * 100))) 
+          : 0;
 
         // Best Performer condition: proper rounds completed (cadence >= 75% or 45+ rounds)
         const isBestPerformer = performanceScore >= 75 && machineLiveStatus !== 'STOPPED';
 
-        // MAX INCENTIVE: Incentive of the machine that is assigned for the current GPS
+        // MAX INCENTIVE: Incentive amount for this count from Incentive Master
         let maxIncentive = 0;
-        if (reportEntry && rules && rules.length > 0) {
-          maxIncentive = calculateIncentive(reportEntry, rules, report?.date, reportEntry.shed || selectedShed);
-        }
-        if (maxIncentive <= 0 && rules && rules.length > 0) {
-          const rule = getActiveRule(yarnCount, 'Sider', rules, liveShiftDate, selectedShed);
-          if (rule?.payouts && rule.payouts.length > 0) {
-            const sorted = [...rule.payouts].sort((a, b) => {
-              const tA = b.fromGps !== undefined ? b.fromGps : b.gpsThreshold;
-              const tB = a.fromGps !== undefined ? a.fromGps : a.gpsThreshold;
-              return tA - tB;
+        if (rules && rules.length > 0 && yarnCount && yarnCount !== '-') {
+          const cleanCount = yarnCount.trim().toLowerCase();
+          const cleanDigits = cleanCount.match(/\d+/)?.[0] || '';
+
+          // 1. Direct or normalized match in Incentive Master rules
+          let matchedRule = rules.find(r => {
+            if (!r?.count) return false;
+            const rc = r.count.trim().toLowerCase();
+            if (rc === cleanCount) return true;
+            const rNorm = rc.replace(/[\s\-_/]/g, '');
+            const cNorm = cleanCount.replace(/[\s\-_/]/g, '');
+            return rNorm === cNorm || cNorm.includes(rNorm) || rNorm.includes(cNorm);
+          });
+
+          // 2. Count digits + category match (e.g. 40 and ch/cw/pc/dy)
+          if (!matchedRule && cleanDigits) {
+            matchedRule = rules.find(r => {
+              if (!r?.count) return false;
+              const rc = r.count.trim().toLowerCase();
+              const rDigits = rc.match(/\d+/)?.[0];
+              if (rDigits === cleanDigits) {
+                if ((cleanCount.includes('ch') && rc.includes('ch')) ||
+                    (cleanCount.includes('cw') && rc.includes('cw')) ||
+                    (cleanCount.includes('pc') && rc.includes('pc')) ||
+                    (cleanCount.includes('dy') && rc.includes('dy'))) {
+                  return true;
+                }
+              }
+              return false;
             });
-            const matched = sorted.find(p => {
-              const threshold = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
-              return gpsActual >= threshold;
-            });
-            maxIncentive = matched?.amount || sorted[0]?.amount || 0;
           }
-        }
-        if (maxIncentive <= 0) {
-          maxIncentive = 450;
+
+          // 3. Fallback to count digits match
+          if (!matchedRule && cleanDigits) {
+            matchedRule = rules.find(r => {
+              if (!r?.count) return false;
+              const rDigits = r.count.trim().toLowerCase().match(/\d+/)?.[0];
+              return rDigits === cleanDigits;
+            });
+          }
+
+          if (matchedRule) {
+            let maxAmount = 0;
+            if (Array.isArray(matchedRule.payouts) && matchedRule.payouts.length > 0) {
+              matchedRule.payouts.forEach((p: any) => {
+                const amt = Number(p.amount || 0);
+                if (amt > maxAmount) maxAmount = amt;
+              });
+            }
+            if (Array.isArray((matchedRule as any).rules) && (matchedRule as any).rules.length > 0) {
+              (matchedRule as any).rules.forEach((r: any) => {
+                const amt = Number(r.amount || 0);
+                if (amt > maxAmount) maxAmount = amt;
+              });
+            }
+            if (Array.isArray((matchedRule as any).slabs) && (matchedRule as any).slabs.length > 0) {
+              (matchedRule as any).slabs.forEach((s: any) => {
+                const amt = Number(s.amount || 0);
+                if (amt > maxAmount) maxAmount = amt;
+              });
+            }
+            maxIncentive = maxAmount;
+          }
         }
 
         // EARNED INCENTIVE: Calculated based on performance score and max incentive
-        let earnedIncentive = Math.round(maxIncentive * (performanceScore / 100));
+        let earnedIncentive = maxIncentive > 0 && performanceScore > 0 
+          ? Math.round(maxIncentive * (performanceScore / 100)) 
+          : 0;
 
         // When STOPPED: all data becomes 0 as requested
         if (machineLiveStatus === 'STOPPED') {
           rpm = 0;
           productionKg = 0;
+          gpsActual = 0;
           maxIncentive = 0;
           earnedIncentive = 0;
           performanceScore = 0;
@@ -607,6 +672,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           totalTaps = 0;
           d1Taps = 0;
           d2Taps = 0;
+          emLeft = 0;
+          emRight = 0;
         }
 
         // Check if dual operators exist across the 2 devices
@@ -658,6 +725,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           activityWindow: liveWindowLabel,
           liveShiftNum,
           liveShiftName,
+          lastTapTime,
           isBestPerformer
         });
       });
@@ -739,7 +807,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           <AlertTriangle size={34} className="text-amber-600" />
         </div>
         <h3 className="text-2xl font-black uppercase tracking-wide text-stone-900">
-          No Assigned Machines Found
+          Machine is not assigned
         </h3>
         <p className="text-sm text-slate-600 max-w-md mt-2 leading-relaxed font-medium">
           IoT TV Dashboard displays machines only when they are actively assigned. 
@@ -1176,18 +1244,30 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                   </span>
                 </div>
 
-                {/* Box 2: Active wind time */}
-                <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl shadow-md flex flex-col justify-between items-center text-center">
-                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-500 mb-1">
-                    ACTIVE WIND TIME
-                  </span>
-                  <div className="my-auto py-1">
-                    <div className="text-2xl sm:text-4xl xl:text-5xl font-black text-stone-900 tracking-tight font-mono">
-                      {currentSlide.activityWindow}
+                {/* Box 2: Active Wind Time (small) & Last Tap Time (in same box below) */}
+                <div className="p-5 sm:p-6 bg-slate-50 border-2 border-slate-200 rounded-3xl shadow-md flex flex-col justify-between">
+                  {/* Top: Active Wind Time (small) */}
+                  <div className="text-center pb-2.5 border-b border-slate-200">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-0.5">
+                      ACTIVE WIND TIME
+                    </span>
+                    <div className="text-sm sm:text-base font-bold text-slate-700 font-mono">
+                      {currentSlide.activityWindow} <span className="text-xs text-slate-400">({currentSlide.liveShiftName})</span>
                     </div>
                   </div>
-                  <span className="text-[11px] font-bold text-slate-400 uppercase">
-                    Live Shift Window ({currentSlide.liveShiftName})
+
+                  {/* Bottom: Last Tap Time (prominent) */}
+                  <div className="text-center pt-2 my-auto">
+                    <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-slate-500 block mb-1">
+                      LAST TAP TIME
+                    </span>
+                    <div className="text-2xl sm:text-4xl xl:text-5xl font-black text-stone-900 font-mono tabular-nums">
+                      {currentSlide.lastTapTime || 'No Taps Recorded'}
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] font-bold text-slate-400 text-center uppercase">
+                    Live Shift Patrol Window &amp; RFID Tap
                   </span>
                 </div>
               </div>

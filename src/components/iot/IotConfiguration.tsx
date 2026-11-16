@@ -134,7 +134,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
 
         const pMap: Record<string, string> = {};
 
-        // 1. From dedicated frameToIotProfileMapping / iotProfileToFrameMapping
+        // 1. From dedicated frameToIotProfileMapping / iotProfileToFrameMapping (Tab 5 Machine Assignments)
         const profileMap = settingsData?.frameToIotProfileMapping || settingsData?.iotProfileToFrameMapping || {};
         Object.entries(profileMap).forEach(([k, v]) => {
           if (k && v) {
@@ -143,34 +143,24 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
           }
         });
 
-        // 2. Also merge from machinePairs array if available
-        if (Array.isArray(settingsData?.machinePairs)) {
-          settingsData.machinePairs.forEach((pair: any) => {
-            if (pair?.spinningFrame && pair?.iotMachine) {
-              pMap[pair.spinningFrame.trim().toUpperCase()] = pair.iotMachine.trim().toUpperCase();
-              pMap[pair.iotMachine.trim().toUpperCase()] = pair.spinningFrame.trim().toUpperCase();
-            }
-          });
-        }
-
-        // 3. Fallback check from persistent localStorage
+        // 2. Persistent localStorage check for Tab 5 assignments
         if (typeof window !== 'undefined') {
           try {
-            const savedPairs = localStorage.getItem('iotMachinePairs');
-            if (savedPairs) {
-              const parsed = JSON.parse(savedPairs);
-              if (Array.isArray(parsed)) {
-                parsed.forEach((pair: any) => {
-                  if (pair?.spinningFrame && pair?.iotMachine) {
-                    pMap[pair.spinningFrame.trim().toUpperCase()] = pair.iotMachine.trim().toUpperCase();
-                    pMap[pair.iotMachine.trim().toUpperCase()] = pair.spinningFrame.trim().toUpperCase();
+            const savedProfile = localStorage.getItem('frameToIotProfileMapping') || localStorage.getItem('iotProfileToFrameMapping');
+            if (savedProfile) {
+              const parsed = JSON.parse(savedProfile);
+              if (parsed && typeof parsed === 'object') {
+                Object.entries(parsed).forEach(([k, v]: [string, any]) => {
+                  if (k && v) {
+                    pMap[k.trim().toUpperCase()] = String(v).trim().toUpperCase();
+                    pMap[String(v).trim().toUpperCase()] = k.trim().toUpperCase();
                   }
                 });
               }
             }
-            const savedProfile = localStorage.getItem('frameToIotProfileMapping') || localStorage.getItem('iotProfileToFrameMapping');
-            if (savedProfile) {
-              const parsed = JSON.parse(savedProfile);
+            const savedProd = localStorage.getItem('productionMappings') || localStorage.getItem('production_mappings');
+            if (savedProd) {
+              const parsed = JSON.parse(savedProd);
               if (parsed && typeof parsed === 'object') {
                 Object.entries(parsed).forEach(([k, v]: [string, any]) => {
                   if (k && v) {
