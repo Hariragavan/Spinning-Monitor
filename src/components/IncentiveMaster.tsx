@@ -71,7 +71,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Distinct counts belonging strictly to the selected shed from Count Master (All Master)
+  // Distinct counts belonging strictly to the selected shed, plus all registered counts so any count can be configured shed-wise
   const availableCountNames = React.useMemo(() => {
     const list: { count: string; shed: string; factor: number }[] = [];
     const seen = new Set<string>();
@@ -88,18 +88,30 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       }
     };
 
-    // Strictly add registered counts from All Count Master (countConversions)
+    // 1. Strictly add registered counts for the selected shed tab
     countConversions.forEach(c => {
       if (!c.count) return;
-      if (selectedShedTab === 'All Sheds') {
+      if (selectedShedTab === 'All Sheds' || c.shed === selectedShedTab || normalizeShed(c.shed) === normalizeShed(selectedShedTab)) {
         addCount(c.count, c.shed || 'Shed 1', c.multiplicationFactor);
-      } else if (c.shed === selectedShedTab || normalizeShed(c.shed) === normalizeShed(selectedShedTab)) {
-        addCount(c.count, c.shed, c.multiplicationFactor);
       }
     });
 
+    // 2. Add counts from existing rules for this shed
+    rules.forEach(r => {
+      if (!r || !r.count || (r.department && r.department !== 'Sider')) return;
+      const rShed = r.shed || 'Shed 1';
+      if (selectedShedTab === 'All Sheds' || normalizeShed(rShed) === normalizeShed(selectedShedTab) || rShed === 'All Sheds') {
+        addCount(r.count, rShed);
+      }
+    });
+
+    // 3. Also include remaining mill counts so any count can be added/configured for this shed
+    countConversions.forEach(c => {
+      if (c.count) addCount(c.count, c.shed || 'Shed 1', c.multiplicationFactor);
+    });
+
     return list;
-  }, [countConversions, selectedShedTab]);
+  }, [countConversions, rules, selectedShedTab]);
 
 // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
   // Filter rules strictly by selected shed tab, showing only existing saved rules for counts from this shed
@@ -170,16 +182,10 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     if (!selectedCount) return;
     const effectiveShed = builderShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
     const activeRule = rules.find(r => 
-      r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() &&
-      (r.shed || 'Shed 1') === effectiveShed
+      normalizeCountName(r.count) === normalizeCountName(selectedCount) &&
+      normalizeShed(r.shed || 'Shed 1') === normalizeShed(effectiveShed)
     ) || rules.find(r => 
-      isCountNameMatching(r.count, selectedCount) &&
-      (r.shed || 'Shed 1') === effectiveShed
-    ) || rules.find(r => 
-      r.count.toLowerCase().trim() === selectedCount.toLowerCase().trim() &&
-      r.shed === 'All Sheds'
-    ) || rules.find(r => 
-      isCountNameMatching(r.count, selectedCount) &&
+      normalizeCountName(r.count) === normalizeCountName(selectedCount) &&
       r.shed === 'All Sheds'
     );
 
@@ -296,11 +302,11 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
       shed: targetShed
     };
 
-    // Filter out existing rule for THIS count in THIS shed OR All Sheds to prevent duplicate rules
+    // Filter out existing rule ONLY for THIS count in THIS specific shed
     const updatedRules = [
       ...rules.filter(r => !(
-        (isCountNameMatching(r.count, cleanCount) || r.count.toLowerCase().trim() === cleanCount.toLowerCase()) && 
-        ((r.shed || 'Shed 1') === targetShed || r.shed === 'All Sheds' || targetShed === 'All Sheds') &&
+        normalizeCountName(r.count) === normalizeCountName(cleanCount) && 
+        normalizeShed(r.shed || 'Shed 1') === normalizeShed(targetShed) &&
         (r.department || 'Sider') === 'Sider'
       )),
       cleanRule
@@ -323,8 +329,8 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     const targetShed = newCountShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
 
     const exists = rules.some(r => 
-      r.count.toUpperCase() === clean &&
-      (r.shed || 'Shed 1') === targetShed
+      normalizeCountName(r.count) === normalizeCountName(clean) &&
+      normalizeShed(r.shed || 'Shed 1') === normalizeShed(targetShed)
     );
     if (exists) {
       setNewCountError(`Count rule "${clean}" for ${targetShed} already exists.`);
@@ -361,13 +367,13 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     const targetShed = ruleShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
     if (confirm(`Delete incentive rule for count "${ruleCount}" in ${targetShed}?`)) {
       const remaining = rules.filter(r => !(
-        (isCountNameMatching(r.count, ruleCount) || r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim()) && 
-        ((r.shed || 'Shed 1') === targetShed || r.shed === 'All Sheds')
+        normalizeCountName(r.count) === normalizeCountName(ruleCount) && 
+        normalizeShed(r.shed || 'Shed 1') === normalizeShed(targetShed)
       ));
       onUpdate(remaining);
       await apiClient.deleteRule(ruleCount, targetShed);
       if (selectedCount === ruleCount) {
-        const next = remaining.find(r => (r.shed || 'Shed 1') === targetShed) || remaining[0] || availableCountNames[0];
+        const next = remaining.find(r => normalizeShed(r.shed || 'Shed 1') === normalizeShed(targetShed)) || remaining[0] || availableCountNames[0];
         if (next) {
           setSelectedCount(next.count);
           setBuilderShed(next.shed || 'Shed 1');
@@ -380,8 +386,8 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   const handleDeleteSlotFromRule = (ruleCount: string, ruleShed: string | undefined, slotIdx: number) => {
     const targetShed = ruleShed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : 'Shed 1');
     const targetRule = rules.find(r => 
-      r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && 
-      (r.shed || 'Shed 1') === targetShed
+      normalizeCountName(r.count) === normalizeCountName(ruleCount) && 
+      normalizeShed(r.shed || 'Shed 1') === normalizeShed(targetShed)
     );
     if (!targetRule) return;
 
@@ -393,7 +399,7 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
     if (confirm(`Delete Slot ${slotIdx + 1} from ${ruleCount} (${targetShed})?`)) {
       const updatedPayouts = targetRule.payouts.filter((_, idx) => idx !== slotIdx);
       const updatedRules = rules.map(r => 
-        (r.count.toLowerCase().trim() === ruleCount.toLowerCase().trim() && (r.shed || 'Shed 1') === targetShed)
+        (normalizeCountName(r.count) === normalizeCountName(ruleCount) && normalizeShed(r.shed || 'Shed 1') === normalizeShed(targetShed))
           ? { ...r, payouts: updatedPayouts } 
           : r
       );

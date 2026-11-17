@@ -816,12 +816,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       if (shiftRes && Array.isArray(shiftRes.machinesDetail) && shiftRes.machinesDetail.length > 0) {
         shiftRes.machinesDetail.forEach(m => {
           if (!m || !isMachineExisted(m.frameNo)) return;
-          const mappedDev = resolveMappedDevice(dateMapping, m.frameNo);
-          const devBadge = mappedDev ? ` [${mappedDev}]` : '';
           logs.push({
             date: report.date,
             shift: shiftRes.shift,
-            machine: `${m.frameNo}${devBadge} (${m.sides} side${m.sides > 1 ? 's' : ''})`,
+            machine: `${m.frameNo} (${m.sides} side${m.sides > 1 ? 's' : ''})`,
             gps: m.gps,
             count: m.count || '',
             em: m.assignedEm
@@ -1084,8 +1082,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         emValue = entry.doffEmt ?? 0;
       }
 
-      const devBadge = mappedDev ? ` [${mappedDev}]` : '';
-      const mcDisplay = `${frameNo}${devBadge}`;
+      const mcDisplay = frameNo;
 
       if (assignedIds.length > 0) {
         assignedIds.forEach(id => {
@@ -1693,20 +1690,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                     </thead>
                     <tbody>
                       {machines.map(machine => {
-                        const registeredDev = resolveMappedDevice(safeSettings?.iotMachineMapping, machine) 
-                          || safeSettings?.iotMachineMapping?.[machine] 
-                          || registeredInfoForMonth.frameToDevice[machine];
                         return (
                           <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
                             <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
-                              <div className="flex items-center gap-1.5">
-                                <span>{machine}</span>
-                                {registeredDev && (
-                                  <span className="text-[10px] font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200" title={`Registered IoT Device: ${registeredDev}`}>
-                                    {registeredDev}
-                                  </span>
-                                )}
-                              </div>
+                              <span>{machine}</span>
                             </td>
                             {selectedMonthDates.map(date => {
                               const dateMapping = resolveEffectiveMappingForDate(
@@ -1716,40 +1703,35 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                 safeSettings?.iotMachineMapping
                               );
                               const mappedDev = resolveMappedDevice(dateMapping, machine);
-                              const isIotAssigned = Boolean(mappedDev && mappedDev !== 'NONE');
 
                               return (
                                 <React.Fragment key={`val-${machine}-${date}`}>
                                   {shifts.map(shift => {
                                     const isAssigned = isMachineAssignedOnShift(date, shift, machine);
-                                    // Read live EM whenever machine is IoT assigned on this date
-                                    const val = isIotAssigned
-                                      ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)
-                                      : undefined;
+                                    // Always read EM value whenever available, even if unassigned
+                                    const val = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
                                     const hasVal = val !== undefined && val !== null;
                                     return (
                                       <td 
                                         key={`cell-${machine}-${date}-${shift}`}
                                         onClick={() => {
-                                          if (isAssigned && isIotAssigned) {
-                                            handleOpenEmDetail(date, machine, shift, val, mappedDev);
-                                          }
+                                          handleOpenEmDetail(date, machine, shift, val, mappedDev);
                                         }}
-                                        className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all ${
-                                          isAssigned && isIotAssigned
-                                            ? 'hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group'
-                                            : 'text-stone-300 bg-stone-50/20 cursor-not-allowed'
+                                        className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group ${
+                                          hasVal
+                                            ? 'text-stone-900 font-bold'
+                                            : isAssigned
+                                            ? 'text-stone-400 bg-stone-50/10'
+                                            : 'text-stone-300 bg-stone-50/20'
                                         }`}
                                         title={
-                                          !isIotAssigned
-                                            ? `${machine} is not assigned to an IoT machine on ${date}`
-                                            : !isAssigned
-                                            ? `${machine} was not assigned in Shift ${shift} on ${date}`
-                                            : `Click to view Left/Right/Total EM: ${machine} [${mappedDev}] · Shift ${shift} · ${date}`
+                                          hasVal
+                                            ? `Click to view Left/Right/Total EM: ${machine} · Shift ${shift} · ${date}`
+                                            : `${machine} · Shift ${shift} · ${date} (Click to inspect EM)`
                                         }
                                       >
                                         {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
-                                        {isIotAssigned && hasVal && (
+                                        {hasVal && (
                                           <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
                                             <Eye size={8} />
                                           </div>
@@ -2356,11 +2338,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                 <span className="px-2.5 py-1 rounded-lg bg-stone-200/80 font-bold text-stone-800 text-[11px]">
                   Shift {activeEmDetail.shift}
                 </span>
-                {activeEmDetail.mappedIot && (
-                  <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-800 font-mono font-bold text-[11px]">
-                    IoT: {activeEmDetail.mappedIot}
-                  </span>
-                )}
               </div>
             </div>
 

@@ -76,7 +76,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
       (['I', 'II', 'III'] as Shift[]).forEach(shift => {
         const entry = frameEntries.find(e => e.shift === shift);
         if (entry) {
-          const inc = calculateIncentive(entry, rules, report.date);
+          const inc = calculateIncentive(entry, rules, report.date, entry.shed || report.shed);
           const assignedWorkers: string[] = [];
           if (entry.siderIds && entry.siderIds.length > 0) {
             entry.siderIds.forEach(id => {
@@ -348,7 +348,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
       XLSX.utils.book_append_sheet(wb, ws, 'Machine Master Data');
     } else {
       const rows = (filteredEntries || []).map((e, idx) => {
-        const inc = calculateIncentive(e, rules, report.date);
+        const inc = calculateIncentive(e, rules, report.date, e.shed || report.shed);
         return {
           'S.No': idx + 1,
           'Machine': e.frameNo,
@@ -391,7 +391,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
     } else {
       csv += `Frame,Shift,Count,Target (Kg),Actual (Kg),GPS Target,GPS Actual,Efficiency %,Utility %,Operator,Incentive (Rs)\n`;
       (report.entries || []).forEach(e => {
-        const inc = calculateIncentive(e, rules, report.date);
+        const inc = calculateIncentive(e, rules, report.date, e.shed || report.shed);
         csv += `"${e.frameNo}","${e.shift}","${e.count}",${e.productionTarget},${e.productionActual},${e.gpsTarget},${e.gpsActual},${e.efficiency}%,${e.utility}%,"${e.siderName || ''}",${inc}\n`;
       });
     }
@@ -768,7 +768,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
             <tbody className="divide-y divide-stone-100 font-medium">
               {filteredEntries.map((entry, idx) => {
                 const variance = (entry.productionActual || 0) - (entry.productionTarget || 0);
-                const inc = calculateIncentive(entry, rules, report.date);
+                const inc = calculateIncentive(entry, rules, report.date, entry.shed || report.shed);
                 const assignedWorkers = (entry.siderIds && entry.siderIds.length > 0)
                   ? entry.siderIds.map(id => resolveWorker(id, entry.siderName, workers).name).filter(Boolean).join(', ')
                   : (entry.siderName || (entry.siderId ? resolveWorker(entry.siderId, undefined, workers).name : 'Unassigned'));

@@ -356,7 +356,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
       // Operator entries
       if (report.entries) {
         report.entries.forEach(entry => {
-          const payout = calculateIncentive(entry, rules, report.date);
+          const payout = calculateIncentive(entry, rules, report.date, entry.shed || report.shed);
           if (payout > 0) {
             if (entry.siderId) activeWorkerIds.add(entry.siderId);
             if (entry.siderIds) {
@@ -1271,7 +1271,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Production Report');
-    XLSX.writeFile(wb, `KTTM_Ringframe_Production_Report_${dateStr}.xlsx`);
+    XLSX.writeFile(wb, `Ringframe_Production_Report_${dateStr}.xlsx`);
   };
 
   const handleExportMachineWiseProductionToExcel = () => {
@@ -1321,7 +1321,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Machine Wise Report');
-    XLSX.writeFile(wb, `KTTM_Ringframe_Machine_Wise_Production_Report_${dateStr}.xlsx`);
+    XLSX.writeFile(wb, `Ringframe_Machine_Wise_Production_Report_${dateStr}.xlsx`);
   };
 
   const handleExportAbstractToExcel = () => {
@@ -1365,7 +1365,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Incentive Abstract');
-    XLSX.writeFile(wb, `KTTM_Ringframe_Operator_Incentive_Abstract_${dateStr}.xlsx`);
+    XLSX.writeFile(wb, `Operator_Incentive_Abstract_${dateStr}.xlsx`);
   };
 
   return (
@@ -1703,7 +1703,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                   alt="SCM Textile Spinners"
                   className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs mx-auto mb-3"
                 />
-                <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">KTTM Ring frame Operator Incentive Abstract</h1>
+                <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">Operator Incentive Abstract</h1>
                 <div className="mt-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
                   Month: <span className="text-stone-950 font-black text-sm">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span>
                 </div>
@@ -1917,7 +1917,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                     className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs"
                   />
                   <div className="border-l-2 border-stone-300 pl-4">
-                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">KTTM Ringframe Production Report</h2>
+                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">Ringframe Production Report</h2>
                   </div>
                 </div>
 
@@ -2105,7 +2105,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                     className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs"
                   />
                   <div className="border-l-2 border-stone-300 pl-4">
-                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">KTTM Ringframe Production Report</h2>
+                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">Ringframe Machine Wise Production Report</h2>
                   </div>
                 </div>
 
@@ -2585,7 +2585,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
                   alt="SCM Textile Spinners"
                   className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
                 />
-                <h1 className="text-2xl font-black text-black uppercase tracking-tight">KTTM Ring frame Operator Incentive Abstract</h1>
+                <h1 className="text-2xl font-black text-black uppercase tracking-tight">Operator Incentive Abstract</h1>
                 <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-4">
                   <span>
                     Month: <span className="text-black font-extrabold text-sm">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span>

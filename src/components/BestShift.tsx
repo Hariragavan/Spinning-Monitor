@@ -96,7 +96,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
 
     siderMap.forEach((data, rKey) => {
       const worker = data.resolvedWorker;
-      const totalIncentive = Math.min(120, data.entries.reduce((acc, e) => acc + calculateIncentive(e, rules), 0));
+      const totalIncentive = Math.min(120, data.entries.reduce((acc, e) => acc + calculateIncentive(e, rules, report.date, e.shed || report.shed), 0));
       const avgGps = data.entries.reduce((acc, e) => acc + (e.gpsActual || 0), 0) / data.entries.length;
       const avg40sGps = data.entries.reduce((acc, e) => acc + (e.gps40sCon || 0), 0) / data.entries.length;
       
@@ -289,7 +289,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
         const worker = workerId ? resolveWorker(workerId, entry.siderName, workers) : null;
 
         const isAssigned = !!worker;
-        const baseIncentive = calculateIncentive(entry, rules);
+        const baseIncentive = calculateIncentive(entry, rules, report.date, entry.shed || report.shed);
         const incentive = isAssigned ? baseIncentive : 0;
 
         return {

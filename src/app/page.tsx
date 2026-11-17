@@ -1700,9 +1700,9 @@ export default function Home() {
       const cleanCount = r.count.trim();
       const s = r.shed || fallbackShed;
       const d = r.department || 'Sider';
-      const num = extractCountNumber(cleanCount);
-      const countKey = (d === 'Sider' && num !== null) ? `count_${num}` : normalizeCountName(cleanCount);
-      const key = `${countKey}__${d.toLowerCase()}__${s.toLowerCase()}`;
+      const normCount = normalizeCountName(cleanCount);
+      const normShed = normalizeShed(s);
+      const key = `${normCount}__${d.toLowerCase()}__${normShed.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
         normalized.unshift({
