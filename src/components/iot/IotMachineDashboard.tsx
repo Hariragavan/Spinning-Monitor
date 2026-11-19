@@ -24,7 +24,9 @@ import {
   Gauge,
   Activity,
   Target,
-  Mountain
+  Mountain,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 /**
@@ -368,17 +370,51 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     return list;
   }, [overview, selectedRunStatus, selectedCount, activeKpi, endBreaksSort]);
 
-  // Machine navigation in modal
-  const currentIndex = displayedMachines.findIndex(m => m.machineId === (selectedMachineDetail?.machine?.machineId || activeMachineId));
-  const hasPrevMachine = currentIndex > 0;
-  const hasNextMachine = currentIndex >= 0 && currentIndex < displayedMachines.length - 1;
-  const prevMachineId = hasPrevMachine ? displayedMachines[currentIndex - 1]?.machineId : null;
-  const nextMachineId = hasNextMachine ? displayedMachines[currentIndex + 1]?.machineId : null;
+  // Machine navigation in modal: reliable, continuous cyclical navigation
+  const machineList = useMemo(() => {
+    if (displayedMachines && displayedMachines.length > 0) return displayedMachines;
+    if (overview?.machines && overview.machines.length > 0) return overview.machines;
+    return [];
+  }, [displayedMachines, overview]);
 
-  const navigateMachine = (direction: -1 | 1) => {
-    const target = direction === -1 ? prevMachineId : nextMachineId;
-    if (target) openMachineModal(target);
-  };
+  const currentMachineId = selectedMachineDetail?.machine?.machineId || activeMachineId || '';
+
+  const currentIndex = useMemo(() => {
+    if (!machineList.length || !currentMachineId) return -1;
+    const norm = currentMachineId.trim().toUpperCase();
+    return machineList.findIndex(m => m.machineId.trim().toUpperCase() === norm);
+  }, [machineList, currentMachineId]);
+
+  const prevMachine = useMemo(() => {
+    if (machineList.length <= 1) return null;
+    const prevIdx = currentIndex > 0 ? currentIndex - 1 : machineList.length - 1;
+    return machineList[prevIdx];
+  }, [machineList, currentIndex]);
+
+  const nextMachine = useMemo(() => {
+    if (machineList.length <= 1) return null;
+    const nextIdx = (currentIndex + 1) % machineList.length;
+    return machineList[nextIdx];
+  }, [machineList, currentIndex]);
+
+  const hasPrevMachine = machineList.length > 1;
+  const hasNextMachine = machineList.length > 1;
+  const prevMachineId = prevMachine?.machineId || null;
+  const nextMachineId = nextMachine?.machineId || null;
+
+  const navigateMachine = useCallback((direction: -1 | 1) => {
+    if (!machineList.length) return;
+    let targetIdx: number;
+    if (currentIndex === -1) {
+      targetIdx = direction === 1 ? 0 : machineList.length - 1;
+    } else {
+      targetIdx = (currentIndex + direction + machineList.length) % machineList.length;
+    }
+    const target = machineList[targetIdx]?.machineId;
+    if (target) {
+      openMachineModal(target);
+    }
+  }, [machineList, currentIndex, openMachineModal]);
 
   // Keyboard navigation for modals (ESC key to close, Left/Right arrow keys for Next/Prev machine)
   useEffect(() => {
@@ -387,10 +423,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
         if (emModalOpen) closeEmModal();
         if (modalOpen) closeModal();
       } else if (modalOpen) {
-        if (e.key === 'ArrowLeft' && hasPrevMachine) {
+        if (e.key === 'ArrowLeft') {
           e.preventDefault();
           navigateMachine(-1);
-        } else if (e.key === 'ArrowRight' && hasNextMachine) {
+        } else if (e.key === 'ArrowRight') {
           e.preventDefault();
           navigateMachine(1);
         }
@@ -398,7 +434,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [modalOpen, emModalOpen, closeModal, closeEmModal, hasPrevMachine, hasNextMachine]);
+  }, [modalOpen, emModalOpen, closeModal, closeEmModal, navigateMachine]);
 
   const maxHourlyProduction = useMemo(() => {
     if (!overview?.hourlyProduction?.chart?.length) return 20;
@@ -1070,14 +1106,14 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     }}
                     onClick={() => openMachineModal(m.machineId)}
                   >
-                    {/* Header: RF01 • 40sPV and Status Badge (Idea 2: Vibrant Solid Green Pill) */}
+                    {/* Header: RF01 • 40sPV and Status Badge (Big Machine No.) */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
-                        <span style={{ fontSize: '1.38rem', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.02em', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', minWidth: 0 }}>
+                        <span style={{ fontSize: '1.85rem', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.03em', lineHeight: 1, fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
                           {m.machineId}
                         </span>
-                        <span style={{ color: '#94a3b8', fontWeight: 900, fontSize: '1.1rem' }}>•</span>
-                        <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#334155', background: '#f1f5f9', padding: '0.22rem 0.65rem', borderRadius: '8px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                        <span style={{ color: '#94a3b8', fontWeight: 900, fontSize: '1.2rem' }}>•</span>
+                        <span style={{ fontSize: '0.96rem', fontWeight: 800, color: '#334155', background: '#f1f5f9', padding: '0.22rem 0.65rem', borderRadius: '8px', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                           {m.count || '-'}
                         </span>
                       </div>
@@ -1329,54 +1365,57 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             </div>
                           </>
                         ) : (
-                          /* TOTAL MACHINES, RUNNING, DOFFING, STOPPED, AVERAGE_RPM (EXACTLY MATCHING IDEA 2: TEAL GREEN IMAGE) */
+                          /* TOTAL MACHINES, RUNNING, DOFFING, STOPPED, AVERAGE_RPM (PRODUCTION, WASTE, END BREAKS) */
                           <>
-                            {/* Card 1: CURRENT SPEED */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.42rem 0.75rem', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(20, 184, 166, 0.2)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                                <Gauge size={22} strokeWidth={2.2} style={{ color: '#0F766E', flexShrink: 0 }} />
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                                  <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1 }}>Current Speed</div>
-                                  <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.spindleSpeedCurrent || 0).toLocaleString()} <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B' }}>rpm</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0F766E', background: '#E6FFFA', padding: '0.2rem 0.55rem', borderRadius: '8px', border: '1px solid rgba(20, 184, 166, 0.25)' }}>
-                                100%
-                              </div>
-                            </div>
-
-                            {/* Card 2: SHIFT OUTPUT */}
+                            {/* Card 1: Production */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.42rem 0.75rem', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(20, 184, 166, 0.2)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                                 <Factory size={22} strokeWidth={2.2} style={{ color: '#0F766E', flexShrink: 0 }} />
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                                  <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1 }}>Shift Output</div>
-                                  <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B' }}>{m.productionUnit || 'kg'}</span>
+                                  <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1 }}>Production</div>
+                                  <div style={{ fontSize: '1.28rem', fontWeight: 900, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#10B981', fontSize: '0.78rem', fontWeight: 800 }}>
                                 <TrendingUp size={15} strokeWidth={2.5} />
-                                <span>+{m.yieldPercent ? `${m.yieldPercent}%` : '100%'}</span>
+                                <span>+{m.yieldPercent ? `${m.yieldPercent}%` : '2.3%'}</span>
                               </div>
                             </div>
 
-                            {/* Card 3: DELIVERY SPEED */}
+                            {/* Card 2: Waste */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.42rem 0.75rem', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(20, 184, 166, 0.2)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                                <Activity size={22} strokeWidth={2.2} style={{ color: '#0F766E', flexShrink: 0 }} />
+                                <Recycle size={22} strokeWidth={2.2} style={{ color: '#0F766E', flexShrink: 0 }} />
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-                                  <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1 }}>Delivery Speed</div>
-                                  <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {deliverySpeed} <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B' }}>m/min</span>
+                                  <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1 }}>Waste</div>
+                                  <div style={{ fontSize: '1.28rem', fontWeight: 900, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B' }}>{m.wasteUnit || '%'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', background: '#F1F5F9', padding: '0.2rem 0.55rem', borderRadius: '8px' }}>
-                                Std GPS
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#10B981', fontSize: '0.78rem', fontWeight: 800 }}>
+                                <TrendingDown size={15} strokeWidth={2.5} />
+                                <span>{(m.shiftWaste || 0) > 1.5 ? `+${((m.shiftWaste || 0) - 1.5).toFixed(1)}%` : `-0.2%`}</span>
+                              </div>
+                            </div>
+
+                            {/* Card 3: End Breaks */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.42rem 0.75rem', background: '#ffffff', borderRadius: '12px', border: '1px solid rgba(20, 184, 166, 0.2)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                                <Zap size={22} strokeWidth={2.2} style={{ color: '#0F766E', flexShrink: 0 }} />
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.64rem', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1 }}>End Breaks</div>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.45rem' }}>
+                                    <span style={{ fontSize: '1.28rem', fontWeight: 900, color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                      {m.totalEndBreakCount || 0}
+                                    </span>
+                                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748B', whiteSpace: 'nowrap' }}>
+                                      {m.breakSidesDisplay || `L: ${leftSide?.endBreakCount || 0} · R: ${rightSide?.endBreakCount || 0}`}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </>
@@ -1572,10 +1611,54 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
             <div className="slide-popup-header">
               <div className="slide-popup-top-bar">
                 <div className="modal-title-wrap">
-                  <div className="modal-heading-row">
-                    <h1 className="modal-machine-title">
-                      {selectedMachineDetail?.machine?.machineId || activeMachineId}
-                    </h1>
+                  <div className="modal-heading-row" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => navigateMachine(-1)}
+                        title={`Previous Machine (${prevMachineId || 'Prev'}) - Left Arrow key`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1.5px solid #cbd5e1',
+                          background: '#ffffff',
+                          color: '#0F766E',
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <ChevronLeft size={18} strokeWidth={2.8} />
+                      </button>
+                      <h1 className="modal-machine-title" style={{ margin: 0, fontSize: '1.85rem', fontWeight: 900, letterSpacing: '-0.02em', color: '#0F172A' }}>
+                        {selectedMachineDetail?.machine?.machineId || activeMachineId}
+                      </h1>
+                      <button
+                        type="button"
+                        onClick={() => navigateMachine(1)}
+                        title={`Next Machine (${nextMachineId || 'Next'}) - Right Arrow key`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: '1.5px solid #cbd5e1',
+                          background: '#ffffff',
+                          color: '#0F766E',
+                          cursor: 'pointer',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <ChevronRight size={18} strokeWidth={2.8} />
+                      </button>
+                    </div>
                     {selectedMachineDetail?.machine?.count && (
                       <span className="modal-shift-badge" style={{ background: '#e0f2fe', color: '#0369a1' }}>
                         Count {selectedMachineDetail.machine.count}
@@ -1590,24 +1673,54 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
 
                 <div className="slide-header-controls">
                   {/* Machine Quick Nav Switchers (Keyboard Left/Right Arrow enabled) */}
-                  <div className="machine-nav-pills">
+                  <div className="machine-nav-pills" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#F1F5F9', padding: '0.25rem', borderRadius: '12px' }}>
                     <button
                       type="button"
                       className="btn-nav-machine"
-                      disabled={!hasPrevMachine}
                       onClick={() => navigateMachine(-1)}
-                      title="Previous machine (Left Arrow ‹)"
+                      title={`Previous machine (${prevMachineId || 'Prev'}) - Left Arrow key`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        padding: '0.4rem 0.8rem',
+                        borderRadius: '9px',
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#0F766E',
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                        transition: 'all 0.15s ease'
+                      }}
                     >
-                      ‹ {prevMachineId || 'Prev'}
+                      <ChevronLeft size={16} strokeWidth={2.8} />
+                      <span>{prevMachineId || 'Prev'}</span>
                     </button>
                     <button
                       type="button"
                       className="btn-nav-machine"
-                      disabled={!hasNextMachine}
                       onClick={() => navigateMachine(1)}
-                      title="Next machine (Right Arrow ›)"
+                      title={`Next machine (${nextMachineId || 'Next'}) - Right Arrow key`}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        padding: '0.4rem 0.8rem',
+                        borderRadius: '9px',
+                        background: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#0F766E',
+                        fontWeight: 800,
+                        fontSize: '0.84rem',
+                        cursor: 'pointer',
+                        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                        transition: 'all 0.15s ease'
+                      }}
                     >
-                      {nextMachineId || 'Next'} ›
+                      <span>{nextMachineId || 'Next'}</span>
+                      <ChevronRight size={16} strokeWidth={2.8} />
                     </button>
                   </div>
 
@@ -1794,28 +1907,11 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 const peakRpm = hourlyPoints.length > 0 ? Math.max(...hourlyPoints.map(p => p.rpm)) : currentSpeed;
                 const avgRpm = activePoints.length > 0 ? Math.round(activePoints.reduce((a, b) => a + b.rpm, 0) / activePoints.length) : currentSpeed;
 
-                // Dynamic, intelligent Y-axis range: vertically centered with ample headroom
-                const activeRpms = activePoints.map(p => p.rpm);
-                const minRpm = activeRpms.length > 0 ? Math.min(...activeRpms) : Math.round(currentSpeed * 0.95);
-                const maxRpm = activeRpms.length > 0 ? Math.max(...activeRpms) : Math.round(currentSpeed * 1.05);
-                const hasStops = hourlyPoints.some(p => p.rpm === 0);
-
-                // Headroom: at least 1,200 RPM above peak so speech bubbles never clip the top
-                const maxY = Math.ceil((maxRpm + 1200) / 500) * 500;
-                let minY = 0;
-                if (!hasStops) {
-                  minY = Math.max(0, Math.floor((minRpm - 2000) / 500) * 500);
-                }
-                if (maxY - minY < 3500) {
-                  minY = Math.max(0, maxY - 3500);
-                }
-
-                const rangeY = maxY - minY || 3500;
-                const step = rangeY > 6000 ? 1000 : 500;
-                const yLevels: number[] = [];
-                for (let lvl = maxY; lvl >= minY; lvl -= step) {
-                  yLevels.push(lvl);
-                }
+                // Fixed Speed Range: 0 to 25k (0, 5k, 10k, 15k, 20k, 25k) as requested by user
+                const minY = 0;
+                const maxY = 25000;
+                const rangeY = 25000;
+                const yLevels: number[] = [25000, 20000, 15000, 10000, 5000, 0];
 
                 // SVG dimensions for big chart
                 const svgW = 880;
@@ -2371,9 +2467,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                       fill="#64748b"
                                       fontSize="12"
                                       fontFamily="system-ui, sans-serif"
-                                      fontWeight="600"
+                                      fontWeight="700"
                                     >
-                                      {(lvl / 1000).toFixed(1)}k
+                                      {lvl === 0 ? '0' : `${lvl / 1000}k`}
                                     </text>
                                   </g>
                                 );
@@ -2521,16 +2617,39 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                           </div>
                         </div>
 
-                        {/* Existing Hour-Wise Production Bar Chart Card + Table */}
-                        <div className="speed-sensors-grid">
+                        {/* Balanced Hour-Wise Production Bar Chart Card + Log Table */}
+                        <div
+                          className="speed-sensors-grid"
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1.15fr 1fr',
+                            gap: '1.25rem',
+                            alignItems: 'stretch',
+                            width: '100%'
+                          }}
+                        >
                           {/* Hour-Wise Production Bar Chart Card */}
-                          <div className="curve-card">
+                          <div
+                            className="curve-card"
+                            style={{
+                              background: '#ffffff',
+                              borderRadius: '16px',
+                              border: '1.5px solid #e2e8f0',
+                              padding: '1.25rem 1.4rem',
+                              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.03)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              boxSizing: 'border-box',
+                              height: '100%'
+                            }}
+                          >
                             <div className="curve-header">
                               <div>
-                                <h4 className="card-heading">
+                                <h4 className="card-heading" style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
                                   Hour-Wise Production ({selectedMachineDetail.machine.machineId})
                                 </h4>
-                                <p className="card-subhead">
+                                <p className="card-subhead" style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#64748B' }}>
                                   Live <code style={{ fontSize: '0.75rem' }}>hourWiseProduction</code> values ({selectedMachineDetail.machine.productionUnit || 'kg'}) across Shift {overview.shift}
                                 </p>
                               </div>
@@ -2559,7 +2678,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               })}
                             </div>
 
-                            <div className="curve-stats-footer" style={{ marginTop: '1rem' }}>
+                            <div className="curve-stats-footer" style={{ marginTop: '1rem', paddingTop: '0.85rem' }}>
                               <div className="cstat-item">
                                 <span className="cstat-lbl">CURRENT RPM</span>
                                 <span className="cstat-val">
@@ -2585,14 +2704,43 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                           </div>
 
                           {/* Hour-Wise Production Table */}
-                          <div className="devices-bounds-card">
-                            <h4 className="card-heading">Hour-Wise Production Log</h4>
-                            <p className="card-subhead">
-                              Breakdown of {selectedMachineDetail.machine.hourWiseProduction?.length || 0} logged hours out of {overview.totalShiftHours ?? 8} total shift hours
-                            </p>
+                          <div
+                            className="devices-bounds-card"
+                            style={{
+                              background: '#ffffff',
+                              borderRadius: '16px',
+                              border: '1.5px solid #e2e8f0',
+                              padding: '1.25rem 1.4rem',
+                              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.03)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              boxSizing: 'border-box',
+                              height: '100%'
+                            }}
+                          >
+                            <div className="curve-header">
+                              <div>
+                                <h4 className="card-heading" style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
+                                  Hour-Wise Production Log
+                                </h4>
+                                <p className="card-subhead" style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#64748B' }}>
+                                  Breakdown of {selectedMachineDetail.machine.hourWiseProduction?.length || 0} logged hours out of {overview.totalShiftHours ?? 8} total shift hours
+                                </p>
+                              </div>
+                            </div>
 
-                            <div className="table-scroll-container">
-                              <table className="data-table">
+                            <div
+                              className="table-scroll-container"
+                              style={{
+                                flex: 1,
+                                overflowY: 'auto',
+                                maxHeight: '250px',
+                                marginTop: '1rem',
+                                borderRadius: '10px',
+                                border: '1px solid #f1f5f9'
+                              }}
+                            >
+                              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                   <tr>
                                     <th>HOUR</th>
@@ -2636,6 +2784,39 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               })()}
             </div>
           </div>
+
+          {/* Floating Left Arrow on backdrop beside the slide panel for 1-click previous machine navigation */}
+          {hasPrevMachine && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                navigateMachine(-1);
+              }}
+              title={`Previous Machine (${prevMachineId || 'Prev'}) - Left Arrow key`}
+              style={{
+                position: 'fixed',
+                right: 'min(955px, 95vw)',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                width: '46px',
+                height: '46px',
+                borderRadius: '50%',
+                background: '#ffffff',
+                border: '2px solid #14B8A6',
+                color: '#0F766E',
+                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.22)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 10000002,
+                transition: 'transform 0.15s ease, background 0.15s ease'
+              }}
+            >
+              <ChevronLeft size={26} strokeWidth={3} />
+            </button>
+          )}
         </div>
       )}
 

@@ -534,9 +534,13 @@ export function buildMachineDetailFromCommon(
       ? rawOrOverview
       : transformCommonToOverview(rawOrOverview);
 
+  const normalizedId = String(machineId || '').trim().toUpperCase();
   const machine: SpinfoMachineItem =
     activeOverview.machines.find(
-      m => m.machineId === machineId || m.machineId === decodeURIComponent(machineId)
+      m =>
+        String(m.machineId || '').trim().toUpperCase() === normalizedId ||
+        String(m.machine || '').trim().toUpperCase() === normalizedId ||
+        String(m.machineId || '').trim().toUpperCase() === decodeURIComponent(normalizedId)
     ) ||
     activeOverview.machines[0] || {
       machineId,
