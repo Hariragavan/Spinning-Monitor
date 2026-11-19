@@ -550,18 +550,21 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
     const isToday = canonical === todayCanonical;
 
-    // For today: if machine has live EM telemetry data or is assigned to an IoT device, it runs live
+    const dateMapping = resolveEffectiveMappingForDate(
+      date,
+      safeSettings?.iotMachineAllocationPeriods,
+      safeSettings?.iotMachineMappingByDate,
+      safeSettings?.iotMachineMapping
+    );
+
+    // If machine has recorded/live EM telemetry data on this date & shift, it definitely ran!
+    const emVal = getMachineEmValue(effectiveMachineEm, date, cleanMachine, shift, dateMapping);
+    if (emVal !== undefined && emVal !== null) {
+      return true;
+    }
+
+    // For today: if machine is mapped to an active IoT device, it runs live
     if (isToday) {
-      const dateMapping = resolveEffectiveMappingForDate(
-        date,
-        safeSettings?.iotMachineAllocationPeriods,
-        safeSettings?.iotMachineMappingByDate,
-        safeSettings?.iotMachineMapping
-      );
-      const val = getMachineEmValue(effectiveMachineEm, date, cleanMachine, shift, dateMapping);
-      if (val !== undefined && val !== null) {
-        return true;
-      }
       const mappedDev = resolveMappedDevice(dateMapping, cleanMachine);
       if (mappedDev && mappedDev !== 'NONE' && mappedDev !== 'unassigned') {
         return true;
@@ -607,7 +610,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const hasCount = Boolean(entry.count && entry.count.trim() !== '' && entry.count.trim() !== '-');
 
     return hasAssignedWorker || hasProd || hasCount;
-  }, [effectiveHistory]);
+  }, [effectiveHistory, safeSettings, effectiveMachineEm]);
 
   const isMachineAssignedOnShift = isMachineRunOnShift;
 
@@ -1944,9 +1947,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                               return (
                                 <React.Fragment key={`val-${machine}-${date}`}>
                                   {shifts.map(shift => {
-                                    const ran = isMachineRunOnShift(date, shift, machine);
+                                    const emFromData = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
+                                    const ran = isMachineRunOnShift(date, shift, machine) || (emFromData !== undefined && emFromData !== null);
                                     // Only read EM value if machine actually ran / was uploaded on this date & shift
-                                    const val = ran ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping) : undefined;
+                                    const val = ran ? (emFromData !== undefined && emFromData !== null ? emFromData : getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)) : undefined;
                                     const hasVal = val !== undefined && val !== null;
 
                                     const now = new Date();
@@ -1971,7 +1975,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                         className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group ${
                                           hasVal
                                             ? isLive
-                                              ? 'text-emerald-600 font-black bg-emerald-50/40'
+                                              ? 'text-green-600 font-extrabold bg-green-50/40'
                                               : 'text-stone-900 font-bold'
                                             : ran
                                             ? 'text-stone-400 bg-stone-50/10'
@@ -1983,14 +1987,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                             : `${machine} · Shift ${shift} · ${date} (${ran ? 'Running' : 'Not Run'})`
                                         }
                                       >
-                                        <span className={isLive && hasVal ? 'text-emerald-600 font-black inline-flex items-center justify-center gap-1' : ''}>
+                                        <span className={isLive && hasVal ? 'text-green-600 font-extrabold inline-flex items-center justify-center gap-1' : ''}>
                                           {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
                                           {isLive && hasVal && (
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Telemetry" />
+                                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" title="Live Telemetry" />
                                           )}
                                         </span>
                                         {hasVal && (
-                                          <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
+                                          <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-green-600 transition-opacity">
                                             <Eye size={8} />
                                           </div>
                                         )}
@@ -2026,13 +2030,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                 <td 
                                   key={`col-total-${date}-${shift}`}
                                   className={`p-3 text-center font-mono border-r border-stone-100 ${
-                                    isLive ? 'text-emerald-600 font-black bg-emerald-100/50' : 'text-stone-900 font-bold bg-stone-100/50'
+                                    isLive ? 'text-green-600 font-extrabold bg-green-50/50' : 'text-stone-900 font-bold bg-stone-100/50'
                                   }`}
                                 >
-                                  <span className={isLive && avg !== '-' ? 'inline-flex items-center justify-center gap-1' : ''}>
+                                  <span className={isLive && avg !== '-' ? 'inline-flex items-center justify-center gap-1 text-green-600 font-extrabold' : ''}>
                                     {avg}
                                     {isLive && avg !== '-' && (
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Shift" />
+                                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" title="Live Shift" />
                                     )}
                                   </span>
                                 </td>

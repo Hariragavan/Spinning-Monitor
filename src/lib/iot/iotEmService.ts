@@ -282,28 +282,37 @@ export async function getLightweightMachineStatuses(): Promise<{
 
       // Upsert EM records to iot_em on every 45s cycle so live database stays current
       const emBulk: any[] = [];
+      const nowDate = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const todayIso = `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}`;
+      const todayCanonical = `${pad(nowDate.getDate())}/${pad(nowDate.getMonth() + 1)}/${nowDate.getFullYear()}`;
+      const datesToWrite = Array.from(new Set([shiftDate, todayIso, todayCanonical]));
+
       for (const st of cachedStatuses) {
         if (!st.machine) continue;
-        emBulk.push({
-          updateOne: {
-            filter: { machineNo: st.machine, date: shiftDate, shift },
-            update: {
-              $set: {
-                machineNo: st.machine,
-                date: shiftDate,
-                month,
-                shift,
-                emLeft: st.emLeft || 0,
-                emRight: st.emRight || 0,
-                emTotal: st.emTotal || 0,
-                totalEndBreaks: st.totalEndBreaks || 0,
-                updatedAt: new Date()
+        for (const d of datesToWrite) {
+          const dMonth = d.includes('/') ? `${d.slice(6, 10)}-${d.slice(3, 5)}` : d.slice(0, 7);
+          emBulk.push({
+            updateOne: {
+              filter: { machineNo: st.machine, date: d, shift },
+              update: {
+                $set: {
+                  machineNo: st.machine,
+                  date: d,
+                  month: dMonth,
+                  shift,
+                  emLeft: st.emLeft || 0,
+                  emRight: st.emRight || 0,
+                  emTotal: st.emTotal || 0,
+                  totalEndBreaks: st.totalEndBreaks || 0,
+                  updatedAt: new Date()
+                },
+                $setOnInsert: { recordedAt: new Date() }
               },
-              $setOnInsert: { recordedAt: new Date() }
-            },
-            upsert: true
-          }
-        });
+              upsert: true
+            }
+          });
+        }
       }
       if (emBulk.length > 0) {
         await db.collection(IOT_COLLECTIONS.EM).bulkWrite(emBulk, { ordered: false }).catch(() => {});
@@ -777,6 +786,104 @@ export async function getMappedMachineEmFromIotEm(
       }
     }
 
+    // Ensure today's live telemetry from iot_spinfo_lives is always present in merged for today's date
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+    const isTargetingToday = !targetDate || getDateVariants(todayCanonical).includes(targetDate) || getDateVariants(todayIso).includes(targetDate);
+
+    if (isTargetingToday) {
+      try {
+        const liveDoc = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
+        if (liveDoc && Array.isArray(liveDoc.machines) && liveDoc.machines.length > 0) {
+          const dateMap = resolveEffectiveMappingForDate(
+            todayCanonical,
+            allocationPeriods,
+            mappingsByDate,
+            activeMappings
+          );
+          const todayDateKeys = Array.from(new Set([todayCanonical, todayIso, ...getDateVariants(todayCanonical), ...getDateVariants(todayIso)]));
+
+          for (const m of liveDoc.machines) {
+            const cleanIot = String(m.machine || m.machineId || '').trim().toUpperCase();
+            if (!cleanIot) continue;
+
+            const sideL = (m.sides || []).find((s: any) => s.side === 'L');
+            const sideR = (m.sides || []).find((s: any) => s.side === 'R');
+            const emLeft = Number(sideL?.endMendingTime || 0);
+            const emRight = Number(sideR?.endMendingTime || 0);
+            const emVal = Number((emLeft + emRight).toFixed(2));
+            let emAvg = 0;
+            if (emLeft > 0 && emRight > 0) {
+              emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
+            } else if (emLeft > 0) {
+              emAvg = Number(emLeft.toFixed(2));
+            } else if (emRight > 0) {
+              emAvg = Number(emRight.toFixed(2));
+            } else if (emVal > 0) {
+              emAvg = Number((emVal / 2).toFixed(2));
+            }
+            const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+            const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+            const totalEndBreaks = Number(m.shiftEndBreaks || m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+            const unit = String(sideL?.endMendingTimeUnit || sideR?.endMendingTimeUnit || 'min');
+
+            const targetKeys = new Set<string>(getFrameVariants(cleanIot));
+            let mappedSpinningFrame: string | undefined = undefined;
+            if (dateMap) {
+              for (const [sFrame, iDev] of Object.entries(dateMap)) {
+                if (iDev && iDev.trim().toUpperCase() === cleanIot) {
+                  getFrameVariants(sFrame).forEach(k => targetKeys.add(k));
+                  mappedSpinningFrame = sFrame;
+                }
+              }
+            }
+
+            for (const shiftNum of [1, 2, 3]) {
+              const sideDetail: IotEmSideDetail = {
+                machineNo: cleanIot,
+                spinningFrame: mappedSpinningFrame,
+                mappedIot: cleanIot,
+                date: todayCanonical,
+                shift: shiftNum,
+                emLeft,
+                emRight,
+                emTotal: emVal,
+                emAvg,
+                unit,
+                endBreakCountLeft,
+                endBreakCountRight,
+                totalEndBreaks
+              };
+
+              for (const dKey of todayDateKeys) {
+                if (!merged[dKey]) merged[dKey] = {};
+                if (!detailsMap[dKey]) detailsMap[dKey] = {};
+
+                for (const fKey of targetKeys) {
+                  if (!merged[dKey][fKey]) merged[dKey][fKey] = {};
+                  if (!detailsMap[dKey][fKey]) detailsMap[dKey][fKey] = {};
+
+                  // Record live EM value for shifts 1, 2, 3 of today
+                  if (merged[dKey][fKey][shiftNum] === undefined) {
+                    merged[dKey][fKey][shiftNum] = emAvg;
+                    merged[dKey][fKey][String(shiftNum)] = emAvg;
+                  }
+                  if (!detailsMap[dKey][fKey][shiftNum]) {
+                    detailsMap[dKey][fKey][shiftNum] = sideDetail;
+                    detailsMap[dKey][fKey][String(shiftNum)] = sideDetail;
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (liveErr) {
+        console.warn('Error merging live spinfo EM in getMappedMachineEmFromIotEm:', liveErr);
+      }
+    }
+
     (merged as any)._details = detailsMap;
     return merged;
   } catch (err) {
@@ -865,6 +972,41 @@ export async function getSingleMachineEmDetail(
           spinningFrame: cleanMachine,
           mappedIot,
           date: shiftDoc.shiftDate,
+          shift: sNum,
+          emLeft,
+          emRight,
+          emTotal,
+          unit: 'min',
+          endBreakCountLeft,
+          endBreakCountRight,
+          totalEndBreaks
+        };
+      }
+    }
+
+    // 4. Fallback: Query iot_spinfo_lives for live snapshot
+    const liveDoc = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
+    if (liveDoc && Array.isArray(liveDoc.machines)) {
+      const matchM = liveDoc.machines.find((m: any) => {
+        const id = String(m.machine || m.machineId || '').toUpperCase().trim();
+        return frameVariants.includes(id);
+      });
+
+      if (matchM) {
+        const sideL = matchM.sides?.find((s: any) => s.side === 'L');
+        const sideR = matchM.sides?.find((s: any) => s.side === 'R');
+        const emLeft = Number(sideL?.endMendingTime || 0);
+        const emRight = Number(sideR?.endMendingTime || 0);
+        const emTotal = Number((emLeft + emRight).toFixed(2));
+        const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
+        const endBreakCountRight = Number(sideR?.endBreakCount || 0);
+        const totalEndBreaks = Number(matchM.shiftEndBreaks || matchM.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
+
+        return {
+          machineNo: String(matchM.machine || matchM.machineId || cleanMachine),
+          spinningFrame: cleanMachine,
+          mappedIot,
+          date,
           shift: sNum,
           emLeft,
           emRight,
@@ -1245,6 +1387,23 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
         r.value.forEach(d => {
           if (d?.shift) syncedShifts.push(Number(d.shift));
         });
+      }
+    }
+
+    // If today is not in allRawDocs from remote, fall back to local live snapshot in iot_spinfo_lives
+    const hasTodayInRaw = allRawDocs.some(d => d && (d.shiftDate === todayIso || (d.dataTime && d.dataTime.slice(0, 10) === todayIso)));
+    if (!hasTodayInRaw) {
+      const liveSnapshot = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
+      if (liveSnapshot && Array.isArray(liveSnapshot.machines) && liveSnapshot.machines.length > 0) {
+        for (const s of [1, 2, 3]) {
+          allRawDocs.push({
+            ...liveSnapshot,
+            shiftDate: todayIso,
+            shift: s,
+            recordType: 'LIVE'
+          });
+          syncedShifts.push(s);
+        }
       }
     }
 
