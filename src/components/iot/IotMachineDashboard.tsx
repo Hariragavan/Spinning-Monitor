@@ -1025,16 +1025,16 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 }
 
                 const cardBgColor =
-                  m.runStatus === 'RUN' ? '#dcfce7' :
-                  m.runStatus === 'DOFF' ? '#fef08a' :
-                  m.runStatus === 'STOP' ? '#fee2e2' :
-                  '#f1f5f9';
+                  m.runStatus === 'RUN' ? '#f2fcf5' :
+                  m.runStatus === 'DOFF' ? '#fefce8' :
+                  m.runStatus === 'STOP' ? '#fef2f2' :
+                  '#f8fafc';
 
                 const cardBorderColor =
-                  m.runStatus === 'RUN' ? '#86efac' :
+                  m.runStatus === 'RUN' ? '#bbf7d0' :
                   m.runStatus === 'DOFF' ? '#fde047' :
-                  m.runStatus === 'STOP' ? '#fca5a5' :
-                  '#cbd5e1';
+                  m.runStatus === 'STOP' ? '#fecaca' :
+                  '#e2e8f0';
 
                 return (
                   <div
