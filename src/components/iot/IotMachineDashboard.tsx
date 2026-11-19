@@ -1024,6 +1024,18 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   dialColor = 'cyan';
                 }
 
+                const cardBgColor =
+                  m.runStatus === 'RUN' ? '#dcfce7' :
+                  m.runStatus === 'DOFF' ? '#fef08a' :
+                  m.runStatus === 'STOP' ? '#fee2e2' :
+                  '#f1f5f9';
+
+                const cardBorderColor =
+                  m.runStatus === 'RUN' ? '#86efac' :
+                  m.runStatus === 'DOFF' ? '#fde047' :
+                  m.runStatus === 'STOP' ? '#fca5a5' :
+                  '#cbd5e1';
+
                 return (
                   <div
                     key={m.machineId}
@@ -1036,6 +1048,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         ? 'status-doffing'
                         : 'status-offline'
                     }`}
+                    style={{
+                      backgroundColor: cardBgColor,
+                      borderColor: cardBorderColor
+                    }}
                     onClick={() => openMachineModal(m.machineId)}
                   >
                     {/* Header: RF01 • 40sPV and Status Badge (Running / Stopped / Doffing) */}
@@ -1098,21 +1114,21 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         label={dialLabel}
                         customUnit={dialUnit}
                         colorScheme={dialColor}
-                        size={124}
+                        size={132}
                       />
 
                       {/* Right 3 Rows */}
-                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.38rem', flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.35rem', flex: 1, minWidth: 0 }}>
                         {/* 1. SPEED VIEW ROWS */}
                         {activeKpi === 'AVERAGE_RPM' ? (
                           <>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Gauge size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Current Speed</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.spindleSpeedCurrent || 0).toLocaleString()} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>rpm</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Current Speed</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.spindleSpeedCurrent || 0).toLocaleString()} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>rpm</span>
                                   </div>
                                 </div>
                               </div>
@@ -1124,10 +1140,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Shift Output</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1140,10 +1156,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Activity size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Delivery Speed</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    215 <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>m/min</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Delivery Speed</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    215 <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>m/min</span>
                                   </div>
                                 </div>
                               </div>
@@ -1158,10 +1174,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Shift Output</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1174,10 +1190,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Target size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Target</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftTargetProduction || 120).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Shift Target</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftTargetProduction || 120).toFixed(1)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1189,10 +1205,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Clock size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Hourly Rate</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {((m.shiftProduction || 0) / Math.max(1, m.hourWiseProduction?.length || 8)).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>Kg/h</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Hourly Rate</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {((m.shiftProduction || 0) / Math.max(1, m.hourWiseProduction?.length || 8)).toFixed(1)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>Kg/h</span>
                                   </div>
                                 </div>
                               </div>
@@ -1207,10 +1223,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Recycle size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Waste</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Shift Waste</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1223,10 +1239,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Shift Output</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1238,10 +1254,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Zap size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Waste Mass</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(((m.shiftProduction || 0) * (m.shiftWaste || 1)) / 100).toFixed(2)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>Kg</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Waste Mass</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(((m.shiftProduction || 0) * (m.shiftWaste || 1)) / 100).toFixed(2)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>Kg</span>
                                   </div>
                                 </div>
                               </div>
@@ -1256,9 +1272,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Zap size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Breaks</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Total Breaks</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
                                     {m.totalEndBreakCount || 0}
                                   </div>
                                 </div>
@@ -1271,10 +1287,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Timer size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Left Side (L)</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {leftSide?.endBreakCount || 0} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Left Side (L)</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {leftSide?.endBreakCount || 0} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>breaks</span>
                                   </div>
                                 </div>
                               </div>
@@ -1286,10 +1302,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Clock size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Right Side (R)</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {rightSide?.endBreakCount || 0} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Right Side (R)</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {rightSide?.endBreakCount || 0} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>breaks</span>
                                   </div>
                                 </div>
                               </div>
@@ -1304,9 +1320,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Timer size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Left Mending</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Left Mending</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
                                     {formatEmTimeOnly(leftSide?.endMendingTime)}
                                   </div>
                                 </div>
@@ -1319,9 +1335,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Clock size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Right Mending</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Right Mending</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
                                     {formatEmTimeOnly(rightSide?.endMendingTime)}
                                   </div>
                                 </div>
@@ -1334,9 +1350,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <BarChart3 size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Std Target</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Std Target</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
                                     {stdMendingTime} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{stdMendingUnit}</span>
                                   </div>
                                 </div>
@@ -1353,10 +1369,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Production</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Production</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1370,10 +1386,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Recycle size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Waste</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
-                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>Waste</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1387,14 +1403,14 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
                                 <Zap size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
-                                <div>
-                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>End Breaks</div>
-                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                  <div style={{ fontSize: '0.6rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', lineHeight: 1 }}>End Breaks</div>
+                                  <div style={{ fontSize: '1.32rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05 }}>
                                     {m.totalEndBreakCount || 0}
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>
+                              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b', fontFamily: 'monospace' }}>
                                 {m.breakSidesDisplay || 'L: 0 · R: 0'}
                               </div>
                             </div>
@@ -1403,7 +1419,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       </div>
                     </div>
 
-                    {/* Footer: LH EM, RH EM, AVG EM (Strictly Matching Specification) */}
+                    {/* Footer: Left EM, Right EM, AVG EM (Strictly Matching Specification) */}
                     <div
                       style={{
                         marginTop: '0.65rem',
@@ -1415,42 +1431,42 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         alignItems: 'center'
                       }}
                     >
-                      {/* Column 1: LH EM */}
+                      {/* Column 1: Left EM (Little Small) */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
-                        <Timer size={18} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
+                        <Timer size={17} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            LH EM
+                          <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            Left EM
                           </div>
-                          <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+                          <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#334155', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
                             {formatEmTimeOnly(leftSide?.endMendingTime)}
                           </div>
                         </div>
                       </div>
 
-                      {/* Column 2: RH EM */}
+                      {/* Column 2: Right EM (Little Small) */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderLeft: '1px solid rgba(0, 0, 0, 0.06)', paddingLeft: '0.45rem', minWidth: 0 }}>
-                        <Clock size={18} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
+                        <Clock size={17} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            RH EM
+                          <div style={{ fontSize: '0.62rem', fontWeight: 800, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            Right EM
                           </div>
-                          <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+                          <div style={{ fontSize: '1.02rem', fontWeight: 800, color: '#334155', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
                             {formatEmTimeOnly(rightSide?.endMendingTime)}
                           </div>
                         </div>
                       </div>
 
-                      {/* Column 3: AVG EM */}
+                      {/* Column 3: AVG EM (BIG) */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderLeft: '1px solid rgba(0, 0, 0, 0.06)', paddingLeft: '0.45rem', minWidth: 0 }}>
-                        <BarChart3 size={18} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
+                        <BarChart3 size={19} strokeWidth={2.4} style={{ color: '#0f172a', flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ fontSize: '0.68rem', fontWeight: 900, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             AVG EM
                           </div>
-                          <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: '3px' }}>
+                          <div style={{ fontSize: '1.38rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.05, whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: '3px' }}>
                             {formatEmTimeOnly(avgMachineMending)}
-                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>min</span>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#64748b' }}>min</span>
                           </div>
                         </div>
                       </div>

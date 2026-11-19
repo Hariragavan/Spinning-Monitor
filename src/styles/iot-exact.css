@@ -1133,30 +1133,30 @@
 
 /* Status-based card backgrounds and borders */
 .machine-card.status-running {
-  background-color: #f0fdf4 !important;
+  background-color: #dcfce7 !important;
   border-color: #86efac !important;
 }
 .machine-card.status-running:hover {
   border-color: #22c55e !important;
-  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.14) !important;
+  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.16) !important;
 }
 
 .machine-card.status-stopped {
-  background-color: #fef2f2 !important;
+  background-color: #fee2e2 !important;
   border-color: #fca5a5 !important;
 }
 .machine-card.status-stopped:hover {
   border-color: #ef4444 !important;
-  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.14) !important;
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.16) !important;
 }
 
 .machine-card.status-doffing {
-  background-color: #fefce8 !important;
+  background-color: #fef08a !important;
   border-color: #fde047 !important;
 }
 .machine-card.status-doffing:hover {
   border-color: #eab308 !important;
-  box-shadow: 0 10px 22px rgba(234, 179, 8, 0.14) !important;
+  box-shadow: 0 10px 22px rgba(234, 179, 8, 0.16) !important;
 }
 
 .machine-card.status-offline {

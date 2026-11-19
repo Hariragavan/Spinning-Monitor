@@ -13,15 +13,15 @@ export interface FuturisticSpeedDialProps {
 }
 
 /**
- * Futuristic Tachometer / Speedometer Dial Component
- * Designed after modern automotive & speed-test dials:
- * - Dark cockpit pod background
- * - 260° perimeter arc track with vibrant gradient
- * - Scale numbers: 0, 5, 10, 15, 20
+ * Futuristic Tachometer / Speedometer Dial Component (Clean White Edition)
+ * Features:
+ * - Crisp White pod housing with soft ambient depth
+ * - 260° perimeter arc track with vibrant gradient sweep
+ * - High-contrast scale numbers: 0, 5, 10, 15, 20
  * - Sharp diamond / spearhead needle indicator
  * - Sweeps smoothly from 0 to current RPM on mount / open
  * - Sweeps down to 0 if machine status is Stopped or Doffing
- * - High-contrast center digital readout with status indicator
+ * - Reduced gap with bold, prominent digital readout & status indicator
  */
 export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   value,
@@ -29,7 +29,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   status,
   label = 'RPM',
   customUnit,
-  size = 126,
+  size = 132,
   colorScheme = 'cyan'
 }) => {
   const isStoppedOrDoffing = status === 'STOP' || status === 'OFFLINE' || status === 'DOFF';
@@ -96,34 +96,34 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   }
 
   // Theme palettes matching the speed dial reference
-  let gradStart = '#06b6d4'; // Cyan
+  let gradStart = '#0284c7'; // Sky / Cyan
   let gradEnd = '#2563eb';   // Royal Blue
-  let needleGlow = 'rgba(6, 182, 212, 0.5)';
-  let needleTipColor = '#38bdf8';
+  let needleGlow = 'rgba(37, 99, 235, 0.35)';
+  let needleTipColor = '#0284c7';
   let needleBaseColor = '#1d4ed8';
 
   if (status === 'STOP' || status === 'OFFLINE') {
-    gradStart = '#fb7185';
-    gradEnd = '#e11d48';
-    needleGlow = 'rgba(225, 29, 72, 0.5)';
-    needleTipColor = '#f43f5e';
-    needleBaseColor = '#9f1239';
+    gradStart = '#f87171';
+    gradEnd = '#dc2626';
+    needleGlow = 'rgba(220, 38, 38, 0.35)';
+    needleTipColor = '#ef4444';
+    needleBaseColor = '#b91c1c';
   } else if (status === 'DOFF') {
-    gradStart = '#fde047';
+    gradStart = '#fbbf24';
     gradEnd = '#ea580c';
-    needleGlow = 'rgba(234, 88, 12, 0.5)';
+    needleGlow = 'rgba(234, 88, 12, 0.35)';
     needleTipColor = '#f59e0b';
     needleBaseColor = '#c2410c';
   } else if (colorScheme === 'emerald') {
-    gradStart = '#34d399';
+    gradStart = '#10b981';
     gradEnd = '#059669';
-    needleGlow = 'rgba(16, 185, 129, 0.5)';
+    needleGlow = 'rgba(16, 185, 129, 0.35)';
     needleTipColor = '#34d399';
     needleBaseColor = '#047857';
   } else if (colorScheme === 'amber') {
     gradStart = '#fbbf24';
     gradEnd = '#d97706';
-    needleGlow = 'rgba(245, 158, 11, 0.5)';
+    needleGlow = 'rgba(245, 158, 11, 0.35)';
     needleTipColor = '#fbbf24';
     needleBaseColor = '#b45309';
   }
@@ -158,13 +158,13 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
 
   // Status badge details
   let badgeText = 'Running';
-  let badgeColor = '#22c55e';
+  let badgeColor = '#16a34a';
   if (status === 'STOP' || status === 'OFFLINE') {
     badgeText = 'Stopped';
-    badgeColor = '#ef4444';
+    badgeColor = '#dc2626';
   } else if (status === 'DOFF') {
     badgeText = 'Doffing';
-    badgeColor = '#f59e0b';
+    badgeColor = '#d97706';
   }
 
   return (
@@ -184,7 +184,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
         width={size}
         height={size}
         viewBox="0 0 130 130"
-        style={{ overflow: 'visible', filter: 'drop-shadow(0 4px 10px rgba(0, 0, 0, 0.18))' }}
+        style={{ overflow: 'visible', filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.06))' }}
       >
         <defs>
           {/* Arc Track Gradient */}
@@ -200,31 +200,29 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           </linearGradient>
 
           {/* Glowing Filter */}
-          <filter id={`needleGlowFilter-${status}`} x="-40%" y="-40%" width="180%" height="180%">
-            <feDropShadow dx="0" dy="0" stdDeviation="2.5" floodColor={needleGlow} floodOpacity="0.8" />
+          <filter id={`needleGlowFilter-${status}`} x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor={needleGlow} floodOpacity="0.7" />
           </filter>
         </defs>
 
-        {/* 1. Dark Cockpit Circular Housing */}
+        {/* 1. White Cockpit Circular Housing */}
         <circle
           cx={cx}
           cy={cy}
           r={62}
-          fill="#0b1329"
-          stroke="#1e293b"
+          fill="#ffffff"
+          stroke="#e2e8f0"
           strokeWidth="1.5"
         />
 
-        {/* Inner subtle glow rim */}
+        {/* Inner subtle track guide rim */}
         <circle
           cx={cx}
           cy={cy}
           r={57}
           fill="none"
-          stroke="#1e293b"
+          stroke="#f1f5f9"
           strokeWidth="0.8"
-          strokeDasharray="2 3"
-          opacity="0.6"
         />
 
         {/* 2. Minor Radial Ticks */}
@@ -235,17 +233,17 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
             y1={t.pt1.y.toFixed(2)}
             x2={t.pt2.x.toFixed(2)}
             y2={t.pt2.y.toFixed(2)}
-            stroke={t.isMajor ? '#64748b' : '#334155'}
-            strokeWidth={t.isMajor ? '1.5' : '0.9'}
+            stroke={t.isMajor ? '#94a3b8' : '#e2e8f0'}
+            strokeWidth={t.isMajor ? '1.5' : '1'}
             strokeLinecap="round"
           />
         ))}
 
-        {/* 3. Inactive Background Arc Track */}
+        {/* 3. Inactive Background Arc Track (Crisp light slate on white) */}
         <path
           d={bgArcPath}
           fill="none"
-          stroke="#1e293b"
+          stroke="#e2e8f0"
           strokeWidth="7.5"
           strokeLinecap="round"
         />
@@ -262,7 +260,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           />
         )}
 
-        {/* 5. Scale Number Markings: 0, 5, 10, 15, 20 */}
+        {/* 5. Scale Number Markings: 0, 5, 10, 15, 20 (Dark Charcoal for high contrast) */}
         {scaleMarks.map(m => {
           const pt = polarToXY(m.deg, 34);
           return (
@@ -271,8 +269,8 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
               x={pt.x.toFixed(2)}
               y={(pt.y + 2.8).toFixed(2)}
               textAnchor="middle"
-              fill="#94a3b8"
-              fontSize="7.5"
+              fill="#475569"
+              fontSize="8"
               fontWeight="800"
               fontFamily="system-ui, -apple-system, sans-serif"
             >
@@ -298,7 +296,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
             y1={cy - 43}
             x2={cx}
             y2={cy}
-            stroke="rgba(255, 255, 255, 0.45)"
+            stroke="rgba(255, 255, 255, 0.7)"
             strokeWidth="0.8"
           />
           {/* Pivot Circle */}
@@ -306,25 +304,25 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
             cx={cx}
             cy={cy}
             r={4.2}
-            fill="#0b1329"
+            fill="#ffffff"
             stroke={needleTipColor}
-            strokeWidth="1.6"
+            strokeWidth="1.8"
           />
           <circle
             cx={cx}
             cy={cy}
-            r={1.8}
-            fill="#ffffff"
+            r={2}
+            fill={needleTipColor}
           />
         </g>
 
-        {/* 7. Center Speed Label (e.g. RPM / SPEED TEST) */}
+        {/* 7. Center Speed Label (Tight gap) */}
         <text
           x={cx}
-          y={cy + 13}
+          y={cy + 10}
           textAnchor="middle"
-          fill="#94a3b8"
-          fontSize="7"
+          fill="#64748b"
+          fontSize="7.5"
           fontWeight="800"
           fontFamily="system-ui, -apple-system, sans-serif"
           letterSpacing="0.08em"
@@ -332,13 +330,13 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           {label}
         </text>
 
-        {/* 8. Digital Speedometer Readout */}
+        {/* 8. Digital Speedometer Readout (Big, High Contrast Bold Text) */}
         <text
           x={cx}
-          y={cy + 25}
+          y={cy + 23}
           textAnchor="middle"
-          fill="#ffffff"
-          fontSize={displayString.length > 5 ? '13' : displayString.length > 4 ? '14.5' : '16'}
+          fill="#0f172a"
+          fontSize={displayString.length > 5 ? '15' : displayString.length > 4 ? '16.5' : '18'}
           fontWeight="900"
           fontFamily="system-ui, -apple-system, sans-serif"
           letterSpacing="-0.02em"
@@ -347,13 +345,13 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
         </text>
 
         {/* 9. Small Running / Stopped Status Dot Indicator */}
-        <g transform={`translate(${cx - 18}, ${cy + 30})`}>
+        <g transform={`translate(${cx - 18}, ${cy + 28})`}>
           <circle cx={4} cy={4} r={2.2} fill={badgeColor} />
           <text
             x={10}
             y={6.5}
             fill={badgeColor}
-            fontSize="6.2"
+            fontSize="6.5"
             fontWeight="800"
             fontFamily="system-ui, -apple-system, sans-serif"
           >

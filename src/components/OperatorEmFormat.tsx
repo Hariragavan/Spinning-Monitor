@@ -186,6 +186,13 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
     });
 
+    // Ensure today's date is present when viewing current month/year for live telemetry
+    const now = new Date();
+    if (selectedMonth === (now.getMonth() + 1) && selectedYear === now.getFullYear()) {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      datesSet.add(`${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`);
+    }
+
     return Array.from(datesSet).sort((a, b) => {
       return parseUniversalDate(a).getTime() - parseUniversalDate(b).getTime();
     });
@@ -538,6 +545,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     if (!cleanMachine) return false;
 
     const canonical = normalizeToCanonicalDate(date);
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+    const isToday = canonical === todayCanonical;
+
+    // For today: if machine has live EM telemetry data or is assigned to an IoT device, it runs live
+    if (isToday) {
+      const dateMapping = resolveEffectiveMappingForDate(
+        date,
+        safeSettings?.iotMachineAllocationPeriods,
+        safeSettings?.iotMachineMappingByDate,
+        safeSettings?.iotMachineMapping
+      );
+      const val = getMachineEmValue(effectiveMachineEm, date, cleanMachine, shift, dateMapping);
+      if (val !== undefined && val !== null) {
+        return true;
+      }
+      const mappedDev = resolveMappedDevice(dateMapping, cleanMachine);
+      if (mappedDev && mappedDev !== 'NONE' && mappedDev !== 'unassigned') {
+        return true;
+      }
+    }
+
     const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
     if (!report || !Array.isArray(report.entries) || report.entries.length === 0) {
       return false; // No report uploaded for this date -> machine did NOT run
@@ -1918,6 +1948,20 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                     // Only read EM value if machine actually ran / was uploaded on this date & shift
                                     const val = ran ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping) : undefined;
                                     const hasVal = val !== undefined && val !== null;
+
+                                    const now = new Date();
+                                    const pad = (n: number) => n.toString().padStart(2, '0');
+                                    const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                                    const isToday = normalizeToCanonicalDate(date) === todayCanonical;
+
+                                    // Check if a saved daily report exists with entries for this date & shift
+                                    const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
+                                    const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shift));
+
+                                    // Determine if this shift is over vs live
+                                    // For live telemetry on today, show in green text; when saved report exists or on past dates, show saved EM in normal text
+                                    const isLive = isToday && !hasSavedReport;
+
                                     return (
                                       <td 
                                         key={`cell-${machine}-${date}-${shift}`}
@@ -1926,18 +1970,25 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                         }}
                                         className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group ${
                                           hasVal
-                                            ? 'text-stone-900 font-bold'
+                                            ? isLive
+                                              ? 'text-emerald-600 font-black bg-emerald-50/40'
+                                              : 'text-stone-900 font-bold'
                                             : ran
                                             ? 'text-stone-400 bg-stone-50/10'
                                             : 'text-stone-300 bg-stone-50/20'
                                         }`}
                                         title={
                                           hasVal
-                                            ? `Click to view Left/Right/Average EM: ${machine} · Shift ${shift} · ${date}`
+                                            ? `${machine} · Shift ${shift} · ${date}: ${typeof val === 'number' ? val.toFixed(2) : val} (${isLive ? 'LIVE' : 'Saved EM'})`
                                             : `${machine} · Shift ${shift} · ${date} (${ran ? 'Running' : 'Not Run'})`
                                         }
                                       >
-                                        {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
+                                        <span className={isLive && hasVal ? 'text-emerald-600 font-black inline-flex items-center justify-center gap-1' : ''}>
+                                          {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
+                                          {isLive && hasVal && (
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Telemetry" />
+                                          )}
+                                        </span>
                                         {hasVal && (
                                           <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-emerald-600 transition-opacity">
                                             <Eye size={8} />
@@ -1962,12 +2013,28 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                           <React.Fragment key={`total-${date}`}>
                             {shifts.map(shift => {
                               const avg = calculateColAverage(date, shift);
+                              const now = new Date();
+                              const pad = (n: number) => n.toString().padStart(2, '0');
+                              const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                              const isToday = normalizeToCanonicalDate(date) === todayCanonical;
+                              const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
+                              const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shift));
+                              const curMinutes = now.getHours() * 60 + now.getMinutes();
+                              const isLive = isToday && !hasSavedReport;
+
                               return (
                                 <td 
                                   key={`col-total-${date}-${shift}`}
-                                  className="p-3 text-center font-mono border-r border-stone-100 text-emerald-700 bg-emerald-50/20"
+                                  className={`p-3 text-center font-mono border-r border-stone-100 ${
+                                    isLive ? 'text-emerald-600 font-black bg-emerald-100/50' : 'text-stone-900 font-bold bg-stone-100/50'
+                                  }`}
                                 >
-                                  {avg}
+                                  <span className={isLive && avg !== '-' ? 'inline-flex items-center justify-center gap-1' : ''}>
+                                    {avg}
+                                    {isLive && avg !== '-' && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Shift" />
+                                    )}
+                                  </span>
                                 </td>
                               );
                             })}
@@ -2135,19 +2202,39 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                 <td className="p-3 text-right font-mono text-stone-600 font-bold">
                                   {m.gps.toFixed(3)}
                                 </td>
-                                {isFirst && (
-                                  <td 
-                                    rowSpan={rowSpan}
-                                    onClick={() => handleOpenGroupedEmDetail(group)}
-                                    className="p-3 text-right font-mono text-indigo-600 font-bold hover:bg-indigo-50/70 hover:underline cursor-pointer transition-colors align-middle border-l border-stone-100/60"
-                                    title={`Click to view EM breakdown for ${group.totalSides} sides`}
-                                  >
-                                    <span className="inline-flex items-center justify-end gap-1.5">
-                                      <span className="text-sm font-black">{group.avgEm.toFixed(2)}</span>
-                                      <Eye size={12} className="text-indigo-400 opacity-70" />
-                                    </span>
-                                  </td>
-                                )}
+                                {isFirst && (() => {
+                                  const now = new Date();
+                                  const pad = (n: number) => n.toString().padStart(2, '0');
+                                  const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                                  const isToday = normalizeToCanonicalDate(group.date) === todayCanonical;
+                                  const shiftNum = mapShiftToNum(group.shift);
+                                  const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === todayCanonical);
+                                  const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shiftNum));
+                                  const isGroupLive = isToday && !hasSavedReport;
+
+                                  return (
+                                    <td 
+                                      rowSpan={rowSpan}
+                                      onClick={() => handleOpenGroupedEmDetail(group)}
+                                      className={`p-3 text-right font-mono transition-colors align-middle border-l border-stone-100/60 cursor-pointer ${
+                                        isGroupLive
+                                          ? 'text-emerald-600 font-black bg-emerald-50/30 hover:bg-emerald-50'
+                                          : 'text-stone-900 font-bold hover:bg-stone-50/70'
+                                      }`}
+                                      title={`Click to view EM breakdown for ${group.totalSides} sides (${isGroupLive ? 'Live Telemetry' : 'Saved EM'})`}
+                                    >
+                                      <span className="inline-flex items-center justify-end gap-1.5">
+                                        <span className={`text-sm ${isGroupLive ? 'font-black text-emerald-600' : 'font-bold text-stone-900'}`}>
+                                          {group.avgEm.toFixed(2)}
+                                        </span>
+                                        {isGroupLive && (
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Telemetry" />
+                                        )}
+                                        <Eye size={12} className={isGroupLive ? "text-emerald-500 opacity-80" : "text-stone-400 opacity-60"} />
+                                      </span>
+                                    </td>
+                                  );
+                                })()}
                               </tr>
                             );
                           });
@@ -2503,41 +2590,71 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {dailyEmRows.map((row, idx) => (
-                        <tr 
-                          key={`${row.siderName}-${row.mcNo}-${row.shift}-${idx}`} 
-                          className="border-b border-stone-100 hover:bg-stone-50/30 transition-colors"
-                        >
-                          <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 font-mono text-stone-600">
-                            {row.tNo || '-'}
-                          </td>
-                          <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 font-bold text-stone-900 uppercase">
-                            {row.siderName.toUpperCase()}
-                          </td>
-                          <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-center font-bold text-stone-500">{row.shift}</td>
-                          <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-center font-mono font-bold text-stone-800 bg-stone-50/30">{row.mcNo}</td>
-                          <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-center font-semibold text-stone-600">{row.count || '-'}</td>
-                          <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-right font-mono text-stone-600 font-medium">
-                            {row.gps ? Math.round(row.gps) : '-'}
-                          </td>
-                          <td style={{ fontSize: '17px' }} className={`p-4 text-right font-mono font-black border-l border-stone-100 ${row.em !== null ? (row.em > 3 ? 'text-red-600 font-extrabold bg-red-50/20' : row.em < 2.5 ? 'text-green-600 font-extrabold bg-green-50/20' : 'text-stone-800 bg-emerald-50/20') : 'text-stone-400'}`}>
-                            {row.em !== null ? row.em.toFixed(2) : '-'}
-                          </td>
-                        </tr>
-                      ))}
+                      {dailyEmRows.map((row, idx) => {
+                        const now = new Date();
+                        const pad = (n: number) => n.toString().padStart(2, '0');
+                        const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                        const isSelectedDateToday = normalizeToCanonicalDate(selectedDailyEmDate) === todayCanonical;
+                        const shiftNum = mapShiftToNum(row.shift);
+                        const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === todayCanonical);
+                        const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shiftNum));
+                        const isRowLive = isSelectedDateToday && !hasSavedReport;
+
+                        return (
+                          <tr 
+                            key={`${row.siderName}-${row.mcNo}-${row.shift}-${idx}`} 
+                            className="border-b border-stone-100 hover:bg-stone-50/30 transition-colors"
+                          >
+                            <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 font-mono text-stone-600">
+                              {row.tNo || '-'}
+                            </td>
+                            <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 font-bold text-stone-900 uppercase">
+                              {row.siderName.toUpperCase()}
+                            </td>
+                            <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-center font-bold text-stone-500">{row.shift}</td>
+                            <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-center font-mono font-bold text-stone-800 bg-stone-50/30">{row.mcNo}</td>
+                            <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-center font-semibold text-stone-600">{row.count || '-'}</td>
+                            <td style={{ fontSize: '17px' }} className="p-4 border-r border-stone-200 text-right font-mono text-stone-600 font-medium">
+                              {row.gps ? Math.round(row.gps) : '-'}
+                            </td>
+                            <td style={{ fontSize: '17px' }} className={`p-4 text-right font-mono font-black border-l border-stone-100 ${row.em !== null ? (isRowLive ? 'text-emerald-600 bg-emerald-50/30 font-black' : row.em > 3 ? 'text-red-600 font-extrabold bg-red-50/20' : row.em < 2.5 ? 'text-green-600 font-extrabold bg-green-50/20' : 'text-stone-800 bg-emerald-50/20') : 'text-stone-400'}`}>
+                              <span className={isRowLive && row.em !== null ? 'inline-flex items-center justify-end gap-1.5' : ''}>
+                                {row.em !== null ? row.em.toFixed(2) : '-'}
+                                {isRowLive && row.em !== null && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Shift Telemetry" />
+                                )}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
-                    {dailyEmRows.length > 0 && (
-                      <tfoot>
-                        <tr className="bg-stone-100 font-black border-t-2 border-stone-200">
-                          <td colSpan={6} style={{ fontSize: '15px' }} className="p-4 text-right uppercase tracking-wider text-stone-800 font-bold border-r border-stone-200">
-                            Average EM:
-                          </td>
-                          <td style={{ fontSize: '17px' }} className="p-4 text-right font-mono text-stone-900 font-extrabold">
-                            {(dailyEmRows.reduce((sum, r) => sum + (r.em || 0), 0) / dailyEmRows.length).toFixed(2)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    )}
+                    {dailyEmRows.length > 0 && (() => {
+                      const now = new Date();
+                      const pad = (n: number) => n.toString().padStart(2, '0');
+                      const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                      const isSelectedDateToday = normalizeToCanonicalDate(selectedDailyEmDate) === todayCanonical;
+                      const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === todayCanonical);
+                      const isLive = isSelectedDateToday && (!report || !report.entries || report.entries.length === 0);
+
+                      return (
+                        <tfoot>
+                          <tr className="bg-stone-100 font-black border-t-2 border-stone-200">
+                            <td colSpan={6} style={{ fontSize: '15px' }} className="p-4 text-right uppercase tracking-wider text-stone-800 font-bold border-r border-stone-200">
+                              Average EM:
+                            </td>
+                            <td style={{ fontSize: '17px' }} className={`p-4 text-right font-mono font-extrabold ${isLive ? 'text-emerald-700 bg-emerald-50/50' : 'text-stone-900'}`}>
+                              <span className={isLive ? 'inline-flex items-center justify-end gap-1.5' : ''}>
+                                {(dailyEmRows.reduce((sum, r) => sum + (r.em || 0), 0) / dailyEmRows.length).toFixed(2)}
+                                {isLive && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" title="Live Shift" />
+                                )}
+                              </span>
+                            </td>
+                          </tr>
+                        </tfoot>
+                      );
+                    })()}
                   </table>
                 </div>
               )}
