@@ -1106,7 +1106,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     </div>
 
                     {/* Middle: Left Dial + Right 3 Metric Rows */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minHeight: '105px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minHeight: '110px' }}>
                       <FuturisticSpeedDial
                         value={dialValue}
                         max={dialMax}
@@ -1114,7 +1114,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         label={dialLabel}
                         customUnit={dialUnit}
                         colorScheme={dialColor}
-                        size={132}
+                        size={138}
                       />
 
                       {/* Right 3 Rows */}

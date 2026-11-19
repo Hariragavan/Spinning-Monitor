@@ -3,19 +3,73 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   RotateCcw, Plus, Edit2, Trash2, Save, Check, AlertCircle,
-  Layers, Activity
+  Layers, Activity, RefreshCw
 } from 'lucide-react';
 import { MachineMasterItem, Sider, CountConversion, Shed, DailyReport } from '../types';
 import { cn, getYesterdayUniversalDate, normalizeShed } from '../lib/utils';
 
 export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
-  'Shed 1': [],
-  'Shed 2': [],
-  'Shed 3': [],
-  'KTTM': [],
+  'Shed 1': [
+    { id: 'm-sp009-shed-1', rfNo: 'SP009', description: 'RING FRAME SP009 (Shed 1)', shed: 'Shed 1', count: '21/1-CW-SY', stdGps: 340 },
+    { id: 'm-sp010-shed-1', rfNo: 'SP010', description: 'RING FRAME SP010 (Shed 1)', shed: 'Shed 1', count: '24/1-CH-SY', stdGps: 340 },
+    { id: 'm-sp011-shed-1', rfNo: 'SP011', description: 'RING FRAME SP011 (Shed 1)', shed: 'Shed 1', count: '24/1-CH-SY', stdGps: 340 },
+    { id: 'm-sp012-shed-1', rfNo: 'SP012', description: 'RING FRAME SP012 (Shed 1)', shed: 'Shed 1', count: '30/1--DY', stdGps: 330 },
+    { id: 'm-sp013-shed-1', rfNo: 'SP013', description: 'RING FRAME SP013 (Shed 1)', shed: 'Shed 1', count: '30/1--DY', stdGps: 330 },
+    { id: 'm-sp014-shed-1', rfNo: 'SP014', description: 'RING FRAME SP014 (Shed 1)', shed: 'Shed 1', count: '30/1--DY', stdGps: 330 },
+    { id: 'm-sp015-shed-1', rfNo: 'SP015', description: 'RING FRAME SP015 (Shed 1)', shed: 'Shed 1', count: '32/1-CW-SY', stdGps: 330 },
+    { id: 'm-sp016-shed-1', rfNo: 'SP016', description: 'RING FRAME SP016 (Shed 1)', shed: 'Shed 1', count: '32/1-CW-SY', stdGps: 330 },
+    { id: 'm-sp017-shed-1', rfNo: 'SP017', description: 'RING FRAME SP017 (Shed 1)', shed: 'Shed 1', count: '40/1CHY', stdGps: 310 },
+    { id: 'm-sp018-shed-1', rfNo: 'SP018', description: 'RING FRAME SP018 (Shed 1)', shed: 'Shed 1', count: '40/1CHY', stdGps: 310 },
+    { id: 'm-sp021-shed-1', rfNo: 'SP021', description: 'RING FRAME SP021 (Shed 1)', shed: 'Shed 1', count: '030/1-PH-PC', stdGps: 340 },
+    { id: 'm-sp022-shed-1', rfNo: 'SP022', description: 'RING FRAME SP022 (Shed 1)', shed: 'Shed 1', count: '030/1-PH-PC', stdGps: 340 },
+    { id: 'm-sp023-shed-1', rfNo: 'SP023', description: 'RING FRAME SP023 (Shed 1)', shed: 'Shed 1', count: '040/1-PH-PC', stdGps: 310 },
+    { id: 'm-sp024-shed-1', rfNo: 'SP024', description: 'RING FRAME SP024 (Shed 1)', shed: 'Shed 1', count: '040/1-PH-PC', stdGps: 310 },
+    { id: 'm-sp025-shed-1', rfNo: 'SP025', description: 'RING FRAME SP025 (Shed 1)', shed: 'Shed 1', count: '34/1-PH-PV', stdGps: 330 },
+    { id: 'm-sp026-shed-1', rfNo: 'SP026', description: 'RING FRAME SP026 (Shed 1)', shed: 'Shed 1', count: '34/1-PH-PV', stdGps: 330 },
+    { id: 'm-sp027-shed-1', rfNo: 'SP027', description: 'RING FRAME SP027 (Shed 1)', shed: 'Shed 1', count: '042/1-CH-NY', stdGps: 305 },
+    { id: 'm-sp028-shed-1', rfNo: 'SP028', description: 'RING FRAME SP028 (Shed 1)', shed: 'Shed 1', count: '042/1-CH-NY', stdGps: 305 },
+    { id: 'm-sp029-shed-1', rfNo: 'SP029', description: 'RING FRAME SP029 (Shed 1)', shed: 'Shed 1', count: '038/1-CH-NY', stdGps: 320 },
+    { id: 'm-sp030-shed-1', rfNo: 'SP030', description: 'RING FRAME SP030 (Shed 1)', shed: 'Shed 1', count: '034/1-PH-PC', stdGps: 330 }
+  ],
+  'Shed 2': [
+    { id: 'm-sp031-shed-2', rfNo: 'SP031', description: 'RING FRAME SP031 (Shed 2)', shed: 'Shed 2', count: '32/1-CH-CY', stdGps: 340 },
+    { id: 'm-sp032-shed-2', rfNo: 'SP032', description: 'RING FRAME SP032 (Shed 2)', shed: 'Shed 2', count: '32/1-CH-CY', stdGps: 340 },
+    { id: 'm-sp033-shed-2', rfNo: 'SP033', description: 'RING FRAME SP033 (Shed 2)', shed: 'Shed 2', count: '32/1-CH-CY', stdGps: 340 },
+    { id: 'm-sp034-shed-2', rfNo: 'SP034', description: 'RING FRAME SP034 (Shed 2)', shed: 'Shed 2', count: '34/1CHY-OCY', stdGps: 330 },
+    { id: 'm-sp035-shed-2', rfNo: 'SP035', description: 'RING FRAME SP035 (Shed 2)', shed: 'Shed 2', count: '34/1CHY-OCY', stdGps: 330 },
+    { id: 'm-sp036-shed-2', rfNo: 'SP036', description: 'RING FRAME SP036 (Shed 2)', shed: 'Shed 2', count: '30/1CH', stdGps: 355 },
+    { id: 'm-sp037-shed-2', rfNo: 'SP037', description: 'RING FRAME SP037 (Shed 2)', shed: 'Shed 2', count: '30/1CH', stdGps: 355 },
+    { id: 'm-sp038-shed-2', rfNo: 'SP038', description: 'RING FRAME SP038 (Shed 2)', shed: 'Shed 2', count: '30/1CH', stdGps: 355 },
+    { id: 'm-sp039-shed-2', rfNo: 'SP039', description: 'RING FRAME SP039 (Shed 2)', shed: 'Shed 2', count: '20/1-CW-WVG', stdGps: 375 },
+    { id: 'm-sp040-shed-2', rfNo: 'SP040', description: 'RING FRAME SP040 (Shed 2)', shed: 'Shed 2', count: '20/1-CW-WVG', stdGps: 375 }
+  ],
+  'Shed 3': [
+    { id: 'm-sp041-shed-3', rfNo: 'SP041', description: 'RING FRAME SP041 (Shed 3)', shed: 'Shed 3', count: '26/1-CHY', stdGps: 360 },
+    { id: 'm-sp042-shed-3', rfNo: 'SP042', description: 'RING FRAME SP042 (Shed 3)', shed: 'Shed 3', count: '26/1-CHY', stdGps: 360 },
+    { id: 'm-sp043-shed-3', rfNo: 'SP043', description: 'RING FRAME SP043 (Shed 3)', shed: 'Shed 3', count: '26/1-CHY', stdGps: 360 },
+    { id: 'm-sp044-shed-3', rfNo: 'SP044', description: 'RING FRAME SP044 (Shed 3)', shed: 'Shed 3', count: '50s Compact', stdGps: 325 },
+    { id: 'm-sp045-shed-3', rfNo: 'SP045', description: 'RING FRAME SP045 (Shed 3)', shed: 'Shed 3', count: '50s Compact', stdGps: 325 },
+    { id: 'm-sp046-shed-3', rfNo: 'SP046', description: 'RING FRAME SP046 (Shed 3)', shed: 'Shed 3', count: '60s Super Combed', stdGps: 310 },
+    { id: 'm-sp047-shed-3', rfNo: 'SP047', description: 'RING FRAME SP047 (Shed 3)', shed: 'Shed 3', count: '60s Super Combed', stdGps: 310 },
+    { id: 'm-sp048-shed-3', rfNo: 'SP048', description: 'RING FRAME SP048 (Shed 3)', shed: 'Shed 3', count: '40s Micro Weft', stdGps: 340 },
+    { id: 'm-sp049-shed-3', rfNo: 'SP049', description: 'RING FRAME SP049 (Shed 3)', shed: 'Shed 3', count: '40s Micro Weft', stdGps: 340 },
+    { id: 'm-sp050-shed-3', rfNo: 'SP050', description: 'RING FRAME SP050 (Shed 3)', shed: 'Shed 3', count: '40s Micro Weft', stdGps: 340 }
+  ],
+  'KTTM': [
+    { id: 'm-k01-kttm', rfNo: 'K01', description: 'KTTM RXI 240 - K01', shed: 'KTTM', count: '60s CW', stdGps: 310 },
+    { id: 'm-k02-kttm', rfNo: 'K02', description: 'KTTM RXI 240 - K02', shed: 'KTTM', count: '60s CW', stdGps: 310 },
+    { id: 'm-k03-kttm', rfNo: 'K03', description: 'KTTM RXI 240 - K03', shed: 'KTTM', count: '60s CW', stdGps: 310 },
+    { id: 'm-k04-kttm', rfNo: 'K04', description: 'KTTM RXI 240 - K04', shed: 'KTTM', count: '40s KTTM', stdGps: 345 },
+    { id: 'm-k05-kttm', rfNo: 'K05', description: 'KTTM RXI 240 - K05', shed: 'KTTM', count: '40s KTTM', stdGps: 345 },
+    { id: 'm-k06-kttm', rfNo: 'K06', description: 'KTTM RXI 240 - K06', shed: 'KTTM', count: '40s KTTM', stdGps: 345 },
+    { id: 'm-k07-kttm', rfNo: 'K07', description: 'KTTM RXI 240 - K07', shed: 'KTTM', count: '80s Compact', stdGps: 280 },
+    { id: 'm-k08-kttm', rfNo: 'K08', description: 'KTTM RXI 240 - K08', shed: 'KTTM', count: '80s Compact', stdGps: 280 },
+    { id: 'm-k09-kttm', rfNo: 'K09', description: 'KTTM RXI 240 - K10', shed: 'KTTM', count: '100s Dobby', stdGps: 250 },
+    { id: 'm-k10-kttm', rfNo: 'K10', description: 'KTTM RXI 240 - K10', shed: 'KTTM', count: '100s Dobby', stdGps: 250 }
+  ]
 };
 
-export const ALL_STANDARD_MACHINES: MachineMasterItem[] = [];
+export const ALL_STANDARD_MACHINES: MachineMasterItem[] = Object.values(STANDARD_MACHINES_BY_SHED).flat();
 
 export const STANDARD_12_MACHINES = ALL_STANDARD_MACHINES;
 
@@ -69,6 +123,28 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     count: ''
   });
   const [error, setError] = useState<string | null>(null);
+  const [isSyncingReports, setIsSyncingReports] = useState(false);
+  const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
+
+  const handleSyncFromReports = async () => {
+    try {
+      setIsSyncingReports(true);
+      setError(null);
+      const res = await fetch('/api/machines?syncFromReports=true');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        json.data.forEach((m: MachineMasterItem) => onSaveMachine(m));
+        setSyncSuccessMessage(`Successfully synchronized ${json.data.length} machines from uploaded reports & standard profiles.`);
+        setTimeout(() => setSyncSuccessMessage(null), 5000);
+      } else {
+        setError(json.error || 'Failed to sync machines');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Error communicating with machines server API');
+    } finally {
+      setIsSyncingReports(false);
+    }
+  };
 
   // Sync tab with currentShed if currentShed prop changes
   useEffect(() => {
@@ -226,8 +302,8 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     return items.sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
   }, [activeDateHasData, dateMachineMap, machines]);
 
-  // Effective list shown in table based on viewMode
-  const displayMachines = viewMode === 'date' ? dateMachines : masterMachines;
+  // Effective list shown in table based on viewMode (falls back to master machines if date statement not uploaded)
+  const displayMachines = (viewMode === 'date' && dateMachines.length > 0) ? dateMachines : masterMachines;
 
   const handleStartEdit = (machine: MachineMasterItem) => {
     setEditingId(machine.id);
@@ -334,6 +410,17 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
           <button
             type="button"
+            disabled={isSyncingReports}
+            onClick={handleSyncFromReports}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer self-start sm:self-center disabled:opacity-50"
+            title="Automatically scan uploaded Excel statements and recover all machine numbers"
+          >
+            <RefreshCw size={14} className={cn("text-white", isSyncingReports && "animate-spin")} />
+            <span>{isSyncingReports ? 'Syncing...' : 'Sync From Reports'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => onResetStandardMachines(selectedShedTab === 'All Sheds' ? undefined : selectedShedTab)}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-stone-200 text-stone-700 hover:text-stone-950 text-xs font-bold hover:bg-stone-50 transition-all shadow-2xs cursor-pointer self-start sm:self-center"
           >
@@ -342,6 +429,13 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
           </button>
         </div>
       </div>
+
+      {syncSuccessMessage && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xs">
+          <Check size={16} className="text-emerald-600 shrink-0" />
+          <span>{syncSuccessMessage}</span>
+        </div>
+      )}
 
       {/* TWO COLUMN GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
@@ -493,7 +587,9 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
               </h2>
               <p className="text-[11px] text-stone-500 font-medium mt-0.5">
                 {viewMode === 'date'
-                  ? `Showing detected machines on ${activeDate}. Empty if no statement uploaded.`
+                  ? (dateMachines.length > 0
+                      ? `Showing detected machines on ${activeDate}.`
+                      : `No statement uploaded on ${activeDate}. Showing ${masterMachines.length} master registered machines for ${selectedShedTab}.`)
                   : `Showing all master registered machines across ${selectedShedTab}.`}
               </p>
             </div>

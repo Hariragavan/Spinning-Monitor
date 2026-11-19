@@ -1522,18 +1522,32 @@ export default function Home() {
   };
 
   const resetStandardMachines = async (shed?: string) => {
+    try {
+      const res = await fetch('/api/machines?syncFromReports=true');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        const restored = json.data;
+        setMachines(restored);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('spinning_machines', JSON.stringify(restored));
+        }
+        return;
+      }
+    } catch {}
+
     let newMachines: MachineMasterItem[];
-    if (shed) {
-      newMachines = machines.filter(m => m.shed !== shed);
+    if (shed && shed !== 'All' && shed !== 'All Sheds') {
+      const otherShedMachines = machines.filter(m => normalizeShed(m.shed) !== normalizeShed(shed));
+      const shedDefaults = STANDARD_MACHINES_BY_SHED[shed] || [];
+      newMachines = [...otherShedMachines, ...shedDefaults];
     } else {
-      newMachines = [];
+      newMachines = ALL_STANDARD_MACHINES;
     }
     setMachines(newMachines);
     if (typeof window !== 'undefined') {
       localStorage.setItem('spinning_machines', JSON.stringify(newMachines));
     }
     await apiClient.saveMachines(newMachines);
-    alert(shed ? `Cleared machines for ${shed}` : 'Cleared all machines');
   };
 
   const saveCountConversion = async (conv: CountConversion) => {

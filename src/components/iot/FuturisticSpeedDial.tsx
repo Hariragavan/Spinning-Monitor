@@ -13,14 +13,15 @@ export interface FuturisticSpeedDialProps {
 }
 
 /**
- * Stylish High-Performance Speedometer Dial (Transparent Edition)
+ * Stylish High-Performance Speedometer Dial (Blue Dynamic Theme)
  * Exactly matching the reference speed-test instrument:
  * - Thick, bold 260° perimeter band (140° bottom-left to 400° bottom-right)
- * - Active track with blazing Pink -> Coral -> Orange -> Electric Yellow gradient
- * - Inactive track in sleek dark navy slate (#1e293b) with clean radial cuts
- * - Floating diamond spearhead needle with 3D faceted center spine
- * - Sporty condensed scale numbers (0, 5, 10, 15, 20)
- * - Bold italic 'RPM' label and high-contrast digital speed readout
+ * - Active track with Blue shades: Low speed in light blue -> High speed in deep rich royal blue
+ * - Inactive track in light frosted white with opacity (rgba(255, 255, 255, 0.85)) with subtle crisp underlay
+ * - Large spacious circular meter filling available space
+ * - Floating diamond spearhead needle with 3D faceted center spine and electric blue glow
+ * - Bold sporty scale numbers (0, 5, 10, 15, 20)
+ * - Prominent RPM digital number & label placed cleanly BELOW the meter
  * - Completely transparent background (no container box or background pod)
  */
 export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
@@ -29,7 +30,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   status,
   label = 'RPM',
   customUnit,
-  size = 132
+  size = 140
 }) => {
   const isStoppedOrDoffing = status === 'STOP' || status === 'OFFLINE' || status === 'DOFF';
   const targetVal = isStoppedOrDoffing ? 0 : Math.max(0, value);
@@ -61,10 +62,10 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     };
   }, [targetVal]);
 
-  const cx = 65;
-  const cy = 54;
-  const arcRadius = 42;
-  const bandThickness = 11;
+  const cx = 70;
+  const cy = 48;
+  const arcRadius = 46;
+  const bandThickness = 12;
   const startAngleDeg = 140;
   const sweepDeg = 260;
 
@@ -99,11 +100,11 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
 
   // Scale markings placed cleanly along inside perimeter: 0, 5, 10, 15, 20
   const scaleMarks = [
-    { label: '0', x: 40, y: 72 },
-    { label: '5', x: 37, y: 44 },
-    { label: '10', x: 65, y: 27 },
-    { label: '15', x: 93, y: 44 },
-    { label: '20', x: 90, y: 72 }
+    { label: '0', x: 44, y: 72 },
+    { label: '5', x: 41, y: 44 },
+    { label: '10', x: 70, y: 24 },
+    { label: '15', x: 99, y: 44 },
+    { label: '20', x: 96, y: 72 }
   ];
 
   // Display value formatting
@@ -116,95 +117,94 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     displayString = Math.round(animatedVal).toLocaleString();
   }
 
-  // Dynamic needle color based on current fraction / status
-  let needleTipColor = '#fde047'; // Electric yellow
-  let needleBaseColor = 'rgba(234, 88, 12, 0.4)';
-  if (status === 'STOP' || status === 'OFFLINE') {
-    needleTipColor = '#f43f5e';
-    needleBaseColor = 'rgba(225, 29, 72, 0.3)';
-  } else if (status === 'DOFF') {
-    needleTipColor = '#fb923c';
-    needleBaseColor = 'rgba(234, 88, 12, 0.3)';
-  } else if (fraction < 0.3) {
-    needleTipColor = '#f43f5e';
-    needleBaseColor = 'rgba(225, 29, 72, 0.3)';
-  } else if (fraction < 0.6) {
-    needleTipColor = '#fb923c';
-    needleBaseColor = 'rgba(249, 115, 22, 0.3)';
-  }
+  // Needle color theme: vibrant glowing cyan-blue
+  const needleTipColor = '#38bdf8'; // Electric sky cyan
+  const needleBodyColor = '#0284c7'; // Rich bright blue
+  const needleBaseColor = 'rgba(29, 78, 216, 0.4)'; // Royal blue tint
 
-  const height = Math.round(size * 0.74);
+  const svgHeight = Math.round(size * 0.65);
 
   return (
     <div
       style={{
         position: 'relative',
         width: size,
-        height: height,
         flexShrink: 0,
         userSelect: 'none',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
       }}
     >
+      {/* 1. Large Circular Speedometer Arc */}
       <svg
         width={size}
-        height={height}
-        viewBox="0 0 130 96"
+        height={svgHeight}
+        viewBox="0 0 140 92"
         style={{ overflow: 'visible' }}
       >
         <defs>
-          {/* Active Gradient: Pink -> Coral -> Orange -> Electric Yellow (Exact Match to Reference) */}
-          <linearGradient id="speedDialStylishGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#ec4899" />
-            <stop offset="20%" stopColor="#f43f5e" />
-            <stop offset="50%" stopColor="#f97316" />
-            <stop offset="80%" stopColor="#facc15" />
-            <stop offset="100%" stopColor="#fde047" />
+          {/* Active Gradient: Blue shades (Low in light blue/cyan -> High in deep rich royal blue) */}
+          <linearGradient id="speedDialBlueGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#7dd3fc" />
+            <stop offset="25%" stopColor="#38bdf8" />
+            <stop offset="60%" stopColor="#0284c7" />
+            <stop offset="85%" stopColor="#2563eb" />
+            <stop offset="100%" stopColor="#1d4ed8" />
           </linearGradient>
 
           {/* Floating Diamond Needle Gradient */}
-          <linearGradient id="stylishNeedleGrad" x1="0%" y1="0%" x2="0%" y2="1">
+          <linearGradient id="stylishBlueNeedleGrad" x1="0%" y1="0%" x2="0%" y2="1">
             <stop offset="0%" stopColor={needleTipColor} />
+            <stop offset="50%" stopColor={needleBodyColor} />
             <stop offset="100%" stopColor={needleBaseColor} />
           </linearGradient>
 
-          {/* Subtle Glow Filter for Needle */}
-          <filter id="stylishNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor={needleTipColor} floodOpacity="0.5" />
+          {/* Glowing Drop Shadow Filter for Needle */}
+          <filter id="stylishBlueNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor="#0284c7" floodOpacity="0.6" />
           </filter>
         </defs>
 
-        {/* 1. Inactive Thick Band Track (Sleek Dark Navy Slate with flat radial ends) */}
+        {/* Inactive Track Underlay (Subtle crisp border for white track definition) */}
         <path
           d={bgArcPath}
           fill="none"
-          stroke="#1e293b"
+          stroke="rgba(203, 213, 225, 0.5)"
+          strokeWidth={bandThickness + 1.5}
+          strokeLinecap="butt"
+        />
+
+        {/* Inactive Track: Light white with opacity */}
+        <path
+          d={bgArcPath}
+          fill="none"
+          stroke="rgba(255, 255, 255, 0.88)"
           strokeWidth={bandThickness}
           strokeLinecap="butt"
         />
 
-        {/* 2. Active Thick Band Track (Blazing Pink -> Orange -> Yellow Gradient) */}
+        {/* Active Track: Gradient from Light Blue to Deep Royal Blue */}
         {activeArcPath && (
           <path
             d={activeArcPath}
             fill="none"
-            stroke="url(#speedDialStylishGrad)"
+            stroke="url(#speedDialBlueGrad)"
             strokeWidth={bandThickness}
             strokeLinecap="butt"
           />
         )}
 
-        {/* 3. Scale Number Markings: 0, 5, 10, 15, 20 (Bold Sporty Condensed Typography) */}
+        {/* Scale Number Markings: 0, 5, 10, 15, 20 (Bold Sporty Typography) */}
         {scaleMarks.map(m => (
           <text
             key={`scale-${m.label}`}
             x={m.x}
             y={m.y}
             textAnchor="middle"
-            fill="#0f172a"
-            fontSize="8"
+            fill="#1e293b"
+            fontSize="8.5"
             fontWeight="900"
             fontFamily='"Arial Black", "Barlow Condensed", system-ui, sans-serif'
           >
@@ -212,57 +212,65 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           </text>
         ))}
 
-        {/* 4. Floating Diamond Spear Needle (No Pivot Circle, 3D Faceted Spine) */}
+        {/* Floating Diamond Spear Needle (No Pivot Circle, 3D Faceted Spine) */}
         <g
           transform={`rotate(${needleRotationDeg.toFixed(2)}, ${cx}, ${cy})`}
           style={{ transition: 'transform 0.05s linear' }}
         >
           {/* Diamond Polygon */}
           <polygon
-            points={`${cx},${cy - 33} ${cx + 3.4},${cy - 19} ${cx},${cy - 6} ${cx - 3.4},${cy - 19}`}
-            fill="url(#stylishNeedleGrad)"
-            filter="url(#stylishNeedleGlow)"
+            points={`${cx},${cy - 36} ${cx + 3.8},${cy - 20} ${cx},${cy - 6} ${cx - 3.8},${cy - 20}`}
+            fill="url(#stylishBlueNeedleGrad)"
+            filter="url(#stylishBlueNeedleGlow)"
           />
           {/* Center 3D Facet Spine */}
           <line
             x1={cx}
-            y1={cy - 32}
+            y1={cy - 35}
             x2={cx}
             y2={cy - 7}
-            stroke="rgba(255, 255, 255, 0.75)"
-            strokeWidth="0.8"
+            stroke="rgba(255, 255, 255, 0.9)"
+            strokeWidth="0.9"
           />
         </g>
+      </svg>
 
-        {/* 5. Center Label: Italic Sporty 'RPM' */}
-        <text
-          x={cx}
-          y={cy + 13}
-          textAnchor="middle"
-          fill="#64748b"
-          fontSize="7.5"
-          fontWeight="900"
-          fontStyle="italic"
-          fontFamily='"Arial Black", system-ui, sans-serif'
-          letterSpacing="0.08em"
-        >
-          {label}
-        </text>
-
-        {/* 6. Digital Readout: Big High-Contrast Bold Number */}
-        <text
-          x={cx}
-          y={cy + 28}
-          textAnchor="middle"
-          fill="#0f172a"
-          fontSize={displayString.length > 5 ? '16' : displayString.length > 4 ? '17.5' : '19'}
-          fontWeight="900"
-          fontFamily='system-ui, -apple-system, sans-serif'
-          letterSpacing="-0.02em"
+      {/* 2. Digital RPM Readout placed cleanly BELOW the meter */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          marginTop: '-1px',
+          textAlign: 'center'
+        }}
+      >
+        <span
+          style={{
+            fontSize: displayString.length > 5 ? '17px' : '19px',
+            fontWeight: 900,
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            color: '#0f172a',
+            letterSpacing: '-0.02em',
+            lineHeight: 1.15
+          }}
         >
           {displayString}
-        </text>
-      </svg>
+        </span>
+        <span
+          style={{
+            fontSize: '9.5px',
+            fontWeight: 800,
+            color: '#64748b',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            fontStyle: 'italic',
+            marginTop: '1px'
+          }}
+        >
+          {label}
+        </span>
+      </div>
     </div>
   );
 };
