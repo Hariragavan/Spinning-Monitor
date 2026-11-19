@@ -95,7 +95,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       const repShed = rep.shed || 'Shed 1';
       (rep.entries || []).forEach(e => {
         const rf = (e.frameNo || '').trim().toUpperCase();
-        if (!rf) return;
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
         foundData = true;
         const key = `${rf}__${repShed.toLowerCase()}`;
         const existing = map.get(key);
@@ -111,7 +111,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
       (rep.summaries || []).forEach(s => {
         const rf = (s.frameNo || '').trim().toUpperCase();
-        if (!rf) return;
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
         foundData = true;
         const key = `${rf}__${repShed.toLowerCase()}`;
         const existing = map.get(key);
@@ -190,6 +190,8 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   // Master registered machines filtered by shed
   const masterMachines = useMemo(() => {
     return machines.filter(m => {
+      const rf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+      if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return false;
       if (selectedShedTab === 'All Sheds') return true;
       return normalizeShed(m.shed) === normalizeShed(selectedShedTab);
     });
@@ -264,6 +266,10 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
 
     const cleanRfNo = formData.rfNo.trim().toUpperCase();
+    if (cleanRfNo === 'M' || cleanRfNo === 'MC' || !cleanRfNo.match(/\d+/)) {
+      setError('Please enter a valid machine number containing digits (e.g., 01, RF-02, K03). "M" cannot be registered as a machine.');
+      return;
+    }
     const cleanShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
     const finalCount = formData.count || availableCountsForShed[0] || '';
 

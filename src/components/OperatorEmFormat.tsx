@@ -23,7 +23,7 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
+import { cn, parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 
 // Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
@@ -309,6 +309,20 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     totalBreaks?: number;
     unit?: string;
     loading?: boolean;
+    isMultiMachine?: boolean;
+    totalSides?: number;
+    combinedAvgEm?: number;
+    machines?: {
+      frameNo: string;
+      sides: number;
+      sideLabel: 'LH' | 'RH' | 'LH, RH';
+      assignedEm: number;
+      gps: number;
+      count: string;
+      emLeft?: number;
+      emRight?: number;
+      mappedIot?: string;
+    }[];
   } | null>(null);
 
   // Manual cell edit state
@@ -682,6 +696,45 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     setActiveEmDetail(prev => prev ? { ...prev, loading: false } : null);
   };
 
+  // Inspect Grouped EM Breakdown for multi-machine operator duties (combining 2 sides of M1 and 3rd side of M2)
+  const handleOpenGroupedEmDetail = (group: {
+    id: string;
+    date: string;
+    shift: Shift;
+    totalSides: number;
+    avgEm: number;
+    machines: {
+      frameNo: string;
+      sides: number;
+      sideLabel: 'LH' | 'RH' | 'LH, RH';
+      assignedEm: number;
+      gps: number;
+      count: string;
+      emLeft?: number;
+      emRight?: number;
+      mappedIot?: string;
+    }[];
+  }) => {
+    if (group.machines.length === 1) {
+      const m = group.machines[0];
+      handleOpenEmDetail(group.date, m.frameNo, group.shift, m.assignedEm, m.mappedIot);
+      return;
+    }
+
+    setActiveEmDetail({
+      date: group.date,
+      machine: group.machines.map(m => m.frameNo).join(', '),
+      shift: group.shift,
+      emTotal: group.avgEm,
+      unit: 'min',
+      loading: false,
+      isMultiMachine: true,
+      totalSides: group.totalSides,
+      combinedAvgEm: group.avgEm,
+      machines: group.machines
+    });
+  };
+
   // Periodic 45-second background auto-refresh for live Machine EM
   React.useEffect(() => {
     let isMounted = true;
@@ -805,7 +858,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return count > 0 ? (sum / count).toFixed(2) : '-';
   };
 
-  // 2. Individual Sider Log calculation
+  // 2. Individual Sider Log calculation: Combined rows by Date & Shift with 3-Side Average
   const individualEmLedger = useMemo(() => {
     if (!selectedWorkerId) return [];
     
@@ -814,13 +867,24 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     if (start) start.setHours(0, 0, 0, 0);
     if (end) end.setHours(23, 59, 59, 999);
 
-    const logs: {
+    const shiftGroups: {
+      id: string;
       date: string;
       shift: Shift;
-      machine: string;
-      gps: number;
-      count: string;
-      em: number;
+      totalSides: number;
+      avgEm: number;
+      machines: {
+        frameNo: string;
+        shift: Shift;
+        sides: number;
+        sideLabel: 'LH' | 'RH' | 'LH, RH';
+        gps: number;
+        count: string;
+        assignedEm: number;
+        emLeft?: number;
+        emRight?: number;
+        mappedIot?: string;
+      }[];
     }[] = [];
 
     const selectedWorker = (effectiveWorkers || []).find(w => w && (w.id === selectedWorkerId || w.tNo === selectedWorkerId));
@@ -842,36 +906,77 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       );
       const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, effectiveMachineEm, effectiveWorkers, dateMapping, liveMachineEmDetails);
       if (shiftRes && Array.isArray(shiftRes.machinesDetail) && shiftRes.machinesDetail.length > 0) {
-        shiftRes.machinesDetail.forEach(m => {
-          if (!m || !isMachineExisted(m.frameNo)) return;
-          logs.push({
-            date: report.date,
-            shift: m.shift || shiftRes.shift,
-            machine: `${m.frameNo} (${m.sideLabel || (m.sides === 1 ? 'LH' : 'LH, RH')})`,
-            gps: m.gps,
-            count: m.count || '',
-            em: m.assignedEm
+        const validMachines = shiftRes.machinesDetail
+          .filter(m => m && isMachineExisted(m.frameNo))
+          .map(m => {
+            const mappedDev = dateMapping[m.frameNo] || dateMapping[m.frameNo.toUpperCase()] || '';
+            return {
+              frameNo: m.frameNo,
+              shift: m.shift || shiftRes.shift,
+              sides: m.sides,
+              sideLabel: m.sideLabel,
+              gps: m.gps,
+              count: m.count || '',
+              assignedEm: m.assignedEm,
+              emLeft: m.emLeft,
+              emRight: m.emRight,
+              mappedIot: mappedDev
+            };
           });
-        });
+
+        if (validMachines.length > 0) {
+          // Group by shift if worker worked multiple shifts or same shift
+          const byShift: Record<string, typeof validMachines> = {};
+          validMachines.forEach(vm => {
+            const shKey = vm.shift || shiftRes.shift;
+            if (!byShift[shKey]) byShift[shKey] = [];
+            byShift[shKey].push(vm);
+          });
+
+          Object.entries(byShift).forEach(([sh, mList]) => {
+            const totalSidesInShift = mList.reduce((s, m) => s + m.sides, 0);
+            const totalEmWeighted = mList.reduce((s, m) => s + (m.assignedEm * m.sides), 0);
+            const avgEmForShift = totalSidesInShift > 0 ? Number((totalEmWeighted / totalSidesInShift).toFixed(3)) : 0;
+
+            shiftGroups.push({
+              id: `${report.date}-${sh}`,
+              date: report.date,
+              shift: sh as Shift,
+              totalSides: totalSidesInShift,
+              avgEm: avgEmForShift,
+              machines: mList
+            });
+          });
+        }
       }
     });
 
     // Sort chronological
-    return logs.sort((a, b) => {
+    return shiftGroups.sort((a, b) => {
       return parseUniversalDate(a.date).getTime() - parseUniversalDate(b.date).getTime();
     });
-  }, [effectiveHistory, effectiveMachineEm, selectedWorkerId, fromDate, toDate, effectiveWorkers, registeredInfoForMonth, isMachineExisted]);
+  }, [effectiveHistory, effectiveMachineEm, selectedWorkerId, fromDate, toDate, effectiveWorkers, registeredInfoForMonth, isMachineExisted, liveMachineEmDetails, safeSettings]);
 
   // Aggregate stats for individual view
   const individualStats = useMemo(() => {
     if (individualEmLedger.length === 0) return { totalShifts: 0, avgGps: 0, avgEm: 0 };
     const totalShifts = individualEmLedger.length;
-    const sumGps = individualEmLedger.reduce((sum, item) => sum + item.gps, 0);
-    const sumEm = individualEmLedger.reduce((sum, item) => sum + item.em, 0);
+    let sumGps = 0;
+    let totalMachineCount = 0;
+    let sumEm = 0;
+
+    individualEmLedger.forEach(group => {
+      group.machines.forEach(m => {
+        sumGps += m.gps;
+        totalMachineCount += 1;
+      });
+      sumEm += group.avgEm;
+    });
+
     return {
       totalShifts,
-      avgGps: sumGps / totalShifts,
-      avgEm: sumEm / totalShifts
+      avgGps: totalMachineCount > 0 ? sumGps / totalMachineCount : 0,
+      avgEm: totalShifts > 0 ? sumEm / totalShifts : 0
     };
   }, [individualEmLedger]);
 
@@ -955,6 +1060,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   // Operator Monthly EM grid data
   const operatorEmGridData = useMemo(() => {
     const lookup: Record<string, Record<string, number>> = {};
+    const lookupSum: Record<string, Record<string, number>> = {};
+    const shiftCount: Record<string, Record<string, number>> = {};
 
     (effectiveHistory || []).forEach(report => {
       if (!report || !report.date || !Array.isArray(report.entries)) return;
@@ -964,6 +1071,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
       if (!lookup[dateStr]) {
         lookup[dateStr] = {};
+        lookupSum[dateStr] = {};
+        shiftCount[dateStr] = {};
       }
 
       const dateMapping = resolveEffectiveMappingForDate(
@@ -977,8 +1086,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         if (!worker || !worker.id) return;
         const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping, liveMachineEmDetails);
         if (shiftRes && shiftRes.totalSides > 0 && shiftRes.totalEm > 0) {
-          const prev = lookup[dateStr][worker.id] || 0;
-          lookup[dateStr][worker.id] = Number((prev + shiftRes.totalEm).toFixed(3));
+          lookupSum[dateStr][worker.id] = (lookupSum[dateStr][worker.id] || 0) + shiftRes.totalEm;
+          shiftCount[dateStr][worker.id] = (shiftCount[dateStr][worker.id] || 0) + 1;
+          lookup[dateStr][worker.id] = Number((lookupSum[dateStr][worker.id] / shiftCount[dateStr][worker.id]).toFixed(2));
           if (worker.tNo) {
             lookup[dateStr][worker.tNo] = lookup[dateStr][worker.id];
           }
@@ -1462,15 +1572,20 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const worker = workers.find(w => w.id === selectedWorkerId);
     const workerName = worker?.name || 'Operator';
     
-    const excelData = individualEmLedger.map((item, idx) => ({
-      'S.No': idx + 1,
-      'Date': item.date,
-      'Shift': item.shift,
-      'Assigned Machine': item.machine,
-      'Yarn Count': item.count,
-      'Actual GPS': item.gps,
-      'EM Value': item.em
-    }));
+    const excelData: any[] = [];
+    individualEmLedger.forEach((group, idx) => {
+      group.machines.forEach((m, mIdx) => {
+        excelData.push({
+          'S.No': mIdx === 0 ? idx + 1 : '',
+          'Date': mIdx === 0 ? group.date : '',
+          'Shift': mIdx === 0 ? group.shift : '',
+          'Assigned Machine': `${m.frameNo} (${m.sideLabel})`,
+          'Yarn Count': m.count,
+          'Actual GPS': m.gps,
+          'EM Value': mIdx === 0 ? group.avgEm : ''
+        });
+      });
+    });
 
     const ws = XLSX.utils.json_to_sheet(excelData);
     const wb = XLSX.utils.book_new();
@@ -1979,26 +2094,64 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                         </tr>
                       </thead>
                       <tbody>
-                        {individualEmLedger.map((item, idx) => (
-                          <tr key={`${item.date}-${item.shift}-${item.machine}`} className="border-b border-stone-100 hover:bg-stone-50/30 transition-colors">
-                            <td className="p-3 font-medium text-stone-400">{idx + 1}</td>
-                            <td className="p-3 font-bold text-stone-800">{item.date}</td>
-                            <td className="p-3 text-center font-bold text-stone-700">{item.shift}</td>
-                            <td className="p-3 text-center font-bold text-stone-700">{item.machine}</td>
-                            <td className="p-3 font-mono text-stone-500">{item.count}</td>
-                            <td className="p-3 text-right font-mono text-stone-600 font-bold">{item.gps.toFixed(3)}</td>
-                            <td 
-                              onClick={() => handleOpenEmDetail(item.date, item.machine, item.shift, item.em)}
-                              className="p-3 text-right font-mono text-indigo-600 font-bold hover:bg-indigo-50/70 hover:underline cursor-pointer transition-colors"
-                              title="Click to view Left EM, Right EM & Total EM"
-                            >
-                              <span className="inline-flex items-center gap-1">
-                                {item.em.toFixed(2)}
-                                <Eye size={10} className="text-indigo-400 opacity-60" />
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {individualEmLedger.map((group, groupIdx) => {
+                          const rowSpan = group.machines.length;
+                          return group.machines.map((m, mIdx) => {
+                            const isFirst = mIdx === 0;
+                            return (
+                              <tr 
+                                key={`${group.id}-${m.frameNo}-${mIdx}`} 
+                                className={cn(
+                                  "border-b border-stone-100 hover:bg-stone-50/40 transition-colors",
+                                  mIdx > 0 && "bg-stone-50/15"
+                                )}
+                              >
+                                {isFirst && (
+                                  <>
+                                    <td rowSpan={rowSpan} className="p-3 font-medium text-stone-400 align-middle border-r border-stone-100/60">
+                                      {groupIdx + 1}
+                                    </td>
+                                    <td rowSpan={rowSpan} className="p-3 font-bold text-stone-800 align-middle border-r border-stone-100/60">
+                                      {group.date}
+                                    </td>
+                                    <td rowSpan={rowSpan} className="p-3 text-center font-bold text-stone-700 align-middle border-r border-stone-100/60">
+                                      <span className="px-2 py-0.5 rounded-lg bg-stone-100 text-stone-800 text-xs font-mono">
+                                        {group.shift}
+                                      </span>
+                                    </td>
+                                  </>
+                                )}
+                                <td className="p-3 text-center font-bold text-stone-700">
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="font-mono text-stone-900">{m.frameNo}</span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 font-semibold uppercase">
+                                      {m.sideLabel}
+                                    </span>
+                                  </span>
+                                </td>
+                                <td className="p-3 font-mono text-stone-500">
+                                  {m.count || '-'}
+                                </td>
+                                <td className="p-3 text-right font-mono text-stone-600 font-bold">
+                                  {m.gps.toFixed(3)}
+                                </td>
+                                {isFirst && (
+                                  <td 
+                                    rowSpan={rowSpan}
+                                    onClick={() => handleOpenGroupedEmDetail(group)}
+                                    className="p-3 text-right font-mono text-indigo-600 font-bold hover:bg-indigo-50/70 hover:underline cursor-pointer transition-colors align-middle border-l border-stone-100/60"
+                                    title={`Click to view EM breakdown for ${group.totalSides} sides`}
+                                  >
+                                    <span className="inline-flex items-center justify-end gap-1.5">
+                                      <span className="text-sm font-black">{group.avgEm.toFixed(2)}</span>
+                                      <Eye size={12} className="text-indigo-400 opacity-70" />
+                                    </span>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          });
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -2414,10 +2567,21 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                    Machine EM Breakdown
+                    {activeEmDetail.isMultiMachine 
+                      ? `Operator Shift EM Breakdown (${activeEmDetail.totalSides || 3} Sides)` 
+                      : 'Machine EM Breakdown'}
                   </span>
-                  <h3 className="font-serif italic text-xl tracking-tight text-stone-900">
-                    Frame {activeEmDetail.machine}
+                  <h3 className="text-xl font-black text-stone-900 uppercase tracking-tight font-sans flex items-center gap-2">
+                    {activeEmDetail.isMultiMachine ? (
+                      activeEmDetail.machines?.map((m, idx) => (
+                        <span key={m.frameNo} className="inline-flex items-center gap-1">
+                          {idx > 0 && <span className="text-stone-300 font-normal">&amp;</span>}
+                          <span>Frame <span className="font-mono text-emerald-800">{m.frameNo}</span></span>
+                        </span>
+                      ))
+                    ) : (
+                      <>Frame <span className="font-mono text-emerald-800">{activeEmDetail.machine}</span></>
+                    )}
                   </h3>
                 </div>
               </div>
@@ -2437,73 +2601,148 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                 <span className="font-bold text-stone-900">{activeEmDetail.date}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-1 rounded-lg bg-stone-200/80 font-bold text-stone-800 text-[11px]">
+                <span className="px-2.5 py-1 rounded-lg bg-stone-200/80 font-bold text-stone-800 text-[11px] font-mono">
                   Shift {activeEmDetail.shift}
                 </span>
               </div>
             </div>
 
-            {/* Sides Grid: Left EM & Right EM */}
-            <div className="grid grid-cols-2 gap-3">
-              {/* Left Side */}
-              <div className="bg-gradient-to-br from-blue-50/80 to-blue-50/20 p-4 rounded-2xl border border-blue-100 flex flex-col">
-                <div className="flex items-center justify-between text-blue-700 text-[11px] font-bold uppercase tracking-wider mb-2">
-                  <span>Left Side EM</span>
-                  <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-[10px] font-mono">Side L</span>
-                </div>
-                <div className="font-mono text-2xl font-black text-blue-950">
-                  {activeEmDetail.emLeft !== undefined ? activeEmDetail.emLeft.toFixed(2) : '-'}
-                  <span className="text-xs font-normal text-blue-600 ml-1">min</span>
-                </div>
-                {activeEmDetail.breaksLeft !== undefined && (
-                  <div className="text-[11px] text-blue-700/80 mt-1 font-medium">
-                    {activeEmDetail.breaksLeft} end breaks
+            {activeEmDetail.isMultiMachine && activeEmDetail.machines ? (
+              <div className="space-y-3.5">
+                {activeEmDetail.machines.map((m, mIdx) => {
+                  const isTwoSides = m.sides === 2;
+                  return (
+                    <div key={`${m.frameNo}-${mIdx}`} className="bg-stone-50 p-4 rounded-2xl border border-stone-200/80 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-lg bg-stone-900 text-stone-50 font-mono text-xs font-bold">
+                            Frame {m.frameNo}
+                          </span>
+                          <span className="text-xs font-bold text-stone-600 uppercase">
+                            {m.sideLabel} ({m.sides} {m.sides === 1 ? 'Side' : 'Sides'})
+                          </span>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-stone-500">
+                          Avg: <strong className="text-stone-900">{m.assignedEm.toFixed(2)} min</strong>
+                        </span>
+                      </div>
+
+                      {isTwoSides ? (
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-100 flex flex-col">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Left Side (LH)</span>
+                            <span className="font-mono text-lg font-black text-blue-950 mt-0.5">
+                              {m.emLeft !== undefined ? m.emLeft.toFixed(2) : m.assignedEm.toFixed(2)}
+                              <span className="text-[10px] font-normal text-blue-600 ml-1">min</span>
+                            </span>
+                          </div>
+                          <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-100 flex flex-col">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">Right Side (RH)</span>
+                            <span className="font-mono text-lg font-black text-indigo-950 mt-0.5">
+                              {m.emRight !== undefined ? m.emRight.toFixed(2) : m.assignedEm.toFixed(2)}
+                              <span className="text-[10px] font-normal text-indigo-600 ml-1">min</span>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200/80 flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-amber-900">
+                            3rd Side EM ({m.sideLabel})
+                          </span>
+                          <span className="font-mono text-lg font-black text-amber-950">
+                            {m.assignedEm.toFixed(2)}
+                            <span className="text-xs font-normal text-amber-700 ml-1">min</span>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Overall Weighted 3-Side Average EM Highlight */}
+                <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-5 rounded-2xl text-white shadow-md shadow-emerald-600/20 flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-emerald-100 text-xs font-bold uppercase tracking-wider">
+                    <span>Combined Shift Average EM</span>
+                    <span className="text-[10px] font-mono text-emerald-200 px-2 py-0.5 rounded bg-white/10">
+                      Average of {activeEmDetail.totalSides || 3} Sides
+                    </span>
                   </div>
-                )}
-              </div>
-
-              {/* Right Side */}
-              <div className="bg-gradient-to-br from-indigo-50/80 to-indigo-50/20 p-4 rounded-2xl border border-indigo-100 flex flex-col">
-                <div className="flex items-center justify-between text-indigo-700 text-[11px] font-bold uppercase tracking-wider mb-2">
-                  <span>Right Side EM</span>
-                  <span className="px-1.5 py-0.5 rounded bg-indigo-100/80 text-[10px] font-mono">Side R</span>
-                </div>
-                <div className="font-mono text-2xl font-black text-indigo-950">
-                  {activeEmDetail.emRight !== undefined ? activeEmDetail.emRight.toFixed(2) : '-'}
-                  <span className="text-xs font-normal text-indigo-600 ml-1">min</span>
-                </div>
-                {activeEmDetail.breaksRight !== undefined && (
-                  <div className="text-[11px] text-indigo-700/80 mt-1 font-medium">
-                    {activeEmDetail.breaksRight} end breaks
+                  <div className="flex items-baseline justify-between mt-1">
+                    <div className="font-mono text-3xl font-black text-white tracking-tight">
+                      {(activeEmDetail.combinedAvgEm ?? activeEmDetail.emTotal).toFixed(2)}
+                      <span className="text-sm font-normal text-emerald-100 ml-1.5">min</span>
+                    </div>
+                    <div className="text-[11px] text-emerald-100/90 font-medium text-right">
+                      {activeEmDetail.machines.map(m => `${m.assignedEm.toFixed(2)}×${m.sides}`).join(' + ')} ÷ {activeEmDetail.totalSides || 3}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
-
-            {/* Average Machine EM Highlight (Side L & Side R Average) */}
-            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-4 rounded-2xl text-white shadow-sm shadow-emerald-600/20 flex flex-col gap-1">
-              <div className="flex items-center justify-between text-emerald-100 text-xs font-bold uppercase tracking-wider">
-                <span>Machine Average EM</span>
-                <span className="text-[10px] font-mono text-emerald-200">(Side L + Side R) / 2</span>
-              </div>
-              <div className="flex items-baseline justify-between mt-1">
-                <div className="font-mono text-3xl font-black text-white tracking-tight">
-                  {((activeEmDetail.emLeft !== undefined && activeEmDetail.emRight !== undefined && (activeEmDetail.emLeft > 0 || activeEmDetail.emRight > 0))
-                    ? ((activeEmDetail.emLeft + activeEmDetail.emRight) / 2)
-                    : (activeEmDetail.emTotal > 0 ? (activeEmDetail.emTotal / 2) : 0)).toFixed(2)}
-                  <span className="text-sm font-normal text-emerald-100 ml-1.5">min</span>
-                </div>
-                <div className="text-xs text-emerald-100 font-medium">
-                  Total: {activeEmDetail.emTotal.toFixed(2)} min
                 </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Sides Grid: Left EM & Right EM for single machine */}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Left Side */}
+                  <div className="bg-gradient-to-br from-blue-50/80 to-blue-50/20 p-4 rounded-2xl border border-blue-100 flex flex-col">
+                    <div className="flex items-center justify-between text-blue-700 text-[11px] font-bold uppercase tracking-wider mb-2">
+                      <span>Left Side EM</span>
+                      <span className="px-1.5 py-0.5 rounded bg-blue-100/80 text-[10px] font-mono">Side L</span>
+                    </div>
+                    <div className="font-mono text-2xl font-black text-blue-950">
+                      {activeEmDetail.emLeft !== undefined ? activeEmDetail.emLeft.toFixed(2) : '-'}
+                      <span className="text-xs font-normal text-blue-600 ml-1">min</span>
+                    </div>
+                    {activeEmDetail.breaksLeft !== undefined && (
+                      <div className="text-[11px] text-blue-700/80 mt-1 font-medium">
+                        {activeEmDetail.breaksLeft} end breaks
+                      </div>
+                    )}
+                  </div>
 
-            {/* Total Machine EM Breakdown */}
-            <div className="bg-stone-50 border border-stone-200 p-3.5 rounded-2xl text-stone-800 flex items-center justify-between">
-              <span className="text-xs font-bold text-stone-600 uppercase tracking-wider">Total Combined EM</span>
-              <span className="font-mono text-base font-black text-stone-900">{activeEmDetail.emTotal.toFixed(2)} min</span>
-            </div>
+                  {/* Right Side */}
+                  <div className="bg-gradient-to-br from-indigo-50/80 to-indigo-50/20 p-4 rounded-2xl border border-indigo-100 flex flex-col">
+                    <div className="flex items-center justify-between text-indigo-700 text-[11px] font-bold uppercase tracking-wider mb-2">
+                      <span>Right Side EM</span>
+                      <span className="px-1.5 py-0.5 rounded bg-indigo-100/80 text-[10px] font-mono">Side R</span>
+                    </div>
+                    <div className="font-mono text-2xl font-black text-indigo-950">
+                      {activeEmDetail.emRight !== undefined ? activeEmDetail.emRight.toFixed(2) : '-'}
+                      <span className="text-xs font-normal text-indigo-600 ml-1">min</span>
+                    </div>
+                    {activeEmDetail.breaksRight !== undefined && (
+                      <div className="text-[11px] text-indigo-700/80 mt-1 font-medium">
+                        {activeEmDetail.breaksRight} end breaks
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Average Machine EM Highlight (Side L & Side R Average) */}
+                <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-4 rounded-2xl text-white shadow-sm shadow-emerald-600/20 flex flex-col gap-1">
+                  <div className="flex items-center justify-between text-emerald-100 text-xs font-bold uppercase tracking-wider">
+                    <span>Machine Average EM</span>
+                    <span className="text-[10px] font-mono text-emerald-200">(Side L + Side R) / 2</span>
+                  </div>
+                  <div className="flex items-baseline justify-between mt-1">
+                    <div className="font-mono text-3xl font-black text-white tracking-tight">
+                      {((activeEmDetail.emLeft !== undefined && activeEmDetail.emRight !== undefined && (activeEmDetail.emLeft > 0 || activeEmDetail.emRight > 0))
+                        ? ((activeEmDetail.emLeft + activeEmDetail.emRight) / 2)
+                        : (activeEmDetail.emTotal > 0 ? (activeEmDetail.emTotal / 2) : 0)).toFixed(2)}
+                      <span className="text-sm font-normal text-emerald-100 ml-1.5">min</span>
+                    </div>
+                    <div className="text-xs text-emerald-100 font-medium">
+                      Total: {activeEmDetail.emTotal.toFixed(2)} min
+                    </div>
+                  </div>
+                </div>
+
+                {/* Total Machine EM Breakdown */}
+                <div className="bg-stone-50 border border-stone-200 p-3.5 rounded-2xl text-stone-800 flex items-center justify-between">
+                  <span className="text-xs font-bold text-stone-600 uppercase tracking-wider">Total Combined EM</span>
+                  <span className="font-mono text-base font-black text-stone-900">{activeEmDetail.emTotal.toFixed(2)} min</span>
+                </div>
+              </>
+            )}
 
             {/* Close Button */}
             <div className="flex justify-end mt-1">

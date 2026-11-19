@@ -1394,6 +1394,8 @@ export interface OperatorShiftEmResult {
     assignedEm: number;
     gps: number;
     count?: string;
+    emLeft?: number;
+    emRight?: number;
   }[];
 }
 
@@ -1559,14 +1561,17 @@ export function computeOperatorShiftEm(
       machineEm,
       assignedEm,
       gps: entry.gpsActual || 0,
-      count: entry.count
+      count: entry.count,
+      emLeft,
+      emRight
     });
   });
 
   if (totalSides === 0 || machinesDetail.length === 0) return null;
 
-  // Average EM across duties (never sum)
-  const totalEm = Number((machinesDetail.reduce((sum, m) => sum + m.assignedEm, 0) / machinesDetail.length).toFixed(3));
+  // True weighted average across all sides assigned (e.g. 3 sides = sum of 3 sides / 3, never sum)
+  const totalSideEm = machinesDetail.reduce((sum, m) => sum + (m.assignedEm * m.sides), 0);
+  const totalEm = totalSides > 0 ? Number((totalSideEm / totalSides).toFixed(3)) : 0;
 
   return {
     shift: (machinesDetail[0]?.shift || report.entries[0]?.shift || (report as any).shift || 'I') as Shift,

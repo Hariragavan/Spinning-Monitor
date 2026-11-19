@@ -12,21 +12,39 @@ export async function GET(req: Request) {
       filter.shed = shed;
     }
 
+    // Clean up legacy non-registered / invalid machine records like "M"
+    await db.collection('machines').deleteMany({
+      $or: [
+        { frameNo: /^m$/i },
+        { rfNo: /^m$/i },
+        { frameNo: 'M' },
+        { rfNo: 'M' },
+        { frameNo: '' },
+        { rfNo: '' },
+        { frameNo: null }
+      ]
+    }).catch(() => {});
+
     const machines = await db.collection('machines').find(filter, { projection: { _id: 0 } }).toArray();
-    const normalized = machines.map((m: any) => {
-      const rf = m.rfNo || m.frameNo || '';
-      return {
-        ...m,
-        id: m.id || `m-${rf}`,
-        rfNo: rf,
-        frameNo: m.frameNo || rf,
-        shed: m.shed || 'Shed 1',
-        count: m.count || '030/1-PH-PC',
-        spindles: m.spindles ?? 1200,
-        status: m.status || 'Active',
-        description: m.description || `RING FRAME ${rf}`
-      };
-    });
+    const normalized = machines
+      .filter((m: any) => {
+        const rf = String(m.rfNo || m.frameNo || '').trim().toUpperCase();
+        return rf !== '' && rf !== 'M' && rf !== 'MC' && Boolean(rf.match(/\d+/));
+      })
+      .map((m: any) => {
+        const rf = m.rfNo || m.frameNo || '';
+        return {
+          ...m,
+          id: m.id || `m-${rf}`,
+          rfNo: rf,
+          frameNo: m.frameNo || rf,
+          shed: m.shed || 'Shed 1',
+          count: m.count || '030/1-PH-PC',
+          spindles: m.spindles ?? 1200,
+          status: m.status || 'Active',
+          description: m.description || `RING FRAME ${rf}`
+        };
+      });
     return NextResponse.json({ success: true, data: normalized });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch machines' }, { status: 500 });
@@ -38,8 +56,13 @@ export async function POST(req: Request) {
     const db = await getDb();
     const body = await req.json();
 
+    const isValidMachine = (m: any) => {
+      const rf = String(m?.rfNo || m?.frameNo || '').trim().toUpperCase();
+      return rf !== '' && rf !== 'M' && rf !== 'MC' && Boolean(rf.match(/\d+/));
+    };
+
     if (body.action === 'batch') {
-      const machines: any[] = body.machines || [];
+      const machines: any[] = (body.machines || []).filter(isValidMachine);
       const shed = body.shed;
       if (shed && shed !== 'All') {
         await db.collection('machines').deleteMany({ shed });
@@ -54,9 +77,9 @@ export async function POST(req: Request) {
     }
 
     const machine = body.machine || body;
-    const rfNo = machine.rfNo || machine.frameNo;
-    if (!machine || !rfNo) {
-      return NextResponse.json({ success: false, error: 'rfNo or frameNo is required' }, { status: 400 });
+    const rfNo = machine?.rfNo || machine?.frameNo;
+    if (!machine || !rfNo || !isValidMachine(machine)) {
+      return NextResponse.json({ success: false, error: 'A valid machine number with digits is required' }, { status: 400 });
     }
 
     const mShed = machine.shed || 'Shed 1';

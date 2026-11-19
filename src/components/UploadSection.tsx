@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileCheck, AlertCircle, AlertTriangle, Loader2, Users, Gauge, 
   Contact, FileUp, Coins, Download, Info, X, Calendar, 
-  CheckCircle2, ChevronRight, Hash 
+  CheckCircle2, ChevronRight, Hash, Trash2 
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -1279,52 +1279,52 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </div>
       </div>
 
-      {/* Upload Cards Grid with properly aligned buttons */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4 w-full">
+      {/* Upload Cards Grid with properly aligned buttons - Fills container */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 w-full">
         {uploadCategories.map((cat) => (
           <div
             key={cat.id}
             className={cn(
-              "bg-white p-5 rounded-2xl border shadow-xs transition-all group relative overflow-hidden flex flex-col justify-between",
-              pendingReports[cat.id] ? "border-emerald-500 bg-emerald-50/10" : "border-stone-200"
+              "bg-white p-7 sm:p-9 rounded-[2rem] border-2 shadow-xs transition-all group relative overflow-hidden flex flex-col justify-between min-h-[300px]",
+              pendingReports[cat.id] ? "border-emerald-500 bg-emerald-50/15 ring-2 ring-emerald-500/20" : "border-stone-200 hover:border-stone-300 hover:shadow-md"
             )}
           >
             <div className="flex-1 flex flex-col">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-4">
                 <div className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform opacity-80 shrink-0",
+                  "w-14 h-14 rounded-2xl flex items-center justify-center group-hover:scale-105 transition-transform shrink-0 shadow-xs",
                   pendingReports[cat.id] ? "bg-emerald-100 text-emerald-600" : "bg-stone-50 " + cat.color
                 )}>
-                  {pendingReports[cat.id] ? <FileCheck size={20} /> : <cat.icon size={20} />}
+                  {pendingReports[cat.id] ? <FileCheck size={26} /> : <cat.icon size={26} />}
                 </div>
 
                 <button 
                   onClick={() => downloadTemplate(
                     cat.id === 'daily_report' ? 'daily_report' : 'worker'
                   )}
-                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-xl border border-emerald-200/80 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3.5 py-2 rounded-xl border border-emerald-200/80 transition-colors cursor-pointer shadow-2xs"
                   title={`Download sample template for ${cat.title}`}
                 >
-                  <Download size={12} />
+                  <Download size={14} />
                   Template
                 </button>
               </div>
 
-              <div className="mb-2">
-                <h3 className="text-base font-black text-stone-900 uppercase tracking-tight flex items-center gap-2">
+              <div className="mb-2.5">
+                <h3 className="text-xl sm:text-2xl font-black text-stone-900 uppercase tracking-tight flex items-center gap-3">
                   <span>{cat.title}</span>
-                  {pendingReports[cat.id] && <span className="text-[9px] bg-emerald-500 text-white px-2 py-0.5 rounded-full font-black">READY</span>}
+                  {pendingReports[cat.id] && <span className="text-[10px] bg-emerald-500 text-white px-2.5 py-1 rounded-full font-black tracking-widest">READY</span>}
                 </h3>
               </div>
 
-              <p className="text-xs text-stone-500 font-medium leading-relaxed flex-1 mb-4">
+              <p className="text-sm text-stone-500 font-medium leading-relaxed flex-1 mb-6">
                 {cat.id === 'daily_report' 
                   ? 'Upload all sheds Daily Production Statement (Shed 1, Shed 2, Shed 3, KTTM) for telemetry, GPS, and production totals.' 
                   : 'Upload employee registry to sync names and ticket numbers.'}
               </p>
             </div>
             
-            <div className="relative mt-auto pt-3 border-t border-stone-100">
+            <div className="relative mt-auto pt-4 border-t border-stone-100">
               <input 
                 type="file" 
                 className="absolute inset-0 opacity-0 cursor-pointer z-10" 
@@ -1333,24 +1333,24 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 disabled={!!isUploading}
               />
               <button className={cn(
-                "w-full py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs",
+                "w-full py-4 rounded-2xl text-xs sm:text-sm font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2.5 shadow-xs",
                 isUploading === cat.id ? "bg-stone-100 text-stone-400" : 
-                pendingReports[cat.id] ? "bg-emerald-600 text-white" :
-                "bg-stone-900 text-stone-50 hover:bg-stone-800"
+                pendingReports[cat.id] ? "bg-emerald-600 hover:bg-emerald-700 text-white" :
+                "bg-stone-900 text-stone-50 hover:bg-stone-800 active:scale-[0.99]"
               )}>
                 {isUploading === cat.id ? (
                   <>
-                    <Loader2 className="animate-spin" size={14} />
+                    <Loader2 className="animate-spin" size={16} />
                     Processing...
                   </>
                 ) : pendingReports[cat.id] ? (
                   <>
-                    <FileCheck size={14} />
+                    <FileCheck size={16} />
                     REPLACE FILE
                   </>
                 ) : (
                   <>
-                    <Upload size={14} />
+                    <Upload size={16} />
                     Upload Excel Sheet
                   </>
                 )}
@@ -1422,43 +1422,91 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-          {/* Date Picker & Mark as Leave Button */}
+          {/* Date Picker & Mark/Delete Leave Button */}
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
             <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500">
-              1. Leave Announcement Date Entry
+              1. Leave Announcement Date Entry &amp; Removal
             </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={leaveSelectedDate}
-                onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
-                onChange={(e) => setLeaveSelectedDate(e.target.value)}
-                className="flex-1 bg-white border border-stone-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-stone-800 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer"
-              />
-              <button
-                type="button"
-                onClick={handleMarkLeave}
-                disabled={!leaveSelectedDate}
-                className={cn(
-                  "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs whitespace-nowrap",
-                  leaveSelectedDate
-                    ? "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer active:scale-95"
-                    : "bg-stone-200 text-stone-400 cursor-not-allowed"
-                )}
-              >
-                Mark as Leave
-              </button>
-            </div>
-            <p className="text-[11px] text-stone-400 font-medium">
-              The date entry stays empty until you select a date. Click &apos;Mark as Leave&apos; to register the announcement.
-            </p>
+            {(() => {
+              let formattedDate = '';
+              if (leaveSelectedDate) {
+                const parts = leaveSelectedDate.split('-');
+                if (parts.length === 3) {
+                  formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                }
+              }
+              const isMarked = formattedDate ? leaveDates.includes(formattedDate) : false;
+
+              return (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="date"
+                      value={leaveSelectedDate}
+                      onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
+                      onChange={(e) => setLeaveSelectedDate(e.target.value)}
+                      className="flex-1 min-w-[150px] bg-white border border-stone-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-stone-800 outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 cursor-pointer"
+                    />
+                    {isMarked ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleRemoveLeave(formattedDate);
+                          setLeaveSelectedDate('');
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs cursor-pointer active:scale-95 whitespace-nowrap"
+                        title={`Delete ${formattedDate} from Leave dates`}
+                      >
+                        <Trash2 size={13} />
+                        Delete Leave Date
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleMarkLeave}
+                        disabled={!leaveSelectedDate}
+                        className={cn(
+                          "px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-xs whitespace-nowrap",
+                          leaveSelectedDate
+                            ? "bg-amber-600 hover:bg-amber-700 text-white cursor-pointer active:scale-95"
+                            : "bg-stone-200 text-stone-400 cursor-not-allowed"
+                        )}
+                      >
+                        Mark as Leave
+                      </button>
+                    )}
+                  </div>
+                  {isMarked ? (
+                    <div className="flex items-center justify-between p-2.5 bg-rose-50 rounded-xl border border-rose-200 text-xs">
+                      <span className="font-bold text-rose-900">
+                        Date <strong className="font-mono">{formattedDate}</strong> is marked as Leave.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleRemoveLeave(formattedDate);
+                          setLeaveSelectedDate('');
+                        }}
+                        className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Trash2 size={11} /> Delete
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-stone-400 font-medium">
+                      Select date from calendar. Click &apos;Delete Leave Date&apos; to remove a marked leave, or &apos;Mark as Leave&apos; to register.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
-          {/* Dropdown showing the leave dates */}
+          {/* Dropdown & Quick Delete List for leave dates */}
           <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
             <div className="flex items-center justify-between">
               <label className="block text-[10px] font-black uppercase tracking-wider text-stone-500">
-                2. Marked Leave Announcements Dropdown
+                2. Marked Leave Announcements
               </label>
               {leaveDates.length > 0 && (
                 <span className="text-[10px] font-bold text-emerald-700">
@@ -1487,22 +1535,42 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 <button
                   type="button"
                   onClick={() => handleRemoveLeave(selectedLeaveFilter)}
-                  className="px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap"
-                  title="Remove this leave date"
+                  className="flex items-center gap-1 px-3 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap shadow-xs"
+                  title="Delete this leave date"
                 >
-                  Unmark
+                  <Trash2 size={13} />
+                  Delete
                 </button>
               )}
             </div>
 
-            {selectedLeaveFilter ? (
-              <div className="flex items-center justify-between p-2.5 bg-white rounded-xl border border-amber-200 text-xs">
-                <span className="font-bold text-stone-800">Selected: <strong className="font-mono text-amber-800">{selectedLeaveFilter}</strong></span>
-                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Holiday Logged</span>
+            {leaveDates.length > 0 ? (
+              <div className="pt-2 border-t border-stone-200/80 space-y-1.5">
+                <span className="block text-[9.5px] font-black uppercase tracking-wider text-stone-400">
+                  Quick Delete Marked Dates:
+                </span>
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                  {leaveDates.map((d) => (
+                    <span 
+                      key={d} 
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-100/90 border border-amber-300 text-amber-950 font-mono text-[10.5px] font-bold"
+                    >
+                      <span>{d}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLeave(d)}
+                        className="text-stone-400 hover:text-rose-600 p-0.5 rounded transition-colors cursor-pointer"
+                        title={`Delete ${d}`}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
             ) : (
               <p className="text-[11px] text-stone-400 font-medium">
-                Choose any marked date from the dropdown to review or unmark.
+                Choose any marked date from the dropdown to review or delete.
               </p>
             )}
           </div>

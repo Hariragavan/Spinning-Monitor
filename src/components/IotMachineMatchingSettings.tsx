@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Activity, RefreshCw, Search, Link2, Unlink, Sparkles, CheckCircle2, Calendar, Clock, Database, ChevronRight } from 'lucide-react';
-import { cn, getTodayDateString, resolveEffectiveMappingForDate, parseUniversalDateParts } from '@/lib/utils';
+import { cn, getTodayDateString, resolveEffectiveMappingForDate, parseUniversalDateParts, normalizeShed } from '@/lib/utils';
 import { MachineMasterItem, MachineEmData, IotMachineAllocationPeriod } from '@/types';
 
 // The actual 46 live IoT hardware machines from the API (RF03, RF04, RF09..RF14, RF19..RF56)
@@ -216,11 +216,17 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
 
   // Filter spinning machines strictly by selected shed (Shed 1, 2, or 3 only)
   const shedMachines = useMemo(() => {
+    const normSelected = normalizeShed(selectedShed);
     return machines
-      .filter(m => (m.shed || 'Shed 1') === selectedShed)
+      .filter(m => {
+        const rf = String(m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return false;
+        const mShed = normalizeShed(m.shed || 'Shed 1');
+        return mShed === normSelected;
+      })
       .sort((a, b) => {
-        const aRf = a.rfNo || (a as any).frameNo || '';
-        const bRf = b.rfNo || (b as any).frameNo || '';
+        const aRf = String(a.rfNo || (a as any).frameNo || '');
+        const bRf = String(b.rfNo || (b as any).frameNo || '');
         return aRf.localeCompare(bRf, undefined, { numeric: true });
       });
   }, [machines, selectedShed]);
@@ -479,7 +485,8 @@ export const IotMachineMatchingSettings: React.FC<IotMachineMatchingSettingsProp
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {filteredMachines.map(m => {
-            const rf = (m.rfNo || (m as any).frameNo || 'M').trim();
+            const rf = String(m.rfNo || (m as any).frameNo || '').trim();
+            if (!rf || rf.toUpperCase() === 'M' || rf.toUpperCase() === 'MC' || !rf.match(/\d+/)) return null;
             const currentIot = mappings[rf] || '';
             const liveEmData = currentIot ? iotLiveEmMap[currentIot] : null;
             const isJustSynced = recentlySynced === rf;

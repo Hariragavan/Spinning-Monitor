@@ -679,6 +679,7 @@ const handleProduction = (grid: any[][], countConversions: CountConversion[], ta
     if (!row) continue;
     const frameNoRaw = String(row[colMap.frame] || '').trim();
     if (!frameNoRaw || frameNoRaw.toLowerCase().includes('rf no') || frameNoRaw.toLowerCase().includes('running')) continue;
+    if (frameNoRaw.toUpperCase() === 'M' || frameNoRaw.toUpperCase() === 'MC' || !frameNoRaw.match(/\d+/)) continue;
 
     const lowerFrame = frameNoRaw.toLowerCase();
     // Check for Total / Grand Total row at the bottom
@@ -1031,6 +1032,7 @@ const handleIncentiveDaily = (grid: any[][]): DailyReport => {
 
     const frameNoRaw = String(row[colMap.mcNo] || '').toUpperCase();
     const frameNo = frameNoRaw.replace('RF', 'K').replace('MC', '').replace(/\s+/g, '').replace(/[^\w]/g, '');
+    if (!frameNo || frameNo === 'M' || frameNo === 'MC' || !frameNo.match(/\d+/)) continue;
     let normalizedFrame = frameNo;
     if (frameNo.length > 0 && !frameNo.startsWith('K')) {
        // If it's just a number, pad and prefix

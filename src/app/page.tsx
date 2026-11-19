@@ -676,9 +676,13 @@ export default function Home() {
       }
 
       if (data.machines && data.machines.length > 0) {
-        setMachines(data.machines);
+        const cleanMachines = data.machines.filter((m: any) => {
+          const rf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+          return rf !== '' && rf !== 'M' && rf !== 'MC' && Boolean(rf.match(/\d+/));
+        });
+        setMachines(cleanMachines);
         if (typeof window !== 'undefined') {
-          localStorage.setItem('spinning_machines', JSON.stringify(data.machines));
+          localStorage.setItem('spinning_machines', JSON.stringify(cleanMachines));
         }
       }
       if (data.rules !== undefined) {
@@ -1587,7 +1591,7 @@ export default function Home() {
 
       (rep.entries || []).forEach(e => {
         const rf = (e.frameNo || '').trim();
-        if (!rf) return;
+        if (!rf || rf.toUpperCase() === 'M' || rf.toUpperCase() === 'MC' || !rf.match(/\d+/)) return;
         const cnt = (e.count || '').trim();
         const existing = machineMap.get(rf.toUpperCase());
         machineMap.set(rf.toUpperCase(), {
@@ -1601,7 +1605,7 @@ export default function Home() {
 
       (rep.summaries || []).forEach(s => {
         const rf = (s.frameNo || '').trim();
-        if (!rf) return;
+        if (!rf || rf.toUpperCase() === 'M' || rf.toUpperCase() === 'MC' || !rf.match(/\d+/)) return;
         const cnt = (s.count || '').trim();
         const existing = machineMap.get(rf.toUpperCase());
         machineMap.set(rf.toUpperCase(), {
@@ -1663,11 +1667,15 @@ export default function Home() {
     }
 
     if (machinesModified) {
-      setMachines(updatedMachines);
+      const cleanMachines = updatedMachines.filter(m => {
+        const rf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+        return rf !== '' && rf !== 'M' && rf !== 'MC' && Boolean(rf.match(/\d+/));
+      });
+      setMachines(cleanMachines);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('spinning_machines', JSON.stringify(updatedMachines));
+        localStorage.setItem('spinning_machines', JSON.stringify(cleanMachines));
       }
-      await apiClient.saveMachines(updatedMachines);
+      await apiClient.saveMachines(cleanMachines);
     }
 
     if (conversionsModified) {

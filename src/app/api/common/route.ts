@@ -56,6 +56,19 @@ export async function GET(req: Request) {
     // Attempt MongoDB connection
     try {
       const db = await getDb();
+      // Clean up legacy non-registered / invalid machine records like "M"
+      await db.collection('machines').deleteMany({
+        $or: [
+          { frameNo: /^m$/i },
+          { rfNo: /^m$/i },
+          { frameNo: 'M' },
+          { rfNo: 'M' },
+          { frameNo: '' },
+          { rfNo: '' },
+          { frameNo: null }
+        ]
+      }).catch(() => {});
+
       const [wDocs, rDocs, cDocs, repDocs, mDocs, setDoc, mappedEm] = await Promise.all([
         db.collection('workers').find({}, { projection: { _id: 0 } }).toArray(),
         db.collection('incentive_rules').find({}, { projection: { _id: 0 } }).toArray(),
@@ -70,20 +83,25 @@ export async function GET(req: Request) {
       rules = (rDocs as unknown as IncentiveRule[]) || [];
       counts = (cDocs as unknown as CountConversion[]) || [];
       reports = (repDocs as unknown as DailyReport[]) || [];
-      machines = ((mDocs as any[]) || []).map((m: any) => {
-        const rf = m.rfNo || m.frameNo || '';
-        return {
-          ...m,
-          id: m.id || `m-${rf}`,
-          rfNo: rf,
-          frameNo: m.frameNo || rf,
-          shed: m.shed || 'Shed 1',
-          count: m.count || '030/1-PH-PC',
-          spindles: m.spindles ?? 1200,
-          status: m.status || 'Active',
-          description: m.description || `RING FRAME ${rf}`
-        };
-      });
+      machines = ((mDocs as any[]) || [])
+        .filter((m: any) => {
+          const rf = String(m.rfNo || m.frameNo || '').trim().toUpperCase();
+          return rf !== '' && rf !== 'M' && rf !== 'MC' && Boolean(rf.match(/\d+/));
+        })
+        .map((m: any) => {
+          const rf = m.rfNo || m.frameNo || '';
+          return {
+            ...m,
+            id: m.id || `m-${rf}`,
+            rfNo: rf,
+            frameNo: m.frameNo || rf,
+            shed: m.shed || 'Shed 1',
+            count: m.count || '030/1-PH-PC',
+            spindles: m.spindles ?? 1200,
+            status: m.status || 'Active',
+            description: m.description || `RING FRAME ${rf}`
+          };
+        });
       settings = setDoc ? (({ _id, ...rest }) => rest)(setDoc) : {};
       machineEm = mappedEm || {};
     } catch (dbErr) {
