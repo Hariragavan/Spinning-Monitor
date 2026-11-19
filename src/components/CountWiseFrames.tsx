@@ -75,7 +75,8 @@ const isCountMatch = (a: string, b: string): boolean => {
 export const FourSpindleRollAnimation: React.FC<{
   className?: string;
   status?: 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE';
-}> = ({ className, status = 'RUN' }) => {
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+}> = ({ className, status = 'RUN', size = 'md' }) => {
   const spindleCenters = [11, 29, 47, 65];
   const isDoffing = status === 'DOFF';
   const isStopped = status === 'STOP' || status === 'OFFLINE';
@@ -85,11 +86,17 @@ export const FourSpindleRollAnimation: React.FC<{
   const coilHighlightColor = isDoffing ? '#fef3c7' : isStopped ? '#fee2e2' : '#ffffff';
   const coilShadowColor = isDoffing ? '#78350f' : isStopped ? '#991b1b' : '#064e3b';
 
+  const sizeClass = 
+    size === 'xl' ? 'h-16' :
+    size === 'lg' ? 'h-12' :
+    size === 'sm' ? 'h-5' :
+    'h-7';
+
   return (
     <div className={cn("inline-flex items-center select-none shrink-0", className)}>
       <svg
         viewBox="0 0 76 33"
-        className="h-7 w-auto overflow-visible"
+        className={cn("w-auto overflow-visible", sizeClass)}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
