@@ -1113,9 +1113,9 @@
 
 .machine-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 0.95rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 1rem 1.15rem;
   cursor: pointer;
   transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -1126,42 +1126,49 @@
 }
 
 .machine-card:hover {
-  border-color: #3b82f6;
   transform: translateY(-3px);
-  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
-/* Status-based card backgrounds and borders (Very very light pastel) */
+/* Status-based card backgrounds and borders (Idea 2: Teal Green Modern & Professional) */
 .machine-card.status-running {
-  background-color: #f0fdf4 !important;
-  border-color: #86efac !important;
+  background-color: #E6FFFA !important;
+  border-color: #14B8A6 !important;
+  border-width: 2px !important;
+  border-radius: 20px !important;
 }
 .machine-card.status-running:hover {
-  border-color: #22c55e !important;
-  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.12) !important;
+  border-color: #0F766E !important;
+  box-shadow: 0 10px 24px rgba(20, 184, 166, 0.22) !important;
 }
 
 .machine-card.status-stopped {
   background-color: #fef2f2 !important;
-  border-color: #fca5a5 !important;
+  border-color: #ef4444 !important;
+  border-width: 2px !important;
+  border-radius: 20px !important;
 }
 .machine-card.status-stopped:hover {
-  border-color: #ef4444 !important;
-  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.12) !important;
+  border-color: #dc2626 !important;
+  box-shadow: 0 10px 24px rgba(239, 68, 68, 0.16) !important;
 }
 
 .machine-card.status-doffing {
-  background-color: #fefce8 !important;
-  border-color: #fde047 !important;
+  background-color: #fffbeb !important;
+  border-color: #f59e0b !important;
+  border-width: 2px !important;
+  border-radius: 20px !important;
 }
 .machine-card.status-doffing:hover {
-  border-color: #eab308 !important;
-  box-shadow: 0 10px 22px rgba(234, 179, 8, 0.12) !important;
+  border-color: #d97706 !important;
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.16) !important;
 }
 
 .machine-card.status-offline {
   background-color: #f8fafc !important;
   border-color: #cbd5e1 !important;
+  border-width: 2px !important;
+  border-radius: 20px !important;
 }
 
 /* Status-based backgrounds for spindle map rows */
