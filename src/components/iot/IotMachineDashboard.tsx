@@ -11,6 +11,32 @@ import { iotApi, IOT_COMMON_API_URL } from '@/lib/iot/iotApi';
 import { getSampleSpinfoOverview, buildMachineDetailFromCommon } from '@/lib/iot/sampleIotData';
 import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
 import { FourSpindleRollAnimation } from '@/components/CountWiseFrames';
+import { FuturisticSpeedDial } from '@/components/iot/FuturisticSpeedDial';
+import {
+  Factory,
+  Recycle,
+  Zap,
+  Timer,
+  Clock,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  Gauge,
+  Activity,
+  Target
+} from 'lucide-react';
+
+/**
+ * Format minutes into mm:ss display string (e.g. 12.58 -> 12:35 mm:ss, 14.33 -> 14:20 mm:ss)
+ */
+export function formatEmMinutesToTime(val: number | string | undefined): string {
+  if (val === undefined || val === null) return '00:00 mm:ss';
+  const num = Number(val);
+  if (isNaN(num) || num <= 0) return '00:00 mm:ss';
+  const mins = Math.floor(num);
+  const secs = Math.round((num - mins) * 60);
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} mm:ss`;
+}
 
 const INITIAL_OVERVIEW: SpinfoOverviewResponse = getSampleSpinfoOverview();
 
@@ -948,6 +974,43 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   (((leftSide?.endMendingTime || 0) + (rightSide?.endMendingTime || 0)) / 2).toFixed(2)
                 );
 
+                // Determine dial settings per active KPI page
+                let dialValue = m.spindleSpeedCurrent || 16500;
+                let dialMax = 20000;
+                let dialLabel = 'RPM';
+                let dialUnit: string | undefined = undefined;
+                let dialColor: 'cyan' | 'emerald' | 'amber' | 'rose' | 'indigo' = 'cyan';
+
+                if (activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION') {
+                  dialValue = m.yieldPercent || (m.shiftTargetProduction ? Number(((m.shiftProduction / m.shiftTargetProduction) * 100).toFixed(1)) : 98.5);
+                  dialMax = 100;
+                  dialLabel = 'YIELD';
+                  dialUnit = '%';
+                  dialColor = 'emerald';
+                } else if (activeKpi === 'SHIFT_WASTE') {
+                  dialValue = Number((m.shiftWaste || 1.02).toFixed(2));
+                  dialMax = 3.0;
+                  dialLabel = 'WASTE';
+                  dialUnit = '%';
+                  dialColor = (m.shiftWaste || 0) <= 1.5 ? 'emerald' : 'amber';
+                } else if (activeKpi === 'END_BREAKS') {
+                  dialValue = m.totalEndBreakCount || 0;
+                  dialMax = 30;
+                  dialLabel = 'BREAKS';
+                  dialColor = (m.totalEndBreakCount || 0) > 15 ? 'rose' : 'cyan';
+                } else if (activeKpi === 'END_MENDING_TIME') {
+                  dialValue = avgMachineMending || 0;
+                  dialMax = 20;
+                  dialLabel = 'AVG EM';
+                  dialUnit = 'min';
+                  dialColor = 'indigo';
+                } else if (activeKpi === 'AVERAGE_RPM') {
+                  dialValue = m.spindleSpeedCurrent || 16500;
+                  dialMax = 20000;
+                  dialLabel = 'RPM';
+                  dialColor = 'cyan';
+                }
+
                 return (
                   <div
                     key={m.machineId}
@@ -962,137 +1025,408 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     }`}
                     onClick={() => openMachineModal(m.machineId)}
                   >
-                    <div className="card-top">
-                      <div>
-                        <span className="machine-code">{m.machineId}</span>
-                        <span
-                          style={{
-                            marginLeft: '0.4rem',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '0.1rem 0.4rem',
-                            borderRadius: '4px',
-                            background: '#f1f5f9',
-                            color: '#334155'
-                          }}
-                        >
-                          Count {m.count}
+                    {/* Header: RF01 • 40sPV and Status Badge (Running / Stopped / Doffing) */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                        <span style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.01em', fontFamily: 'monospace' }}>
+                          {m.machineId}
+                        </span>
+                        <span style={{ color: '#94a3b8', fontWeight: 900, fontSize: '0.9rem' }}>•</span>
+                        <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#334155', background: '#f1f5f9', padding: '0.1rem 0.45rem', borderRadius: '6px' }}>
+                          {m.count || '-'}
                         </span>
                       </div>
                       <span
-                        className={`status-pill ${
-                          m.runStatus === 'RUN'
-                            ? 'running'
-                            : m.runStatus === 'DOFF'
-                            ? 'doffing'
-                            : 'stopped'
-                        }`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          padding: '0.22rem 0.65rem',
+                          borderRadius: '9999px',
+                          fontSize: '0.74rem',
+                          fontWeight: 800,
+                          background:
+                            m.runStatus === 'RUN' ? '#f0fdf4' :
+                            m.runStatus === 'DOFF' ? '#fefce8' :
+                            m.runStatus === 'STOP' ? '#fef2f2' : '#f8fafc',
+                          color:
+                            m.runStatus === 'RUN' ? '#15803d' :
+                            m.runStatus === 'DOFF' ? '#a16207' :
+                            m.runStatus === 'STOP' ? '#b91c1c' : '#64748b',
+                          border: `1.2px solid ${
+                            m.runStatus === 'RUN' ? '#bbf7d0' :
+                            m.runStatus === 'DOFF' ? '#fef08a' :
+                            m.runStatus === 'STOP' ? '#fecaca' : '#e2e8f0'
+                          }`
+                        }}
                       >
-                        {m.runStatus} · {m.statusBadge}
+                        <span
+                          style={{
+                            width: '7.5px',
+                            height: '7.5px',
+                            borderRadius: '50%',
+                            background:
+                              m.runStatus === 'RUN' ? '#22c55e' :
+                              m.runStatus === 'DOFF' ? '#f59e0b' :
+                              m.runStatus === 'STOP' ? '#ef4444' : '#94a3b8',
+                            boxShadow: m.runStatus === 'RUN' ? '0 0 6px #22c55e' : undefined
+                          }}
+                        ></span>
+                        {m.runStatus === 'RUN' ? 'Running' : m.runStatus === 'DOFF' ? 'Doffing' : m.runStatus === 'STOP' ? 'Stopped' : 'Offline'}
                       </span>
                     </div>
 
-                    {/* Default / Frame Status / End Breaks Card Face */}
-                    {(activeKpi === 'TOTAL_MACHINES' ||
-                      activeKpi === 'RUNNING' ||
-                      activeKpi === 'DOFFING' ||
-                      activeKpi === 'STOPPED_DOFFING' ||
-                      activeKpi === 'END_BREAKS') && (
-                      <>
-                        <div className="card-mid-label">TOTAL END BREAKS</div>
-                        <div className="card-large-number">{m.totalEndBreakCount}</div>
-                        <div className="card-progress-bar">
-                          <div
-                            className="progress-fill blue"
-                            style={{ width: `${Math.min(100, (m.totalEndBreakCount || 0) * 20)}%` }}
-                          ></div>
-                        </div>
-                        <div className="card-footer-sub">
-                          {m.breakSidesDisplay} · EM: L({leftSide?.endMendingTime ?? 0}{leftSide?.endMendingTimeUnit || 'm'}) / R({rightSide?.endMendingTime ?? 0}{rightSide?.endMendingTimeUnit || 'm'})
-                        </div>
-                      </>
-                    )}
+                    {/* Middle: Left Dial + Right 3 Metric Rows */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minHeight: '124px' }}>
+                      <FuturisticSpeedDial
+                        value={dialValue}
+                        max={dialMax}
+                        status={m.runStatus}
+                        label={dialLabel}
+                        customUnit={dialUnit}
+                        colorScheme={dialColor}
+                        size={124}
+                      />
 
-                    {/* Average RPM Card Face */}
-                    {activeKpi === 'AVERAGE_RPM' && (
-                      <>
-                        <div className="card-mid-label">SPINDLE SPEED CURRENT</div>
-                        <div className="card-large-number">
-                          {(m.spindleSpeedCurrent || 0).toLocaleString()}{' '}
-                          <span className="unit-sm">{m.spindleSpeedUnit || 'rpm'}</span>
-                        </div>
-                        <div className="card-progress-bar">
-                          <div
-                            className="progress-fill blue"
-                            style={{ width: `${Math.min(100, ((m.spindleSpeedCurrent || 0) / 18500) * 100)}%` }}
-                          ></div>
-                        </div>
-                        <div className="card-footer-sub">
-                          Status: {m.runStatus} · Count: {m.count}
-                        </div>
-                      </>
-                    )}
+                      {/* Right 3 Rows */}
+                      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.38rem', flex: 1, minWidth: 0 }}>
+                        {/* 1. SPEED VIEW ROWS */}
+                        {activeKpi === 'AVERAGE_RPM' ? (
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                                  <Gauge size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Current Speed</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.spindleSpeedCurrent || 0).toLocaleString()} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>rpm</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#16a34a' }}>
+                                100%
+                              </div>
+                            </div>
 
-                    {/* Production Yield / Hourly Production Card Face */}
-                    {(activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION') && (
-                      <>
-                        <div className="card-mid-label">SHIFT PRODUCTION</div>
-                        <div className="card-large-number">
-                          {(m.shiftProduction || 0).toFixed(2)}{' '}
-                          <span className="unit-sm">{m.productionUnit || 'kg'}</span>
-                        </div>
-                        <div className="card-progress-bar">
-                          <div
-                            className="progress-fill blue"
-                            style={{ width: `${Math.min(100, m.yieldPercent || 0)}%` }}
-                          ></div>
-                        </div>
-                        <div className="card-footer-sub">
-                          {m.hourWiseProduction?.length || 0} hrs logged · Count {m.count}
-                        </div>
-                      </>
-                    )}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
+                                  <Factory size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
+                                <TrendingUp size={13} />
+                                <span>+{m.yieldPercent || 98}%</span>
+                              </div>
+                            </div>
 
-                    {/* Shift Waste Card Face */}
-                    {activeKpi === 'SHIFT_WASTE' && (
-                      <>
-                        <div className="card-mid-label">SHIFT WASTE</div>
-                        <div className="card-large-number">
-                          {(m.shiftWaste || 0).toFixed(2)} <span className="unit-sm">{m.wasteUnit || '%'}</span>
-                        </div>
-                        <div className="card-progress-bar">
-                          <div
-                            className={`progress-fill ${(m.shiftWaste || 0) > 2.0 ? 'red' : 'blue'}`}
-                            style={{ width: `${Math.min(100, ((m.shiftWaste || 0) / 3) * 100)}%` }}
-                          ></div>
-                        </div>
-                        <div className="card-footer-sub">
-                          Count {m.count} · Prod {(m.shiftProduction || 0).toFixed(2)} {m.productionUnit || 'kg'}
-                        </div>
-                      </>
-                    )}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+                                  <Activity size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Delivery Speed</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    215 <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>m/min</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', fontFamily: 'monospace' }}>
+                                Std GPS
+                              </div>
+                            </div>
+                          </>
+                        ) : activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION' ? (
+                          /* 2. PRODUCTION VIEW ROWS */
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                                  <Factory size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
+                                <TrendingUp size={13} />
+                                <span>{m.yieldPercent ? `${m.yieldPercent}%` : '98.5%'}</span>
+                              </div>
+                            </div>
 
-                    {/* End Mending Time Card Face */}
-                    {activeKpi === 'END_MENDING_TIME' && (
-                      <>
-                        <div className="card-mid-label">END MENDING TIME (L / R)</div>
-                        <div className="card-large-number">
-                          {avgMachineMending.toFixed(2)}{' '}
-                          <span className="unit-sm">{leftSide?.endMendingTimeUnit || stdMendingUnit}</span>
-                        </div>
-                        <div className="card-progress-bar">
-                          <div
-                            className={`progress-fill ${avgMachineMending > stdMendingTime ? 'red' : 'green'}`}
-                            style={{ width: `${Math.min(100, (avgMachineMending / (stdMendingTime * 1.5)) * 100)}%` }}
-                          ></div>
-                        </div>
-                        <div className="card-footer-sub">
-                          L: {leftSide?.endMendingTime ?? 0} {leftSide?.endMendingTimeUnit || 'min'} · R: {rightSide?.endMendingTime ?? 0} {rightSide?.endMendingTimeUnit || 'min'} (Std {stdMendingTime})
-                        </div>
-                      </>
-                    )}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669' }}>
+                                  <Target size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Target</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftTargetProduction || 120).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669' }}>
+                                Target
+                              </div>
+                            </div>
 
-                    {/* Compact Bottom Telemetry Strip showing key JSON metrics */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d97706' }}>
+                                  <Clock size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Hourly Rate</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {((m.shiftProduction || 0) / Math.max(1, m.hourWiseProduction?.length || 8)).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>Kg/h</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', fontFamily: 'monospace' }}>
+                                {m.hourWiseProduction?.length || 8} hrs logged
+                              </div>
+                            </div>
+                          </>
+                        ) : activeKpi === 'SHIFT_WASTE' ? (
+                          /* 3. WASTE VIEW ROWS */
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
+                                  <Recycle size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Waste</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
+                                <TrendingDown size={13} />
+                                <span>{(m.shiftWaste || 0) > 1.5 ? `+${((m.shiftWaste || 0) - 1.5).toFixed(1)}%` : `-0.2%`}</span>
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                                  <Factory size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#2563eb' }}>
+                                Yield {m.yieldPercent || 0}%
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+                                  <Zap size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Waste Mass</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(((m.shiftProduction || 0) * (m.shiftWaste || 1)) / 100).toFixed(2)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>Kg</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>
+                                Max 1.50%
+                              </div>
+                            </div>
+                          </>
+                        ) : activeKpi === 'END_BREAKS' ? (
+                          /* 4. END BREAKS VIEW ROWS */
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+                                  <Zap size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Breaks</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {m.totalEndBreakCount || 0}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#ef4444' }}>
+                                Total
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7' }}>
+                                  <Timer size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Left Side (L)</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {leftSide?.endBreakCount || 0} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#0284c7' }}>
+                                L Side
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                                  <Clock size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Right Side (R)</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {rightSide?.endBreakCount || 0} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4f46e5' }}>
+                                R Side
+                              </div>
+                            </div>
+                          </>
+                        ) : activeKpi === 'END_MENDING_TIME' ? (
+                          /* 5. END MENDING VIEW ROWS */
+                          <>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                                  <Timer size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Left Mending</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {formatEmMinutesToTime(leftSide?.endMendingTime)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#2563eb' }}>
+                                L Side
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                                  <Clock size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Right Mending</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {formatEmMinutesToTime(rightSide?.endMendingTime)}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4f46e5' }}>
+                                R Side
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669' }}>
+                                  <BarChart3 size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Std Target</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {stdMendingTime} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{stdMendingUnit}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669' }}>
+                                Standard
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          /* 6. TOTAL MACHINES & DEFAULT OVERVIEW (EXACTLY MATCHING USER'S SKETCH) */
+                          <>
+                            {/* Row 1: Factory Icon + Production + Value + Trend */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+                                  <Factory size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Production</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
+                                <TrendingUp size={13} />
+                                <span>+{m.yieldPercent ? `${m.yieldPercent}%` : '2.3%'}</span>
+                              </div>
+                            </div>
+
+                            {/* Row 2: Recycle Icon + Waste + Value + Trend */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
+                                  <Recycle size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Waste</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
+                                <TrendingDown size={13} />
+                                <span>{(m.shiftWaste || 0) > 1.5 ? `+${((m.shiftWaste || 0) - 1.5).toFixed(1)}%` : `-0.2%`}</span>
+                              </div>
+                            </div>
+
+                            {/* Row 3: Zap Icon + End Breaks + Value + Side Breakdown */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+                                  <Zap size={15} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>End Breaks</div>
+                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                    {m.totalEndBreakCount || 0}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', fontFamily: 'monospace' }}>
+                                {m.breakSidesDisplay || 'L: 0 · R: 0'}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Footer: Left Endmenting, Right Endmenting, Total Average Em. (EXACTLY MATCHING USER'S SKETCH) */}
                     <div
                       style={{
                         marginTop: '0.65rem',
@@ -1101,21 +1435,52 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         display: 'grid',
                         gridTemplateColumns: 'repeat(3, 1fr)',
                         gap: '0.35rem',
-                        fontSize: '0.7rem',
-                        color: '#475569'
+                        alignItems: 'center'
                       }}
                     >
-                      <div>
-                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>SPEED</span>
-                        <strong>{(m.spindleSpeedCurrent || 0).toLocaleString()} {m.spindleSpeedUnit || 'rpm'}</strong>
+                      {/* Left Endmenting */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
+                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', flexShrink: 0 }}>
+                          <Timer size={14} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            Left Endmenting
+                          </div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {formatEmMinutesToTime(leftSide?.endMendingTime)}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>SHIFT PROD</span>
-                        <strong>{m.shiftProduction} {m.productionUnit || 'kg'}</strong>
+
+                      {/* Right Endmenting */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderLeft: '1px solid #f1f5f9', paddingLeft: '0.4rem', minWidth: 0 }}>
+                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', flexShrink: 0 }}>
+                          <Clock size={14} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            Right Endmenting
+                          </div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {formatEmMinutesToTime(rightSide?.endMendingTime)}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span style={{ color: '#94a3b8', display: 'block', fontSize: '0.62rem', fontWeight: 700 }}>WASTE</span>
-                        <strong>{m.shiftWaste}{m.wasteUnit || '%'}</strong>
+
+                      {/* Total Average Em */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderLeft: '1px solid #f1f5f9', paddingLeft: '0.4rem', minWidth: 0 }}>
+                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669', flexShrink: 0 }}>
+                          <BarChart3 size={14} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            Total Average Em.
+                          </div>
+                          <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {formatEmMinutesToTime(avgMachineMending)}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -1112,13 +1112,13 @@
 }
 
 .machine-card {
-  background: #ffffff;
+  background: #ffffff !important;
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 0.85rem;
+  border-radius: 14px;
+  padding: 0.95rem;
   cursor: pointer;
   transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
   animation: cardFadeIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -1126,41 +1126,41 @@
 }
 
 .machine-card:hover {
-  border-color: #2563eb;
+  border-color: #3b82f6;
   transform: translateY(-3px);
-  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
 }
 
-/* Status-based backgrounds for machine cards */
+/* Status-based card borders & hover accents */
 .machine-card.status-running {
-  background-color: #f0fdf4 !important; /* Very very light green */
-  border-color: #86efac;
+  background-color: #ffffff !important;
+  border-color: #cbd5e1;
 }
 .machine-card.status-running:hover {
   border-color: #22c55e;
-  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.16);
+  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.12);
 }
 
 .machine-card.status-stopped {
-  background-color: #fef2f2 !important; /* Light red */
+  background-color: #ffffff !important;
   border-color: #fca5a5;
 }
 .machine-card.status-stopped:hover {
   border-color: #ef4444;
-  box-shadow: 0 8px 18px rgba(239, 68, 68, 0.16);
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.12);
 }
 
 .machine-card.status-doffing {
-  background-color: #fefce8 !important; /* Light yellow */
+  background-color: #ffffff !important;
   border-color: #fde047;
 }
 .machine-card.status-doffing:hover {
   border-color: #eab308;
-  box-shadow: 0 8px 18px rgba(234, 179, 8, 0.16);
+  box-shadow: 0 10px 22px rgba(234, 179, 8, 0.12);
 }
 
 .machine-card.status-offline {
-  background-color: #f8fafc !important;
+  background-color: #ffffff !important;
   border-color: #cbd5e1;
 }
 
@@ -5235,8 +5235,8 @@
 
 .machine-cards-grid {
   display: grid !important;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)) !important;
-  gap: 1.25rem !important;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)) !important;
+  gap: 1rem !important;
   width: 100% !important;
 }
 
