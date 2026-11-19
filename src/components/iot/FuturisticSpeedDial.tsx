@@ -13,15 +13,15 @@ export interface FuturisticSpeedDialProps {
 }
 
 /**
- * Futuristic Tachometer / Speedometer Dial Component
- * Styled after modern automotive & speed-test instruments:
- * - 240° open gauge arch (150° bottom-left to 390° bottom-right)
- * - Transparent background (no container pod)
- * - Color scaling from low speed (Pink/Red) -> Mid (Orange/Yellow) -> High (Green)
- * - Inactive track in soft slate; active track filled up to current speed
- * - Diamond spear needle rotating smoothly with aerodynamic easing
- * - Center RPM label and prominent digital readout below the pivot
- * - No redundant status badge under RPM
+ * Stylish High-Performance Speedometer Dial (Transparent Edition)
+ * Exactly matching the reference speed-test instrument:
+ * - Thick, bold 260° perimeter band (140° bottom-left to 400° bottom-right)
+ * - Active track with blazing Pink -> Coral -> Orange -> Electric Yellow gradient
+ * - Inactive track in sleek dark navy slate (#1e293b) with clean radial cuts
+ * - Floating diamond spearhead needle with 3D faceted center spine
+ * - Sporty condensed scale numbers (0, 5, 10, 15, 20)
+ * - Bold italic 'RPM' label and high-contrast digital speed readout
+ * - Completely transparent background (no container box or background pod)
  */
 export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   value,
@@ -62,16 +62,17 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   }, [targetVal]);
 
   const cx = 65;
-  const cy = 56;
-  const arcRadius = 45;
-  const startAngleDeg = 150;
-  const sweepDeg = 240;
+  const cy = 54;
+  const arcRadius = 42;
+  const bandThickness = 11;
+  const startAngleDeg = 140;
+  const sweepDeg = 260;
 
   // Fraction (0 to 1)
   const fraction = max > 0 ? Math.min(1, Math.max(0, animatedVal / max)) : 0;
 
-  // Needle rotation from -120° (bottom-left, 0 RPM) to +120° (bottom-right, max RPM)
-  const needleRotationDeg = -120 + fraction * sweepDeg;
+  // Needle rotation from -130° (bottom-left, 0 RPM) to +130° (bottom-right, max RPM)
+  const needleRotationDeg = -130 + fraction * sweepDeg;
 
   // Math helper for polar coordinates (0 deg is 3 o'clock, 90 deg is 6 o'clock)
   const polarToXY = (deg: number, r: number) => {
@@ -82,12 +83,12 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     };
   };
 
-  // Full 240° background arc: from 150° clockwise to 390°
+  // Full 260° background arc: from 140° clockwise to 400°
   const pBgStart = polarToXY(startAngleDeg, arcRadius);
   const pBgEnd = polarToXY(startAngleDeg + sweepDeg, arcRadius);
   const bgArcPath = `M ${pBgStart.x.toFixed(2)} ${pBgStart.y.toFixed(2)} A ${arcRadius} ${arcRadius} 0 1 1 ${pBgEnd.x.toFixed(2)} ${pBgEnd.y.toFixed(2)}`;
 
-  // Active arc path (from 150° to current angle)
+  // Active arc path (from 140° to current angle)
   let activeArcPath = '';
   if (fraction > 0.005) {
     const activeAngle = startAngleDeg + fraction * sweepDeg;
@@ -96,23 +97,14 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     activeArcPath = `M ${pBgStart.x.toFixed(2)} ${pBgStart.y.toFixed(2)} A ${arcRadius} ${arcRadius} 0 ${largeArc} 1 ${pActiveEnd.x.toFixed(2)} ${pActiveEnd.y.toFixed(2)}`;
   }
 
-  // Scale markings around the inside of the gauge: 0, 5, 10, 15, 20
+  // Scale markings placed cleanly along inside perimeter: 0, 5, 10, 15, 20
   const scaleMarks = [
-    { label: '0', deg: 150, x: 36, y: 72 },
-    { label: '5', deg: 210, x: 36, y: 40 },
-    { label: '10', deg: 270, x: 65, y: 25 },
-    { label: '15', deg: 330, x: 94, y: 40 },
-    { label: '20', deg: 390, x: 94, y: 72 }
+    { label: '0', x: 40, y: 72 },
+    { label: '5', x: 37, y: 44 },
+    { label: '10', x: 65, y: 27 },
+    { label: '15', x: 93, y: 44 },
+    { label: '20', x: 90, y: 72 }
   ];
-
-  // Minor tick lines around the inside of the track
-  const minorTicks = Array.from({ length: 21 }, (_, i) => {
-    const deg = startAngleDeg + (i / 20) * sweepDeg;
-    const pt1 = polarToXY(deg, 39);
-    const pt2 = polarToXY(deg, 42.5);
-    const isMajor = i % 5 === 0;
-    return { deg, pt1, pt2, isMajor };
-  });
 
   // Display value formatting
   let displayString = '';
@@ -124,21 +116,24 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     displayString = Math.round(animatedVal).toLocaleString();
   }
 
-  // Dynamic needle color based on current fraction
-  let needleColor = '#22c55e'; // Green for high speed
+  // Dynamic needle color based on current fraction / status
+  let needleTipColor = '#fde047'; // Electric yellow
+  let needleBaseColor = 'rgba(234, 88, 12, 0.4)';
   if (status === 'STOP' || status === 'OFFLINE') {
-    needleColor = '#ef4444';
+    needleTipColor = '#f43f5e';
+    needleBaseColor = 'rgba(225, 29, 72, 0.3)';
   } else if (status === 'DOFF') {
-    needleColor = '#f59e0b';
-  } else if (fraction < 0.25) {
-    needleColor = '#f43f5e';
-  } else if (fraction < 0.55) {
-    needleColor = '#fb923c';
-  } else if (fraction < 0.78) {
-    needleColor = '#eab308';
+    needleTipColor = '#fb923c';
+    needleBaseColor = 'rgba(234, 88, 12, 0.3)';
+  } else if (fraction < 0.3) {
+    needleTipColor = '#f43f5e';
+    needleBaseColor = 'rgba(225, 29, 72, 0.3)';
+  } else if (fraction < 0.6) {
+    needleTipColor = '#fb923c';
+    needleBaseColor = 'rgba(249, 115, 22, 0.3)';
   }
 
-  const height = Math.round(size * 0.76);
+  const height = Math.round(size * 0.74);
 
   return (
     <div
@@ -156,145 +151,113 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
       <svg
         width={size}
         height={height}
-        viewBox="0 0 130 100"
+        viewBox="0 0 130 96"
         style={{ overflow: 'visible' }}
       >
         <defs>
-          {/* Low to High Speed Gradient matching speed test instrument presets */}
-          <linearGradient id="speedDialMultiGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#f43f5e" />
-            <stop offset="28%" stopColor="#fb923c" />
-            <stop offset="55%" stopColor="#facc15" />
-            <stop offset="82%" stopColor="#86efac" />
-            <stop offset="100%" stopColor="#22c55e" />
+          {/* Active Gradient: Pink -> Coral -> Orange -> Electric Yellow (Exact Match to Reference) */}
+          <linearGradient id="speedDialStylishGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#ec4899" />
+            <stop offset="20%" stopColor="#f43f5e" />
+            <stop offset="50%" stopColor="#f97316" />
+            <stop offset="80%" stopColor="#facc15" />
+            <stop offset="100%" stopColor="#fde047" />
           </linearGradient>
 
-          {/* Needle Drop Shadow Filter */}
-          <filter id="speedNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor={needleColor} floodOpacity="0.35" />
+          {/* Floating Diamond Needle Gradient */}
+          <linearGradient id="stylishNeedleGrad" x1="0%" y1="0%" x2="0%" y2="1">
+            <stop offset="0%" stopColor={needleTipColor} />
+            <stop offset="100%" stopColor={needleBaseColor} />
+          </linearGradient>
+
+          {/* Subtle Glow Filter for Needle */}
+          <filter id="stylishNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor={needleTipColor} floodOpacity="0.5" />
           </filter>
         </defs>
 
-        {/* 1. Inactive Background Arc Track (Soft Slate, No Pod Box) */}
+        {/* 1. Inactive Thick Band Track (Sleek Dark Navy Slate with flat radial ends) */}
         <path
           d={bgArcPath}
           fill="none"
-          stroke="rgba(0, 0, 0, 0.08)"
-          strokeWidth="7.5"
-          strokeLinecap="round"
+          stroke="#1e293b"
+          strokeWidth={bandThickness}
+          strokeLinecap="butt"
         />
 
-        {/* 2. Soft Colored Scaling Track Preview */}
-        <path
-          d={bgArcPath}
-          fill="none"
-          stroke="url(#speedDialMultiGrad)"
-          strokeWidth="6.5"
-          strokeLinecap="round"
-          opacity="0.22"
-        />
-
-        {/* 3. Radial Ticks */}
-        {minorTicks.map((t, idx) => (
-          <line
-            key={`tick-${idx}`}
-            x1={t.pt1.x.toFixed(2)}
-            y1={t.pt1.y.toFixed(2)}
-            x2={t.pt2.x.toFixed(2)}
-            y2={t.pt2.y.toFixed(2)}
-            stroke={t.isMajor ? '#94a3b8' : 'rgba(0, 0, 0, 0.12)'}
-            strokeWidth={t.isMajor ? '1.5' : '1'}
-            strokeLinecap="round"
-          />
-        ))}
-
-        {/* 4. Active Sweeping Gradient Arc Track (Low Pink/Red -> Mid Orange/Yellow -> High Green) */}
+        {/* 2. Active Thick Band Track (Blazing Pink -> Orange -> Yellow Gradient) */}
         {activeArcPath && (
           <path
             d={activeArcPath}
             fill="none"
-            stroke="url(#speedDialMultiGrad)"
-            strokeWidth="7.5"
-            strokeLinecap="round"
+            stroke="url(#speedDialStylishGrad)"
+            strokeWidth={bandThickness}
+            strokeLinecap="butt"
           />
         )}
 
-        {/* 5. Scale Number Markings: 0, 5, 10, 15, 20 */}
+        {/* 3. Scale Number Markings: 0, 5, 10, 15, 20 (Bold Sporty Condensed Typography) */}
         {scaleMarks.map(m => (
           <text
             key={`scale-${m.label}`}
             x={m.x}
             y={m.y}
             textAnchor="middle"
-            fill="#64748b"
+            fill="#0f172a"
             fontSize="8"
-            fontWeight="800"
-            fontFamily="system-ui, -apple-system, sans-serif"
+            fontWeight="900"
+            fontFamily='"Arial Black", "Barlow Condensed", system-ui, sans-serif'
           >
             {m.label}
           </text>
         ))}
 
-        {/* 6. Rotating Spear / Diamond Needle */}
+        {/* 4. Floating Diamond Spear Needle (No Pivot Circle, 3D Faceted Spine) */}
         <g
           transform={`rotate(${needleRotationDeg.toFixed(2)}, ${cx}, ${cy})`}
           style={{ transition: 'transform 0.05s linear' }}
         >
-          {/* Diamond Spear Polygon */}
+          {/* Diamond Polygon */}
           <polygon
-            points={`${cx},${cy - 39} ${cx + 3.2},${cy - 19} ${cx + 1},${cy - 5} ${cx},${cy} ${cx - 1},${cy - 5} ${cx - 3.2},${cy - 19}`}
-            fill={needleColor}
-            filter="url(#speedNeedleGlow)"
+            points={`${cx},${cy - 33} ${cx + 3.4},${cy - 19} ${cx},${cy - 6} ${cx - 3.4},${cy - 19}`}
+            fill="url(#stylishNeedleGrad)"
+            filter="url(#stylishNeedleGlow)"
           />
-          {/* Center spine highlight */}
+          {/* Center 3D Facet Spine */}
           <line
             x1={cx}
-            y1={cy - 38}
+            y1={cy - 32}
             x2={cx}
-            y2={cy}
-            stroke="rgba(255, 255, 255, 0.85)"
+            y2={cy - 7}
+            stroke="rgba(255, 255, 255, 0.75)"
             strokeWidth="0.8"
-          />
-          {/* Pivot Circle */}
-          <circle
-            cx={cx}
-            cy={cy}
-            r={3.8}
-            fill="#ffffff"
-            stroke={needleColor}
-            strokeWidth="1.8"
-          />
-          <circle
-            cx={cx}
-            cy={cy}
-            r={1.6}
-            fill={needleColor}
           />
         </g>
 
-        {/* 7. Center Speed Parameter Label */}
+        {/* 5. Center Label: Italic Sporty 'RPM' */}
         <text
           x={cx}
-          y={cy + 14}
+          y={cy + 13}
           textAnchor="middle"
           fill="#64748b"
           fontSize="7.5"
-          fontWeight="800"
-          fontFamily="system-ui, -apple-system, sans-serif"
+          fontWeight="900"
+          fontStyle="italic"
+          fontFamily='"Arial Black", system-ui, sans-serif'
           letterSpacing="0.08em"
         >
           {label}
         </text>
 
-        {/* 8. Digital Speed Readout (Big Bold Text) */}
+        {/* 6. Digital Readout: Big High-Contrast Bold Number */}
         <text
           x={cx}
-          y={cy + 29}
+          y={cy + 28}
           textAnchor="middle"
           fill="#0f172a"
-          fontSize={displayString.length > 5 ? '15.5' : displayString.length > 4 ? '17' : '18.5'}
+          fontSize={displayString.length > 5 ? '16' : displayString.length > 4 ? '17.5' : '19'}
           fontWeight="900"
-          fontFamily="system-ui, -apple-system, sans-serif"
+          fontFamily='system-ui, -apple-system, sans-serif'
           letterSpacing="-0.02em"
         >
           {displayString}
