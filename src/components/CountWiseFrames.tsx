@@ -87,8 +87,8 @@ export const FourSpindleRollAnimation: React.FC<{
   const coilShadowColor = isDoffing ? '#78350f' : isStopped ? '#991b1b' : '#064e3b';
 
   const sizeClass = 
-    size === 'xl' ? 'h-16' :
-    size === 'lg' ? 'h-12' :
+    size === 'xl' ? 'h-14' :
+    size === 'lg' ? 'h-[34px]' :
     size === 'sm' ? 'h-5' :
     'h-7';
 
