@@ -39,6 +39,18 @@ export function formatEmMinutesToTime(val: number | string | undefined): string 
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')} mm:ss`;
 }
 
+/**
+ * Format minutes into clean time string (e.g. 12.58 -> "12:35") without appending mm:ss
+ */
+export function formatEmTimeOnly(val: number | string | undefined): string {
+  if (val === undefined || val === null) return '00:00';
+  const num = Number(val);
+  if (isNaN(num) || num <= 0) return '00:00';
+  const mins = Math.floor(num);
+  const secs = Math.round((num - mins) * 60);
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 const INITIAL_OVERVIEW: SpinfoOverviewResponse = getSampleSpinfoOverview();
 
 export type ActiveKpiType =
@@ -1094,54 +1106,48 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         {/* 1. SPEED VIEW ROWS */}
                         {activeKpi === 'AVERAGE_RPM' ? (
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                  <Gauge size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Gauge size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Current Speed</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.spindleSpeedCurrent || 0).toLocaleString()} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>rpm</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.spindleSpeedCurrent || 0).toLocaleString()} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>rpm</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#16a34a' }}>
+                              <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#16a34a' }}>
                                 100%
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
-                                  <Factory size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
-                                <TrendingUp size={13} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.75rem', fontWeight: 800 }}>
+                                <TrendingUp size={14} />
                                 <span>+{m.yieldPercent || 98}%</span>
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-                                  <Activity size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Activity size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Delivery Speed</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    215 <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>m/min</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    215 <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>m/min</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', fontFamily: 'monospace' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>
                                 Std GPS
                               </div>
                             </div>
@@ -1149,54 +1155,48 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         ) : activeKpi === 'PRODUCTION_YIELD' || activeKpi === 'HOURLY_PRODUCTION' ? (
                           /* 2. PRODUCTION VIEW ROWS */
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                  <Factory size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
-                                <TrendingUp size={13} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.75rem', fontWeight: 800 }}>
+                                <TrendingUp size={14} />
                                 <span>{m.yieldPercent ? `${m.yieldPercent}%` : '98.5%'}</span>
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669' }}>
-                                  <Target size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Target size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Target</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftTargetProduction || 120).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftTargetProduction || 120).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#059669' }}>
                                 Target
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d97706' }}>
-                                  <Clock size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Clock size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Hourly Rate</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {((m.shiftProduction || 0) / Math.max(1, m.hourWiseProduction?.length || 8)).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>Kg/h</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {((m.shiftProduction || 0) / Math.max(1, m.hourWiseProduction?.length || 8)).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>Kg/h</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', fontFamily: 'monospace' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>
                                 {m.hourWiseProduction?.length || 8} hrs logged
                               </div>
                             </div>
@@ -1204,54 +1204,48 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         ) : activeKpi === 'SHIFT_WASTE' ? (
                           /* 3. WASTE VIEW ROWS */
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
-                                  <Recycle size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Recycle size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Waste</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
-                                <TrendingDown size={13} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#16a34a', fontSize: '0.75rem', fontWeight: 800 }}>
+                                <TrendingDown size={14} />
                                 <span>{(m.shiftWaste || 0) > 1.5 ? `+${((m.shiftWaste || 0) - 1.5).toFixed(1)}%` : `-0.2%`}</span>
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                  <Factory size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Shift Output</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#2563eb' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#2563eb' }}>
                                 Yield {m.yieldPercent || 0}%
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-                                  <Zap size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Zap size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Waste Mass</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(((m.shiftProduction || 0) * (m.shiftWaste || 1)) / 100).toFixed(2)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>Kg</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(((m.shiftProduction || 0) * (m.shiftWaste || 1)) / 100).toFixed(2)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>Kg</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>
                                 Max 1.50%
                               </div>
                             </div>
@@ -1259,53 +1253,47 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         ) : activeKpi === 'END_BREAKS' ? (
                           /* 4. END BREAKS VIEW ROWS */
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-                                  <Zap size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Zap size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Total Breaks</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
                                     {m.totalEndBreakCount || 0}
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#ef4444' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#ef4444' }}>
                                 Total
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0284c7' }}>
-                                  <Timer size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Timer size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Left Side (L)</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {leftSide?.endBreakCount || 0} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {leftSide?.endBreakCount || 0} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#0284c7' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#0284c7' }}>
                                 L Side
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
-                                  <Clock size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Clock size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Right Side (R)</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {rightSide?.endBreakCount || 0} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {rightSide?.endBreakCount || 0} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>breaks</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4f46e5' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#4f46e5' }}>
                                 R Side
                               </div>
                             </div>
@@ -1313,53 +1301,47 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         ) : activeKpi === 'END_MENDING_TIME' ? (
                           /* 5. END MENDING VIEW ROWS */
                           <>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                  <Timer size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Timer size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Left Mending</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {formatEmMinutesToTime(leftSide?.endMendingTime)}
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {formatEmTimeOnly(leftSide?.endMendingTime)}
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#2563eb' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#2563eb' }}>
                                 L Side
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
-                                  <Clock size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Clock size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Right Mending</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {formatEmMinutesToTime(rightSide?.endMendingTime)}
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {formatEmTimeOnly(rightSide?.endMendingTime)}
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#4f46e5' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#4f46e5' }}>
                                 R Side
                               </div>
                             </div>
 
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669' }}>
-                                  <BarChart3 size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <BarChart3 size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Std Target</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {stdMendingTime} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{stdMendingUnit}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {stdMendingTime} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{stdMendingUnit}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#059669' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#059669' }}>
                                 Standard
                               </div>
                             </div>
@@ -1368,57 +1350,51 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                           /* 6. TOTAL MACHINES & DEFAULT OVERVIEW (EXACTLY MATCHING USER'S SKETCH) */
                           <>
                             {/* Row 1: Factory Icon + Production + Value + Trend */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
-                                  <Factory size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Factory size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Production</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftProduction || 0).toFixed(1)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.productionUnit || 'Kg'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
-                                <TrendingUp size={13} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: '#16a34a', fontSize: '0.75rem', fontWeight: 800 }}>
+                                <TrendingUp size={14} />
                                 <span>+{m.yieldPercent ? `${m.yieldPercent}%` : '2.3%'}</span>
                               </div>
                             </div>
 
                             {/* Row 2: Recycle Icon + Waste + Value + Trend */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
-                                  <Recycle size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Recycle size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Waste</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
-                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
+                                    {(m.shiftWaste || 0).toFixed(2)} <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b' }}>{m.wasteUnit || '%'}</span>
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#16a34a', fontSize: '0.72rem', fontWeight: 800 }}>
-                                <TrendingDown size={13} />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.15rem', color: (m.shiftWaste || 0) > 1.5 ? '#dc2626' : '#16a34a', fontSize: '0.75rem', fontWeight: 800 }}>
+                                <TrendingDown size={14} />
                                 <span>{(m.shiftWaste || 0) > 1.5 ? `+${((m.shiftWaste || 0) - 1.5).toFixed(1)}%` : `-0.2%`}</span>
                               </div>
                             </div>
 
                             {/* Row 3: Zap Icon + End Breaks + Value + Side Breakdown */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.32rem 0.5rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
-                                  <Zap size={15} />
-                                </div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.35rem 0.55rem', background: 'rgba(255, 255, 255, 0.65)', borderRadius: '8px', border: '1px solid rgba(0, 0, 0, 0.05)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                                <Zap size={22} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                                 <div>
                                   <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>End Breaks</div>
-                                  <div style={{ fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>
+                                  <div style={{ fontSize: '1.22rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1 }}>
                                     {m.totalEndBreakCount || 0}
                                   </div>
                                 </div>
                               </div>
-                              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#64748b', fontFamily: 'monospace' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b' }}>
                                 {m.breakSidesDisplay || 'L: 0 · R: 0'}
                               </div>
                             </div>
@@ -1427,59 +1403,54 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       </div>
                     </div>
 
-                    {/* Footer: Left Endmenting, Right Endmenting, Total Average Em. (EXACTLY MATCHING USER'S SKETCH) */}
+                    {/* Footer: LH EM, RH EM, AVG EM (Strictly Matching Specification) */}
                     <div
                       style={{
                         marginTop: '0.65rem',
                         paddingTop: '0.55rem',
-                        borderTop: '1px solid #f1f5f9',
+                        borderTop: '1px solid rgba(0, 0, 0, 0.06)',
                         display: 'grid',
                         gridTemplateColumns: 'repeat(3, 1fr)',
                         gap: '0.35rem',
                         alignItems: 'center'
                       }}
                     >
-                      {/* Left Endmenting */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0 }}>
-                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563eb', flexShrink: 0 }}>
-                          <Timer size={14} />
-                        </div>
+                      {/* Column 1: LH EM */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                        <Timer size={18} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            Left Endmenting
+                          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            LH EM
                           </div>
-                          <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {formatEmMinutesToTime(leftSide?.endMendingTime)}
+                          <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+                            {formatEmTimeOnly(leftSide?.endMendingTime)}
                           </div>
                         </div>
                       </div>
 
-                      {/* Right Endmenting */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderLeft: '1px solid #f1f5f9', paddingLeft: '0.4rem', minWidth: 0 }}>
-                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#eef2ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', flexShrink: 0 }}>
-                          <Clock size={14} />
-                        </div>
+                      {/* Column 2: RH EM */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderLeft: '1px solid rgba(0, 0, 0, 0.06)', paddingLeft: '0.45rem', minWidth: 0 }}>
+                        <Clock size={18} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            Right Endmenting
+                          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            RH EM
                           </div>
-                          <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {formatEmMinutesToTime(rightSide?.endMendingTime)}
+                          <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+                            {formatEmTimeOnly(rightSide?.endMendingTime)}
                           </div>
                         </div>
                       </div>
 
-                      {/* Total Average Em */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', borderLeft: '1px solid #f1f5f9', paddingLeft: '0.4rem', minWidth: 0 }}>
-                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669', flexShrink: 0 }}>
-                          <BarChart3 size={14} />
-                        </div>
+                      {/* Column 3: AVG EM */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', borderLeft: '1px solid rgba(0, 0, 0, 0.06)', paddingLeft: '0.45rem', minWidth: 0 }}>
+                        <BarChart3 size={18} strokeWidth={2.2} style={{ color: '#0f172a', flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: '0.62rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            Total Average Em.
+                          <div style={{ fontSize: '0.65rem', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            AVG EM
                           </div>
-                          <div style={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {formatEmMinutesToTime(avgMachineMending)}
+                          <div style={{ fontSize: '1.15rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1.1, whiteSpace: 'nowrap', display: 'flex', alignItems: 'baseline', gap: '3px' }}>
+                            {formatEmTimeOnly(avgMachineMending)}
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>min</span>
                           </div>
                         </div>
                       </div>

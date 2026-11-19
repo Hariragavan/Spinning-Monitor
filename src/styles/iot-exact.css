@@ -1112,7 +1112,7 @@
 }
 
 .machine-card {
-  background: #ffffff !important;
+  background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 0.95rem;
@@ -1131,37 +1131,37 @@
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
 }
 
-/* Status-based card borders & hover accents */
+/* Status-based card backgrounds and borders */
 .machine-card.status-running {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1;
+  background-color: #f0fdf4 !important;
+  border-color: #86efac !important;
 }
 .machine-card.status-running:hover {
-  border-color: #22c55e;
-  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.12);
+  border-color: #22c55e !important;
+  box-shadow: 0 10px 22px rgba(34, 197, 94, 0.14) !important;
 }
 
 .machine-card.status-stopped {
-  background-color: #ffffff !important;
-  border-color: #fca5a5;
+  background-color: #fef2f2 !important;
+  border-color: #fca5a5 !important;
 }
 .machine-card.status-stopped:hover {
-  border-color: #ef4444;
-  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.12);
+  border-color: #ef4444 !important;
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.14) !important;
 }
 
 .machine-card.status-doffing {
-  background-color: #ffffff !important;
-  border-color: #fde047;
+  background-color: #fefce8 !important;
+  border-color: #fde047 !important;
 }
 .machine-card.status-doffing:hover {
-  border-color: #eab308;
-  box-shadow: 0 10px 22px rgba(234, 179, 8, 0.12);
+  border-color: #eab308 !important;
+  box-shadow: 0 10px 22px rgba(234, 179, 8, 0.14) !important;
 }
 
 .machine-card.status-offline {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1;
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
 }
 
 /* Status-based backgrounds for spindle map rows */
