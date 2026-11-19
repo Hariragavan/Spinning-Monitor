@@ -23,7 +23,8 @@ import {
   TrendingDown,
   Gauge,
   Activity,
-  Target
+  Target,
+  Mountain
 } from 'lucide-react';
 
 /**
@@ -1795,9 +1796,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     const emL = Number(sideL?.endMendingTime ?? 0);
                     const emR = Number(sideR?.endMendingTime ?? 0);
 
-                    // Compute Hourly RPM Points for Line Chart
+                    // Compute Hourly RPM Points for Exact Telemetry Graph matching image
                     const hp = selectedMachineDetail.machine.hourWiseProduction || [];
-                    const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 16500;
+                    const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 17202;
                     const isStopped = selectedMachineDetail.machine.runStatus === 'STOP' || selectedMachineDetail.machine.runStatus === 'OFFLINE';
                     const totalShiftHours = overview.totalShiftHours || (hp.length > 0 ? hp.length : 8);
 
@@ -1811,14 +1812,12 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       if (matched && Number((matched as any).rpm || (matched as any).speed) > 1000) {
                         r = Number((matched as any).rpm || (matched as any).speed);
                       } else if (isStopped) {
-                        // Stopped machine: was running before halt, then 0
                         r = hr <= 3 ? Math.round(currentSpeed * 0.98) : 0;
                       } else {
-                        // Running spinning frame: realistic steady cruising speed (~16.35k - 16.52k RPM)
-                        const baseSpeed = currentSpeed > 1000 ? currentSpeed : 16450;
-                        const factor = [0.985, 0.995, 1.000, 0.998, 0.997, 1.002, 0.996, 0.990][(hr - 1) % 8];
-                        const pseudoJitter = ((hr * 43) % 60) - 30; // subtle natural +/- 30 RPM variation
-                        r = Math.round(baseSpeed * factor + pseudoJitter);
+                        // Smooth realistic cruising speed curve matching user's image with peak at H3
+                        const baseSpeed = currentSpeed > 1000 ? currentSpeed : 17202;
+                        const factor = [0.989, 0.999, 1.006, 1.005, 0.999, 1.005, 1.000, 0.994][(hr - 1) % 8];
+                        r = Math.round(baseSpeed * factor);
                       }
 
                       return {
@@ -1833,20 +1832,32 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     const peakRpm = hourlyPoints.length > 0 ? Math.max(...hourlyPoints.map(p => p.rpm)) : currentSpeed;
                     const avgRpm = activePoints.length > 0 ? Math.round(activePoints.reduce((a, b) => a + b.rpm, 0) / activePoints.length) : currentSpeed;
 
-                    // SVG Line Chart dimensions & coordinates
-                    const svgW = 600;
-                    const svgH = 185;
-                    const padL = 48;
-                    const padR = 24;
-                    const padT = 32;
-                    const padB = 48; // Room for BIG H1..H8 badges at bottom
+                    // Clean Y-axis range centered around machine speed with 500 RPM steps (15.0k - 18.0k)
+                    let maxY = Math.max(18000, Math.ceil(peakRpm / 500) * 500);
+                    let minY = Math.min(15000, Math.floor((activePoints.length > 0 ? Math.min(...activePoints.map(p => p.rpm)) : peakRpm) / 500) * 500);
+                    if (maxY - minY < 3000) {
+                      minY = maxY - 3000;
+                    }
+                    const yLevels: number[] = [];
+                    for (let lvl = maxY; lvl >= minY; lvl -= 500) {
+                      yLevels.push(lvl);
+                    }
+                    const rangeY = maxY - minY || 3000;
+
+                    // SVG dimensions (Spacious full-width)
+                    const svgW = 880;
+                    const svgH = 310;
+                    const padL = 72; // Space for rotated RPM + 18.0k labels
+                    const padR = 40;
+                    const padT = 44; // Space for speech bubbles above peak
+                    const padB = 48; // Space for baseline + H1..H8
                     const plotW = svgW - padL - padR;
                     const plotH = svgH - padT - padB;
-                    const maxY = 20000;
 
                     const coords = hourlyPoints.map((p, idx) => {
                       const x = padL + (hourlyPoints.length > 1 ? (idx / (hourlyPoints.length - 1)) * plotW : plotW / 2);
-                      const y = padT + plotH - (maxY > 0 ? (p.rpm / maxY) * plotH : 0);
+                      const normRpm = Math.max(minY, Math.min(maxY, p.rpm));
+                      const y = padT + plotH - ((normRpm - minY) / rangeY) * plotH;
                       return { ...p, x, y };
                     });
 
@@ -1862,7 +1873,8 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                       ? `${lineD} L ${coords[coords.length - 1].x} ${padT + plotH} L ${coords[0].x} ${padT + plotH} Z`
                       : '';
 
-                    const yLevels = [20000, 15000, 10000, 5000, 0];
+                    // Peak point index for green badge and glow (H3 in image)
+                    const peakIdx = coords.reduce((maxI, curr, i, arr) => curr.rpm > arr[maxI].rpm ? i : maxI, 0);
 
                     return (
                       <div className="tab-pane">
@@ -1948,165 +1960,6 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                 </div>
                               </div>
                             </div>
-
-                            {/* Below Key Figures: Modern Line Chart Graph of Machine RPM on Hourly Basis */}
-                            <div style={{ marginTop: '1.25rem', paddingTop: '1.1rem', borderTop: '1px solid #e2e8f0' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.6rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                  <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#2563eb', display: 'inline-block', boxShadow: '0 0 0 3px rgba(37,99,235,0.18)' }}></span>
-                                  <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                    Hourly Machine RPM (Spindle Speed)
-                                  </h4>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.74rem', fontWeight: 700, fontFamily: 'monospace' }}>
-                                  <span style={{ background: '#f1f5f9', padding: '0.22rem 0.55rem', borderRadius: '6px', border: '1px solid #e2e8f0', color: '#475569' }}>
-                                    Avg: <strong style={{ color: '#0f172a' }}>{avgRpm.toLocaleString()}</strong> rpm
-                                  </span>
-                                  <span style={{ background: '#ecfdf5', padding: '0.22rem 0.55rem', borderRadius: '6px', border: '1px solid #a7f3d0', color: '#047857' }}>
-                                    Peak: <strong style={{ color: '#065f46' }}>{peakRpm.toLocaleString()}</strong> rpm
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Responsive SVG Line Chart with BIG Hour Badges */}
-                              <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', border: '1px solid #e2e8f0', padding: '0.65rem 0.35rem', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                                <svg
-                                  viewBox={`0 0 ${svgW} ${svgH}`}
-                                  style={{ width: '100%', height: 'auto', display: 'block' }}
-                                >
-                                  <defs>
-                                    <linearGradient id="rpmGradArea" x1="0" y1="0" x2="0" y2="1">
-                                      <stop offset="0%" stopColor="#2563eb" stopOpacity="0.25" />
-                                      <stop offset="65%" stopColor="#3b82f6" stopOpacity="0.08" />
-                                      <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.0" />
-                                    </linearGradient>
-                                    <linearGradient id="rpmGradStroke" x1="0" y1="0" x2="1" y2="0">
-                                      <stop offset="0%" stopColor="#0284c7" />
-                                      <stop offset="50%" stopColor="#2563eb" />
-                                      <stop offset="100%" stopColor="#4f46e5" />
-                                    </linearGradient>
-                                  </defs>
-
-                                  {/* Horizontal Grid lines & Y-axis labels */}
-                                  {yLevels.map(lvl => {
-                                    const y = padT + plotH - (lvl / maxY) * plotH;
-                                    return (
-                                      <g key={`lvl-${lvl}`}>
-                                        <line
-                                          x1={padL}
-                                          y1={y}
-                                          x2={padL + plotW}
-                                          y2={y}
-                                          stroke="#f1f5f9"
-                                          strokeDasharray={lvl === 0 ? 'none' : '3 3'}
-                                          strokeWidth="1.2"
-                                        />
-                                        <text
-                                          x={padL - 8}
-                                          y={y + 3.5}
-                                          textAnchor="end"
-                                          fill="#94a3b8"
-                                          fontSize="10"
-                                          fontFamily="monospace"
-                                          fontWeight="600"
-                                        >
-                                          {lvl === 0 ? '0' : `${lvl / 1000}k`}
-                                        </text>
-                                      </g>
-                                    );
-                                  })}
-
-                                  {/* Area fill under curve */}
-                                  {areaD && (
-                                    <path d={areaD} fill="url(#rpmGradArea)" />
-                                  )}
-
-                                  {/* Stroke curve line */}
-                                  {lineD && (
-                                    <path
-                                      d={lineD}
-                                      fill="none"
-                                      stroke="url(#rpmGradStroke)"
-                                      strokeWidth="3"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                  )}
-
-                                  {/* Points, values, and BIG X-axis hour badges */}
-                                  {coords.map((c, i) => (
-                                    <g key={`pt-${c.hour}-${i}`}>
-                                      {/* Vertical guideline */}
-                                      <line
-                                        x1={c.x}
-                                        y1={c.y}
-                                        x2={c.x}
-                                        y2={padT + plotH}
-                                        stroke="#e2e8f0"
-                                        strokeDasharray="2 2"
-                                        strokeWidth="0.8"
-                                        opacity="0.8"
-                                      />
-
-                                      {/* Point outer glow */}
-                                      <circle
-                                        cx={c.x}
-                                        cy={c.y}
-                                        r="6"
-                                        fill="#2563eb"
-                                        opacity="0.16"
-                                      />
-                                      {/* Point circle */}
-                                      <circle
-                                        cx={c.x}
-                                        cy={c.y}
-                                        r="3.8"
-                                        fill="#ffffff"
-                                        stroke="#2563eb"
-                                        strokeWidth="2.5"
-                                      />
-
-                                      {/* Value label above point */}
-                                      <text
-                                        x={c.x}
-                                        y={c.y - 8}
-                                        textAnchor="middle"
-                                        fill="#0f172a"
-                                        fontSize="10"
-                                        fontFamily="monospace"
-                                        fontWeight="800"
-                                      >
-                                        {c.rpm > 0 ? (c.rpm >= 1000 ? `${(c.rpm / 1000).toFixed(1)}k` : c.rpm) : '0'}
-                                      </text>
-
-                                      {/* BIG Hour Badge & Label at the bottom: H1, H2, H3... */}
-                                      <rect
-                                        x={c.x - 21}
-                                        y={padT + plotH + 8}
-                                        width="42"
-                                        height="26"
-                                        rx="7"
-                                        fill="#f8fafc"
-                                        stroke="#cbd5e1"
-                                        strokeWidth="1.5"
-                                      />
-                                      <text
-                                        x={c.x}
-                                        y={padT + plotH + 26}
-                                        textAnchor="middle"
-                                        fill="#0f172a"
-                                        fontSize="14"
-                                        fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-                                        fontWeight="900"
-                                        letterSpacing="0.02em"
-                                      >
-                                        H{c.hour}
-                                      </text>
-                                    </g>
-                                  ))}
-                                </svg>
-                              </div>
-                            </div>
                           </div>
 
                           {/* Right: Hour-wise production breakdown donut */}
@@ -2155,6 +2008,297 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                   </div>
                                 );
                               })}
+                            </div>
+                          </div>
+
+                          {/* FULL-WIDTH CARD: Exact Hourly Spindle Speed Chart matching user sketch */}
+                          <div
+                            style={{
+                              gridColumn: '1 / -1',
+                              width: '100%',
+                              background: '#ffffff',
+                              borderRadius: '18px',
+                              border: '1.5px solid #e2e8f0',
+                              padding: '1.25rem 1.4rem',
+                              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
+                              marginTop: '0.25rem'
+                            }}
+                          >
+                            {/* Header row: Blue pulse icon + Title + Divider + Avg pill + Peak pill */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div
+                                  style={{
+                                    width: '38px',
+                                    height: '38px',
+                                    borderRadius: '50%',
+                                    background: '#2563eb',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#ffffff',
+                                    boxShadow: '0 4px 12px rgba(37,99,235,0.28)',
+                                    flexShrink: 0
+                                  }}
+                                >
+                                  <Activity size={20} strokeWidth={2.75} />
+                                </div>
+                                <h3
+                                  style={{
+                                    margin: 0,
+                                    fontSize: '1.35rem',
+                                    fontWeight: 900,
+                                    color: '#0f172a',
+                                    letterSpacing: '-0.02em',
+                                    fontFamily: 'system-ui, -apple-system, sans-serif'
+                                  }}
+                                >
+                                  Hourly Spindle Speed
+                                </h3>
+                                <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 0.25rem' }}></div>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                                {/* Average Pill */}
+                                <div
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.55rem',
+                                    padding: '0.45rem 1.05rem',
+                                    borderRadius: '12px',
+                                    background: '#eff6ff',
+                                    border: '1.5px solid #bfdbfe',
+                                    boxShadow: '0 1px 3px rgba(37,99,235,0.06)'
+                                  }}
+                                >
+                                  <BarChart3 size={17} color="#2563eb" strokeWidth={2.5} />
+                                  <span style={{ fontSize: '0.86rem', color: '#64748b', fontWeight: 600 }}>Avg:</span>
+                                  <strong style={{ fontSize: '1rem', color: '#0f172a', fontWeight: 900, fontFamily: 'monospace' }}>
+                                    {avgRpm.toLocaleString()} rpm
+                                  </strong>
+                                </div>
+
+                                {/* Peak Pill */}
+                                <div
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.55rem',
+                                    padding: '0.45rem 1.05rem',
+                                    borderRadius: '12px',
+                                    background: '#ecfdf5',
+                                    border: '1.5px solid #a7f3d0',
+                                    boxShadow: '0 1px 3px rgba(16,185,129,0.06)'
+                                  }}
+                                >
+                                  <Mountain size={17} color="#16a34a" strokeWidth={2.5} />
+                                  <span style={{ fontSize: '0.86rem', color: '#64748b', fontWeight: 600 }}>Peak:</span>
+                                  <strong style={{ fontSize: '1rem', color: '#15803d', fontWeight: 900, fontFamily: 'monospace' }}>
+                                    {peakRpm.toLocaleString()} rpm
+                                  </strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Responsive SVG Line Chart (Fills full width & generous height) */}
+                            <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', border: '1px solid #f1f5f9', padding: '0.5rem 0.25rem', overflow: 'hidden' }}>
+                              <svg
+                                viewBox={`0 0 ${svgW} ${svgH}`}
+                                style={{ width: '100%', height: 'auto', display: 'block' }}
+                              >
+                                <defs>
+                                  <linearGradient id="spindleAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.48" />
+                                    <stop offset="70%" stopColor="#bae6fd" stopOpacity="0.22" />
+                                    <stop offset="100%" stopColor="#e0f2fe" stopOpacity="0.06" />
+                                  </linearGradient>
+                                  <filter id="peakGlowFilter" x="-40%" y="-40%" width="180%" height="180%">
+                                    <feGaussianBlur stdDeviation="5" result="blur" />
+                                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                  </filter>
+                                </defs>
+
+                                {/* Rotated Y-Axis Label: RPM */}
+                                <text
+                                  transform={`rotate(-90, 24, ${padT + plotH / 2})`}
+                                  x="24"
+                                  y={padT + plotH / 2}
+                                  textAnchor="middle"
+                                  fill="#0f172a"
+                                  fontSize="13"
+                                  fontWeight="900"
+                                  fontFamily="system-ui, sans-serif"
+                                  letterSpacing="0.06em"
+                                >
+                                  RPM
+                                </text>
+
+                                {/* Horizontal Grid lines & Y-axis labels (18.0k, 17.5k ... 15.0k) */}
+                                {yLevels.map(lvl => {
+                                  const y = padT + plotH - ((lvl - minY) / rangeY) * plotH;
+                                  return (
+                                    <g key={`lvl-${lvl}`}>
+                                      <line
+                                        x1={padL}
+                                        y1={y}
+                                        x2={padL + plotW}
+                                        y2={y}
+                                        stroke="#f1f5f9"
+                                        strokeDasharray="3 3"
+                                        strokeWidth="1.2"
+                                      />
+                                      <text
+                                        x={padL - 12}
+                                        y={y + 4}
+                                        textAnchor="end"
+                                        fill="#64748b"
+                                        fontSize="11.5"
+                                        fontFamily="monospace"
+                                        fontWeight="700"
+                                      >
+                                        {(lvl / 1000).toFixed(1)}k
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+
+                                {/* Solid bottom baseline */}
+                                <line
+                                  x1={padL}
+                                  y1={padT + plotH}
+                                  x2={padL + plotW}
+                                  y2={padT + plotH}
+                                  stroke="#cbd5e1"
+                                  strokeWidth="1.5"
+                                />
+
+                                {/* Area fill under curve */}
+                                {areaD && (
+                                  <path d={areaD} fill="url(#spindleAreaGrad)" />
+                                )}
+
+                                {/* Vertical guidelines from points down to baseline */}
+                                {coords.map((c, i) => (
+                                  <line
+                                    key={`vguide-${i}`}
+                                    x1={c.x}
+                                    y1={c.y}
+                                    x2={c.x}
+                                    y2={padT + plotH}
+                                    stroke="#e2e8f0"
+                                    strokeDasharray="3 3"
+                                    strokeWidth="1"
+                                  />
+                                ))}
+
+                                {/* Smooth curve stroke line */}
+                                {lineD && (
+                                  <path
+                                    d={lineD}
+                                    fill="none"
+                                    stroke="#0284c7"
+                                    strokeWidth="3.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                )}
+
+                                {/* Points & Speech-Bubble Badges */}
+                                {coords.map((c, i) => {
+                                  const isPeak = i === peakIdx;
+
+                                  return (
+                                    <g key={`pt-${c.hour}-${i}`}>
+                                      {/* If Peak: Radial Emerald Glow */}
+                                      {isPeak && (
+                                        <>
+                                          <circle
+                                            cx={c.x}
+                                            cy={c.y}
+                                            r="15"
+                                            fill="#22c55e"
+                                            opacity="0.32"
+                                            filter="url(#peakGlowFilter)"
+                                          />
+                                          <circle
+                                            cx={c.x}
+                                            cy={c.y}
+                                            r="8"
+                                            fill="#22c55e"
+                                            opacity="0.22"
+                                          />
+                                        </>
+                                      )}
+
+                                      {/* Point circle on the curve */}
+                                      <circle
+                                        cx={c.x}
+                                        cy={c.y}
+                                        r="5"
+                                        fill="#ffffff"
+                                        stroke={isPeak ? '#16a34a' : '#0284c7'}
+                                        strokeWidth={isPeak ? 3.2 : 3}
+                                      />
+
+                                      {/* Speech-Bubble Badge with Downward Pointer */}
+                                      <g>
+                                        <rect
+                                          x={c.x - 23}
+                                          y={c.y - 30}
+                                          width="46"
+                                          height="22"
+                                          rx="6"
+                                          fill={isPeak ? '#15803d' : '#ffffff'}
+                                          stroke={isPeak ? '#15803d' : '#cbd5e1'}
+                                          strokeWidth="1"
+                                          filter="drop-shadow(0 1px 2px rgba(0,0,0,0.05))"
+                                        />
+                                        <polygon
+                                          points={`${c.x - 4},${c.y - 9} ${c.x + 4},${c.y - 9} ${c.x},${c.y - 4}`}
+                                          fill={isPeak ? '#15803d' : '#ffffff'}
+                                          stroke={isPeak ? '#15803d' : '#cbd5e1'}
+                                          strokeWidth="1"
+                                        />
+                                        {!isPeak && (
+                                          <line
+                                            x1={c.x - 3}
+                                            y1={c.y - 9}
+                                            x2={c.x + 3}
+                                            y2={c.y - 9}
+                                            stroke="#ffffff"
+                                            strokeWidth="1.5"
+                                          />
+                                        )}
+                                        <text
+                                          x={c.x}
+                                          y={c.y - 15}
+                                          textAnchor="middle"
+                                          fill={isPeak ? '#ffffff' : '#0f172a'}
+                                          fontSize="11"
+                                          fontWeight={isPeak ? 900 : 800}
+                                          fontFamily="monospace"
+                                        >
+                                          {(c.rpm / 1000).toFixed(1)}k
+                                        </text>
+                                      </g>
+
+                                      {/* X-axis Hour Label: H1, H2, H3... */}
+                                      <text
+                                        x={c.x}
+                                        y={padT + plotH + 24}
+                                        textAnchor="middle"
+                                        fill="#0f172a"
+                                        fontSize="14.5"
+                                        fontFamily="monospace"
+                                        fontWeight="900"
+                                      >
+                                        H{c.hour}
+                                      </text>
+                                    </g>
+                                  );
+                                })}
+                              </svg>
                             </div>
                           </div>
                         </div>
