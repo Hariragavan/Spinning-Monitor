@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export interface FuturisticSpeedDialProps {
   value: number;
@@ -13,16 +13,14 @@ export interface FuturisticSpeedDialProps {
 }
 
 /**
- * Stylish High-Performance Speedometer Dial (Blue Dynamic Theme)
- * Exactly matching the reference speed-test instrument:
- * - Thick, bold 260° perimeter band (140° bottom-left to 400° bottom-right)
- * - Active track with Blue shades: Low speed in light blue -> High speed in deep rich royal blue
- * - Inactive track in light frosted white with opacity (rgba(255, 255, 255, 0.85)) with subtle crisp underlay
- * - Large spacious circular meter filling available space
- * - Floating diamond spearhead needle with 3D faceted center spine and electric blue glow
- * - Bold sporty scale numbers (0, 5, 10, 15, 20)
- * - Prominent RPM digital number & label placed cleanly BELOW the meter
- * - Completely transparent background (no container box or background pod)
+ * High-Performance Futuristic Speedometer Dial (Dynamic Blue Theme)
+ * - Large spacious circular meter arc touching left and right boundaries
+ * - 260° perimeter band (140° bottom-left to 400° bottom-right)
+ * - Dynamic blue gradient: Light sky blue -> Rich cobalt -> Deep royal sapphire
+ * - Frosted white track with opacity underlay
+ * - Redesigned sleek 3D aerodynamic diamond needle with glowing metallic pivot
+ * - Fluid animation on initial mount / refresh, run status change (e.g. drop to 0 on stop), and live telemetry updates
+ * - Clean digital readout placed below the meter
  */
 export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   value,
@@ -30,42 +28,56 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   status,
   label = 'RPM',
   customUnit,
-  size = 140
+  size = 146
 }) => {
   const isStoppedOrDoffing = status === 'STOP' || status === 'OFFLINE' || status === 'DOFF';
   const targetVal = isStoppedOrDoffing ? 0 : Math.max(0, value);
   const [animatedVal, setAnimatedVal] = useState<number>(0);
+  const currentValRef = useRef<number>(0);
 
+  // Keep ref updated with latest animated value so re-triggers start from exact current position
+  useEffect(() => {
+    currentValRef.current = animatedVal;
+  }, [animatedVal]);
+
+  // Smooth animation trigger on refresh / load, status change, and live data updates
   useEffect(() => {
     let animId: number;
-    const startVal = animatedVal;
+    const startVal = currentValRef.current;
     const endVal = targetVal;
-    const duration = 1100; // 1.1s smooth aerodynamic sweep
+    const diff = Math.abs(endVal - startVal);
+
+    // Duration: 1.1s for large sweeps (start from 0, stop, or doff), 500ms for live telemetry adjustments
+    const duration = diff > 2500 ? 1100 : 550;
     const startTime = performance.now();
 
     const frame = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(1, elapsed / duration);
-      // Exponential aerodynamic ease-out
-      const ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      // Smooth aerodynamic ease-out cubic
+      const ease = 1 - Math.pow(1 - progress, 3);
       const current = startVal + (endVal - startVal) * ease;
       setAnimatedVal(current);
 
       if (progress < 1) {
         animId = requestAnimationFrame(frame);
+      } else {
+        setAnimatedVal(endVal);
       }
     };
 
     animId = requestAnimationFrame(frame);
+
     return () => {
       if (animId) cancelAnimationFrame(animId);
     };
-  }, [targetVal]);
+  }, [targetVal, status]);
 
-  const cx = 70;
-  const cy = 48;
-  const arcRadius = 46;
-  const bandThickness = 12;
+  // SVG Geometry - Meter circle reaches right up to left and right boundaries
+  const cx = 72;
+  const cy = 60;
+  const arcRadius = 57;
+  const bandThickness = 11;
   const startAngleDeg = 140;
   const sweepDeg = 260;
 
@@ -100,11 +112,11 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
 
   // Scale markings placed cleanly along inside perimeter: 0, 5, 10, 15, 20
   const scaleMarks = [
-    { label: '0', x: 44, y: 72 },
-    { label: '5', x: 41, y: 44 },
-    { label: '10', x: 70, y: 24 },
-    { label: '15', x: 99, y: 44 },
-    { label: '20', x: 96, y: 72 }
+    { label: '0', x: 34, y: 94 },
+    { label: '5', x: 26, y: 55 },
+    { label: '10', x: 72, y: 22 },
+    { label: '15', x: 118, y: 55 },
+    { label: '20', x: 110, y: 94 }
   ];
 
   // Display value formatting
@@ -117,12 +129,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     displayString = Math.round(animatedVal).toLocaleString();
   }
 
-  // Needle color theme: vibrant glowing cyan-blue
-  const needleTipColor = '#38bdf8'; // Electric sky cyan
-  const needleBodyColor = '#0284c7'; // Rich bright blue
-  const needleBaseColor = 'rgba(29, 78, 216, 0.4)'; // Royal blue tint
-
-  const svgHeight = Math.round(size * 0.65);
+  const svgHeight = Math.round(size * 0.72);
 
   return (
     <div
@@ -137,33 +144,46 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
         justifyContent: 'center'
       }}
     >
-      {/* 1. Large Circular Speedometer Arc */}
+      {/* 1. Large Circular Speedometer Arc touching left and right edges */}
       <svg
         width={size}
         height={svgHeight}
-        viewBox="0 0 140 92"
+        viewBox="0 0 144 104"
         style={{ overflow: 'visible' }}
       >
         <defs>
-          {/* Active Gradient: Blue shades (Low in light blue/cyan -> High in deep rich royal blue) */}
+          {/* Active Gradient: Dynamic blue shades (Light cyan-blue -> Cobalt -> Deep royal blue) */}
           <linearGradient id="speedDialBlueGrad" x1="0%" y1="100%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#7dd3fc" />
             <stop offset="25%" stopColor="#38bdf8" />
-            <stop offset="60%" stopColor="#0284c7" />
-            <stop offset="85%" stopColor="#2563eb" />
+            <stop offset="55%" stopColor="#0284c7" />
+            <stop offset="80%" stopColor="#2563eb" />
             <stop offset="100%" stopColor="#1d4ed8" />
           </linearGradient>
 
-          {/* Floating Diamond Needle Gradient */}
-          <linearGradient id="stylishBlueNeedleGrad" x1="0%" y1="0%" x2="0%" y2="1">
-            <stop offset="0%" stopColor={needleTipColor} />
-            <stop offset="50%" stopColor={needleBodyColor} />
-            <stop offset="100%" stopColor={needleBaseColor} />
+          {/* Sleek Needle Gradient Left Facet (Light cyan glow) */}
+          <linearGradient id="needleLeftFacetGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#bae6fd" />
+            <stop offset="100%" stopColor="#38bdf8" />
           </linearGradient>
+
+          {/* Sleek Needle Gradient Right Facet (Deep sapphire blue) */}
+          <linearGradient id="needleRightFacetGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#0284c7" />
+            <stop offset="100%" stopColor="#1e40af" />
+          </linearGradient>
+
+          {/* Metallic Hub Gradient */}
+          <radialGradient id="needleHubGrad" cx="40%" cy="40%" r="60%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="45%" stopColor="#cbd5e1" />
+            <stop offset="85%" stopColor="#64748b" />
+            <stop offset="100%" stopColor="#334155" />
+          </radialGradient>
 
           {/* Glowing Drop Shadow Filter for Needle */}
           <filter id="stylishBlueNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor="#0284c7" floodOpacity="0.6" />
+            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor="#0284c7" floodOpacity="0.5" />
           </filter>
         </defs>
 
@@ -171,12 +191,12 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
         <path
           d={bgArcPath}
           fill="none"
-          stroke="rgba(203, 213, 225, 0.5)"
-          strokeWidth={bandThickness + 1.5}
+          stroke="rgba(203, 213, 225, 0.45)"
+          strokeWidth={bandThickness + 1.2}
           strokeLinecap="butt"
         />
 
-        {/* Inactive Track: Light white with opacity */}
+        {/* Inactive Track: Frosted white with opacity */}
         <path
           d={bgArcPath}
           fill="none"
@@ -196,41 +216,63 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           />
         )}
 
-        {/* Scale Number Markings: 0, 5, 10, 15, 20 (Bold Sporty Typography) */}
+        {/* Scale Number Markings: 0, 5, 10, 15, 20 */}
         {scaleMarks.map(m => (
           <text
             key={`scale-${m.label}`}
             x={m.x}
             y={m.y}
             textAnchor="middle"
-            fill="#1e293b"
-            fontSize="8.5"
-            fontWeight="900"
-            fontFamily='"Arial Black", "Barlow Condensed", system-ui, sans-serif'
+            fill="#334155"
+            fontSize="9"
+            fontWeight="800"
+            fontFamily="system-ui, -apple-system, sans-serif"
           >
             {m.label}
           </text>
         ))}
 
-        {/* Floating Diamond Spear Needle (No Pivot Circle, 3D Faceted Spine) */}
-        <g
-          transform={`rotate(${needleRotationDeg.toFixed(2)}, ${cx}, ${cy})`}
-          style={{ transition: 'transform 0.05s linear' }}
-        >
-          {/* Diamond Polygon */}
+        {/* Redesigned Sleek 3D Aerodynamic Needle */}
+        <g transform={`rotate(${needleRotationDeg.toFixed(2)}, ${cx}, ${cy})`}>
+          {/* Left 3D Facet */}
           <polygon
-            points={`${cx},${cy - 36} ${cx + 3.8},${cy - 20} ${cx},${cy - 6} ${cx - 3.8},${cy - 20}`}
-            fill="url(#stylishBlueNeedleGrad)"
+            points={`${cx},${cy - 47} ${cx - 3.4},${cy - 24} ${cx - 2},${cy - 5} ${cx},${cy - 5}`}
+            fill="url(#needleLeftFacetGrad)"
             filter="url(#stylishBlueNeedleGlow)"
           />
-          {/* Center 3D Facet Spine */}
+          {/* Right 3D Facet */}
+          <polygon
+            points={`${cx},${cy - 47} ${cx + 3.4},${cy - 24} ${cx + 2},${cy - 5} ${cx},${cy - 5}`}
+            fill="url(#needleRightFacetGrad)"
+            filter="url(#stylishBlueNeedleGlow)"
+          />
+          {/* Center Spine Line (Bright highlight) */}
           <line
             x1={cx}
-            y1={cy - 35}
+            y1={cy - 46}
             x2={cx}
-            y2={cy - 7}
-            stroke="rgba(255, 255, 255, 0.9)"
+            y2={cy - 5}
+            stroke="rgba(255, 255, 255, 0.95)"
+            strokeWidth="0.8"
+          />
+
+          {/* Central Pivot Hub (Metallic ring with glowing cyan core) */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r="6.5"
+            fill="url(#needleHubGrad)"
+            stroke="#ffffff"
             strokeWidth="0.9"
+            style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.25))' }}
+          />
+          <circle
+            cx={cx}
+            cy={cy}
+            r="3"
+            fill="#0284c7"
+            stroke="#38bdf8"
+            strokeWidth="0.6"
           />
         </g>
       </svg>
@@ -241,14 +283,14 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          marginTop: '-1px',
+          marginTop: '-3px',
           textAlign: 'center'
         }}
       >
         <span
           style={{
-            fontSize: displayString.length > 5 ? '17px' : '19px',
-            fontWeight: 900,
+            fontSize: displayString.length > 5 ? '18px' : '20px',
+            fontWeight: 800,
             fontFamily: 'system-ui, -apple-system, sans-serif',
             color: '#0f172a',
             letterSpacing: '-0.02em',
@@ -260,12 +302,12 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
         <span
           style={{
             fontSize: '9.5px',
-            fontWeight: 800,
+            fontWeight: 700,
             color: '#64748b',
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
-            fontStyle: 'italic',
-            marginTop: '1px'
+            marginTop: '1px',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
           }}
         >
           {label}

@@ -1114,7 +1114,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                         label={dialLabel}
                         customUnit={dialUnit}
                         colorScheme={dialColor}
-                        size={138}
+                        size={146}
                       />
 
                       {/* Right 3 Rows */}
@@ -1787,106 +1787,148 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 </div>
               )}
 
-              {selectedMachineDetail && (
-                <>
-                  {/* TAB 1: OVERVIEW */}
-                  {activeModalTab === 'overview' && (() => {
-                    const sideL = selectedMachineDetail.machine.sides?.find(s => s.side === 'L');
-                    const sideR = selectedMachineDetail.machine.sides?.find(s => s.side === 'R');
-                    const emL = Number(sideL?.endMendingTime ?? 0);
-                    const emR = Number(sideR?.endMendingTime ?? 0);
+              {selectedMachineDetail && (() => {
+                const sideL = selectedMachineDetail.machine.sides?.find(s => s.side === 'L');
+                const sideR = selectedMachineDetail.machine.sides?.find(s => s.side === 'R');
+                const emL = Number(sideL?.endMendingTime ?? 0);
+                const emR = Number(sideR?.endMendingTime ?? 0);
 
-                    // Compute Hourly RPM Points for Exact Telemetry Graph matching image
-                    const hp = selectedMachineDetail.machine.hourWiseProduction || [];
-                    const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 17202;
-                    const isStopped = selectedMachineDetail.machine.runStatus === 'STOP' || selectedMachineDetail.machine.runStatus === 'OFFLINE';
-                    const totalShiftHours = overview.totalShiftHours || (hp.length > 0 ? hp.length : 8);
+                // Compute Hourly RPM Points for Exact Telemetry Graph matching image
+                const hp = selectedMachineDetail.machine.hourWiseProduction || [];
+                const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 17202;
+                const isStopped = selectedMachineDetail.machine.runStatus === 'STOP' || selectedMachineDetail.machine.runStatus === 'OFFLINE';
+                const totalShiftHours = overview.totalShiftHours || (hp.length > 0 ? hp.length : 8);
 
-                    // Map all shift hours (typically H1 through H8)
-                    const hourlyPoints = Array.from({ length: totalShiftHours }, (_, i) => {
-                      const hr = i + 1;
-                      const matched = hp.find(h => Number(h.hour) === hr);
-                      let r = 0;
-                      let prod = matched ? Number(matched.production || 0) : 0;
+                // Map all shift hours (typically H1 through H8)
+                const hourlyPoints = Array.from({ length: totalShiftHours }, (_, i) => {
+                  const hr = i + 1;
+                  const matched = hp.find(h => Number(h.hour) === hr);
+                  let r = 0;
+                  let prod = matched ? Number(matched.production || 0) : 0;
 
-                      if (matched && Number((matched as any).rpm || (matched as any).speed) > 1000) {
-                        r = Number((matched as any).rpm || (matched as any).speed);
-                      } else if (isStopped) {
-                        r = hr <= 3 ? Math.round(currentSpeed * 0.98) : 0;
-                      } else {
-                        // Smooth realistic cruising speed curve matching user's image with peak at H3
-                        const baseSpeed = currentSpeed > 1000 ? currentSpeed : 17202;
-                        const factor = [0.989, 0.999, 1.006, 1.005, 0.999, 1.005, 1.000, 0.994][(hr - 1) % 8];
-                        r = Math.round(baseSpeed * factor);
-                      }
+                  if (matched && Number((matched as any).rpm || (matched as any).speed) > 1000) {
+                    r = Number((matched as any).rpm || (matched as any).speed);
+                  } else if (isStopped) {
+                    r = hr <= 3 ? Math.round(currentSpeed * 0.98) : 0;
+                  } else {
+                    const baseSpeed = currentSpeed > 1000 ? currentSpeed : 17202;
+                    const factor = [0.989, 0.999, 1.006, 1.005, 0.999, 1.005, 1.000, 0.994][(hr - 1) % 8];
+                    r = Math.round(baseSpeed * factor);
+                  }
 
-                      return {
-                        hour: hr,
-                        label: `H${hr}`,
-                        rpm: r,
-                        prod
-                      };
-                    });
+                  return {
+                    hour: hr,
+                    label: `H${hr}`,
+                    rpm: r,
+                    prod
+                  };
+                });
 
-                    const activePoints = hourlyPoints.filter(p => p.rpm > 0);
-                    const peakRpm = hourlyPoints.length > 0 ? Math.max(...hourlyPoints.map(p => p.rpm)) : currentSpeed;
-                    const avgRpm = activePoints.length > 0 ? Math.round(activePoints.reduce((a, b) => a + b.rpm, 0) / activePoints.length) : currentSpeed;
+                const activePoints = hourlyPoints.filter(p => p.rpm > 0);
+                const peakRpm = hourlyPoints.length > 0 ? Math.max(...hourlyPoints.map(p => p.rpm)) : currentSpeed;
+                const avgRpm = activePoints.length > 0 ? Math.round(activePoints.reduce((a, b) => a + b.rpm, 0) / activePoints.length) : currentSpeed;
 
-                    // Clean Y-axis range centered around machine speed with 500 RPM steps (15.0k - 18.0k)
-                    let maxY = Math.max(18000, Math.ceil(peakRpm / 500) * 500);
-                    let minY = Math.min(15000, Math.floor((activePoints.length > 0 ? Math.min(...activePoints.map(p => p.rpm)) : peakRpm) / 500) * 500);
-                    if (maxY - minY < 3000) {
-                      minY = maxY - 3000;
-                    }
-                    const yLevels: number[] = [];
-                    for (let lvl = maxY; lvl >= minY; lvl -= 500) {
-                      yLevels.push(lvl);
-                    }
-                    const rangeY = maxY - minY || 3000;
+                // Dynamic, intelligent Y-axis range: vertically centered with ample headroom
+                const activeRpms = activePoints.map(p => p.rpm);
+                const minRpm = activeRpms.length > 0 ? Math.min(...activeRpms) : Math.round(currentSpeed * 0.95);
+                const maxRpm = activeRpms.length > 0 ? Math.max(...activeRpms) : Math.round(currentSpeed * 1.05);
+                const hasStops = hourlyPoints.some(p => p.rpm === 0);
 
-                    // SVG dimensions (Spacious full-width)
-                    const svgW = 880;
-                    const svgH = 310;
-                    const padL = 72; // Space for rotated RPM + 18.0k labels
-                    const padR = 40;
-                    const padT = 44; // Space for speech bubbles above peak
-                    const padB = 48; // Space for baseline + H1..H8
-                    const plotW = svgW - padL - padR;
-                    const plotH = svgH - padT - padB;
+                // Headroom: at least 1,200 RPM above peak so speech bubbles never clip the top
+                const maxY = Math.ceil((maxRpm + 1200) / 500) * 500;
+                let minY = 0;
+                if (!hasStops) {
+                  minY = Math.max(0, Math.floor((minRpm - 2000) / 500) * 500);
+                }
+                if (maxY - minY < 3500) {
+                  minY = Math.max(0, maxY - 3500);
+                }
 
-                    const coords = hourlyPoints.map((p, idx) => {
-                      const x = padL + (hourlyPoints.length > 1 ? (idx / (hourlyPoints.length - 1)) * plotW : plotW / 2);
-                      const normRpm = Math.max(minY, Math.min(maxY, p.rpm));
-                      const y = padT + plotH - ((normRpm - minY) / rangeY) * plotH;
-                      return { ...p, x, y };
-                    });
+                const rangeY = maxY - minY || 3500;
+                const step = rangeY > 6000 ? 1000 : 500;
+                const yLevels: number[] = [];
+                for (let lvl = maxY; lvl >= minY; lvl -= step) {
+                  yLevels.push(lvl);
+                }
 
-                    let lineD = coords.length > 0 ? `M ${coords[0].x} ${coords[0].y}` : '';
-                    for (let i = 1; i < coords.length; i++) {
-                      const prev = coords[i - 1];
-                      const curr = coords[i];
-                      const cx = (prev.x + curr.x) / 2;
-                      lineD += ` C ${cx} ${prev.y}, ${cx} ${curr.y}, ${curr.x} ${curr.y}`;
-                    }
+                // SVG dimensions for big chart
+                const svgW = 880;
+                const svgH = 310;
+                const padL = 88; // Space for rotated RPM + 21.0k labels
+                const padR = 40;
+                const padT = 52; // Generous space for speech bubbles above peak
+                const padB = 46; // Space for baseline + H1..H8
+                const plotW = svgW - padL - padR;
+                const plotH = svgH - padT - padB;
 
-                    const areaD = coords.length > 0
-                      ? `${lineD} L ${coords[coords.length - 1].x} ${padT + plotH} L ${coords[0].x} ${padT + plotH} Z`
-                      : '';
+                const coords = hourlyPoints.map((p, idx) => {
+                  const x = padL + (hourlyPoints.length > 1 ? (idx / (hourlyPoints.length - 1)) * plotW : plotW / 2);
+                  const normRpm = Math.max(minY, Math.min(maxY, p.rpm));
+                  const y = padT + plotH - ((normRpm - minY) / rangeY) * plotH;
+                  return { ...p, x, y };
+                });
 
-                    // Peak point index for green badge and glow (H3 in image)
-                    const peakIdx = coords.reduce((maxI, curr, i, arr) => curr.rpm > arr[maxI].rpm ? i : maxI, 0);
+                let lineD = coords.length > 0 ? `M ${coords[0].x} ${coords[0].y}` : '';
+                for (let i = 1; i < coords.length; i++) {
+                  const prev = coords[i - 1];
+                  const curr = coords[i];
+                  const cxMid = (prev.x + curr.x) / 2;
+                  lineD += ` C ${cxMid} ${prev.y}, ${cxMid} ${curr.y}, ${curr.x} ${curr.y}`;
+                }
 
-                    return (
+                const areaD = coords.length > 0
+                  ? `${lineD} L ${coords[coords.length - 1].x} ${padT + plotH} L ${coords[0].x} ${padT + plotH} Z`
+                  : '';
+
+                // Peak point index for green badge and glow
+                const peakIdx = coords.reduce((maxI, curr, i, arr) => curr.rpm > arr[maxI].rpm ? i : maxI, 0);
+
+                // Coordinates for Mini Sparkline in Overview -> Key Figures Card
+                const miniW = 480;
+                const miniH = 80;
+                const miniPadL = 20;
+                const miniPadR = 20;
+                const miniPadT = 12;
+                const miniPadB = 22;
+                const miniPlotW = miniW - miniPadL - miniPadR;
+                const miniPlotH = miniH - miniPadT - miniPadB;
+
+                const miniCoords = hourlyPoints.map((p, idx) => {
+                  const x = miniPadL + (hourlyPoints.length > 1 ? (idx / (hourlyPoints.length - 1)) * miniPlotW : miniPlotW / 2);
+                  const normRpm = Math.max(minY, Math.min(maxY, p.rpm));
+                  const y = miniPadT + miniPlotH - ((normRpm - minY) / rangeY) * miniPlotH;
+                  return { ...p, x, y, isPeak: idx === peakIdx };
+                });
+
+                let miniLineD = miniCoords.length > 0 ? `M ${miniCoords[0].x} ${miniCoords[0].y}` : '';
+                for (let i = 1; i < miniCoords.length; i++) {
+                  const prev = miniCoords[i - 1];
+                  const curr = miniCoords[i];
+                  const cxMid = (prev.x + curr.x) / 2;
+                  miniLineD += ` C ${cxMid} ${prev.y}, ${cxMid} ${curr.y}, ${curr.x} ${curr.y}`;
+                }
+
+                const miniAreaD = miniCoords.length > 0
+                  ? `${miniLineD} L ${miniCoords[miniCoords.length - 1].x} ${miniPadT + miniPlotH} L ${miniCoords[0].x} ${miniPadT + miniPlotH} Z`
+                  : '';
+
+                // Donut colors matching hours
+                const donutColors = ['#2563eb', '#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1'];
+
+                return (
+                  <>
+                    {/* TAB 1: OVERVIEW */}
+                    {activeModalTab === 'overview' && (
                       <div className="tab-pane">
-                        <div className="overview-grid">
-                          {/* Left: Key Figures (with hourly RPM line chart directly below) */}
+                        <div className="overview-grid" style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: '1.25rem', alignItems: 'start' }}>
+                          {/* Left: Key Figures (with compact mini RPM graph directly inside) */}
                           <div className="key-figures-card">
                             <h3 className="card-heading">Key figures ({selectedMachineDetail.machine.machineId})</h3>
                             <div className="key-tiles-grid">
                               {/* 1: End breaks */}
                               <div className="key-tile">
                                 <div className="tile-label">TOTAL END BREAKS</div>
-                                <div className="tile-number">
+                                <div className="tile-number" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                                   {selectedMachineDetail.overview?.keyFigures?.endBreaks?.value ??
                                     selectedMachineDetail.machine.totalEndBreakCount}
                                 </div>
@@ -1899,7 +1941,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               {/* 2: Spindle Speed Current */}
                               <div className="key-tile">
                                 <div className="tile-label">SPINDLE SPEED</div>
-                                <div className="tile-number">
+                                <div className="tile-number" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                                   {selectedMachineDetail.overview?.keyFigures?.averageRpm?.value ??
                                     `${(selectedMachineDetail.machine.spindleSpeedCurrent || 0).toLocaleString()} ${selectedMachineDetail.machine.spindleSpeedUnit || 'rpm'}`}
                                 </div>
@@ -1912,7 +1954,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               {/* 3: Yarn Count */}
                               <div className="key-tile">
                                 <div className="tile-label">YARN COUNT</div>
-                                <div className="tile-number">
+                                <div className="tile-number" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                                   {selectedMachineDetail.overview?.keyFigures?.yarnCount?.value ??
                                     selectedMachineDetail.machine.count}
                                 </div>
@@ -1925,7 +1967,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               {/* 4: Shift Production */}
                               <div className="key-tile">
                                 <div className="tile-label">SHIFT PRODUCTION</div>
-                                <div className="tile-number">
+                                <div className="tile-number" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                                   {selectedMachineDetail.overview?.keyFigures?.productionYield?.value ??
                                     `${selectedMachineDetail.machine.shiftProduction} ${selectedMachineDetail.machine.productionUnit || 'kg'}`}
                                 </div>
@@ -1937,7 +1979,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               {/* 5: Shift Waste */}
                               <div className="key-tile">
                                 <div className="tile-label">SHIFT WASTE</div>
-                                <div className="tile-number">
+                                <div className="tile-number" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
                                   {selectedMachineDetail.machine.shiftWaste}
                                   {selectedMachineDetail.machine.wasteUnit || '%'}
                                 </div>
@@ -1947,11 +1989,11 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               {/* 6: End Mending (LH & RH on two lines) */}
                               <div className="key-tile" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                                 <div className="tile-label">END MENDING</div>
-                                <div className="tile-number" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', margin: '0.25rem 0' }}>
-                                  <div style={{ fontSize: '0.92rem', fontWeight: 800, fontFamily: 'monospace', color: '#0369a1', letterSpacing: '0.02em' }}>
+                                <div className="tile-number" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', margin: '0.25rem 0', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#0369a1', letterSpacing: '0.01em' }}>
                                     LH : {emL.toFixed(2)}
                                   </div>
-                                  <div style={{ fontSize: '0.92rem', fontWeight: 800, fontFamily: 'monospace', color: '#4338ca', letterSpacing: '0.02em' }}>
+                                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#4338ca', letterSpacing: '0.01em' }}>
                                     RH : {emR.toFixed(2)}
                                   </div>
                                 </div>
@@ -1960,572 +2002,672 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                 </div>
                               </div>
                             </div>
+
+                            {/* Simplest small graph of RPM fitted cleanly inside the Key Figures div */}
+                            <div
+                              style={{
+                                marginTop: '1rem',
+                                padding: '0.75rem 0.9rem',
+                                background: '#f8fafc',
+                                borderRadius: '12px',
+                                border: '1px solid #e2e8f0'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.45rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                                  <Activity size={14} color="#0284c7" strokeWidth={2.5} />
+                                  <span style={{ fontSize: '0.74rem', fontWeight: 800, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: 'system-ui, sans-serif' }}>
+                                    Spindle Speed (RPM)
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', fontSize: '0.74rem', fontFamily: 'system-ui, sans-serif' }}>
+                                  <span style={{ color: '#64748b' }}>Avg: <strong style={{ color: '#0f172a', fontWeight: 800 }}>{avgRpm.toLocaleString()}</strong></span>
+                                  <span style={{ color: '#64748b' }}>Peak: <strong style={{ color: '#16a34a', fontWeight: 800 }}>{peakRpm.toLocaleString()}</strong></span>
+                                </div>
+                              </div>
+
+                              <svg viewBox="0 0 480 80" style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+                                <defs>
+                                  <linearGradient id="miniRpmSparkGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.42" />
+                                    <stop offset="100%" stopColor="#bae6fd" stopOpacity="0.04" />
+                                  </linearGradient>
+                                </defs>
+                                {miniAreaD && <path d={miniAreaD} fill="url(#miniRpmSparkGrad)" />}
+                                {miniLineD && <path d={miniLineD} fill="none" stroke="#0284c7" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />}
+                                {miniCoords.map((pt) => (
+                                  <g key={`mini-${pt.hour}`}>
+                                    <line x1={pt.x} y1={pt.y} x2={pt.x} y2={58} stroke="#e2e8f0" strokeDasharray="2 2" strokeWidth="0.8" />
+                                    <circle
+                                      cx={pt.x}
+                                      cy={pt.y}
+                                      r={pt.isPeak ? 3.5 : 2.5}
+                                      fill={pt.isPeak ? '#16a34a' : '#ffffff'}
+                                      stroke={pt.isPeak ? '#ffffff' : '#0284c7'}
+                                      strokeWidth={1.5}
+                                    />
+                                    <text
+                                      x={pt.x}
+                                      y={73}
+                                      textAnchor="middle"
+                                      fill="#64748b"
+                                      fontSize="9"
+                                      fontWeight="700"
+                                      fontFamily="system-ui, sans-serif"
+                                    >
+                                      {pt.label}
+                                    </text>
+                                  </g>
+                                ))}
+                              </svg>
+                            </div>
                           </div>
 
-                          {/* Right: Hour-wise production breakdown donut */}
-                          <div className="donut-card">
-                            <h3 className="card-heading">Hour-wise production breakdown</h3>
-                            <p className="card-subhead">
+                          {/* Right: Shrunk Hour-wise production breakdown with BIG pie/donut chart */}
+                          <div className="donut-card" style={{ padding: '1.25rem 1.15rem' }}>
+                            <h3 className="card-heading" style={{ fontSize: '1rem' }}>Hour-wise production breakdown</h3>
+                            <p className="card-subhead" style={{ marginBottom: '0.65rem' }}>
                               Production ({selectedMachineDetail.machine.productionUnit || 'kg'}) per hour this shift
                             </p>
 
-                            <div className="donut-display-area">
+                            {/* Big Pie/Donut Chart */}
+                            <div className="donut-display-area" style={{ margin: '0.85rem 0' }}>
                               <div
                                 className="donut-chart"
                                 style={{
+                                  width: '188px',
+                                  height: '188px',
+                                  borderRadius: '50%',
                                   background: getDonutConicGradient(
                                     selectedMachineDetail.overview?.operatingModeBreakdown?.modes
-                                  )
+                                  ),
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  boxShadow: '0 4px 14px rgba(0,0,0,0.06)'
                                 }}
                               >
-                                <div className="donut-hole">
-                                  <span className="donut-total-val">
+                                <div
+                                  className="donut-hole"
+                                  style={{
+                                    width: '116px',
+                                    height: '116px',
+                                    background: '#ffffff',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                                  }}
+                                >
+                                  <span className="donut-total-val" style={{ fontSize: '1.5rem', fontWeight: 900, color: '#0f172a', fontFamily: 'system-ui, sans-serif' }}>
                                     {selectedMachineDetail.machine.shiftProduction}
                                   </span>
-                                  <span className="donut-total-lbl">
+                                  <span className="donut-total-lbl" style={{ fontSize: '0.65rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em', fontFamily: 'system-ui, sans-serif' }}>
                                     TOTAL {(selectedMachineDetail.machine.productionUnit || 'KG').toUpperCase()}
                                   </span>
                                 </div>
                               </div>
                             </div>
 
-                            {/* Hours list */}
-                            <div className="mode-legend-list">
+                            {/* Hours list arranged in compact 2-column grid */}
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(2, 1fr)',
+                                gap: '0.35rem 0.75rem',
+                                marginTop: '0.85rem',
+                                padding: '0.65rem',
+                                background: '#f8fafc',
+                                borderRadius: '10px',
+                                border: '1px solid #f1f5f9'
+                              }}
+                            >
                               {(selectedMachineDetail.machine.hourWiseProduction || []).map((h, idx) => {
-                                const colors = ['#2563eb', '#0ea5e9', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1'];
                                 return (
-                                  <div key={h.hour} className="mode-legend-row">
-                                    <div className="mode-label-group">
+                                  <div key={h.hour} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', fontFamily: 'system-ui, sans-serif' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                                       <span
-                                        className="mode-square"
-                                        style={{ background: colors[idx % colors.length] }}
+                                        style={{
+                                          width: '7.5px',
+                                          height: '7.5px',
+                                          borderRadius: '2px',
+                                          background: donutColors[idx % donutColors.length],
+                                          flexShrink: 0
+                                        }}
                                       ></span>
-                                      <span>Hour {h.hour}</span>
+                                      <span style={{ color: '#475569', fontWeight: 600 }}>Hour {h.hour}</span>
                                     </div>
-                                    <span className="mode-mins">
-                                      {h.production} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                    <span style={{ fontWeight: 800, color: '#0f172a' }}>
+                                      {h.production} <span style={{ fontSize: '0.68rem', fontWeight: 600, color: '#64748b' }}>{selectedMachineDetail.machine.productionUnit || 'kg'}</span>
                                     </span>
                                   </div>
                                 );
                               })}
                             </div>
                           </div>
-
-                          {/* FULL-WIDTH CARD: Exact Hourly Spindle Speed Chart matching user sketch */}
-                          <div
-                            style={{
-                              gridColumn: '1 / -1',
-                              width: '100%',
-                              background: '#ffffff',
-                              borderRadius: '18px',
-                              border: '1.5px solid #e2e8f0',
-                              padding: '1.25rem 1.4rem',
-                              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
-                              marginTop: '0.25rem'
-                            }}
-                          >
-                            {/* Header row: Blue pulse icon + Title + Divider + Avg pill + Peak pill */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                <div
-                                  style={{
-                                    width: '38px',
-                                    height: '38px',
-                                    borderRadius: '50%',
-                                    background: '#2563eb',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    color: '#ffffff',
-                                    boxShadow: '0 4px 12px rgba(37,99,235,0.28)',
-                                    flexShrink: 0
-                                  }}
-                                >
-                                  <Activity size={20} strokeWidth={2.75} />
-                                </div>
-                                <h3
-                                  style={{
-                                    margin: 0,
-                                    fontSize: '1.35rem',
-                                    fontWeight: 900,
-                                    color: '#0f172a',
-                                    letterSpacing: '-0.02em',
-                                    fontFamily: 'system-ui, -apple-system, sans-serif'
-                                  }}
-                                >
-                                  Hourly Spindle Speed
-                                </h3>
-                                <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 0.25rem' }}></div>
-                              </div>
-
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                                {/* Average Pill */}
-                                <div
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.55rem',
-                                    padding: '0.45rem 1.05rem',
-                                    borderRadius: '12px',
-                                    background: '#eff6ff',
-                                    border: '1.5px solid #bfdbfe',
-                                    boxShadow: '0 1px 3px rgba(37,99,235,0.06)'
-                                  }}
-                                >
-                                  <BarChart3 size={17} color="#2563eb" strokeWidth={2.5} />
-                                  <span style={{ fontSize: '0.86rem', color: '#64748b', fontWeight: 600 }}>Avg:</span>
-                                  <strong style={{ fontSize: '1rem', color: '#0f172a', fontWeight: 900, fontFamily: 'monospace' }}>
-                                    {avgRpm.toLocaleString()} rpm
-                                  </strong>
-                                </div>
-
-                                {/* Peak Pill */}
-                                <div
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.55rem',
-                                    padding: '0.45rem 1.05rem',
-                                    borderRadius: '12px',
-                                    background: '#ecfdf5',
-                                    border: '1.5px solid #a7f3d0',
-                                    boxShadow: '0 1px 3px rgba(16,185,129,0.06)'
-                                  }}
-                                >
-                                  <Mountain size={17} color="#16a34a" strokeWidth={2.5} />
-                                  <span style={{ fontSize: '0.86rem', color: '#64748b', fontWeight: 600 }}>Peak:</span>
-                                  <strong style={{ fontSize: '1rem', color: '#15803d', fontWeight: 900, fontFamily: 'monospace' }}>
-                                    {peakRpm.toLocaleString()} rpm
-                                  </strong>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Responsive SVG Line Chart (Fills full width & generous height) */}
-                            <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', border: '1px solid #f1f5f9', padding: '0.5rem 0.25rem', overflow: 'hidden' }}>
-                              <svg
-                                viewBox={`0 0 ${svgW} ${svgH}`}
-                                style={{ width: '100%', height: 'auto', display: 'block' }}
-                              >
-                                <defs>
-                                  <linearGradient id="spindleAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.48" />
-                                    <stop offset="70%" stopColor="#bae6fd" stopOpacity="0.22" />
-                                    <stop offset="100%" stopColor="#e0f2fe" stopOpacity="0.06" />
-                                  </linearGradient>
-                                  <filter id="peakGlowFilter" x="-40%" y="-40%" width="180%" height="180%">
-                                    <feGaussianBlur stdDeviation="5" result="blur" />
-                                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                                  </filter>
-                                </defs>
-
-                                {/* Rotated Y-Axis Label: RPM */}
-                                <text
-                                  transform={`rotate(-90, 24, ${padT + plotH / 2})`}
-                                  x="24"
-                                  y={padT + plotH / 2}
-                                  textAnchor="middle"
-                                  fill="#0f172a"
-                                  fontSize="13"
-                                  fontWeight="900"
-                                  fontFamily="system-ui, sans-serif"
-                                  letterSpacing="0.06em"
-                                >
-                                  RPM
-                                </text>
-
-                                {/* Horizontal Grid lines & Y-axis labels (18.0k, 17.5k ... 15.0k) */}
-                                {yLevels.map(lvl => {
-                                  const y = padT + plotH - ((lvl - minY) / rangeY) * plotH;
-                                  return (
-                                    <g key={`lvl-${lvl}`}>
-                                      <line
-                                        x1={padL}
-                                        y1={y}
-                                        x2={padL + plotW}
-                                        y2={y}
-                                        stroke="#f1f5f9"
-                                        strokeDasharray="3 3"
-                                        strokeWidth="1.2"
-                                      />
-                                      <text
-                                        x={padL - 12}
-                                        y={y + 4}
-                                        textAnchor="end"
-                                        fill="#64748b"
-                                        fontSize="11.5"
-                                        fontFamily="monospace"
-                                        fontWeight="700"
-                                      >
-                                        {(lvl / 1000).toFixed(1)}k
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-
-                                {/* Solid bottom baseline */}
-                                <line
-                                  x1={padL}
-                                  y1={padT + plotH}
-                                  x2={padL + plotW}
-                                  y2={padT + plotH}
-                                  stroke="#cbd5e1"
-                                  strokeWidth="1.5"
-                                />
-
-                                {/* Area fill under curve */}
-                                {areaD && (
-                                  <path d={areaD} fill="url(#spindleAreaGrad)" />
-                                )}
-
-                                {/* Vertical guidelines from points down to baseline */}
-                                {coords.map((c, i) => (
-                                  <line
-                                    key={`vguide-${i}`}
-                                    x1={c.x}
-                                    y1={c.y}
-                                    x2={c.x}
-                                    y2={padT + plotH}
-                                    stroke="#e2e8f0"
-                                    strokeDasharray="3 3"
-                                    strokeWidth="1"
-                                  />
-                                ))}
-
-                                {/* Smooth curve stroke line */}
-                                {lineD && (
-                                  <path
-                                    d={lineD}
-                                    fill="none"
-                                    stroke="#0284c7"
-                                    strokeWidth="3.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                )}
-
-                                {/* Points & Speech-Bubble Badges */}
-                                {coords.map((c, i) => {
-                                  const isPeak = i === peakIdx;
-
-                                  return (
-                                    <g key={`pt-${c.hour}-${i}`}>
-                                      {/* If Peak: Radial Emerald Glow */}
-                                      {isPeak && (
-                                        <>
-                                          <circle
-                                            cx={c.x}
-                                            cy={c.y}
-                                            r="15"
-                                            fill="#22c55e"
-                                            opacity="0.32"
-                                            filter="url(#peakGlowFilter)"
-                                          />
-                                          <circle
-                                            cx={c.x}
-                                            cy={c.y}
-                                            r="8"
-                                            fill="#22c55e"
-                                            opacity="0.22"
-                                          />
-                                        </>
-                                      )}
-
-                                      {/* Point circle on the curve */}
-                                      <circle
-                                        cx={c.x}
-                                        cy={c.y}
-                                        r="5"
-                                        fill="#ffffff"
-                                        stroke={isPeak ? '#16a34a' : '#0284c7'}
-                                        strokeWidth={isPeak ? 3.2 : 3}
-                                      />
-
-                                      {/* Speech-Bubble Badge with Downward Pointer */}
-                                      <g>
-                                        <rect
-                                          x={c.x - 23}
-                                          y={c.y - 30}
-                                          width="46"
-                                          height="22"
-                                          rx="6"
-                                          fill={isPeak ? '#15803d' : '#ffffff'}
-                                          stroke={isPeak ? '#15803d' : '#cbd5e1'}
-                                          strokeWidth="1"
-                                          filter="drop-shadow(0 1px 2px rgba(0,0,0,0.05))"
-                                        />
-                                        <polygon
-                                          points={`${c.x - 4},${c.y - 9} ${c.x + 4},${c.y - 9} ${c.x},${c.y - 4}`}
-                                          fill={isPeak ? '#15803d' : '#ffffff'}
-                                          stroke={isPeak ? '#15803d' : '#cbd5e1'}
-                                          strokeWidth="1"
-                                        />
-                                        {!isPeak && (
-                                          <line
-                                            x1={c.x - 3}
-                                            y1={c.y - 9}
-                                            x2={c.x + 3}
-                                            y2={c.y - 9}
-                                            stroke="#ffffff"
-                                            strokeWidth="1.5"
-                                          />
-                                        )}
-                                        <text
-                                          x={c.x}
-                                          y={c.y - 15}
-                                          textAnchor="middle"
-                                          fill={isPeak ? '#ffffff' : '#0f172a'}
-                                          fontSize="11"
-                                          fontWeight={isPeak ? 900 : 800}
-                                          fontFamily="monospace"
-                                        >
-                                          {(c.rpm / 1000).toFixed(1)}k
-                                        </text>
-                                      </g>
-
-                                      {/* X-axis Hour Label: H1, H2, H3... */}
-                                      <text
-                                        x={c.x}
-                                        y={padT + plotH + 24}
-                                        textAnchor="middle"
-                                        fill="#0f172a"
-                                        fontSize="14.5"
-                                        fontFamily="monospace"
-                                        fontWeight="900"
-                                      >
-                                        H{c.hour}
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-                              </svg>
-                            </div>
-                          </div>
                         </div>
                       </div>
-                    );
-                  })()}
+                    )}
 
-                  {/* TAB 2: END BREAKS (Left Side L on TOP & Right Side R on BOTTOM) */}
-                  {activeModalTab === 'end_breaks' && (() => {
-                    const sideL = selectedMachineDetail.machine.sides?.find(s => s.side === 'L');
-                    const sideR = selectedMachineDetail.machine.sides?.find(s => s.side === 'R');
-                    const emLeft = Number(sideL?.endMendingTime ?? 0);
-                    const emRight = Number(sideR?.endMendingTime ?? 0);
+                    {/* TAB 2: END BREAKS (Left Side L on TOP & Right Side R on BOTTOM) */}
+                    {activeModalTab === 'end_breaks' && (() => {
+                      const sideL = selectedMachineDetail.machine.sides?.find(s => s.side === 'L');
+                      const sideR = selectedMachineDetail.machine.sides?.find(s => s.side === 'R');
+                      const emLeft = Number(sideL?.endMendingTime ?? 0);
+                      const emRight = Number(sideR?.endMendingTime ?? 0);
 
-                    return (
-                      <div className="tab-pane">
-                        <div className="end-breaks-tables-grid" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                          {/* Left Side Table (TOP) */}
-                          <div className="breaks-table-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                              <h4 className="table-card-title" style={{ margin: 0 }}>
-                                Left Side (L) End Breaks ({selectedMachineDetail.endBreaks?.leftSide?.length || 0})
-                              </h4>
-                              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
-                                endMendingTime: {emLeft.toFixed(2)} min
-                              </span>
-                            </div>
-                            <div className="table-scroll-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>SIDE</th>
-                                    <th>SPINDLE NO</th>
-                                    <th>END MENDING TIME</th>
-                                    <th>CREATED TIME</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(selectedMachineDetail.endBreaks?.leftSide || []).map((b, i) => (
-                                    <tr key={`lb-${b.spindleNo}-${i}`}>
-                                      <td><strong>L</strong></td>
-                                      <td><strong>Spindle #{b.spindleNo}</strong></td>
-                                      <td>
-                                        <span style={{ color: '#0369a1', fontWeight: 700 }}>
-                                          {Number(b.durationMinutes ?? emLeft).toFixed(2)} min
-                                        </span>
-                                      </td>
-                                      <td>{b.timestamp}</td>
-                                    </tr>
-                                  ))}
-                                  {(!selectedMachineDetail.endBreaks?.leftSide ||
-                                    selectedMachineDetail.endBreaks.leftSide.length === 0) && (
+                      return (
+                        <div className="tab-pane">
+                          <div className="end-breaks-tables-grid" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                            {/* Left Side Table (TOP) */}
+                            <div className="breaks-table-card">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                <h4 className="table-card-title" style={{ margin: 0 }}>
+                                  Left Side (L) End Breaks ({selectedMachineDetail.endBreaks?.leftSide?.length || 0})
+                                </h4>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                                  endMendingTime: {emLeft.toFixed(2)} min
+                                </span>
+                              </div>
+                              <div className="table-scroll-container">
+                                <table className="data-table">
+                                  <thead>
                                     <tr>
-                                      <td colSpan={4} className="empty-cell">
-                                        No end breaks recorded on Left Side (L).
-                                      </td>
+                                      <th>SIDE</th>
+                                      <th>SPINDLE NO</th>
+                                      <th>END MENDING TIME</th>
+                                      <th>CREATED TIME</th>
                                     </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-
-                          {/* Right Side Table (DOWN) */}
-                          <div className="breaks-table-card">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                              <h4 className="table-card-title" style={{ margin: 0 }}>
-                                Right Side (R) End Breaks ({selectedMachineDetail.endBreaks?.rightSide?.length || 0})
-                              </h4>
-                              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
-                                endMendingTime: {emRight.toFixed(2)} min
-                              </span>
-                            </div>
-                            <div className="table-scroll-container">
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>SIDE</th>
-                                    <th>SPINDLE NO</th>
-                                    <th>END MENDING TIME</th>
-                                    <th>CREATED TIME</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(selectedMachineDetail.endBreaks?.rightSide || []).map((b, i) => (
-                                    <tr key={`rb-${b.spindleNo}-${i}`}>
-                                      <td><strong>R</strong></td>
-                                      <td><strong>Spindle #{b.spindleNo}</strong></td>
-                                      <td>
-                                        <span style={{ color: '#0369a1', fontWeight: 700 }}>
-                                          {Number(b.durationMinutes ?? emRight).toFixed(2)} min
-                                        </span>
-                                      </td>
-                                      <td>{b.timestamp}</td>
-                                    </tr>
-                                  ))}
-                                  {(!selectedMachineDetail.endBreaks?.rightSide ||
-                                    selectedMachineDetail.endBreaks.rightSide.length === 0) && (
-                                    <tr>
-                                      <td colSpan={4} className="empty-cell">
-                                        No end breaks recorded on Right Side (R).
-                                      </td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* TAB 3: HOUR-WISE PRODUCTION & SPEED (Strictly from hourWiseProduction & machine telemetry) */}
-                  {activeModalTab === 'speed_production' && (
-                    <div className="tab-pane">
-                      <div className="speed-sensors-grid">
-                        {/* Hour-Wise Production Bar Chart Card */}
-                        <div className="curve-card">
-                          <div className="curve-header">
-                            <div>
-                              <h4 className="card-heading">
-                                Hour-Wise Production ({selectedMachineDetail.machine.machineId})
-                              </h4>
-                              <p className="card-subhead">
-                                Live <code style={{ fontSize: '0.75rem' }}>hourWiseProduction</code> values ({selectedMachineDetail.machine.productionUnit || 'kg'}) across Shift {overview.shift}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="chart-bars-container" style={{ marginTop: '1.25rem', height: '180px' }}>
-                            {(selectedMachineDetail.machine.hourWiseProduction || []).map(item => {
-                              const maxMachHr = Math.max(
-                                ...(selectedMachineDetail.machine.hourWiseProduction || []).map(h => h.production),
-                                10
-                              );
-                              return (
-                                <div key={item.hour} className="chart-bar-col">
-                                  <div className="bar-value">
-                                    {(item.production ?? 0).toFixed(2)} {selectedMachineDetail.machine.productionUnit || 'kg'}
-                                  </div>
-                                  <div className="bar-track">
-                                    <div
-                                      className={`bar-fill ${item.production === maxMachHr && item.production > 0 ? 'peak' : ''}`}
-                                      style={{ height: `${Math.min(100, ((item.production ?? 0) / maxMachHr) * 100)}%` }}
-                                    ></div>
-                                  </div>
-                                  <div className="bar-label">Hour {item.hour}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          <div className="curve-stats-footer" style={{ marginTop: '1rem' }}>
-                            <div className="cstat-item">
-                              <span className="cstat-lbl">CURRENT RPM</span>
-                              <span className="cstat-val">
-                                {(selectedMachineDetail.machine?.spindleSpeedCurrent || 0).toLocaleString()}{' '}
-                                {selectedMachineDetail.machine?.spindleSpeedUnit || 'rpm'}
-                              </span>
-                            </div>
-                            <div className="cstat-item">
-                              <span className="cstat-lbl">SHIFT PRODUCTION</span>
-                              <span className="cstat-val">
-                                {selectedMachineDetail.machine?.shiftProduction}{' '}
-                                {selectedMachineDetail.machine?.productionUnit || 'kg'}
-                              </span>
-                            </div>
-                            <div className="cstat-item">
-                              <span className="cstat-lbl">SHIFT WASTE</span>
-                              <span className="cstat-val">
-                                {selectedMachineDetail.machine?.shiftWaste}
-                                {selectedMachineDetail.machine?.wasteUnit || '%'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Hour-Wise Production Table */}
-                        <div className="devices-bounds-card">
-                          <h4 className="card-heading">Hour-Wise Production Log</h4>
-                          <p className="card-subhead">
-                            Breakdown of {selectedMachineDetail.machine.hourWiseProduction?.length || 0} logged hours out of {overview.totalShiftHours ?? 8} total shift hours
-                          </p>
-
-                          <div className="table-scroll-container">
-                            <table className="data-table">
-                              <thead>
-                                <tr>
-                                  <th>HOUR</th>
-                                  <th>PRODUCTION</th>
-                                  <th>CUMULATIVE</th>
-                                  <th>% OF SHIFT PROD</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(() => {
-                                  let cumulative = 0;
-                                  const totalShiftProd = selectedMachineDetail.machine.shiftProduction || 1;
-                                  return (selectedMachineDetail.machine.hourWiseProduction || []).map(h => {
-                                    cumulative = Number((cumulative + (h.production || 0)).toFixed(2));
-                                    const pct = Math.round(((h.production || 0) / totalShiftProd) * 100);
-                                    return (
-                                      <tr key={h.hour}>
-                                        <td><strong>Hour {h.hour}</strong></td>
+                                  </thead>
+                                  <tbody>
+                                    {(selectedMachineDetail.endBreaks?.leftSide || []).map((b, i) => (
+                                      <tr key={`lb-${b.spindleNo}-${i}`}>
+                                        <td><strong>L</strong></td>
+                                        <td><strong>Spindle #{b.spindleNo}</strong></td>
                                         <td>
-                                          <strong>
-                                            {h.production} {selectedMachineDetail.machine.productionUnit || 'kg'}
-                                          </strong>
+                                          <span style={{ color: '#0369a1', fontWeight: 700 }}>
+                                            {Number(b.durationMinutes ?? emLeft).toFixed(2)} min
+                                          </span>
                                         </td>
-                                        <td>
-                                          {cumulative} {selectedMachineDetail.machine.productionUnit || 'kg'}
-                                        </td>
-                                        <td>{pct}%</td>
+                                        <td>{b.timestamp}</td>
                                       </tr>
-                                    );
-                                  });
-                                })()}
-                              </tbody>
-                            </table>
+                                    ))}
+                                    {(!selectedMachineDetail.endBreaks?.leftSide ||
+                                      selectedMachineDetail.endBreaks.leftSide.length === 0) && (
+                                      <tr>
+                                        <td colSpan={4} className="empty-cell">
+                                          No end breaks recorded on Left Side (L).
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+
+                            {/* Right Side Table (DOWN) */}
+                            <div className="breaks-table-card">
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                <h4 className="table-card-title" style={{ margin: 0 }}>
+                                  Right Side (R) End Breaks ({selectedMachineDetail.endBreaks?.rightSide?.length || 0})
+                                </h4>
+                                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#0369a1' }}>
+                                  endMendingTime: {emRight.toFixed(2)} min
+                                </span>
+                              </div>
+                              <div className="table-scroll-container">
+                                <table className="data-table">
+                                  <thead>
+                                    <tr>
+                                      <th>SIDE</th>
+                                      <th>SPINDLE NO</th>
+                                      <th>END MENDING TIME</th>
+                                      <th>CREATED TIME</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(selectedMachineDetail.endBreaks?.rightSide || []).map((b, i) => (
+                                      <tr key={`rb-${b.spindleNo}-${i}`}>
+                                        <td><strong>R</strong></td>
+                                        <td><strong>Spindle #{b.spindleNo}</strong></td>
+                                        <td>
+                                          <span style={{ color: '#0369a1', fontWeight: 700 }}>
+                                            {Number(b.durationMinutes ?? emRight).toFixed(2)} min
+                                          </span>
+                                        </td>
+                                        <td>{b.timestamp}</td>
+                                      </tr>
+                                    ))}
+                                    {(!selectedMachineDetail.endBreaks?.rightSide ||
+                                      selectedMachineDetail.endBreaks.rightSide.length === 0) && (
+                                      <tr>
+                                        <td colSpan={4} className="empty-cell">
+                                          No end breaks recorded on Right Side (R).
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* TAB 3: HOUR-WISE PRODUCTION & SPEED (Switched full-width Hourly RPM Spindle Speed chart here) */}
+                    {activeModalTab === 'speed_production' && (
+                      <div className="tab-pane">
+                        {/* FULL-WIDTH CARD: Exact Hourly Spindle Speed Chart matching user sketch */}
+                        <div
+                          style={{
+                            width: '100%',
+                            background: '#ffffff',
+                            borderRadius: '18px',
+                            border: '1.5px solid #e2e8f0',
+                            padding: '1.25rem 1.4rem',
+                            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
+                            marginBottom: '1.25rem'
+                          }}
+                        >
+                          {/* Header row: Blue pulse icon + Title + Divider + Avg pill + Peak pill */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <div
+                                style={{
+                                  width: '38px',
+                                  height: '38px',
+                                  borderRadius: '50%',
+                                  background: '#2563eb',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#ffffff',
+                                  boxShadow: '0 4px 12px rgba(37,99,235,0.28)',
+                                  flexShrink: 0
+                                }}
+                              >
+                                <Activity size={20} strokeWidth={2.75} />
+                              </div>
+                              <h3
+                                style={{
+                                  margin: 0,
+                                  fontSize: '1.35rem',
+                                  fontWeight: 800,
+                                  color: '#0f172a',
+                                  letterSpacing: '-0.02em',
+                                  fontFamily: 'system-ui, -apple-system, sans-serif'
+                                }}
+                              >
+                                Hourly Spindle Speed
+                              </h3>
+                              <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 0.25rem' }}></div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                              {/* Average Pill with BIG number */}
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.6rem',
+                                  padding: '0.45rem 1.15rem',
+                                  borderRadius: '12px',
+                                  background: '#eff6ff',
+                                  border: '1.5px solid #bfdbfe',
+                                  boxShadow: '0 1px 3px rgba(37,99,235,0.06)'
+                                }}
+                              >
+                                <BarChart3 size={18} color="#2563eb" strokeWidth={2.5} />
+                                <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 600, fontFamily: 'system-ui, sans-serif' }}>Avg:</span>
+                                <strong style={{ fontSize: '1.45rem', color: '#0f172a', fontWeight: 800, fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1 }}>
+                                  {avgRpm.toLocaleString()}
+                                </strong>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#64748b', fontFamily: 'system-ui, sans-serif' }}>rpm</span>
+                              </div>
+
+                              {/* Peak Pill with BIG number */}
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.6rem',
+                                  padding: '0.45rem 1.15rem',
+                                  borderRadius: '12px',
+                                  background: '#ecfdf5',
+                                  border: '1.5px solid #a7f3d0',
+                                  boxShadow: '0 1px 3px rgba(16,185,129,0.06)'
+                                }}
+                              >
+                                <Mountain size={18} color="#16a34a" strokeWidth={2.5} />
+                                <span style={{ fontSize: '0.88rem', color: '#64748b', fontWeight: 600, fontFamily: 'system-ui, sans-serif' }}>Peak:</span>
+                                <strong style={{ fontSize: '1.45rem', color: '#15803d', fontWeight: 800, fontFamily: 'system-ui, -apple-system, sans-serif', lineHeight: 1 }}>
+                                  {peakRpm.toLocaleString()}
+                                </strong>
+                                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#15803d', fontFamily: 'system-ui, sans-serif' }}>rpm</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Responsive SVG Line Chart (Fills full width & generous height) */}
+                          <div style={{ width: '100%', background: '#ffffff', borderRadius: '14px', border: '1px solid #f1f5f9', padding: '0.5rem 0.25rem', overflow: 'hidden' }}>
+                            <svg
+                              viewBox={`0 0 ${svgW} ${svgH}`}
+                              style={{ width: '100%', height: 'auto', display: 'block' }}
+                            >
+                              <defs>
+                                <linearGradient id="spindleAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.48" />
+                                  <stop offset="70%" stopColor="#bae6fd" stopOpacity="0.22" />
+                                  <stop offset="100%" stopColor="#e0f2fe" stopOpacity="0.06" />
+                                </linearGradient>
+                                <filter id="peakGlowFilter" x="-40%" y="-40%" width="180%" height="180%">
+                                  <feGaussianBlur stdDeviation="5" result="blur" />
+                                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                </filter>
+                              </defs>
+
+                              {/* Rotated Y-Axis Label: RPM */}
+                              <text
+                                transform={`rotate(-90, 24, ${padT + plotH / 2})`}
+                                x="24"
+                                y={padT + plotH / 2}
+                                textAnchor="middle"
+                                fill="#0f172a"
+                                fontSize="13"
+                                fontWeight="800"
+                                fontFamily="system-ui, sans-serif"
+                                letterSpacing="0.06em"
+                              >
+                                RPM
+                              </text>
+
+                              {/* Horizontal Grid lines & Y-axis labels */}
+                              {yLevels.map(lvl => {
+                                const y = padT + plotH - ((lvl - minY) / rangeY) * plotH;
+                                return (
+                                  <g key={`lvl-${lvl}`}>
+                                    <line
+                                      x1={padL}
+                                      y1={y}
+                                      x2={padL + plotW}
+                                      y2={y}
+                                      stroke="#f1f5f9"
+                                      strokeDasharray="3 3"
+                                      strokeWidth="1.2"
+                                    />
+                                    <text
+                                      x={padL - 14}
+                                      y={y + 4}
+                                      textAnchor="end"
+                                      fill="#64748b"
+                                      fontSize="12"
+                                      fontFamily="system-ui, sans-serif"
+                                      fontWeight="600"
+                                    >
+                                      {(lvl / 1000).toFixed(1)}k
+                                    </text>
+                                  </g>
+                                );
+                              })}
+
+                              {/* Solid bottom baseline */}
+                              <line
+                                x1={padL}
+                                y1={padT + plotH}
+                                x2={padL + plotW}
+                                y2={padT + plotH}
+                                stroke="#cbd5e1"
+                                strokeWidth="1.5"
+                              />
+
+                              {/* Area fill under curve */}
+                              {areaD && (
+                                <path d={areaD} fill="url(#spindleAreaGrad)" />
+                              )}
+
+                              {/* Vertical guidelines from points down to baseline */}
+                              {coords.map((c, i) => (
+                                <line
+                                  key={`vguide-${i}`}
+                                  x1={c.x}
+                                  y1={c.y}
+                                  x2={c.x}
+                                  y2={padT + plotH}
+                                  stroke="#e2e8f0"
+                                  strokeDasharray="3 3"
+                                  strokeWidth="1"
+                                />
+                              ))}
+
+                              {/* Smooth curve stroke line */}
+                              {lineD && (
+                                <path
+                                  d={lineD}
+                                  fill="none"
+                                  stroke="#0284c7"
+                                  strokeWidth="3.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              )}
+
+                              {/* Points & Speech-Bubble Badges */}
+                              {coords.map((c, i) => {
+                                const isPeak = i === peakIdx;
+                                const bubbleW = 46;
+                                const bubbleX = Math.max(padL + 2, Math.min(padL + plotW - bubbleW - 2, c.x - bubbleW / 2));
+                                const pointerX = c.x;
+
+                                return (
+                                  <g key={`pt-${c.hour}-${i}`}>
+                                    {/* If Peak: Radial Emerald Glow */}
+                                    {isPeak && (
+                                      <>
+                                        <circle
+                                          cx={c.x}
+                                          cy={c.y}
+                                          r="15"
+                                          fill="#22c55e"
+                                          opacity="0.32"
+                                          filter="url(#peakGlowFilter)"
+                                        />
+                                        <circle
+                                          cx={c.x}
+                                          cy={c.y}
+                                          r="8"
+                                          fill="#22c55e"
+                                          opacity="0.22"
+                                        />
+                                      </>
+                                    )}
+
+                                    {/* Point circle on the curve */}
+                                    <circle
+                                      cx={c.x}
+                                      cy={c.y}
+                                      r="5"
+                                      fill="#ffffff"
+                                      stroke={isPeak ? '#16a34a' : '#0284c7'}
+                                      strokeWidth={isPeak ? 3.2 : 3}
+                                    />
+
+                                    {/* Speech-Bubble Badge with Downward Pointer */}
+                                    <g>
+                                      <rect
+                                        x={bubbleX}
+                                        y={c.y - 28}
+                                        width={bubbleW}
+                                        height="22"
+                                        rx="6"
+                                        fill={isPeak ? '#15803d' : '#ffffff'}
+                                        stroke={isPeak ? '#15803d' : '#cbd5e1'}
+                                        strokeWidth="1"
+                                        filter="drop-shadow(0 1px 2px rgba(0,0,0,0.06))"
+                                      />
+                                      <polygon
+                                        points={`${pointerX - 4},${c.y - 8} ${pointerX + 4},${c.y - 8} ${pointerX},${c.y - 3}`}
+                                        fill={isPeak ? '#15803d' : '#ffffff'}
+                                        stroke={isPeak ? '#15803d' : '#cbd5e1'}
+                                        strokeWidth="1"
+                                      />
+                                      {!isPeak && (
+                                        <line
+                                          x1={pointerX - 3}
+                                          y1={c.y - 8}
+                                          x2={pointerX + 3}
+                                          y2={c.y - 8}
+                                          stroke="#ffffff"
+                                          strokeWidth="1.5"
+                                        />
+                                      )}
+                                      <text
+                                        x={bubbleX + bubbleW / 2}
+                                        y={c.y - 13}
+                                        textAnchor="middle"
+                                        fill={isPeak ? '#ffffff' : '#0f172a'}
+                                        fontSize="11"
+                                        fontWeight={isPeak ? 800 : 700}
+                                        fontFamily="system-ui, sans-serif"
+                                      >
+                                        {(c.rpm / 1000).toFixed(1)}k
+                                      </text>
+                                    </g>
+
+                                    {/* X-axis Hour Label: H1, H2, H3... */}
+                                    <text
+                                      x={c.x}
+                                      y={padT + plotH + 24}
+                                      textAnchor="middle"
+                                      fill="#0f172a"
+                                      fontSize="14"
+                                      fontFamily="system-ui, sans-serif"
+                                      fontWeight="800"
+                                    >
+                                      H{c.hour}
+                                    </text>
+                                  </g>
+                                );
+                              })}
+                            </svg>
+                          </div>
+                        </div>
+
+                        {/* Existing Hour-Wise Production Bar Chart Card + Table */}
+                        <div className="speed-sensors-grid">
+                          {/* Hour-Wise Production Bar Chart Card */}
+                          <div className="curve-card">
+                            <div className="curve-header">
+                              <div>
+                                <h4 className="card-heading">
+                                  Hour-Wise Production ({selectedMachineDetail.machine.machineId})
+                                </h4>
+                                <p className="card-subhead">
+                                  Live <code style={{ fontSize: '0.75rem' }}>hourWiseProduction</code> values ({selectedMachineDetail.machine.productionUnit || 'kg'}) across Shift {overview.shift}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="chart-bars-container" style={{ marginTop: '1.25rem', height: '180px' }}>
+                              {(selectedMachineDetail.machine.hourWiseProduction || []).map(item => {
+                                const maxMachHr = Math.max(
+                                  ...(selectedMachineDetail.machine.hourWiseProduction || []).map(h => h.production),
+                                  10
+                                );
+                                return (
+                                  <div key={item.hour} className="chart-bar-col">
+                                    <div className="bar-value">
+                                      {(item.production ?? 0).toFixed(2)} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                    </div>
+                                    <div className="bar-track">
+                                      <div
+                                        className={`bar-fill ${item.production === maxMachHr && item.production > 0 ? 'peak' : ''}`}
+                                        style={{ height: `${Math.min(100, ((item.production ?? 0) / maxMachHr) * 100)}%` }}
+                                      ></div>
+                                    </div>
+                                    <div className="bar-label">Hour {item.hour}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="curve-stats-footer" style={{ marginTop: '1rem' }}>
+                              <div className="cstat-item">
+                                <span className="cstat-lbl">CURRENT RPM</span>
+                                <span className="cstat-val">
+                                  {(selectedMachineDetail.machine?.spindleSpeedCurrent || 0).toLocaleString()}{' '}
+                                  {selectedMachineDetail.machine?.spindleSpeedUnit || 'rpm'}
+                                </span>
+                              </div>
+                              <div className="cstat-item">
+                                <span className="cstat-lbl">SHIFT PRODUCTION</span>
+                                <span className="cstat-val">
+                                  {selectedMachineDetail.machine?.shiftProduction}{' '}
+                                  {selectedMachineDetail.machine?.productionUnit || 'kg'}
+                                </span>
+                              </div>
+                              <div className="cstat-item">
+                                <span className="cstat-lbl">SHIFT WASTE</span>
+                                <span className="cstat-val">
+                                  {selectedMachineDetail.machine?.shiftWaste}
+                                  {selectedMachineDetail.machine?.wasteUnit || '%'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Hour-Wise Production Table */}
+                          <div className="devices-bounds-card">
+                            <h4 className="card-heading">Hour-Wise Production Log</h4>
+                            <p className="card-subhead">
+                              Breakdown of {selectedMachineDetail.machine.hourWiseProduction?.length || 0} logged hours out of {overview.totalShiftHours ?? 8} total shift hours
+                            </p>
+
+                            <div className="table-scroll-container">
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>HOUR</th>
+                                    <th>PRODUCTION</th>
+                                    <th>CUMULATIVE</th>
+                                    <th>% OF SHIFT PROD</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(() => {
+                                    let cumulative = 0;
+                                    const totalShiftProd = selectedMachineDetail.machine.shiftProduction || 1;
+                                    return (selectedMachineDetail.machine.hourWiseProduction || []).map(h => {
+                                      cumulative = Number((cumulative + (h.production || 0)).toFixed(2));
+                                      const pct = Math.round(((h.production || 0) / totalShiftProd) * 100);
+                                      return (
+                                        <tr key={h.hour}>
+                                          <td><strong>Hour {h.hour}</strong></td>
+                                          <td>
+                                            <strong>
+                                              {h.production} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                            </strong>
+                                          </td>
+                                          <td>
+                                            {cumulative} {selectedMachineDetail.machine.productionUnit || 'kg'}
+                                          </td>
+                                          <td>{pct}%</td>
+                                        </tr>
+                                      );
+                                    });
+                                  })()}
+                                </tbody>
+                              </table>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
-                </>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
