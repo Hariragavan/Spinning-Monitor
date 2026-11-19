@@ -509,7 +509,36 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
     return ensureSixMachines(report, selectedShed);
   }, [dailyReport, selectedShed, availableDates, history]);
 
-  // 3. Active Main Pages & Sub-pages based on settings
+  // 3. Active Main Pages & Sub-pages based on shed-wise settings
+  const currentShedTvSettings = useMemo(() => {
+    return (selectedShed && settings.shedTvSettings?.[selectedShed]) || {};
+  }, [settings.shedTvSettings, selectedShed]);
+
+  const effectiveTvPageIntervals = useMemo(() => {
+    if (currentShedTvSettings.tvPageIntervals && Object.keys(currentShedTvSettings.tvPageIntervals).length > 0) {
+      return currentShedTvSettings.tvPageIntervals;
+    }
+    return settings.tvPageIntervals || {};
+  }, [currentShedTvSettings.tvPageIntervals, settings.tvPageIntervals]);
+
+  const effectiveTvSlideIntervals = useMemo(() => {
+    if (currentShedTvSettings.tvSlideIntervals && Object.keys(currentShedTvSettings.tvSlideIntervals).length > 0) {
+      return currentShedTvSettings.tvSlideIntervals;
+    }
+    return settings.tvSlideIntervals || {};
+  }, [currentShedTvSettings.tvSlideIntervals, settings.tvSlideIntervals]);
+
+  const effectiveTvSlideEnabled = useMemo(() => {
+    if (currentShedTvSettings.tvSlideEnabled && Object.keys(currentShedTvSettings.tvSlideEnabled).length > 0) {
+      return currentShedTvSettings.tvSlideEnabled;
+    }
+    return settings.tvSlideEnabled || {};
+  }, [currentShedTvSettings.tvSlideEnabled, settings.tvSlideEnabled]);
+
+  const effectiveTvMonth = currentShedTvSettings.tvMonth || settings.tvMonth || 0;
+  const effectiveTvYear = currentShedTvSettings.tvYear || settings.tvYear || 0;
+  const effectiveTvShowBestSiderMonth = currentShedTvSettings.tvShowBestSiderMonth ?? settings.tvShowBestSiderMonth ?? true;
+
   const activeMainPages = useMemo(() => {
     // Extract actively running counts from safeDailyReport
     const countMap = new Map<string, Set<string>>();
@@ -566,10 +595,10 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
       }
 
       const activeSubPages = pageSubPages.filter(sub => {
-        const configuredSecs = settings.tvPageIntervals?.[sub.id]
-          ?? (sub.id.startsWith('count-frames') ? settings.tvPageIntervals?.['count-frames'] : undefined)
-          ?? settings.tvSlideIntervals?.[sub.id];
-        const isExplicitlyDisabled = settings.tvSlideEnabled?.[sub.id] === false || configuredSecs === 0;
+        const configuredSecs = effectiveTvPageIntervals[sub.id]
+          ?? (sub.id.startsWith('count-frames') ? effectiveTvPageIntervals['count-frames'] : undefined)
+          ?? effectiveTvSlideIntervals[sub.id];
+        const isExplicitlyDisabled = effectiveTvSlideEnabled[sub.id] === false || configuredSecs === 0;
         if (isExplicitlyDisabled) return false;
         const secs = configuredSecs !== undefined ? configuredSecs : sub.defaultSeconds;
         return secs > 0;
@@ -579,7 +608,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
         subPages: activeSubPages
       };
     }).filter(main => main.subPages.length > 0);
-  }, [settings.tvPageIntervals, settings.tvSlideIntervals, settings.tvSlideEnabled, safeDailyReport]);
+  }, [effectiveTvPageIntervals, effectiveTvSlideIntervals, effectiveTvSlideEnabled, safeDailyReport]);
 
   // Fallback if all pages omitted
   const availableMainPages = activeMainPages.length > 0 ? activeMainPages : TV_MAIN_PAGES;
@@ -597,12 +626,12 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
   // 5. Calculate Duration for Current Sub-Page (Every count page / subpage runs for strictly the selected duration)
   const currentSubDuration = useMemo(() => {
     if (!currentSub) return 15;
-    const configuredSecs = settings.tvPageIntervals?.[currentSub.id]
-      ?? (currentSub.id.startsWith('count-frames') ? settings.tvPageIntervals?.['count-frames'] : undefined)
-      ?? settings.tvSlideIntervals?.[currentSub.id];
+    const configuredSecs = effectiveTvPageIntervals[currentSub.id]
+      ?? (currentSub.id.startsWith('count-frames') ? effectiveTvPageIntervals['count-frames'] : undefined)
+      ?? effectiveTvSlideIntervals[currentSub.id];
     const baseSecs = configuredSecs !== undefined ? configuredSecs : currentSub.defaultSeconds;
     return Math.max(3, baseSecs);
-  }, [currentSub, settings.tvPageIntervals, settings.tvSlideIntervals]);
+  }, [currentSub, effectiveTvPageIntervals, effectiveTvSlideIntervals]);
 
   const [timeRemaining, setTimeRemaining] = useState(currentSubDuration);
 
@@ -1507,8 +1536,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                   <div className="w-full max-w-full">
                     <MonthlyCountGpss
                       history={allShedsHistory && allShedsHistory.length > 0 ? allShedsHistory : history}
-                      selectedMonth={propMonth || (settings.tvMonth && settings.tvMonth > 0 ? settings.tvMonth : 10)}
-                      selectedYear={propYear || (settings.tvYear && settings.tvYear > 0 ? settings.tvYear : 2026)}
+                      selectedMonth={propMonth || (effectiveTvMonth > 0 ? effectiveTvMonth : 10)}
+                      selectedYear={propYear || (effectiveTvYear > 0 ? effectiveTvYear : 2026)}
                       onMonthChange={() => {}}
                       onYearChange={() => {}}
                       selectedShed={selectedShed}
@@ -1641,7 +1670,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     onYearChange={() => {}}
                     isTvMode={true}
                     onPagesDetermined={setSubPagesCount}
-                    tvPageInterval={settings.tvPageIntervals?.['month-view']}
+                    tvPageInterval={effectiveTvPageIntervals['month-view']}
                     frozenMonths={frozenMonths}
                   />
                 );
@@ -1656,7 +1685,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     year={targetYear}
                     isTvMode={true}
                     onPagesDetermined={setSubPagesCount}
-                    tvPageInterval={settings.tvPageIntervals?.['month-abstract']}
+                    tvPageInterval={effectiveTvPageIntervals['month-abstract']}
                     frozenMonths={frozenMonths}
                   />
                 );
@@ -1690,7 +1719,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     year={targetYear}
                     isTvMode={true}
                     onPagesDetermined={setSubPagesCount}
-                    tvPageInterval={settings.tvPageIntervals?.['operator-em-format']}
+                    tvPageInterval={effectiveTvPageIntervals['operator-em-format']}
                   />
                 );
 
@@ -1743,7 +1772,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     year={targetYear}
                     isTvMode={true}
                     onPagesDetermined={setSubPagesCount}
-                    tvPageInterval={settings.tvPageIntervals?.['ai-month-abstract']}
+                    tvPageInterval={effectiveTvPageIntervals['ai-month-abstract']}
                     frozenMonths={frozenMonths}
                   />
                 );
@@ -1778,7 +1807,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     rules={rules}
                     month={targetMonth}
                     year={targetYear}
-                    showMonthOnTv={settings.tvShowBestSiderMonth}
+                    showMonthOnTv={effectiveTvShowBestSiderMonth}
                     isTvMode={true}
                   />
                 );

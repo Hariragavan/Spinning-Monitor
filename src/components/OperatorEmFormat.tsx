@@ -517,27 +517,55 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return map;
   }, [effectiveHistory]);
 
-  const isMachineAssignedOnShift = useCallback((date: string, shift: string, machine: any): boolean => {
+  // Check if a machine actually ran and was uploaded in the Daily Report for this date and shift
+  const isMachineRunOnShift = useCallback((date: string, shift: string, machine: any): boolean => {
     if (!date || machine === null || machine === undefined) return false;
     const cleanMachine = String(machine).trim().toUpperCase();
     if (!cleanMachine) return false;
 
     const canonical = normalizeToCanonicalDate(date);
-    const shiftMap = assignedMachinesByDateAndShift.get(date) || assignedMachinesByDateAndShift.get(canonical);
-    if (!shiftMap) {
-      // If a daily report exists for this date, but this machine has no shift entry, it was NOT assigned
-      const hasReport = (effectiveHistory || []).some(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
-      return !hasReport;
+    const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
+    if (!report || !Array.isArray(report.entries) || report.entries.length === 0) {
+      return false; // No report uploaded for this date -> machine did NOT run
     }
-    const frameSet = shiftMap.get(shift);
-    if (!frameSet) return false;
-    if (frameSet.has(cleanMachine)) return true;
-    const digits = cleanMachine.match(/\d+/);
-    if (digits) {
-      return frameSet.has(digits[0]) || frameSet.has(String(parseInt(digits[0], 10)));
-    }
-    return false;
-  }, [assignedMachinesByDateAndShift, effectiveHistory]);
+
+    const sKey = mapShiftToNum(shift);
+    const mDigits = cleanMachine.match(/\d+/);
+    const mNum = mDigits ? parseInt(mDigits[0], 10) : null;
+
+    const entry = report.entries.find(e => {
+      if (!e) return false;
+      const eShift = mapShiftToNum(e.shift || (report as any).shift || '1');
+      if (eShift !== sKey) return false;
+
+      const rawFrame = e.frameNo || (e as any).machineId;
+      if (rawFrame === null || rawFrame === undefined) return false;
+      const cleanFrame = String(rawFrame).trim().toUpperCase();
+      if (cleanFrame === cleanMachine) return true;
+
+      const eDigits = cleanFrame.match(/\d+/);
+      if (mNum !== null && eDigits && parseInt(eDigits[0], 10) === mNum) {
+        return true;
+      }
+      return false;
+    });
+
+    if (!entry) return false;
+
+    // Check if machine was active/ran on this shift (assigned sider, production, gps, or count)
+    const hasAssignedWorker = (
+      (Array.isArray(entry.siderIds) && entry.siderIds.some(id => id && String(id).trim() !== '-' && String(id).trim() !== '--' && String(id).toLowerCase().trim() !== 'unassigned' && String(id).toLowerCase().trim() !== 'none' && String(id).trim() !== '0')) ||
+      (entry.siderId && String(entry.siderId).trim() !== '-' && String(entry.siderId).trim() !== '--' && String(entry.siderId).toLowerCase().trim() !== 'unassigned' && String(entry.siderId).toLowerCase().trim() !== 'none' && String(entry.siderId).trim() !== '0') ||
+      (entry.siderName && String(entry.siderName).toLowerCase().trim() !== 'unassigned' && String(entry.siderName).trim() !== '' && String(entry.siderName).trim() !== '-')
+    );
+
+    const hasProd = (entry.productionActual !== undefined && entry.productionActual > 0) || (entry.gpsActual !== undefined && entry.gpsActual > 0);
+    const hasCount = Boolean(entry.count && entry.count.trim() !== '' && entry.count.trim() !== '-');
+
+    return hasAssignedWorker || hasProd || hasCount;
+  }, [effectiveHistory]);
+
+  const isMachineAssignedOnShift = isMachineRunOnShift;
 
   // Active dates for the selected Month & Year (strictly for selectedMonth and selectedYear)
   const selectedMonthDates = useMemo(() => {
@@ -812,14 +840,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         safeSettings?.iotMachineMappingByDate,
         safeSettings?.iotMachineMapping
       );
-      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, effectiveMachineEm, effectiveWorkers, dateMapping);
+      const shiftRes = computeOperatorShiftEm(selectedWorker || selectedWorkerId, report, effectiveMachineEm, effectiveWorkers, dateMapping, liveMachineEmDetails);
       if (shiftRes && Array.isArray(shiftRes.machinesDetail) && shiftRes.machinesDetail.length > 0) {
         shiftRes.machinesDetail.forEach(m => {
           if (!m || !isMachineExisted(m.frameNo)) return;
           logs.push({
             date: report.date,
-            shift: shiftRes.shift,
-            machine: `${m.frameNo} (${m.sides} side${m.sides > 1 ? 's' : ''})`,
+            shift: m.shift || shiftRes.shift,
+            machine: `${m.frameNo} (${m.sideLabel || (m.sides === 1 ? 'LH' : 'LH, RH')})`,
             gps: m.gps,
             count: m.count || '',
             em: m.assignedEm
@@ -889,7 +917,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
       (effectiveWorkers || []).forEach(worker => {
         if (!worker || !worker.id) return;
-        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping);
+        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping, liveMachineEmDetails);
         if (shiftRes && shiftRes.totalSides > 0) {
           if (!siderData[worker.id]) {
             siderData[worker.id] = {
@@ -947,7 +975,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
       (effectiveWorkers || []).forEach(worker => {
         if (!worker || !worker.id) return;
-        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping);
+        const shiftRes = computeOperatorShiftEm(worker, report, effectiveMachineEm, effectiveWorkers, dateMapping, liveMachineEmDetails);
         if (shiftRes && shiftRes.totalSides > 0 && shiftRes.totalEm > 0) {
           const prev = lookup[dateStr][worker.id] || 0;
           lookup[dateStr][worker.id] = Number((prev + shiftRes.totalEm).toFixed(3));
@@ -1082,7 +1110,69 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         emValue = entry.doffEmt ?? 0;
       }
 
-      const mcDisplay = frameNo;
+      // Resolve side-specific telemetry detail if available
+      let emLeft: number | undefined = undefined;
+      let emRight: number | undefined = undefined;
+      let emAvg: number | undefined = undefined;
+
+      const detailsSource = liveMachineEmDetails || (effectiveMachineEm as any)?._details;
+      if (detailsSource) {
+        const canonical = normalizeToCanonicalDate(report.date);
+        const dVariants = [report.date, canonical];
+        const mVariants = [frameNo, frameNo.toUpperCase().trim(), frameNo.replace(/^SP0*/i, ''), frameNo.replace(/^RF0*/i, '')];
+        const sKey = mapShiftToNum(entry.shift);
+
+        for (const d of dVariants) {
+          if (!detailsSource[d]) continue;
+          for (const m of mVariants) {
+            const detail = detailsSource[d][m]?.[sKey] || detailsSource[d][m]?.[Number(sKey)];
+            if (detail) {
+              if (typeof detail.emLeft === 'number') emLeft = detail.emLeft;
+              if (typeof detail.emRight === 'number') emRight = detail.emRight;
+              if (typeof detail.emAvg === 'number') emAvg = detail.emAvg;
+              break;
+            }
+          }
+          if (emLeft !== undefined || emRight !== undefined || emAvg !== undefined) break;
+        }
+      }
+
+      const slot0 = entry.siderIds?.[0] || entry.siderId;
+      const slot1 = entry.siderIds?.[1];
+
+      const getSideAllocationAndEm = (wIdOrName: string) => {
+        const clean = String(wIdOrName).trim().toLowerCase();
+        const slot0Clean = slot0 ? String(slot0).trim().toLowerCase() : '';
+        const slot1Clean = slot1 ? String(slot1).trim().toLowerCase() : '';
+        const isSlot0 = slot0Clean !== '' && (slot0Clean === clean || (entry.siderName && entry.siderName.toLowerCase().trim() === clean));
+        const isSlot1 = slot1Clean !== '' && slot1Clean === clean;
+
+        let sideLabel: 'LH' | 'RH' | 'LH, RH' = 'LH, RH';
+        if (isSlot0 && isSlot1) {
+          sideLabel = 'LH, RH';
+        } else if (isSlot0) {
+          const hasOtherInSlot1 = slot1Clean !== '' && slot1Clean !== '-' && !isSlot1;
+          sideLabel = hasOtherInSlot1 ? 'LH' : 'LH, RH';
+        } else if (isSlot1) {
+          sideLabel = 'RH';
+        }
+
+        let dutyEm = emValue;
+        if (sideLabel === 'LH') {
+          dutyEm = (emLeft !== undefined && emLeft > 0) ? emLeft : (emAvg ?? emValue);
+        } else if (sideLabel === 'RH') {
+          dutyEm = (emRight !== undefined && emRight > 0) ? emRight : (emAvg ?? emValue);
+        } else {
+          // Both sides (LH, RH): Average of Left and Right EM (never total sum)
+          if (emLeft !== undefined && emRight !== undefined && (emLeft > 0 || emRight > 0)) {
+            dutyEm = Number(((emLeft + emRight) / 2).toFixed(2));
+          } else {
+            dutyEm = emAvg ?? emValue;
+          }
+        }
+
+        return { sideLabel, dutyEm: Number(dutyEm.toFixed(2)) };
+      };
 
       if (assignedIds.length > 0) {
         assignedIds.forEach(id => {
@@ -1094,27 +1184,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
           );
           const name = worker ? worker.name : (entry.siderName || 'Unassigned');
           if (name && name.toLowerCase().trim() !== 'unassigned') {
+            const { sideLabel, dutyEm } = getSideAllocationAndEm(id);
             list.push({
               siderName: name,
               tNo: worker?.tNo,
               shift: entry.shift,
-              mcNo: mcDisplay,
+              mcNo: `${frameNo} (${sideLabel})`,
               count: entry.count || '-',
               gps: entry.gpsActual || 0,
-              em: emValue
+              em: dutyEm
             });
           }
         });
       } else if (entry.siderName && entry.siderName.toLowerCase().trim() !== 'unassigned' && entry.siderName.trim() !== '') {
         const worker = (effectiveWorkers || []).find(w => w && w.name && w.name.toLowerCase().trim() === String(entry.siderName).toLowerCase().trim());
+        const { sideLabel, dutyEm } = getSideAllocationAndEm(entry.siderName);
         list.push({
           siderName: entry.siderName,
           tNo: worker?.tNo,
           shift: entry.shift,
-          mcNo: mcDisplay,
+          mcNo: `${frameNo} (${sideLabel})`,
           count: entry.count || '-',
           gps: entry.gpsActual || 0,
-          em: emValue
+          em: dutyEm
         });
       }
     });
@@ -1707,9 +1799,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                               return (
                                 <React.Fragment key={`val-${machine}-${date}`}>
                                   {shifts.map(shift => {
-                                    const isAssigned = isMachineAssignedOnShift(date, shift, machine);
-                                    // Always read EM value whenever available, even if unassigned
-                                    const val = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
+                                    const ran = isMachineRunOnShift(date, shift, machine);
+                                    // Only read EM value if machine actually ran / was uploaded on this date & shift
+                                    const val = ran ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping) : undefined;
                                     const hasVal = val !== undefined && val !== null;
                                     return (
                                       <td 
@@ -1720,14 +1812,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                         className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group ${
                                           hasVal
                                             ? 'text-stone-900 font-bold'
-                                            : isAssigned
+                                            : ran
                                             ? 'text-stone-400 bg-stone-50/10'
                                             : 'text-stone-300 bg-stone-50/20'
                                         }`}
                                         title={
                                           hasVal
-                                            ? `Click to view Left/Right/Total EM: ${machine} · Shift ${shift} · ${date}`
-                                            : `${machine} · Shift ${shift} · ${date} (Click to inspect EM)`
+                                            ? `Click to view Left/Right/Average EM: ${machine} · Shift ${shift} · ${date}`
+                                            : `${machine} · Shift ${shift} · ${date} (${ran ? 'Running' : 'Not Run'})`
                                         }
                                       >
                                         {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
@@ -2225,6 +2317,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                 <div className="text-lg font-mono font-bold text-stone-600 mt-2 bg-stone-50 px-4 py-1 rounded-full border border-stone-100 shadow-xs">
                   {selectedDailyEmDate || 'No Date Selected'}
                 </div>
+                {dailyEmRows.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-3">
+                    <span className="px-3.5 py-1 rounded-full bg-stone-100 text-stone-700 text-xs font-bold border border-stone-200">
+                      Total Machine Duties: <strong className="font-mono text-stone-900 ml-1">{dailyEmRows.length}</strong>
+                    </span>
+                    <span className="px-4 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 shadow-2xs">
+                      Selected Date Total Average EM: <strong className="font-mono text-emerald-700 text-sm ml-1.5">{(dailyEmRows.reduce((sum, r) => sum + (r.em || 0), 0) / dailyEmRows.length).toFixed(2)} min</strong>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {dailyEmRows.length === 0 ? (
@@ -2378,23 +2480,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
               </div>
             </div>
 
-            {/* Total Machine EM Highlight */}
-            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-4 rounded-2xl text-white shadow-sm shadow-emerald-500/20 flex flex-col gap-1">
+            {/* Average Machine EM Highlight (Side L & Side R Average) */}
+            <div className="bg-gradient-to-br from-emerald-600 to-teal-700 p-4 rounded-2xl text-white shadow-sm shadow-emerald-600/20 flex flex-col gap-1">
               <div className="flex items-center justify-between text-emerald-100 text-xs font-bold uppercase tracking-wider">
-                <span>Total Machine EM</span>
-                <span className="text-[10px] font-mono text-emerald-200">Side L + Side R</span>
+                <span>Machine Average EM</span>
+                <span className="text-[10px] font-mono text-emerald-200">(Side L + Side R) / 2</span>
               </div>
               <div className="flex items-baseline justify-between mt-1">
                 <div className="font-mono text-3xl font-black text-white tracking-tight">
-                  {activeEmDetail.emTotal.toFixed(2)}
+                  {((activeEmDetail.emLeft !== undefined && activeEmDetail.emRight !== undefined && (activeEmDetail.emLeft > 0 || activeEmDetail.emRight > 0))
+                    ? ((activeEmDetail.emLeft + activeEmDetail.emRight) / 2)
+                    : (activeEmDetail.emTotal > 0 ? (activeEmDetail.emTotal / 2) : 0)).toFixed(2)}
                   <span className="text-sm font-normal text-emerald-100 ml-1.5">min</span>
                 </div>
-                {activeEmDetail.totalBreaks !== undefined && (
-                  <div className="text-xs text-emerald-100 font-medium">
-                    Total Breaks: <span className="font-bold text-white">{activeEmDetail.totalBreaks}</span>
-                  </div>
-                )}
+                <div className="text-xs text-emerald-100 font-medium">
+                  Total: {activeEmDetail.emTotal.toFixed(2)} min
+                </div>
               </div>
+            </div>
+
+            {/* Total Machine EM Breakdown */}
+            <div className="bg-stone-50 border border-stone-200 p-3.5 rounded-2xl text-stone-800 flex items-center justify-between">
+              <span className="text-xs font-bold text-stone-600 uppercase tracking-wider">Total Combined EM</span>
+              <span className="font-mono text-base font-black text-stone-900">{activeEmDetail.emTotal.toFixed(2)} min</span>
             </div>
 
             {/* Close Button */}

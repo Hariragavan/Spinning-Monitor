@@ -1387,7 +1387,9 @@ export interface OperatorShiftEmResult {
   totalGps: number;
   machinesDetail: {
     frameNo: string;
+    shift: Shift;
     sides: number;
+    sideLabel: 'LH' | 'RH' | 'LH, RH';
     machineEm: number;
     assignedEm: number;
     gps: number;
@@ -1396,20 +1398,19 @@ export interface OperatorShiftEmResult {
 }
 
 /**
- * Calculates the total End Mending (EM) and sides assigned to an operator in a given DailyReport.
- * Supports:
- * - 1 side (half machine): machineEm / 2
- * - 2 sides (1 full machine): machineEm
- * - 3 sides (1 full machine + 1 half machine): machineEm_1 + (machineEm_2 / 2)
- * - 4 sides (2 full machines): machineEm_1 + machineEm_2
- * - Multi-machine side sums
+ * Calculates the End Mending (EM) and sides assigned to an operator in a given DailyReport.
+ * In accordance with spinning mill standards:
+ * - Shows average of Left and Right EM (never total sum)
+ * - Identifies side assignment (LH, RH, or LH, RH)
+ * - Tracks exact shift per machine duty
  */
 export function computeOperatorShiftEm(
   targetWorker: Sider | string,
   report: DailyReport,
   machineEmData: MachineEmData | undefined,
   workers: Sider[] = [],
-  mapping?: Record<string, string>
+  mapping?: Record<string, string>,
+  machineEmDetails?: Record<string, any>
 ): OperatorShiftEmResult | null {
   if (!report || !report.entries || report.entries.length === 0) return null;
 
@@ -1457,8 +1458,9 @@ export function computeOperatorShiftEm(
 
   const machinesDetail: OperatorShiftEmResult['machinesDetail'] = [];
   let totalSides = 0;
-  let totalEm = 0;
   let totalGps = 0;
+
+  const detailsSource = machineEmDetails || (machineEmData as any)?._details;
 
   report.entries.forEach(entry => {
     const slot0 = entry.siderIds?.[0] || entry.siderId;
@@ -1470,40 +1472,90 @@ export function computeOperatorShiftEm(
     if (!slot0Match && !slot1Match) return;
 
     let sides = 0;
+    let sideLabel: 'LH' | 'RH' | 'LH, RH' = 'LH, RH';
+
     if (slot0Match && slot1Match) {
       sides = 2;
+      sideLabel = 'LH, RH';
     } else if (slot0Match) {
-      // If slot 1 has another valid assigned worker, this worker ran 1 side only
+      // If slot 1 has another valid assigned worker, this worker ran LH side only
       const otherInSlot1 = isAssignedWorker(slot1) && !slot1Match;
       sides = otherInSlot1 ? 1 : 2;
+      sideLabel = otherInSlot1 ? 'LH' : 'LH, RH';
     } else if (slot1Match) {
-      // If slot 0 has another valid assigned worker, this worker ran 1 side only
-      const otherInSlot0 = isAssignedWorker(slot0) && !slot0Match;
-      sides = otherInSlot0 ? 1 : 2;
+      // Worker is assigned to slot 1 (RH)
+      sides = 1;
+      sideLabel = 'RH';
     }
 
     if (sides <= 0) return;
 
     const frame = entry.frameNo || (entry as any).machineId || '';
-    const shift = entry.shift || (report as any).shift || 'I';
-    let machineEm = getMachineEmValue(machineEmData, report.date, frame, shift, mapping);
-    if (machineEm === undefined) {
-      machineEm = entry.doffEmt ?? 0;
+    const entryShift = (entry.shift || (report as any).shift || 'I') as Shift;
+
+    // Look up side-specific telemetry detail if available
+    let emLeft: number | undefined = undefined;
+    let emRight: number | undefined = undefined;
+    let emAvg: number | undefined = undefined;
+
+    if (detailsSource) {
+      const canonical = normalizeToCanonicalDate(report.date);
+      const dVariants = [report.date, canonical];
+      const mVariants = [frame, frame.toUpperCase().trim(), frame.replace(/^SP0*/i, ''), frame.replace(/^RF0*/i, '')];
+      const shiftStr = String(entryShift).trim().toUpperCase();
+      const sKey = shiftStr === 'I' || shiftStr === '1' ? '1' : shiftStr === 'II' || shiftStr === '2' ? '2' : '3';
+
+      for (const d of dVariants) {
+        if (!detailsSource[d]) continue;
+        for (const m of mVariants) {
+          const detail = detailsSource[d][m]?.[sKey] || detailsSource[d][m]?.[Number(sKey)];
+          if (detail) {
+            if (typeof detail.emLeft === 'number') emLeft = detail.emLeft;
+            if (typeof detail.emRight === 'number') emRight = detail.emRight;
+            if (typeof detail.emAvg === 'number') emAvg = detail.emAvg;
+            break;
+          }
+        }
+        if (emLeft !== undefined || emRight !== undefined || emAvg !== undefined) break;
+      }
     }
 
-    // Full machine EM represents 2 sides.
-    // 1 side = machineEm / 2
-    // 2 sides = machineEm
-    const assignedEm = sides === 2 ? machineEm : Number(((machineEm / 2) * sides).toFixed(3));
+    if (emAvg === undefined) {
+      const rawVal = getMachineEmValue(machineEmData, report.date, frame, entryShift, mapping);
+      if (rawVal !== undefined) {
+        emAvg = rawVal;
+      } else {
+        emAvg = entry.doffEmt ?? 0;
+      }
+    }
+
+    // Calculate side-specific average EM (never sum)
+    let assignedEm = 0;
+    if (sideLabel === 'LH') {
+      assignedEm = (emLeft !== undefined && emLeft > 0) ? emLeft : (emAvg || 0);
+    } else if (sideLabel === 'RH') {
+      assignedEm = (emRight !== undefined && emRight > 0) ? emRight : (emAvg || 0);
+    } else {
+      // Both sides (LH, RH): Average of Left and Right EM
+      if (emLeft !== undefined && emRight !== undefined && (emLeft > 0 || emRight > 0)) {
+        assignedEm = Number(((emLeft + emRight) / 2).toFixed(3));
+      } else {
+        assignedEm = emAvg || 0;
+      }
+    }
+    assignedEm = Number(assignedEm.toFixed(3));
+
+    const machineEm = emAvg !== undefined ? Number(emAvg.toFixed(3)) : assignedEm;
     const gpsPart = Number(((entry.gpsActual || 0) * (sides / 2)).toFixed(3));
 
     totalSides += sides;
-    totalEm += assignedEm;
     totalGps += gpsPart;
 
     machinesDetail.push({
       frameNo: frame,
+      shift: entryShift,
       sides,
+      sideLabel,
       machineEm,
       assignedEm,
       gps: entry.gpsActual || 0,
@@ -1511,12 +1563,15 @@ export function computeOperatorShiftEm(
     });
   });
 
-  if (totalSides === 0) return null;
+  if (totalSides === 0 || machinesDetail.length === 0) return null;
+
+  // Average EM across duties (never sum)
+  const totalEm = Number((machinesDetail.reduce((sum, m) => sum + m.assignedEm, 0) / machinesDetail.length).toFixed(3));
 
   return {
-    shift: (report.entries[0]?.shift || (report as any).shift || 'I') as Shift,
+    shift: (machinesDetail[0]?.shift || report.entries[0]?.shift || (report as any).shift || 'I') as Shift,
     totalSides,
-    totalEm: Number(totalEm.toFixed(3)),
+    totalEm,
     totalGps: Number(totalGps.toFixed(3)),
     machinesDetail
   };

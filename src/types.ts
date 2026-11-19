@@ -145,6 +145,17 @@ export interface MachineEmData {
   };
 }
 
+export interface ShedTvSettings {
+  tvInterval?: number;
+  tvSubInterval?: number;
+  tvPageIntervals?: Record<string, number>;
+  tvSlideIntervals?: Record<string, number>;
+  tvSlideEnabled?: Record<string, boolean>;
+  tvMonth?: number;
+  tvYear?: number;
+  tvShowBestSiderMonth?: boolean;
+}
+
 export interface SystemSettings {
   googleSheetUrl?: string;
   machineEmGoogleSheetUrl?: string;
@@ -172,6 +183,7 @@ export interface SystemSettings {
   iotMachineMappingByDate?: Record<string, Record<string, string>>;
   iotMachineAllocationPeriods?: IotMachineAllocationPeriod[];
   iotDeviceOperatorMapping?: Record<string, { employeeId: string; employeeName: string }>;
+  shedTvSettings?: Record<string, ShedTvSettings>;
 }
 
 export interface IotMachineAllocationPeriod {

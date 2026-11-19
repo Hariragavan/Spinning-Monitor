@@ -60,7 +60,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   Calendar, Gauge, Activity, RefreshCw, Database, Trash2, UserCheck, Users,
   LayoutDashboard, FileUp, Settings, TrendingUp, Coins, Trophy, BarChart3,
-  Monitor, Zap, Star, AlertTriangle, X, CloudUpload, Loader2, Grid3X3,
+  Monitor, Tv, Zap, Star, AlertTriangle, X, CloudUpload, Loader2, Grid3X3,
   FileText, Check, MessageSquare, Play, Wrench, RotateCcw, History, Menu,
   ArrowLeft, Table, Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight
 } from 'lucide-react';
@@ -571,6 +571,9 @@ export default function Home() {
   const [settingsMachineSearch, setSettingsMachineSearch] = useState<string>('');
   const [isUploadingSettingsStatement, setIsUploadingSettingsStatement] = useState<boolean>(false);
   const settingsStatementInputRef = useRef<HTMLInputElement>(null);
+
+  // Shed-wise TV settings active tab in Settings
+  const [settingsTvShed, setSettingsTvShed] = useState<Shed>('Shed 1');
 
   // Auto-refresh states & reference pointers
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -2058,20 +2061,57 @@ export default function Home() {
     }
   };
 
+  // Active shed TV configuration helper (supports shed-wise TV settings)
+  const currentShedTvConfig = useMemo(() => {
+    const shedConfig = settings.shedTvSettings?.[settingsTvShed];
+    return {
+      tvPageIntervals: (shedConfig?.tvPageIntervals && Object.keys(shedConfig.tvPageIntervals).length > 0)
+        ? shedConfig.tvPageIntervals
+        : (settings.tvPageIntervals || {}),
+      tvSlideIntervals: (shedConfig?.tvSlideIntervals && Object.keys(shedConfig.tvSlideIntervals).length > 0)
+        ? shedConfig.tvSlideIntervals
+        : (settings.tvSlideIntervals || {}),
+      tvSlideEnabled: (shedConfig?.tvSlideEnabled && Object.keys(shedConfig.tvSlideEnabled).length > 0)
+        ? shedConfig.tvSlideEnabled
+        : (settings.tvSlideEnabled || {}),
+      tvInterval: shedConfig?.tvInterval || settings.tvInterval || 15,
+      tvSubInterval: shedConfig?.tvSubInterval || settings.tvSubInterval || 5,
+      tvMonth: shedConfig?.tvMonth || settings.tvMonth || 0,
+      tvYear: shedConfig?.tvYear || settings.tvYear || 0,
+      tvShowBestSiderMonth: shedConfig?.tvShowBestSiderMonth ?? settings.tvShowBestSiderMonth ?? true
+    };
+  }, [settings.shedTvSettings, settings.tvPageIntervals, settings.tvSlideIntervals, settings.tvSlideEnabled, settings.tvInterval, settings.tvSubInterval, settings.tvMonth, settings.tvYear, settings.tvShowBestSiderMonth, settingsTvShed]);
+
   const updateTvSubPageDuration = (subId: string, seconds: number) => {
+    const existingShedConfig = settings.shedTvSettings?.[settingsTvShed] || {};
+    const newPageIntervals = {
+      ...(currentShedTvConfig.tvPageIntervals || {}),
+      [subId]: Math.max(0, seconds)
+    };
+    const newSlideIntervals = {
+      ...(currentShedTvConfig.tvSlideIntervals || {}),
+      [subId]: Math.max(0, seconds)
+    };
+    const newSlideEnabled = {
+      ...(currentShedTvConfig.tvSlideEnabled || {}),
+      [subId]: seconds > 0
+    };
+
+    const updatedShed = {
+      ...existingShedConfig,
+      tvPageIntervals: newPageIntervals,
+      tvSlideIntervals: newSlideIntervals,
+      tvSlideEnabled: newSlideEnabled
+    };
+
     const updated: SystemSettings = {
       ...settings,
-      tvPageIntervals: {
-        ...(settings.tvPageIntervals || {}),
-        [subId]: Math.max(0, seconds)
-      },
-      tvSlideIntervals: {
-        ...(settings.tvSlideIntervals || {}),
-        [subId]: Math.max(0, seconds)
-      },
-      tvSlideEnabled: {
-        ...(settings.tvSlideEnabled || {}),
-        [subId]: seconds > 0
+      tvPageIntervals: settingsTvShed === selectedShed ? newPageIntervals : settings.tvPageIntervals,
+      tvSlideIntervals: settingsTvShed === selectedShed ? newSlideIntervals : settings.tvSlideIntervals,
+      tvSlideEnabled: settingsTvShed === selectedShed ? newSlideEnabled : settings.tvSlideEnabled,
+      shedTvSettings: {
+        ...(settings.shedTvSettings || {}),
+        [settingsTvShed]: updatedShed
       }
     };
     setSettings(updated);
@@ -2079,16 +2119,17 @@ export default function Home() {
   };
 
   const toggleTvSubPageEnabled = (subId: string, defaultSecs: number) => {
-    const configuredSecs = settings.tvPageIntervals?.[subId] ?? settings.tvSlideIntervals?.[subId];
-    const isCurrentlyEnabled = settings.tvSlideEnabled?.[subId] !== false && (configuredSecs === undefined || configuredSecs > 0);
+    const configuredSecs = currentShedTvConfig.tvPageIntervals?.[subId] ?? currentShedTvConfig.tvSlideIntervals?.[subId];
+    const isCurrentlyEnabled = currentShedTvConfig.tvSlideEnabled?.[subId] !== false && (configuredSecs === undefined || configuredSecs > 0);
     const newSecs = isCurrentlyEnabled ? 0 : (configuredSecs && configuredSecs > 0 ? configuredSecs : Math.max(5, defaultSecs || 15));
     updateTvSubPageDuration(subId, newSecs);
   };
 
   const setAllTvSubPagesDuration = (seconds: number) => {
-    const newPageIntervals = { ...(settings.tvPageIntervals || {}) };
-    const newSlideIntervals = { ...(settings.tvSlideIntervals || {}) };
-    const newSlideEnabled = { ...(settings.tvSlideEnabled || {}) };
+    const existingShedConfig = settings.shedTvSettings?.[settingsTvShed] || {};
+    const newPageIntervals = { ...(currentShedTvConfig.tvPageIntervals || {}) };
+    const newSlideIntervals = { ...(currentShedTvConfig.tvSlideIntervals || {}) };
+    const newSlideEnabled = { ...(currentShedTvConfig.tvSlideEnabled || {}) };
 
     TV_MAIN_PAGES.forEach(main => {
       main.subPages.forEach(sub => {
@@ -2098,19 +2139,31 @@ export default function Home() {
       });
     });
 
-    const updated: SystemSettings = {
-      ...settings,
+    const updatedShed = {
+      ...existingShedConfig,
       tvInterval: seconds,
       tvSubInterval: seconds,
       tvPageIntervals: newPageIntervals,
       tvSlideIntervals: newSlideIntervals,
       tvSlideEnabled: newSlideEnabled
     };
+
+    const updated: SystemSettings = {
+      ...settings,
+      tvPageIntervals: settingsTvShed === selectedShed ? newPageIntervals : settings.tvPageIntervals,
+      tvSlideIntervals: settingsTvShed === selectedShed ? newSlideIntervals : settings.tvSlideIntervals,
+      tvSlideEnabled: settingsTvShed === selectedShed ? newSlideEnabled : settings.tvSlideEnabled,
+      shedTvSettings: {
+        ...(settings.shedTvSettings || {}),
+        [settingsTvShed]: updatedShed
+      }
+    };
     setSettings(updated);
     apiClient.saveSettings(updated).catch(() => {});
   };
 
   const resetTvTimingsToDefault = () => {
+    const existingShedConfig = settings.shedTvSettings?.[settingsTvShed] || {};
     const newPageIntervals: Record<string, number> = {};
     const newSlideIntervals: Record<string, number> = {};
     const newSlideEnabled: Record<string, boolean> = {};
@@ -2123,13 +2176,24 @@ export default function Home() {
       });
     });
 
-    const updated: SystemSettings = {
-      ...settings,
+    const updatedShed = {
+      ...existingShedConfig,
       tvInterval: 15,
       tvSubInterval: 5,
       tvPageIntervals: newPageIntervals,
       tvSlideIntervals: newSlideIntervals,
       tvSlideEnabled: newSlideEnabled
+    };
+
+    const updated: SystemSettings = {
+      ...settings,
+      tvPageIntervals: settingsTvShed === selectedShed ? newPageIntervals : settings.tvPageIntervals,
+      tvSlideIntervals: settingsTvShed === selectedShed ? newSlideIntervals : settings.tvSlideIntervals,
+      tvSlideEnabled: settingsTvShed === selectedShed ? newSlideEnabled : settings.tvSlideEnabled,
+      shedTvSettings: {
+        ...(settings.shedTvSettings || {}),
+        [settingsTvShed]: updatedShed
+      }
     };
     setSettings(updated);
     apiClient.saveSettings(updated).catch(() => {});
@@ -3021,17 +3085,60 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Shed-Wise TV Settings Tab Selector */}
+              <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                    <Tv size={16} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-wider text-stone-900 block">
+                      TV Settings Shed Configuration
+                    </span>
+                    <span className="text-[11px] text-stone-500 font-medium">
+                      Select a shed to customize its independent TV rotation schedule & timing
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-stone-200 shadow-2xs">
+                  {(['Shed 1', 'Shed 2', 'Shed 3', 'KTTM'] as Shed[]).map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setSettingsTvShed(s)}
+                      className={cn(
+                        "px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer",
+                        settingsTvShed === s
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "text-stone-600 hover:text-stone-900 hover:bg-stone-50"
+                      )}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* TV Broadcast Controls & Target Month Selection */}
               <div className="bg-white p-5 rounded-2xl border border-stone-200/90 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex flex-wrap items-center gap-4">
                   <div>
                     <label className="text-[10px] font-black uppercase text-stone-400 block mb-1">
-                      TV Target Month
+                      TV Target Month ({settingsTvShed})
                     </label>
                     <select
-                      value={settings.tvMonth || 9}
+                      value={currentShedTvConfig.tvMonth || 9}
                       onChange={(e) => {
-                        const updated = { ...settings, tvMonth: Number(e.target.value) };
+                        const val = Number(e.target.value);
+                        const existing = settings.shedTvSettings?.[settingsTvShed] || {};
+                        const updated = {
+                          ...settings,
+                          tvMonth: settingsTvShed === selectedShed ? val : settings.tvMonth,
+                          shedTvSettings: {
+                            ...(settings.shedTvSettings || {}),
+                            [settingsTvShed]: { ...existing, tvMonth: val }
+                          }
+                        };
                         setSettings(updated);
                         apiClient.saveSettings(updated).catch(() => {});
                       }}
@@ -3047,12 +3154,21 @@ export default function Home() {
 
                   <div>
                     <label className="text-[10px] font-black uppercase text-stone-400 block mb-1">
-                      TV Target Year
+                      TV Target Year ({settingsTvShed})
                     </label>
                     <select
-                      value={settings.tvYear || 2026}
+                      value={currentShedTvConfig.tvYear || 2026}
                       onChange={(e) => {
-                        const updated = { ...settings, tvYear: Number(e.target.value) };
+                        const val = Number(e.target.value);
+                        const existing = settings.shedTvSettings?.[settingsTvShed] || {};
+                        const updated = {
+                          ...settings,
+                          tvYear: settingsTvShed === selectedShed ? val : settings.tvYear,
+                          shedTvSettings: {
+                            ...(settings.shedTvSettings || {}),
+                            [settingsTvShed]: { ...existing, tvYear: val }
+                          }
+                        };
                         setSettings(updated);
                         apiClient.saveSettings(updated).catch(() => {});
                       }}
@@ -3076,8 +3192,8 @@ export default function Home() {
                   TV_MAIN_PAGES.forEach(main => {
                     let chapterHasActive = false;
                     main.subPages.forEach(sub => {
-                      const configured = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
-                      const isEnabled = settings.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
+                      const configured = currentShedTvConfig.tvPageIntervals?.[sub.id] ?? currentShedTvConfig.tvSlideIntervals?.[sub.id];
+                      const isEnabled = currentShedTvConfig.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
                       const secs = configured !== undefined ? configured : sub.defaultSeconds;
                       if (isEnabled && secs > 0) {
                         totalSecs += secs;
@@ -3094,10 +3210,10 @@ export default function Home() {
                   return (
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black uppercase tracking-wider">
-                        {activeChapterCount} / {TV_MAIN_PAGES.length} Chapters Active
+                        {activeChapterCount} / {TV_MAIN_PAGES.length} Chapters Active ({settingsTvShed})
                       </span>
                       <span className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-black uppercase tracking-wider">
-                        {activeSubCount} / {TV_MAIN_PAGES.reduce((acc, m) => acc + m.subPages.length, 0)} Sub-Pages Rotating
+                        {activeSubCount} / {TV_MAIN_PAGES.reduce((acc, m) => acc + m.subPages.length, 0)} Sub-Pages
                       </span>
                       <span className="px-3 py-1.5 rounded-xl bg-stone-100 text-stone-900 border border-stone-300 text-xs font-black uppercase tracking-wider font-mono">
                         Cycle: {mins}m {remSecs}s
@@ -3112,12 +3228,12 @@ export default function Home() {
                 {TV_MAIN_PAGES.map((chapter) => {
                   const ChapterIcon = chapter.icon;
                   
-                  // Compute total duration for this chapter
+                  // Compute total duration for this chapter in this shed
                   let chapterSecs = 0;
                   let activeSubsInChapter = 0;
                   chapter.subPages.forEach(sub => {
-                    const configured = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
-                    const isEnabled = settings.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
+                    const configured = currentShedTvConfig.tvPageIntervals?.[sub.id] ?? currentShedTvConfig.tvSlideIntervals?.[sub.id];
+                    const isEnabled = currentShedTvConfig.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
                     const secs = configured !== undefined ? configured : sub.defaultSeconds;
                     if (isEnabled && secs > 0) {
                       chapterSecs += secs;
@@ -3169,8 +3285,8 @@ export default function Home() {
                       {/* Sub-Pages Configuration List */}
                       <div className="divide-y divide-stone-100">
                         {chapter.subPages.map((sub, sIdx) => {
-                          const configured = settings.tvPageIntervals?.[sub.id] ?? settings.tvSlideIntervals?.[sub.id];
-                          const isEnabled = settings.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
+                          const configured = currentShedTvConfig.tvPageIntervals?.[sub.id] ?? currentShedTvConfig.tvSlideIntervals?.[sub.id];
+                          const isEnabled = currentShedTvConfig.tvSlideEnabled?.[sub.id] !== false && (configured === undefined ? sub.defaultSeconds > 0 : configured > 0);
                           const currentSecs = configured !== undefined ? configured : sub.defaultSeconds;
 
                           return (

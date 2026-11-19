@@ -31,6 +31,7 @@ export interface IotEmSideDetail {
   emLeft: number;
   emRight: number;
   emTotal: number;
+  emAvg?: number;
   unit: string;
   endBreakCountLeft?: number;
   endBreakCountRight?: number;
@@ -700,6 +701,17 @@ export async function getMappedMachineEmFromIotEm(
       const emLeft = Number(rec.emLeft || 0);
       const emRight = Number(rec.emRight || 0);
       const emVal = Number(rec.emTotal ?? (emLeft + emRight));
+      // Calculate machine average EM (average of Left and Right EM, not total)
+      let emAvg = 0;
+      if (emLeft > 0 && emRight > 0) {
+        emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
+      } else if (emLeft > 0) {
+        emAvg = Number(emLeft.toFixed(2));
+      } else if (emRight > 0) {
+        emAvg = Number(emRight.toFixed(2));
+      } else if (emVal > 0) {
+        emAvg = Number((emVal / 2).toFixed(2));
+      }
       const endBreakCountLeft = Number(rec.endBreakCountLeft || 0);
       const endBreakCountRight = Number(rec.endBreakCountRight || 0);
       const totalEndBreaks = Number(rec.totalEndBreaks || (endBreakCountLeft + endBreakCountRight));
@@ -712,6 +724,7 @@ export async function getMappedMachineEmFromIotEm(
         emLeft,
         emRight,
         emTotal: emVal,
+        emAvg,
         unit,
         endBreakCountLeft,
         endBreakCountRight,
@@ -754,9 +767,9 @@ export async function getMappedMachineEmFromIotEm(
           if (!merged[dKey][fKey]) merged[dKey][fKey] = {};
           if (!detailsMap[dKey][fKey]) detailsMap[dKey][fKey] = {};
 
-          // Record latest EM value for this machine, date and shift
-          merged[dKey][fKey][shiftNum] = emVal;
-          merged[dKey][fKey][String(shiftNum)] = emVal;
+          // Record latest average EM value for this machine, date and shift (never sum/total)
+          merged[dKey][fKey][shiftNum] = emAvg;
+          merged[dKey][fKey][String(shiftNum)] = emAvg;
 
           detailsMap[dKey][fKey][shiftNum] = sideDetail;
           detailsMap[dKey][fKey][String(shiftNum)] = sideDetail;
