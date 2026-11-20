@@ -616,16 +616,19 @@ export function getFrameVariants(frame: string): string[] {
       variants.add(upper);
       variants.add(`RF${p2}`);
       variants.add(`RF${unpadded}`);
+    } else if (upper.startsWith('K')) {
+      // KTTM machine variants (ONLY K, NEVER SP or bare numbers!)
+      variants.add(upper);
+      variants.add(`K${p2}`);
+      variants.add(`K${unpadded}`);
     } else {
-      // Spinning machine frame variants (SP, K, numbers)
+      // Spinning machine frame variants (SP, numbers)
       variants.add(rawNum);
       variants.add(unpadded);
       variants.add(p2);
       variants.add(p3);
       variants.add(`SP${p3}`);
       variants.add(`SP${p2}`);
-      variants.add(`K${p2}`);
-      variants.add(`K${unpadded}`);
     }
   }
 

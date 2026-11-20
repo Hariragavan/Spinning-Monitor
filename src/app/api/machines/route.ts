@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
+import { getMachineShed, normalizeShed } from '@/lib/utils';
 
 const STANDARD_FALLBACK_MACHINES: Record<string, Array<{ rfNo: string; count: string; stdGps: number; spindles: number }>> = {
   'Shed 1': [
@@ -63,77 +64,83 @@ const STANDARD_FALLBACK_MACHINES: Record<string, Array<{ rfNo: string; count: st
 };
 
 /**
- * Synchronize and restore machines from uploaded reports and standard profiles
+ * Synchronize and restore machines from uploaded reports and standard profiles.
+ * Strictly separates machine numbers shed-wise detected from the database:
+ * - Shed 1: SP009 - SP030 (1..30)
+ * - Shed 2: SP031 - SP040 (31..40)
+ * - Shed 3: SP041 - SP050 (41..50)
+ * - KTTM: K01 - K10 (starts with 'K')
  */
 async function syncMachinesFromReportsInternal(db: any) {
   const machineMap = new Map<string, any>();
 
-  // 1. Ingest from uploaded reports (both this month and all historical reports)
+  // 1. Seed standard fallback machines first for all sheds to ensure completeness
+  for (const [shed, list] of Object.entries(STANDARD_FALLBACK_MACHINES)) {
+    for (const item of list) {
+      const rf = item.rfNo.trim().toUpperCase();
+      const canonicalShed = getMachineShed(rf, shed);
+      machineMap.set(rf, {
+        id: `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
+        rfNo: rf,
+        frameNo: rf,
+        shed: canonicalShed,
+        count: item.count,
+        stdGps: item.stdGps,
+        spindles: item.spindles || 1200,
+        status: 'Active',
+        description: `RING FRAME ${rf} (${canonicalShed})`
+      });
+    }
+  }
+
+  // 2. Ingest from uploaded reports (both this month and historical reports)
+  // Strictly assign every machine to its true canonical shed!
   const reports = await db.collection('reports').find({}).toArray();
   reports.forEach((r: any) => {
-    const shed = r.shed || 'Shed 1';
     (r.entries || []).forEach((e: any) => {
       const rf = String(e.frameNo || e.rfNo || '').trim().toUpperCase();
       if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-      const key = `${rf}__${shed.toLowerCase()}`;
-      const existing = machineMap.get(key);
-      machineMap.set(key, {
-        id: `m-${rf.toLowerCase()}-${shed.toLowerCase().replace(/\s+/g, '-')}`,
+      const canonicalShed = getMachineShed(rf, e.shed || r.shed);
+      const existing = machineMap.get(rf);
+      machineMap.set(rf, {
+        id: existing?.id || `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
         rfNo: rf,
         frameNo: rf,
-        shed: shed,
+        shed: canonicalShed,
         count: (e.count || '').trim() || existing?.count || '030/1-PH-PC',
         spindles: e.spindles || existing?.spindles || 1008,
+        stdGps: e.gpsTarget || existing?.stdGps || 0,
         status: 'Active',
-        description: `RING FRAME ${rf} (${shed})`
+        description: `RING FRAME ${rf} (${canonicalShed})`
       });
     });
 
     (r.summaries || []).forEach((s: any) => {
       const rf = String(s.frameNo || s.rfNo || '').trim().toUpperCase();
       if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-      const key = `${rf}__${shed.toLowerCase()}`;
-      const existing = machineMap.get(key);
-      machineMap.set(key, {
-        id: `m-${rf.toLowerCase()}-${shed.toLowerCase().replace(/\s+/g, '-')}`,
+      const canonicalShed = getMachineShed(rf, s.shed || r.shed);
+      const existing = machineMap.get(rf);
+      machineMap.set(rf, {
+        id: existing?.id || `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
         rfNo: rf,
         frameNo: rf,
-        shed: shed,
+        shed: canonicalShed,
         count: (s.count || '').trim() || existing?.count || '030/1-PH-PC',
         spindles: existing?.spindles || 1008,
+        stdGps: s.stdGps || existing?.stdGps || 0,
         status: 'Active',
-        description: `RING FRAME ${rf} (${shed})`
+        description: `RING FRAME ${rf} (${canonicalShed})`
       });
     });
   });
 
-  // 2. Also ensure standard machines for each shed are included
-  for (const [shed, list] of Object.entries(STANDARD_FALLBACK_MACHINES)) {
-    for (const item of list) {
-      const key = `${item.rfNo}__${shed.toLowerCase()}`;
-      if (!machineMap.has(key)) {
-        machineMap.set(key, {
-          id: `m-${item.rfNo.toLowerCase()}-${shed.toLowerCase().replace(/\s+/g, '-')}`,
-          rfNo: item.rfNo,
-          frameNo: item.rfNo,
-          shed: shed,
-          count: item.count,
-          stdGps: item.stdGps,
-          spindles: item.spindles || 1200,
-          status: 'Active',
-          description: `RING FRAME ${item.rfNo} (${shed})`
-        });
-      }
-    }
-  }
+  // 3. Clear machines collection to remove any old/cross-contaminated entries
+  await db.collection('machines').deleteMany({});
 
-  // 3. Batch upsert into machines collection
-  for (const machine of machineMap.values()) {
-    await db.collection('machines').updateOne(
-      { rfNo: machine.rfNo, shed: machine.shed },
-      { $set: machine },
-      { upsert: true }
-    );
+  // 4. Batch insert into machines collection
+  const allMachines = Array.from(machineMap.values());
+  if (allMachines.length > 0) {
+    await db.collection('machines').insertMany(allMachines);
   }
 
   return machineMap.size;
@@ -144,7 +151,7 @@ export async function GET(req: Request) {
     const db = await getDb();
     const { searchParams } = new URL(req.url);
     const shed = searchParams.get('shed');
-    const syncFromReports = searchParams.get('syncFromReports') === 'true' || searchParams.get('sync') === 'true';
+    const syncFromReports = searchParams.get('syncFromReports') === 'true' || searchParams.get('sync') === 'true' || searchParams.get('startFresh') === 'true';
 
     // Clean up legacy non-registered / invalid machine records like "M"
     await db.collection('machines').deleteMany({
@@ -165,31 +172,33 @@ export async function GET(req: Request) {
       await syncMachinesFromReportsInternal(db);
     }
 
-    const filter: any = {};
-    if (shed && shed !== 'All') {
-      filter.shed = shed;
-    }
-
-    const machines = await db.collection('machines').find(filter, { projection: { _id: 0 } }).toArray();
-    const normalized = machines
+    const rawMachines = await db.collection('machines').find({}, { projection: { _id: 0 } }).toArray();
+    const normalized = rawMachines
       .filter((m: any) => {
         const rf = String(m.rfNo || m.frameNo || '').trim().toUpperCase();
         return rf !== '' && rf !== 'M' && rf !== 'MC' && Boolean(rf.match(/\d+/));
       })
       .map((m: any) => {
         const rf = m.rfNo || m.frameNo || '';
+        const trueShed = getMachineShed(rf, m.shed);
         return {
           ...m,
-          id: m.id || `m-${rf}`,
+          id: m.id || `m-${rf.toLowerCase()}`,
           rfNo: rf,
           frameNo: m.frameNo || rf,
-          shed: m.shed || 'Shed 1',
+          shed: trueShed,
           count: m.count || '030/1-PH-PC',
           spindles: m.spindles ?? 1200,
           status: m.status || 'Active',
-          description: m.description || `RING FRAME ${rf}`
+          description: m.description || `RING FRAME ${rf} (${trueShed})`
         };
-      });
+      })
+      .filter((m: any) => {
+        if (!shed || shed === 'All' || shed === 'All Sheds') return true;
+        return normalizeShed(m.shed) === normalizeShed(shed);
+      })
+      .sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+
     return NextResponse.json({ success: true, data: normalized });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'Failed to fetch machines' }, { status: 500 });
@@ -201,10 +210,15 @@ export async function POST(req: Request) {
     const db = await getDb();
     const body = await req.json();
 
-    if (body.action === 'syncFromReports') {
+    if (body.action === 'syncFromReports' || body.action === 'startFresh') {
       const restoredCount = await syncMachinesFromReportsInternal(db);
       const machines = await db.collection('machines').find({}, { projection: { _id: 0 } }).toArray();
-      return NextResponse.json({ success: true, count: restoredCount, data: machines });
+      const normalized = machines.map((m: any) => {
+        const rf = m.rfNo || m.frameNo || '';
+        const trueShed = getMachineShed(rf, m.shed);
+        return { ...m, shed: trueShed, rfNo: rf, frameNo: rf };
+      }).sort((a: any, b: any) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+      return NextResponse.json({ success: true, count: restoredCount, data: normalized });
     }
 
     const isValidMachine = (m: any) => {
@@ -215,14 +229,30 @@ export async function POST(req: Request) {
     if (body.action === 'batch') {
       const machines: any[] = (body.machines || []).filter(isValidMachine);
       const shed = body.shed;
-      if (shed && shed !== 'All') {
-        await db.collection('machines').deleteMany({ shed });
+      if (shed && shed !== 'All' && shed !== 'All Sheds') {
+        const normS = normalizeShed(shed);
+        await db.collection('machines').deleteMany({
+          $or: [
+            { shed: normS },
+            { shed: shed }
+          ]
+        });
       } else {
         await db.collection('machines').deleteMany({});
       }
 
       if (machines.length > 0) {
-        await db.collection('machines').insertMany(machines);
+        const normalizedList = machines.map(m => {
+          const rf = m.rfNo || m.frameNo;
+          const trueShed = getMachineShed(rf, m.shed || shed);
+          return {
+            ...m,
+            rfNo: rf,
+            frameNo: rf,
+            shed: trueShed
+          };
+        });
+        await db.collection('machines').insertMany(normalizedList);
       }
       return NextResponse.json({ success: true, count: machines.length });
     }
@@ -233,16 +263,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'A valid machine number with digits is required' }, { status: 400 });
     }
 
-    const mShed = machine.shed || 'Shed 1';
+    const cleanRf = String(rfNo).trim().toUpperCase();
+    const mShed = getMachineShed(cleanRf, machine.shed || 'Shed 1');
     const normalizedMachine = {
       ...machine,
       shed: mShed,
-      frameNo: rfNo,
-      rfNo
+      frameNo: cleanRf,
+      rfNo: cleanRf
     };
 
     await db.collection('machines').updateOne(
-      { frameNo: rfNo, shed: mShed },
+      { frameNo: cleanRf },
       { $set: normalizedMachine },
       { upsert: true }
     );

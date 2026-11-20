@@ -6,7 +6,7 @@ import {
   Layers, Activity, RefreshCw
 } from 'lucide-react';
 import { MachineMasterItem, Sider, CountConversion, Shed, DailyReport } from '../types';
-import { cn, getYesterdayUniversalDate, normalizeShed } from '../lib/utils';
+import { cn, getYesterdayUniversalDate, normalizeShed, getMachineShed } from '../lib/utils';
 
 export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
   'Shed 1': [
@@ -130,11 +130,11 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     try {
       setIsSyncingReports(true);
       setError(null);
-      const res = await fetch('/api/machines?syncFromReports=true');
+      const res = await fetch('/api/machines?syncFromReports=true&startFresh=true');
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        json.data.forEach((m: MachineMasterItem) => onSaveMachine(m));
-        setSyncSuccessMessage(`Successfully synchronized ${json.data.length} machines from uploaded reports & standard profiles.`);
+        await onResetStandardMachines(selectedShedTab === 'All Sheds' ? undefined : selectedShedTab);
+        setSyncSuccessMessage(`Successfully started fresh and synchronized ${json.data.length} machines cleanly separated by shed.`);
         setTimeout(() => setSyncSuccessMessage(null), 5000);
       } else {
         setError(json.error || 'Failed to sync machines');
@@ -263,13 +263,15 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
   }, [activeFormShed, countConversions, machines, editingId]);
 
-  // Master registered machines filtered by shed
+  // Master registered machines filtered strictly by shed (no cross-shed machines)
   const masterMachines = useMemo(() => {
+    const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
     return machines.filter(m => {
       const rf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
       if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return false;
+      const trueShed = getMachineShed(rf, m.shed);
       if (selectedShedTab === 'All Sheds') return true;
-      return normalizeShed(m.shed) === normalizeShed(selectedShedTab);
+      return trueShed === targetNorm;
     });
   }, [machines, selectedShedTab]);
 
@@ -277,19 +279,23 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   const dateMachines = useMemo(() => {
     if (!activeDateHasData) return [];
 
+    const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
     const items: MachineMasterItem[] = [];
     dateMachineMap.forEach((data, key) => {
-      const [rfUpper, shedLower] = key.split('__');
+      const [rfUpper] = key.split('__');
+      const trueShed = getMachineShed(rfUpper, data.shed);
+      if (selectedShedTab !== 'All Sheds' && trueShed !== targetNorm) return;
+
       const existingRegistered = machines.find(m => {
         const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
-        return mRf === rfUpper && (m.shed || 'Shed 1').toLowerCase() === shedLower;
+        return mRf === rfUpper && getMachineShed(mRf, m.shed) === trueShed;
       });
 
       items.push({
-        id: existingRegistered?.id || `m-${rfUpper.toLowerCase()}-${(data.shed || 'shed-1').toLowerCase().replace(/\s+/g, '-')}`,
+        id: existingRegistered?.id || `m-${rfUpper.toLowerCase()}-${trueShed.toLowerCase().replace(/\s+/g, '-')}`,
         rfNo: data.rfNo || rfUpper,
-        description: existingRegistered?.description || `RING FRAME ${data.rfNo || rfUpper} (${data.shed})`,
-        shed: data.shed,
+        description: existingRegistered?.description || `RING FRAME ${data.rfNo || rfUpper} (${trueShed})`,
+        shed: trueShed,
         count: data.count || existingRegistered?.count || '030/1-PH-PC',
         actualGps: data.actualGps,
         stdGps: data.stdGps,
@@ -300,14 +306,14 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     });
 
     return items.sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
-  }, [activeDateHasData, dateMachineMap, machines]);
+  }, [activeDateHasData, dateMachineMap, machines, selectedShedTab]);
 
   // Effective list shown in table based on viewMode (falls back to master machines if date statement not uploaded)
   const displayMachines = (viewMode === 'date' && dateMachines.length > 0) ? dateMachines : masterMachines;
 
   const handleStartEdit = (machine: MachineMasterItem) => {
     setEditingId(machine.id);
-    const mShed = machine.shed || currentShed || 'Shed 1';
+    const mShed = getMachineShed(machine.rfNo || (machine as any).frameNo, machine.shed || currentShed || 'Shed 1');
     const shedCounts = getAvailableCountsForShed(mShed);
     const rf = (machine.rfNo || (machine as any).frameNo || '').trim().toUpperCase();
     const key = `${rf}__${mShed.toLowerCase()}`;
@@ -346,7 +352,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       setError('Please enter a valid machine number containing digits (e.g., 01, RF-02, K03). "M" cannot be registered as a machine.');
       return;
     }
-    const cleanShed = formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
+    const cleanShed = getMachineShed(cleanRfNo, formData.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1')));
     const finalCount = formData.count || availableCountsForShed[0] || '';
 
     // Check duplicate RF No across same or other sheds
@@ -413,10 +419,10 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
             disabled={isSyncingReports}
             onClick={handleSyncFromReports}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-2xs cursor-pointer self-start sm:self-center disabled:opacity-50"
-            title="Automatically scan uploaded Excel statements and recover all machine numbers"
+            title="Scan uploaded reports from DB and rebuild clean all master machines separated by shed"
           >
             <RefreshCw size={14} className={cn("text-white", isSyncingReports && "animate-spin")} />
-            <span>{isSyncingReports ? 'Syncing...' : 'Sync From Reports'}</span>
+            <span>{isSyncingReports ? 'Starting Fresh...' : 'Start Fresh (Sync DB)'}</span>
           </button>
 
           <button

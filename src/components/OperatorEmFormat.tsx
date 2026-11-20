@@ -23,7 +23,7 @@ import {
 import * as XLSX from 'xlsx';
 import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift, MachineMasterItem, Shed } from '../types';
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
-import { cn, parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
+import { cn, parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate, getMachineShed } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
 import { STANDARD_MACHINES_BY_SHED } from './MachineMaster';
 
@@ -426,6 +426,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const cleanMachine = String(machine).trim().toUpperCase();
     if (!cleanMachine) return false;
 
+    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
     const canonical = normalizeToCanonicalDate(date);
     const now = new Date();
     const pad = (n: number) => n.toString().padStart(2, '0');
@@ -439,18 +440,22 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       safeSettings?.iotMachineMapping
     );
 
+    const mappedDev = resolveMappedDevice(dateMapping, cleanMachine);
+    const hasMappedDev = !!(mappedDev && mappedDev !== 'NONE' && mappedDev !== 'unassigned');
+    const isKttm = cleanMachine.startsWith('K') || targetNorm === 'KTTM';
+
     // If machine has recorded/live EM telemetry data on this date & shift, it definitely ran!
-    const emVal = getMachineEmValue(effectiveMachineEm, date, cleanMachine, shift, dateMapping);
-    if (emVal !== undefined && emVal !== null) {
-      return true;
+    // But for KTTM machines: strictly only if explicitly mapped to an IoT device in settings!
+    if (!isKttm || hasMappedDev) {
+      const emVal = getMachineEmValue(effectiveMachineEm, date, cleanMachine, shift, dateMapping);
+      if (emVal !== undefined && emVal !== null) {
+        return true;
+      }
     }
 
     // For today: if machine is mapped to an active IoT device, it runs live
-    if (isToday) {
-      const mappedDev = resolveMappedDevice(dateMapping, cleanMachine);
-      if (mappedDev && mappedDev !== 'NONE' && mappedDev !== 'unassigned') {
-        return true;
-      }
+    if (isToday && hasMappedDev) {
+      return true;
     }
 
     const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonical);
@@ -462,7 +467,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const mDigits = cleanMachine.match(/\d+/);
     const mNum = mDigits ? parseInt(mDigits[0], 10) : null;
 
-    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
     const isCleanK = cleanMachine.startsWith('K');
 
     const entry = report.entries.find(e => {
@@ -537,10 +541,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, []);
 
-  // Machines list: STRICTLY ONLY machines in that shed's machine registry that have data on at least one date in the selected month!
+  // Machines list: Show ALL master machines for each shed wise (strictly isolated per shed)
   const machines = useMemo(() => {
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
-    const isKttmTab = targetNorm === 'KTTM';
     const seen = new Set<string>();
     const candidateList: string[] = [];
 
@@ -562,11 +565,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         return;
       }
 
-      // Enforce strict shed partitioning:
-      // KTTM tab MUST only contain machines starting with 'K'
-      // Non-KTTM tabs MUST NOT contain machines starting with 'K'
-      const isKMachine = upper.startsWith('K');
-      if (isKttmTab !== isKMachine) return;
+      // Enforce strict shed partitioning using canonical getMachineShed:
+      // Machine must strictly belong to targetNorm!
+      const machineShed = getMachineShed(clean);
+      if (machineShed !== targetNorm) return;
 
       if (!seen.has(upper)) {
         seen.add(upper);
@@ -577,16 +579,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     // 1. Primary Source: machines registered in Machine Master for this shed
     const fromRegistry = (machinesProp || []).filter(m => {
       if (!m) return false;
-      const mShed = normalizeShed(m.shed || 'Shed 1');
+      const mShed = getMachineShed(m.rfNo || (m as any).frameNo, m.shed);
       return mShed === targetNorm;
     });
     fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
 
-    // 2. Standard machines fallback if registry is empty for this shed
-    if (candidateList.length === 0) {
-      const standardList = STANDARD_MACHINES_BY_SHED[targetNorm] || [];
-      standardList.forEach(m => addClean(m.rfNo));
-    }
+    // 2. Standard machines for this shed (ensure full master profile is always complete)
+    const standardList = STANDARD_MACHINES_BY_SHED[targetNorm] || [];
+    standardList.forEach(m => addClean(m.rfNo));
 
     // 3. Spinning frame numbers configured in IoT Machine Mapping for this month/shed
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
@@ -594,89 +594,21 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       addClean(f);
     });
 
-    // 4. Spinning frame numbers from history reports belonging to this shed in selectedMonth & selectedYear
+    // 4. Spinning frame numbers from history reports belonging to this shed
     (effectiveHistory || []).forEach(report => {
-      if (!report || !report.date || !Array.isArray(report.entries)) return;
-      if (report.shed && normalizeShed(report.shed) !== targetNorm) return;
-      const parts = parseUniversalDateParts(report.date);
-      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
-        report.entries.forEach(e => {
-          if (e && e.frameNo && (!e.shed || normalizeShed(e.shed) === targetNorm)) {
-            addClean(e.frameNo);
-          }
-        });
-      }
+      if (!report || !Array.isArray(report.entries)) return;
+      report.entries.forEach(e => {
+        if (!e || !e.frameNo) return;
+        addClean(e.frameNo);
+      });
     });
 
-    const deduplicatedCandidates = deduplicateMachines(candidateList);
-
-    // Filter candidate machines: ONLY keep machines that have data on AT LEAST ONE date in selectedMonthDates!
-    // ("show the machine no. when one of the date has data for that machine check it and fix it")
-    const activeMachinesWithData = deduplicatedCandidates.filter(machine => {
-      const cleanM = machine.trim().toUpperCase();
-      const isCleanK = cleanM.startsWith('K');
-      const mDigits = cleanM.match(/\d+/);
-      const mNum = mDigits ? parseInt(mDigits[0], 10) : null;
-
-      // Check dates in selectedMonthDates
-      for (const date of selectedMonthDates) {
-        const dateMapping = resolveEffectiveMappingForDate(
-          date,
-          safeSettings?.iotMachineAllocationPeriods,
-          safeSettings?.iotMachineMappingByDate,
-          safeSettings?.iotMachineMapping
-        );
-
-        for (const shift of shifts) {
-          const emFromData = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
-          if (emFromData !== undefined && emFromData !== null) {
-            return true;
-          }
-          if (isMachineRunOnShift(date, shift, machine)) {
-            return true;
-          }
-        }
-      }
-
-      // Check effectiveHistory entries for this month & shed
-      for (const report of effectiveHistory || []) {
-        if (!report || !report.date || !Array.isArray(report.entries)) continue;
-        if (report.shed && normalizeShed(report.shed) !== targetNorm) continue;
-        const parts = parseUniversalDateParts(report.date);
-        if (!parts || parts.month !== selectedMonth || parts.year !== selectedYear) continue;
-
-        const found = report.entries.some(e => {
-          if (!e) return false;
-          if (e.shed && normalizeShed(e.shed) !== targetNorm) return false;
-          const raw = e.frameNo || (e as any).machineId;
-          if (!raw) return false;
-          const cleanE = String(raw).trim().toUpperCase();
-          if (cleanE === cleanM) return true;
-          const isEntryK = cleanE.startsWith('K');
-          if (isCleanK !== isEntryK) return false;
-          const eDigits = cleanE.match(/\d+/);
-          if (mNum !== null && eDigits && parseInt(eDigits[0], 10) === mNum) return true;
-          return false;
-        });
-        if (found) return true;
-      }
-
-      return false;
-    });
-
-    return activeMachinesWithData;
+    return deduplicateMachines(candidateList);
   }, [
     machinesProp,
     activeShedTab,
     registeredInfoForMonth,
     effectiveHistory,
-    selectedMonth,
-    selectedYear,
-    selectedMonthDates,
-    shifts,
-    effectiveMachineEm,
-    safeSettings,
-    isMachineRunOnShift,
     deduplicateMachines
   ]);
 
@@ -712,6 +644,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const clean = String(frameNo).trim().toUpperCase();
     if (!clean) return false;
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
+    const machineShed = getMachineShed(clean);
+    if (machineShed !== targetNorm) return false;
+
     const isKttmTab = targetNorm === 'KTTM';
     const isCleanK = clean.startsWith('K');
 
@@ -2095,10 +2030,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                                 return (
                                   <React.Fragment key={`val-${machine}-${date}`}>
                                     {shifts.map(shift => {
-                                      const emFromData = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
-                                      const ran = isMachineRunOnShift(date, shift, machine) || (emFromData !== undefined && emFromData !== null);
+                                      const isKttm = machine.startsWith('K') || normalizeShed(activeShedTab) === 'KTTM';
+                                      const hasMappedDev = !!(mappedDev && mappedDev !== 'NONE' && mappedDev !== 'unassigned');
+                                      const emFromData = (!isKttm || hasMappedDev)
+                                        ? getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)
+                                        : undefined;
+                                      const ran = isMachineRunOnShift(date, shift, machine);
                                       // Only read EM value if machine actually ran / was uploaded on this date & shift
-                                      const val = ran ? (emFromData !== undefined && emFromData !== null ? emFromData : getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)) : undefined;
+                                      const val = ran ? (emFromData !== undefined && emFromData !== null ? emFromData : undefined) : undefined;
                                       const hasVal = val !== undefined && val !== null;
 
                                       const now = new Date();

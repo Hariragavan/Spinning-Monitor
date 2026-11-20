@@ -23,15 +23,29 @@ export function isSameShed(shedA?: string | null, shedB?: string | null): boolea
 }
 
 /**
- * Returns the exact mill shed for a machine frame number.
- * Respects the explicit/fallback shed without guessing or reassigning
- * machines to another shed based on machine number.
+ * Returns the exact mill shed for a machine frame number:
+ * - Frames starting with 'K' or containing 'KT' -> 'KTTM'
+ * - Frames 1..30 (e.g. SP001 to SP030) -> 'Shed 1'
+ * - Frames 31..40 (e.g. SP031 to SP040) -> 'Shed 2'
+ * - Frames 41+ (e.g. SP041 to SP050) -> 'Shed 3'
+ * Ensures strict shed separation detected from the database.
  */
-export function getMachineShed(frameNo: any, fallbackShed: Shed = 'Shed 1'): Shed {
-  if (fallbackShed) return (normalizeShed(fallbackShed) || 'Shed 1') as Shed;
-  if (!frameNo) return 'Shed 1';
+export function getMachineShed(frameNo: any, fallbackShed?: Shed | string): Shed {
+  if (!frameNo) return (normalizeShed(fallbackShed) || 'Shed 1') as Shed;
   const f = String(frameNo).trim().toUpperCase();
   if (f.startsWith('K') || f.includes('KT')) return 'KTTM';
+
+  const digits = f.match(/\d+/);
+  if (digits) {
+    const num = parseInt(digits[0], 10);
+    if (num >= 1 && num <= 30) return 'Shed 1';
+    if (num >= 31 && num <= 40) return 'Shed 2';
+    if (num >= 41) return 'Shed 3';
+  }
+
+  if (fallbackShed) {
+    return (normalizeShed(fallbackShed) || 'Shed 1') as Shed;
+  }
   return 'Shed 1';
 }
 
