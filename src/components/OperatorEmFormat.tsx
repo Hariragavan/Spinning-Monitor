@@ -25,6 +25,7 @@ import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
 import { cn, parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
+import { STANDARD_MACHINES_BY_SHED } from './MachineMaster';
 
 // Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
 const mapShiftToNum = (shift: Shift | string | number): string => {
@@ -360,127 +361,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
 
   const yearsList = [2025, 2026, 2027];
 
-  // Machines list: STRICTLY ONLY machines in that shed's machine registry!
-  const machines = useMemo(() => {
-    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
-    const seen = new Set<string>();
-    const list: string[] = [];
-
-    const addClean = (val: any) => {
-      if (val === null || val === undefined) return;
-      const clean = String(val).trim();
-      if (!clean) return;
-      const lower = clean.toLowerCase();
-      // Filter out grand totals, empty, dashes, and IoT device identifiers (RFxx)
-      if (
-        lower.includes('grand') ||
-        lower.includes('total') ||
-        lower.includes('rf no') ||
-        lower.startsWith('rf') ||
-        lower === '-' ||
-        lower === '0'
-      ) {
-        return;
-      }
-      if (!seen.has(clean.toUpperCase())) {
-        seen.add(clean.toUpperCase());
-        list.push(clean);
-      }
-    };
-
-    // Helper to deduplicate machine lists: removes bare numeric machines (e.g. '9', '10') if a prefixed equivalent exists (e.g. 'SP009', 'SP010')
-    const deduplicateMachines = (rawList: string[]): string[] => {
-      const filtered = rawList.filter(item => {
-        const trimmed = item.trim();
-        if (!trimmed || trimmed === '-' || trimmed === '0') return false;
-        const isPureNumber = /^\d+$/.test(trimmed);
-        if (isPureNumber) {
-          const num = parseInt(trimmed, 10);
-          const hasPrefixed = rawList.some(other => {
-            const otherTrim = other.trim();
-            if (/^\d+$/.test(otherTrim)) return false;
-            const m = otherTrim.match(/\d+/);
-            return m && parseInt(m[0], 10) === num;
-          });
-          if (hasPrefixed) return false;
-        }
-        return true;
-      });
-
-      return filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    };
-
-    // Primary Source: machines registered in Machine Master for this shed
-    const fromRegistry = (machinesProp || []).filter(m => {
-      if (!m) return false;
-      const mShed = normalizeShed(m.shed || 'Shed 1');
-      return mShed === targetNorm;
-    });
-    fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
-
-    // If registry has machines for this shed, strictly use ONLY those machine numbers!
-    if (list.length > 0) {
-      return deduplicateMachines(list);
-    }
-
-    // 2. Fallback: If Machine Master item table has not been populated yet:
-    // a. Spinning frame numbers configured in IoT Machine Mapping for this shed
-    (registeredInfoForMonth.registeredFrames || []).forEach(f => {
-      if (!f || String(f).toUpperCase().startsWith('RF')) return;
-      const clean = String(f).trim();
-      addClean(clean);
-    });
-
-    // b. Spinning frame numbers from history reports belonging to this shed
-    (effectiveHistory || []).forEach(report => {
-      if (!report || !report.date || !Array.isArray(report.entries)) return;
-      if (normalizeShed(report.shed) !== targetNorm) return;
-      const parts = parseUniversalDateParts(report.date);
-      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
-        report.entries.forEach(e => {
-          if (e && e.frameNo && (!e.shed || normalizeShed(e.shed) === targetNorm)) {
-            addClean(e.frameNo);
-          }
-        });
-      }
-    });
-
-    return deduplicateMachines(list);
-  }, [machinesProp, activeShedTab, registeredInfoForMonth, effectiveHistory, selectedMonth, selectedYear]);
-
-  // Set of verified existing machine frame numbers for active shed
-  const existingMachinesSet = useMemo(() => {
-    const s = new Set<string>();
-    (machines || []).forEach(m => {
-      const clean = String(m || '').trim().toUpperCase();
-      if (!clean) return;
-      s.add(clean);
-      const digits = clean.match(/\d+/);
-      if (digits) {
-        s.add(digits[0]);
-        s.add(String(parseInt(digits[0], 10)));
-        s.add(`RF${digits[0].padStart(2, '0')}`);
-        s.add(`SP${digits[0].padStart(2, '0')}`);
-        s.add(`SP${digits[0].padStart(3, '0')}`);
-      }
-    });
-    return s;
-  }, [machines]);
-
-  const isMachineExisted = useCallback((frameNo: any): boolean => {
-    if (frameNo === null || frameNo === undefined) return false;
-    const clean = String(frameNo).trim().toUpperCase();
-    if (!clean) return false;
-    if (!machines || machines.length === 0) return true; // If machine registry not yet populated, do not block
-    if (existingMachinesSet.has(clean)) return true;
-    const digits = clean.match(/\d+/);
-    if (digits) {
-      if (existingMachinesSet.has(digits[0]) || existingMachinesSet.has(String(parseInt(digits[0], 10)))) {
-        return true;
-      }
-    }
-    return false;
-  }, [existingMachinesSet, machines]);
+  // Machines, existingMachinesSet, and isMachineExisted are declared below selectedMonthDates
+  // to ensure they accurately filter candidate machines by whether they have data in the selected month.
 
   // Fast map of: date -> shift -> Set of assigned machines
   const assignedMachinesByDateAndShift = useMemo(() => {
@@ -580,15 +462,26 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const mDigits = cleanMachine.match(/\d+/);
     const mNum = mDigits ? parseInt(mDigits[0], 10) : null;
 
+    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
+    const isCleanK = cleanMachine.startsWith('K');
+
     const entry = report.entries.find(e => {
       if (!e) return false;
       const eShift = mapShiftToNum(e.shift || (report as any).shift || '1');
       if (eShift !== sKey) return false;
 
+      // Shed verification: report or entry shed must match active tab if present
+      if (report.shed && normalizeShed(report.shed) !== targetNorm) return false;
+      if (e.shed && normalizeShed(e.shed) !== targetNorm) return false;
+
       const rawFrame = e.frameNo || (e as any).machineId;
       if (rawFrame === null || rawFrame === undefined) return false;
       const cleanFrame = String(rawFrame).trim().toUpperCase();
       if (cleanFrame === cleanMachine) return true;
+
+      // Prevent cross-matching between KTTM (Kxx) and Ring Frames (SPxx / xx)
+      const isEntryK = cleanFrame.startsWith('K');
+      if (isCleanK !== isEntryK) return false;
 
       const eDigits = cleanFrame.match(/\d+/);
       if (mNum !== null && eDigits && parseInt(eDigits[0], 10) === mNum) {
@@ -621,6 +514,226 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     }
     return calendarDates;
   }, [selectedMonthHistoryDates, calendarDates]);
+
+  // Helper to deduplicate machine lists: removes bare numeric machines (e.g. '9', '10') if a prefixed equivalent exists (e.g. 'SP009', 'SP010')
+  const deduplicateMachines = useCallback((rawList: string[]): string[] => {
+    const filtered = rawList.filter(item => {
+      const trimmed = item.trim();
+      if (!trimmed || trimmed === '-' || trimmed === '0') return false;
+      const isPureNumber = /^\d+$/.test(trimmed);
+      if (isPureNumber) {
+        const num = parseInt(trimmed, 10);
+        const hasPrefixed = rawList.some(other => {
+          const otherTrim = other.trim();
+          if (/^\d+$/.test(otherTrim)) return false;
+          const m = otherTrim.match(/\d+/);
+          return m && parseInt(m[0], 10) === num;
+        });
+        if (hasPrefixed) return false;
+      }
+      return true;
+    });
+
+    return filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, []);
+
+  // Machines list: STRICTLY ONLY machines in that shed's machine registry that have data on at least one date in the selected month!
+  const machines = useMemo(() => {
+    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
+    const isKttmTab = targetNorm === 'KTTM';
+    const seen = new Set<string>();
+    const candidateList: string[] = [];
+
+    const addClean = (val: any) => {
+      if (val === null || val === undefined) return;
+      const clean = String(val).trim();
+      if (!clean) return;
+      const upper = clean.toUpperCase();
+      const lower = clean.toLowerCase();
+      // Filter out grand totals, empty, dashes, and IoT device identifiers (RFxx)
+      if (
+        lower.includes('grand') ||
+        lower.includes('total') ||
+        lower.includes('rf no') ||
+        lower.startsWith('rf') ||
+        lower === '-' ||
+        lower === '0'
+      ) {
+        return;
+      }
+
+      // Enforce strict shed partitioning:
+      // KTTM tab MUST only contain machines starting with 'K'
+      // Non-KTTM tabs MUST NOT contain machines starting with 'K'
+      const isKMachine = upper.startsWith('K');
+      if (isKttmTab !== isKMachine) return;
+
+      if (!seen.has(upper)) {
+        seen.add(upper);
+        candidateList.push(clean);
+      }
+    };
+
+    // 1. Primary Source: machines registered in Machine Master for this shed
+    const fromRegistry = (machinesProp || []).filter(m => {
+      if (!m) return false;
+      const mShed = normalizeShed(m.shed || 'Shed 1');
+      return mShed === targetNorm;
+    });
+    fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
+
+    // 2. Standard machines fallback if registry is empty for this shed
+    if (candidateList.length === 0) {
+      const standardList = STANDARD_MACHINES_BY_SHED[targetNorm] || [];
+      standardList.forEach(m => addClean(m.rfNo));
+    }
+
+    // 3. Spinning frame numbers configured in IoT Machine Mapping for this month/shed
+    (registeredInfoForMonth.registeredFrames || []).forEach(f => {
+      if (!f || String(f).toUpperCase().startsWith('RF')) return;
+      addClean(f);
+    });
+
+    // 4. Spinning frame numbers from history reports belonging to this shed in selectedMonth & selectedYear
+    (effectiveHistory || []).forEach(report => {
+      if (!report || !report.date || !Array.isArray(report.entries)) return;
+      if (report.shed && normalizeShed(report.shed) !== targetNorm) return;
+      const parts = parseUniversalDateParts(report.date);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        report.entries.forEach(e => {
+          if (e && e.frameNo && (!e.shed || normalizeShed(e.shed) === targetNorm)) {
+            addClean(e.frameNo);
+          }
+        });
+      }
+    });
+
+    const deduplicatedCandidates = deduplicateMachines(candidateList);
+
+    // Filter candidate machines: ONLY keep machines that have data on AT LEAST ONE date in selectedMonthDates!
+    // ("show the machine no. when one of the date has data for that machine check it and fix it")
+    const activeMachinesWithData = deduplicatedCandidates.filter(machine => {
+      const cleanM = machine.trim().toUpperCase();
+      const isCleanK = cleanM.startsWith('K');
+      const mDigits = cleanM.match(/\d+/);
+      const mNum = mDigits ? parseInt(mDigits[0], 10) : null;
+
+      // Check dates in selectedMonthDates
+      for (const date of selectedMonthDates) {
+        const dateMapping = resolveEffectiveMappingForDate(
+          date,
+          safeSettings?.iotMachineAllocationPeriods,
+          safeSettings?.iotMachineMappingByDate,
+          safeSettings?.iotMachineMapping
+        );
+
+        for (const shift of shifts) {
+          const emFromData = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
+          if (emFromData !== undefined && emFromData !== null) {
+            return true;
+          }
+          if (isMachineRunOnShift(date, shift, machine)) {
+            return true;
+          }
+        }
+      }
+
+      // Check effectiveHistory entries for this month & shed
+      for (const report of effectiveHistory || []) {
+        if (!report || !report.date || !Array.isArray(report.entries)) continue;
+        if (report.shed && normalizeShed(report.shed) !== targetNorm) continue;
+        const parts = parseUniversalDateParts(report.date);
+        if (!parts || parts.month !== selectedMonth || parts.year !== selectedYear) continue;
+
+        const found = report.entries.some(e => {
+          if (!e) return false;
+          if (e.shed && normalizeShed(e.shed) !== targetNorm) return false;
+          const raw = e.frameNo || (e as any).machineId;
+          if (!raw) return false;
+          const cleanE = String(raw).trim().toUpperCase();
+          if (cleanE === cleanM) return true;
+          const isEntryK = cleanE.startsWith('K');
+          if (isCleanK !== isEntryK) return false;
+          const eDigits = cleanE.match(/\d+/);
+          if (mNum !== null && eDigits && parseInt(eDigits[0], 10) === mNum) return true;
+          return false;
+        });
+        if (found) return true;
+      }
+
+      return false;
+    });
+
+    return activeMachinesWithData;
+  }, [
+    machinesProp,
+    activeShedTab,
+    registeredInfoForMonth,
+    effectiveHistory,
+    selectedMonth,
+    selectedYear,
+    selectedMonthDates,
+    shifts,
+    effectiveMachineEm,
+    safeSettings,
+    isMachineRunOnShift,
+    deduplicateMachines
+  ]);
+
+  // Set of verified existing machine frame numbers for active shed
+  const existingMachinesSet = useMemo(() => {
+    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
+    const isKttmTab = targetNorm === 'KTTM';
+    const s = new Set<string>();
+
+    (machines || []).forEach(m => {
+      const clean = String(m || '').trim().toUpperCase();
+      if (!clean) return;
+      s.add(clean);
+      const digits = clean.match(/\d+/);
+      if (digits) {
+        if (isKttmTab) {
+          s.add(`K${digits[0]}`);
+          s.add(`K${digits[0].padStart(2, '0')}`);
+        } else {
+          s.add(digits[0]);
+          s.add(String(parseInt(digits[0], 10)));
+          s.add(`RF${digits[0].padStart(2, '0')}`);
+          s.add(`SP${digits[0].padStart(2, '0')}`);
+          s.add(`SP${digits[0].padStart(3, '0')}`);
+        }
+      }
+    });
+    return s;
+  }, [machines, activeShedTab]);
+
+  const isMachineExisted = useCallback((frameNo: any): boolean => {
+    if (frameNo === null || frameNo === undefined) return false;
+    const clean = String(frameNo).trim().toUpperCase();
+    if (!clean) return false;
+    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
+    const isKttmTab = targetNorm === 'KTTM';
+    const isCleanK = clean.startsWith('K');
+
+    // Strict tab check
+    if (isKttmTab !== isCleanK) return false;
+
+    if (!machines || machines.length === 0) return true; // If machine list is empty, do not block
+    if (existingMachinesSet.has(clean)) return true;
+    const digits = clean.match(/\d+/);
+    if (digits) {
+      if (isKttmTab) {
+        if (existingMachinesSet.has(`K${digits[0]}`) || existingMachinesSet.has(`K${digits[0].padStart(2, '0')}`)) {
+          return true;
+        }
+      } else {
+        if (existingMachinesSet.has(digits[0]) || existingMachinesSet.has(String(parseInt(digits[0], 10)))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [existingMachinesSet, machines, activeShedTab]);
 
   // Live EM background refresh from MongoDB
   const [isRefreshingEm, setIsRefreshingEm] = useState(false);
@@ -1190,8 +1303,14 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     if (!selectedDailyEmDate) return [];
     
     const canonicalSelected = normalizeToCanonicalDate(selectedDailyEmDate);
-    const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === canonicalSelected);
-    if (!report || !Array.isArray(report.entries) || report.entries.length === 0) return [];
+    const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
+
+    const reportsForDate = (effectiveHistory || []).filter(r => {
+      if (!r || !r.date || normalizeToCanonicalDate(r.date) !== canonicalSelected) return false;
+      if (r.shed && normalizeShed(r.shed) !== targetNorm) return false;
+      return true;
+    });
+    if (reportsForDate.length === 0) return [];
 
     const list: {
       siderName: string;
@@ -1203,15 +1322,20 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       em: number;
     }[] = [];
 
-    report.entries.forEach(entry => {
-      if (!entry) return;
-      const rawFrame = entry.frameNo || (entry as any).machineId;
-      if (rawFrame === null || rawFrame === undefined) return;
-      const frameNo = String(rawFrame).trim();
-      if (!frameNo) return;
+    reportsForDate.forEach(report => {
+      if (!Array.isArray(report.entries)) return;
 
-      // 1. Machine existence check (do not show machines that do not exist in the active registry)
-      if (!isMachineExisted(frameNo)) return;
+      report.entries.forEach(entry => {
+        if (!entry) return;
+        if (entry.shed && normalizeShed(entry.shed) !== targetNorm) return;
+
+        const rawFrame = entry.frameNo || (entry as any).machineId;
+        if (rawFrame === null || rawFrame === undefined) return;
+        const frameNo = String(rawFrame).trim();
+        if (!frameNo) return;
+
+        // 1. Machine existence check (do not show machines that do not exist in the active registry)
+        if (!isMachineExisted(frameNo)) return;
 
       // 2. Resolve all siders assigned to this machine entry
       const assignedIds: string[] = [];
@@ -1317,8 +1441,10 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         return { sideLabel, dutyEm: Number(dutyEm.toFixed(2)) };
       };
 
-      if (assignedIds.length > 0) {
-        assignedIds.forEach(id => {
+      const uniqueAssignedIds = Array.from(new Set(assignedIds));
+
+      if (uniqueAssignedIds.length > 0) {
+        uniqueAssignedIds.forEach(id => {
           const worker = (effectiveWorkers || []).find(w => 
             w && (
               (w.id && String(w.id).toLowerCase() === String(id).toLowerCase()) || 
@@ -1353,20 +1479,32 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         });
       }
     });
+  });
 
-    // Sort by Shift (I, II, III), then MC NO (numeric ascending), then Sider Name
-    return list.sort((a, b) => {
-      const shiftOrder: Record<Shift, number> = { 'I': 1, 'II': 2, 'III': 3 };
-      const aOrder = shiftOrder[a.shift] || 99;
-      const bOrder = shiftOrder[b.shift] || 99;
-      if (aOrder !== bOrder) return aOrder - bOrder;
+  // Deduplicate any identical entries (same Sider, same Shift, same Machine and side)
+  const seenRowKeys = new Set<string>();
+  const deduplicatedList: typeof list = [];
+  list.forEach(item => {
+    const rowKey = `${item.shift}_${item.mcNo.toUpperCase().trim()}_${item.siderName.toUpperCase().trim()}`;
+    if (!seenRowKeys.has(rowKey)) {
+      seenRowKeys.add(rowKey);
+      deduplicatedList.push(item);
+    }
+  });
 
-      const aMc = a.mcNo.localeCompare(b.mcNo, undefined, { numeric: true });
-      if (aMc !== 0) return aMc;
+  // Sort by Shift (I, II, III), then MC NO (numeric ascending), then Sider Name
+  return deduplicatedList.sort((a, b) => {
+    const shiftOrder: Record<Shift, number> = { 'I': 1, 'II': 2, 'III': 3 };
+    const aOrder = shiftOrder[a.shift] || 99;
+    const bOrder = shiftOrder[b.shift] || 99;
+    if (aOrder !== bOrder) return aOrder - bOrder;
 
-      return a.siderName.localeCompare(b.siderName);
-    });
-  }, [effectiveHistory, selectedDailyEmDate, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth, isMachineExisted]);
+    const aMc = a.mcNo.localeCompare(b.mcNo, undefined, { numeric: true });
+    if (aMc !== 0) return aMc;
+
+    return a.siderName.localeCompare(b.siderName);
+  });
+}, [effectiveHistory, selectedDailyEmDate, effectiveMachineEm, effectiveWorkers, registeredInfoForMonth, isMachineExisted, activeShedTab]);
 
   const exportDailyEmToExcel = () => {
     if (dailyEmRows.length === 0) return;
@@ -1929,122 +2067,135 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {machines.map(machine => {
-                        return (
-                          <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
-                            <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
-                              <span>{machine}</span>
-                            </td>
-                            {selectedMonthDates.map(date => {
-                              const dateMapping = resolveEffectiveMappingForDate(
-                                date,
-                                safeSettings?.iotMachineAllocationPeriods,
-                                safeSettings?.iotMachineMappingByDate,
-                                safeSettings?.iotMachineMapping
-                              );
-                              const mappedDev = resolveMappedDevice(dateMapping, machine);
+                      {machines.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={1 + selectedMonthDates.length * 3}
+                            className="p-12 text-center text-stone-400 font-medium italic bg-stone-50/20"
+                          >
+                            No machines with data or assignments found for {activeShedTab} in {monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}.
+                          </td>
+                        </tr>
+                      ) : (
+                        machines.map(machine => {
+                          return (
+                            <tr key={machine} className="border-b border-stone-100 hover:bg-stone-50/50 transition-colors">
+                              <td className="p-3 font-bold text-stone-900 border-r border-stone-200 bg-stone-50/30">
+                                <span>{machine}</span>
+                              </td>
+                              {selectedMonthDates.map(date => {
+                                const dateMapping = resolveEffectiveMappingForDate(
+                                  date,
+                                  safeSettings?.iotMachineAllocationPeriods,
+                                  safeSettings?.iotMachineMappingByDate,
+                                  safeSettings?.iotMachineMapping
+                                );
+                                const mappedDev = resolveMappedDevice(dateMapping, machine);
 
-                              return (
-                                <React.Fragment key={`val-${machine}-${date}`}>
-                                  {shifts.map(shift => {
-                                    const emFromData = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
-                                    const ran = isMachineRunOnShift(date, shift, machine) || (emFromData !== undefined && emFromData !== null);
-                                    // Only read EM value if machine actually ran / was uploaded on this date & shift
-                                    const val = ran ? (emFromData !== undefined && emFromData !== null ? emFromData : getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)) : undefined;
-                                    const hasVal = val !== undefined && val !== null;
+                                return (
+                                  <React.Fragment key={`val-${machine}-${date}`}>
+                                    {shifts.map(shift => {
+                                      const emFromData = getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping);
+                                      const ran = isMachineRunOnShift(date, shift, machine) || (emFromData !== undefined && emFromData !== null);
+                                      // Only read EM value if machine actually ran / was uploaded on this date & shift
+                                      const val = ran ? (emFromData !== undefined && emFromData !== null ? emFromData : getMachineEmValue(effectiveMachineEm, date, machine, shift, dateMapping)) : undefined;
+                                      const hasVal = val !== undefined && val !== null;
 
-                                    const now = new Date();
-                                    const pad = (n: number) => n.toString().padStart(2, '0');
-                                    const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
-                                    const isToday = normalizeToCanonicalDate(date) === todayCanonical;
+                                      const now = new Date();
+                                      const pad = (n: number) => n.toString().padStart(2, '0');
+                                      const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                                      const isToday = normalizeToCanonicalDate(date) === todayCanonical;
 
-                                    // Check if a saved daily report exists with entries for this date & shift
-                                    const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
-                                    const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shift));
+                                      // Check if a saved daily report exists with entries for this date & shift
+                                      const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
+                                      const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shift));
 
-                                    // Determine if this shift is over vs live
-                                    // For live telemetry on today, show in green text; when saved report exists or on past dates, show saved EM in normal text
-                                    const isLive = isToday && !hasSavedReport;
+                                      // Determine if this shift is over vs live
+                                      // For live telemetry on today, show in green text; when saved report exists or on past dates, show saved EM in normal text
+                                      const isLive = isToday && !hasSavedReport;
 
-                                    return (
-                                      <td 
-                                        key={`cell-${machine}-${date}-${shift}`}
-                                        onClick={() => {
-                                          handleOpenEmDetail(date, machine, shift, val, mappedDev);
-                                        }}
-                                        className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group ${
-                                          hasVal
-                                            ? isLive
-                                              ? 'text-green-600 font-extrabold bg-green-50/40'
-                                              : 'text-stone-900 font-bold'
-                                            : ran
-                                            ? 'text-stone-400 bg-stone-50/10'
-                                            : 'text-stone-300 bg-stone-50/20'
-                                        }`}
-                                        title={
-                                          hasVal
-                                            ? `${machine} · Shift ${shift} · ${date}: ${typeof val === 'number' ? val.toFixed(2) : val} (${isLive ? 'LIVE' : 'Saved EM'})`
-                                            : `${machine} · Shift ${shift} · ${date} (${ran ? 'Running' : 'Not Run'})`
-                                        }
-                                      >
-                                        <span className={isLive && hasVal ? 'text-green-600 font-extrabold inline-flex items-center justify-center gap-1' : ''}>
-                                          {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
-                                          {isLive && hasVal && (
-                                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" title="Live Telemetry" />
+                                      return (
+                                        <td 
+                                          key={`cell-${machine}-${date}-${shift}`}
+                                          onClick={() => {
+                                            handleOpenEmDetail(date, machine, shift, val, mappedDev);
+                                          }}
+                                          className={`p-2.5 text-center font-mono border-r border-stone-100 transition-all hover:bg-emerald-50 hover:text-emerald-800 cursor-pointer relative group ${
+                                            hasVal
+                                              ? isLive
+                                                ? 'text-green-600 font-extrabold bg-green-50/40'
+                                                : 'text-stone-900 font-bold'
+                                              : ran
+                                              ? 'text-stone-400 bg-stone-50/10'
+                                              : 'text-stone-300 bg-stone-50/20'
+                                          }`}
+                                          title={
+                                            hasVal
+                                              ? `${machine} · Shift ${shift} · ${date}: ${typeof val === 'number' ? val.toFixed(2) : val} (${isLive ? 'LIVE' : 'Saved EM'})`
+                                              : `${machine} · Shift ${shift} · ${date} (${ran ? 'Running' : 'Not Run'})`
+                                          }
+                                        >
+                                          <span className={isLive && hasVal ? 'text-green-600 font-extrabold inline-flex items-center justify-center gap-1' : ''}>
+                                            {hasVal ? (typeof val === 'number' ? val.toFixed(2) : val) : '-'}
+                                            {isLive && hasVal && (
+                                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" title="Live Telemetry" />
+                                            )}
+                                          </span>
+                                          {hasVal && (
+                                            <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-green-600 transition-opacity">
+                                              <Eye size={8} />
+                                            </div>
                                           )}
-                                        </span>
-                                        {hasVal && (
-                                          <div className="absolute right-1 top-1 opacity-0 group-hover:opacity-100 text-[8px] text-green-600 transition-opacity">
-                                            <Eye size={8} />
-                                          </div>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </React.Fragment>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })}
+                                        </td>
+                                      );
+                                    })}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })
+                      )}
 
                       {/* Grand Total Row */}
-                      <tr className="bg-stone-100/50 font-bold border-t-2 border-stone-200 text-stone-900">
-                        <td className="p-4 font-bold uppercase tracking-wider text-[10px] text-stone-850 border-r border-stone-200">
-                          Grand Total
-                        </td>
-                        {selectedMonthDates.map(date => (
-                          <React.Fragment key={`total-${date}`}>
-                            {shifts.map(shift => {
-                              const avg = calculateColAverage(date, shift);
-                              const now = new Date();
-                              const pad = (n: number) => n.toString().padStart(2, '0');
-                              const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
-                              const isToday = normalizeToCanonicalDate(date) === todayCanonical;
-                              const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
-                              const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shift));
-                              const curMinutes = now.getHours() * 60 + now.getMinutes();
-                              const isLive = isToday && !hasSavedReport;
+                      {machines.length > 0 && (
+                        <tr className="bg-stone-100/50 font-bold border-t-2 border-stone-200 text-stone-900">
+                          <td className="p-4 font-bold uppercase tracking-wider text-[10px] text-stone-850 border-r border-stone-200">
+                            Grand Total
+                          </td>
+                          {selectedMonthDates.map(date => (
+                            <React.Fragment key={`total-${date}`}>
+                              {shifts.map(shift => {
+                                const avg = calculateColAverage(date, shift);
+                                const now = new Date();
+                                const pad = (n: number) => n.toString().padStart(2, '0');
+                                const todayCanonical = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+                                const isToday = normalizeToCanonicalDate(date) === todayCanonical;
+                                const report = (effectiveHistory || []).find(r => r && r.date && normalizeToCanonicalDate(r.date) === normalizeToCanonicalDate(date));
+                                const hasSavedReport = !!(report && Array.isArray(report.entries) && report.entries.some(e => e && mapShiftToNum(e.shift) === shift));
+                                const curMinutes = now.getHours() * 60 + now.getMinutes();
+                                const isLive = isToday && !hasSavedReport;
 
-                              return (
-                                <td 
-                                  key={`col-total-${date}-${shift}`}
-                                  className={`p-3 text-center font-mono border-r border-stone-100 ${
-                                    isLive ? 'text-green-600 font-extrabold bg-green-50/50' : 'text-stone-900 font-bold bg-stone-100/50'
-                                  }`}
-                                >
-                                  <span className={isLive && avg !== '-' ? 'inline-flex items-center justify-center gap-1 text-green-600 font-extrabold' : ''}>
-                                    {avg}
-                                    {isLive && avg !== '-' && (
-                                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" title="Live Shift" />
-                                    )}
-                                  </span>
-                                </td>
-                              );
-                            })}
-                          </React.Fragment>
-                        ))}
-                      </tr>
+                                return (
+                                  <td 
+                                    key={`col-total-${date}-${shift}`}
+                                    className={`p-3 text-center font-mono border-r border-stone-100 ${
+                                      isLive ? 'text-green-600 font-extrabold bg-green-50/50' : 'text-stone-900 font-bold bg-stone-100/50'
+                                    }`}
+                                  >
+                                    <span className={isLive && avg !== '-' ? 'inline-flex items-center justify-center gap-1 text-green-600 font-extrabold' : ''}>
+                                      {avg}
+                                      {isLive && avg !== '-' && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block" title="Live Shift" />
+                                      )}
+                                    </span>
+                                  </td>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

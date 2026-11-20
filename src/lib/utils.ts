@@ -956,6 +956,13 @@ export function resolveMappedDevice(
   const clean = frameNo.trim();
   const upper = clean.toUpperCase();
 
+  // KTTM machines are NEVER mapped to IoT devices. They are strictly separate and should never resolve to RFxx devices.
+  if (upper.startsWith('K')) {
+    if (mapping[clean] && isValidDevice(mapping[clean])) return mapping[clean].trim().toUpperCase();
+    if (mapping[upper] && isValidDevice(mapping[upper])) return mapping[upper].trim().toUpperCase();
+    return undefined;
+  }
+
   // 1. Direct match
   if (mapping[clean] && isValidDevice(mapping[clean])) return mapping[clean].trim().toUpperCase();
   if (mapping[upper] && isValidDevice(mapping[upper])) return mapping[upper].trim().toUpperCase();
@@ -976,9 +983,7 @@ export function resolveMappedDevice(
       `SP${p2}`,
       `SP${num}`,
       `RF${p2}`,
-      `RF${num}`,
-      `K${p2}`,
-      `K${num}`
+      `RF${num}`
     ];
     for (const v of numVariants) {
       if (mapping[v] && isValidDevice(mapping[v])) {
@@ -986,10 +991,11 @@ export function resolveMappedDevice(
       }
     }
 
-    // 3. Match keys in mapping whose digits match
+    // 3. Match keys in mapping whose digits match (excluding KTTM keys)
     const intTarget = parseInt(rawNum, 10);
     for (const [key, dev] of Object.entries(mapping)) {
       if (!isValidDevice(dev)) continue;
+      if (key.trim().toUpperCase().startsWith('K')) continue; // Never cross-match KTTM
       const keyDigits = key.toUpperCase().match(/\d+/);
       if (keyDigits && parseInt(keyDigits[0], 10) === intTarget) {
         return dev.trim().toUpperCase();
@@ -1066,29 +1072,42 @@ export function getMachineEmValue(
   const digits = upperFrame.match(/\d+/);
   const frameCandidates = new Set<string>([frameNo, cleanFrame, upperFrame]);
 
-  if (digits) {
-    const raw = digits[0];
-    const num = String(parseInt(raw, 10));
-    const p2 = raw.padStart(2, '0');
-    const p3 = raw.padStart(3, '0');
-    frameCandidates.add(raw);
-    frameCandidates.add(num);
-    frameCandidates.add(p2);
-    frameCandidates.add(p3);
-    frameCandidates.add(`SP${p3}`);
-    frameCandidates.add(`SP${p2}`);
-    frameCandidates.add(`SP${num}`);
-    frameCandidates.add(`K${p2}`);
-    frameCandidates.add(`K${num}`);
-    // If caller explicitly queried an RF device (e.g. RF03), include RF candidates
-    if (upperFrame.startsWith('RF')) {
-      frameCandidates.add(`RF${p2}`);
-      frameCandidates.add(`RF${num}`);
+  // If this is a KTTM machine (starts with 'K'):
+  // ONLY look for KTTM candidates (e.g. K01, K1). NEVER look for bare numbers (1, 2) or SP001/RF01!
+  if (upperFrame.startsWith('K')) {
+    if (digits) {
+      const raw = digits[0];
+      const num = String(parseInt(raw, 10));
+      const p2 = raw.padStart(2, '0');
+      frameCandidates.add(`K${p2}`);
+      frameCandidates.add(`K${num}`);
+      frameCandidates.add(`K${raw}`);
+    }
+  } else {
+    // Standard Ring Frames (Shed 1, Shed 2, Shed 3)
+    if (digits) {
+      const raw = digits[0];
+      const num = String(parseInt(raw, 10));
+      const p2 = raw.padStart(2, '0');
+      const p3 = raw.padStart(3, '0');
+      frameCandidates.add(raw);
+      frameCandidates.add(num);
+      frameCandidates.add(p2);
+      frameCandidates.add(p3);
+      frameCandidates.add(`SP${p3}`);
+      frameCandidates.add(`SP${p2}`);
+      frameCandidates.add(`SP${num}`);
+      // If caller explicitly queried an RF device (e.g. RF03), include RF candidates
+      if (upperFrame.startsWith('RF')) {
+        frameCandidates.add(`RF${p2}`);
+        frameCandidates.add(`RF${num}`);
+      }
     }
   }
 
   // If a mapping is provided, also check the registered device or mapped spinning frame
-  if (mapping && Object.keys(mapping).length > 0) {
+  // (Only for non-KTTM frames!)
+  if (!upperFrame.startsWith('K') && mapping && Object.keys(mapping).length > 0) {
     // 3a. Forward mapping: frame -> device (e.g. SP021 -> RF03, 21 -> RF03)
     const mappedDevice = resolveMappedDevice(mapping, frameNo);
     if (mappedDevice) {
