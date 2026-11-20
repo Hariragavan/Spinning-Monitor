@@ -25,7 +25,6 @@ import { DailyReport, Sider, IncentiveRule, MachineEmData, SystemSettings, Shift
 import { syncMachineEmFromGoogleSheet } from '../lib/googleSheets';
 import { cn, parseUniversalDateParts, parseUniversalDate, normalizeToCanonicalDate, getMachineEmValue, resolveMappedDevice, computeOperatorShiftEm, normalizeShed, resolveEffectiveMappingForDate, getMachineShed } from '../lib/utils';
 import { CalendarMonthPicker, CalendarDatePicker } from './CalendarPickers';
-import { STANDARD_MACHINES_BY_SHED } from './MachineMaster';
 
 // Shift and Date pure helpers declared outside component to ensure zero TDZ or hoist issues
 const mapShiftToNum = (shift: Shift | string | number): string => {
@@ -576,31 +575,43 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
     };
 
-    // 1. Primary Source: machines registered in Machine Master for this shed
+    // 1. Scan this month's uploaded production reports (each day uploaded machine)
+    (effectiveHistory || []).forEach(report => {
+      if (!report || !report.date || !Array.isArray(report.entries)) return;
+      const parts = parseUniversalDateParts(report.date);
+      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
+        report.entries.forEach(e => {
+          if (!e || !e.frameNo) return;
+          addClean(e.frameNo);
+        });
+      }
+    });
+
+    // 2. Also check machines registered in Machine Master for this shed
     const fromRegistry = (machinesProp || []).filter(m => {
       if (!m) return false;
       const mShed = getMachineShed(m.rfNo || (m as any).frameNo, m.shed);
       return mShed === targetNorm;
     });
-    fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
 
-    // 2. Standard machines for this shed (ensure full master profile is always complete)
-    const standardList = STANDARD_MACHINES_BY_SHED[targetNorm] || [];
-    standardList.forEach(m => addClean(m.rfNo));
+    // If candidateList already has machines found in this month's daily reports,
+    // only include registered machines that actually appeared in this month (or keep candidate list)
+    if (candidateList.length > 0) {
+      fromRegistry.forEach(m => {
+        const rf = String(m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+        if (seen.has(rf)) {
+          addClean(rf);
+        }
+      });
+    } else {
+      // Fallback if no reports uploaded for this month yet: include shed registry
+      fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
+    }
 
     // 3. Spinning frame numbers configured in IoT Machine Mapping for this month/shed
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
       if (!f || String(f).toUpperCase().startsWith('RF')) return;
       addClean(f);
-    });
-
-    // 4. Spinning frame numbers from history reports belonging to this shed
-    (effectiveHistory || []).forEach(report => {
-      if (!report || !Array.isArray(report.entries)) return;
-      report.entries.forEach(e => {
-        if (!e || !e.frameNo) return;
-        addClean(e.frameNo);
-      });
     });
 
     return deduplicateMachines(candidateList);
@@ -609,6 +620,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     activeShedTab,
     registeredInfoForMonth,
     effectiveHistory,
+    selectedMonth,
+    selectedYear,
     deduplicateMachines
   ]);
 

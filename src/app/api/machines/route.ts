@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
-import { getMachineShed, normalizeShed } from '@/lib/utils';
+import { getMachineShed, normalizeShed, parseUniversalDateParts } from '@/lib/utils';
 
 const STANDARD_FALLBACK_MACHINES: Record<string, Array<{ rfNo: string; count: string; stdGps: number; spindles: number }>> = {
   'Shed 1': [
@@ -64,39 +64,52 @@ const STANDARD_FALLBACK_MACHINES: Record<string, Array<{ rfNo: string; count: st
 };
 
 /**
- * Synchronize and restore machines from uploaded reports and standard profiles.
- * Strictly separates machine numbers shed-wise detected from the database:
+ * Synchronize and recreate master machines strictly from uploaded daily production reports for this month.
+ * Strictly checks each machine number available in this month's daily uploaded production:
  * - Shed 1: SP009 - SP030 (1..30)
  * - Shed 2: SP031 - SP040 (31..40)
  * - Shed 3: SP041 - SP050 (41..50)
  * - KTTM: K01 - K10 (starts with 'K')
+ * If that machine number is not in this month's daily uploaded production, it is removed!
+ * Removes current all machines in each shed and recreates the machine numbers cleanly.
  */
-async function syncMachinesFromReportsInternal(db: any) {
+async function syncMachinesFromReportsInternal(db: any, targetMonth?: number, targetYear?: number) {
   const machineMap = new Map<string, any>();
 
-  // 1. Seed standard fallback machines first for all sheds to ensure completeness
-  for (const [shed, list] of Object.entries(STANDARD_FALLBACK_MACHINES)) {
-    for (const item of list) {
-      const rf = item.rfNo.trim().toUpperCase();
-      const canonicalShed = getMachineShed(rf, shed);
-      machineMap.set(rf, {
-        id: `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
-        rfNo: rf,
-        frameNo: rf,
-        shed: canonicalShed,
-        count: item.count,
-        stdGps: item.stdGps,
-        spindles: item.spindles || 1200,
-        status: 'Active',
-        description: `RING FRAME ${rf} (${canonicalShed})`
-      });
+  // 1. Fetch all reports from database
+  const allReports = await db.collection('reports').find({}).toArray();
+
+  // 2. Identify the target month and year
+  let mTarget = targetMonth;
+  let yTarget = targetYear;
+  if (!mTarget || !yTarget) {
+    for (const r of allReports) {
+      const p = parseUniversalDateParts(r.date);
+      if (p) {
+        if (!yTarget || p.year > yTarget || (p.year === yTarget && p.month > (mTarget || 0))) {
+          yTarget = p.year;
+          mTarget = p.month;
+        }
+      }
     }
   }
 
-  // 2. Ingest from uploaded reports (both this month and historical reports)
-  // Strictly assign every machine to its true canonical shed!
-  const reports = await db.collection('reports').find({}).toArray();
-  reports.forEach((r: any) => {
+  const now = new Date();
+  if (!mTarget) mTarget = now.getMonth() + 1;
+  if (!yTarget) yTarget = now.getFullYear();
+
+  // 3. Filter reports specifically for this month!
+  const monthReports = allReports.filter((r: any) => {
+    const p = parseUniversalDateParts(r.date);
+    if (!p) return false;
+    return p.month === mTarget && p.year === yTarget;
+  });
+
+  // Source reports: strictly this month's reports (or allReports fallback only if zero reports exist for this month)
+  const sourceReports = monthReports.length > 0 ? monthReports : allReports;
+
+  // 4. Ingest strictly from uploaded daily reports (NO hardcoded standard machine injection)
+  sourceReports.forEach((r: any) => {
     (r.entries || []).forEach((e: any) => {
       const rf = String(e.frameNo || e.rfNo || '').trim().toUpperCase();
       if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
@@ -109,7 +122,7 @@ async function syncMachinesFromReportsInternal(db: any) {
         shed: canonicalShed,
         count: (e.count || '').trim() || existing?.count || '030/1-PH-PC',
         spindles: e.spindles || existing?.spindles || 1008,
-        stdGps: e.gpsTarget || existing?.stdGps || 0,
+        stdGps: e.gpsTarget || e.gpsActual || existing?.stdGps || 0,
         status: 'Active',
         description: `RING FRAME ${rf} (${canonicalShed})`
       });
@@ -127,17 +140,17 @@ async function syncMachinesFromReportsInternal(db: any) {
         shed: canonicalShed,
         count: (s.count || '').trim() || existing?.count || '030/1-PH-PC',
         spindles: existing?.spindles || 1008,
-        stdGps: s.stdGps || existing?.stdGps || 0,
+        stdGps: s.stdGps || s.avgGps || existing?.stdGps || 0,
         status: 'Active',
         description: `RING FRAME ${rf} (${canonicalShed})`
       });
     });
   });
 
-  // 3. Clear machines collection to remove any old/cross-contaminated entries
+  // 5. Clear machines collection to remove any unlisted/old machines
   await db.collection('machines').deleteMany({});
 
-  // 4. Batch insert into machines collection
+  // 6. Batch insert recreated machines into machines collection
   const allMachines = Array.from(machineMap.values());
   if (allMachines.length > 0) {
     await db.collection('machines').insertMany(allMachines);
@@ -152,6 +165,8 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const shed = searchParams.get('shed');
     const syncFromReports = searchParams.get('syncFromReports') === 'true' || searchParams.get('sync') === 'true' || searchParams.get('startFresh') === 'true';
+    const month = searchParams.get('month') ? parseInt(searchParams.get('month')!, 10) : undefined;
+    const year = searchParams.get('year') ? parseInt(searchParams.get('year')!, 10) : undefined;
 
     // Clean up legacy non-registered / invalid machine records like "M"
     await db.collection('machines').deleteMany({
@@ -169,7 +184,7 @@ export async function GET(req: Request) {
     // Check count of machines
     const currentCount = await db.collection('machines').countDocuments();
     if (syncFromReports || currentCount === 0) {
-      await syncMachinesFromReportsInternal(db);
+      await syncMachinesFromReportsInternal(db, month, year);
     }
 
     const rawMachines = await db.collection('machines').find({}, { projection: { _id: 0 } }).toArray();
@@ -211,7 +226,9 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     if (body.action === 'syncFromReports' || body.action === 'startFresh') {
-      const restoredCount = await syncMachinesFromReportsInternal(db);
+      const month = body.month ? parseInt(body.month, 10) : undefined;
+      const year = body.year ? parseInt(body.year, 10) : undefined;
+      const restoredCount = await syncMachinesFromReportsInternal(db, month, year);
       const machines = await db.collection('machines').find({}, { projection: { _id: 0 } }).toArray();
       const normalized = machines.map((m: any) => {
         const rf = m.rfNo || m.frameNo || '';

@@ -1523,9 +1523,11 @@ export default function Home() {
 
   const resetStandardMachines = async (shed?: string) => {
     try {
-      const res = await fetch('/api/machines?syncFromReports=true');
+      const p = parseUniversalDateParts(activeDailyReport?.date);
+      const mParam = p ? `&month=${p.month}&year=${p.year}` : '';
+      const res = await fetch(`/api/machines?syncFromReports=true&startFresh=true${mParam}`);
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         const restored = json.data;
         setMachines(restored);
         if (typeof window !== 'undefined') {
@@ -1533,21 +1535,9 @@ export default function Home() {
         }
         return;
       }
-    } catch {}
-
-    let newMachines: MachineMasterItem[];
-    if (shed && shed !== 'All' && shed !== 'All Sheds') {
-      const otherShedMachines = machines.filter(m => normalizeShed(m.shed) !== normalizeShed(shed));
-      const shedDefaults = STANDARD_MACHINES_BY_SHED[shed] || [];
-      newMachines = [...otherShedMachines, ...shedDefaults];
-    } else {
-      newMachines = ALL_STANDARD_MACHINES;
+    } catch (err) {
+      console.error('Error resetting standard machines from reports:', err);
     }
-    setMachines(newMachines);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('spinning_machines', JSON.stringify(newMachines));
-    }
-    await apiClient.saveMachines(newMachines);
   };
 
   const saveCountConversion = async (conv: CountConversion) => {

@@ -6,7 +6,7 @@ import {
   Layers, Activity, RefreshCw
 } from 'lucide-react';
 import { MachineMasterItem, Sider, CountConversion, Shed, DailyReport } from '../types';
-import { cn, getYesterdayUniversalDate, normalizeShed, getMachineShed } from '../lib/utils';
+import { cn, getYesterdayUniversalDate, normalizeShed, getMachineShed, parseUniversalDateParts } from '../lib/utils';
 
 export const STANDARD_MACHINES_BY_SHED: Record<string, MachineMasterItem[]> = {
   'Shed 1': [
@@ -126,15 +126,24 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
   const [isSyncingReports, setIsSyncingReports] = useState(false);
   const [syncSuccessMessage, setSyncSuccessMessage] = useState<string | null>(null);
 
+  const activeMonthParts = useMemo(() => {
+    return parseUniversalDateParts(activeDate) || {
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear(),
+      day: 1
+    };
+  }, [activeDate]);
+
   const handleSyncFromReports = async () => {
     try {
       setIsSyncingReports(true);
       setError(null);
-      const res = await fetch('/api/machines?syncFromReports=true&startFresh=true');
+      const mParam = activeMonthParts ? `&month=${activeMonthParts.month}&year=${activeMonthParts.year}` : '';
+      const res = await fetch(`/api/machines?syncFromReports=true&startFresh=true${mParam}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         await onResetStandardMachines(selectedShedTab === 'All Sheds' ? undefined : selectedShedTab);
-        setSyncSuccessMessage(`Successfully started fresh and synchronized ${json.data.length} machines cleanly separated by shed.`);
+        setSyncSuccessMessage(`Successfully recreated master machines for this month (${json.data.length} uploaded machines cleanly partitioned by shed).`);
         setTimeout(() => setSyncSuccessMessage(null), 5000);
       } else {
         setError(json.error || 'Failed to sync machines');
@@ -263,9 +272,92 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
   }, [activeFormShed, countConversions, machines, editingId]);
 
-  // Master registered machines filtered strictly by shed (no cross-shed machines)
+  // Collect all machines that were actually uploaded in this month's daily production reports
+  const thisMonthUploadedMachines = useMemo(() => {
+    const map = new Map<string, { rfNo: string; shed: string; count: string; stdGps: number; actualGps: number; datesCount: number }>();
+    const datesPerMachine = new Map<string, Set<string>>();
+
+    (allReports || []).forEach(r => {
+      if (!r || !r.date) return;
+      const parts = parseUniversalDateParts(r.date);
+      if (!parts || parts.month !== activeMonthParts.month || parts.year !== activeMonthParts.year) return;
+
+      const rShed = r.shed || 'Shed 1';
+      (r.entries || []).forEach(e => {
+        const rf = String(e.frameNo || (e as any).rfNo || '').trim().toUpperCase();
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
+        const trueShed = getMachineShed(rf, e.shed || rShed);
+        const set = datesPerMachine.get(rf) || new Set<string>();
+        set.add(r.date);
+        datesPerMachine.set(rf, set);
+
+        const existing = map.get(rf);
+        map.set(rf, {
+          rfNo: rf,
+          shed: trueShed,
+          count: (e.count || '').trim() || existing?.count || '',
+          stdGps: e.gpsTarget || existing?.stdGps || 0,
+          actualGps: e.gpsActual || existing?.actualGps || 0,
+          datesCount: set.size
+        });
+      });
+
+      (r.summaries || []).forEach(s => {
+        const rf = String(s.frameNo || (s as any).rfNo || '').trim().toUpperCase();
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
+        const trueShed = getMachineShed(rf, s.shed || rShed);
+        const set = datesPerMachine.get(rf) || new Set<string>();
+        set.add(r.date);
+        datesPerMachine.set(rf, set);
+
+        const existing = map.get(rf);
+        map.set(rf, {
+          rfNo: rf,
+          shed: trueShed,
+          count: (s.count || '').trim() || existing?.count || '',
+          stdGps: s.stdGps || existing?.stdGps || 0,
+          actualGps: s.avgGps || existing?.actualGps || 0,
+          datesCount: set.size
+        });
+      });
+    });
+
+    return map;
+  }, [allReports, activeMonthParts]);
+
+  // Master registered machines filtered strictly by this month's uploaded production and shed
   const masterMachines = useMemo(() => {
     const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
+
+    // If reports have been uploaded for this month, master machines are strictly derived
+    // from this month's uploaded production (unlisted machines not in this month are removed)!
+    if (thisMonthUploadedMachines.size > 0) {
+      const items: MachineMasterItem[] = [];
+      thisMonthUploadedMachines.forEach((info, rf) => {
+        if (selectedShedTab !== 'All Sheds' && info.shed !== targetNorm) return;
+
+        const existing = machines.find(m => {
+          const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+          return mRf === rf;
+        });
+
+        items.push({
+          id: existing?.id || `m-${rf.toLowerCase()}-${info.shed.toLowerCase().replace(/\s+/g, '-')}`,
+          rfNo: rf,
+          description: existing?.description || `RING FRAME ${rf} (${info.shed})`,
+          shed: info.shed,
+          count: existing?.count || info.count || '030/1-PH-PC',
+          stdGps: existing?.stdGps || info.stdGps || 0,
+          actualGps: info.actualGps || existing?.actualGps,
+          assignedSider: existing?.assignedSider || '-',
+          assignedGaiter: existing?.assignedGaiter || '-'
+        });
+      });
+
+      return items.sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+    }
+
+    // Fallback if no reports exist: filter machines strictly by shed
     return machines.filter(m => {
       const rf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
       if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return false;
@@ -273,7 +365,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       if (selectedShedTab === 'All Sheds') return true;
       return trueShed === targetNorm;
     });
-  }, [machines, selectedShedTab]);
+  }, [machines, selectedShedTab, thisMonthUploadedMachines]);
 
   // Date-specific machines: If no data on date, returns empty!
   const dateMachines = useMemo(() => {
