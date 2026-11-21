@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Employee,
   Machine,
@@ -8,7 +8,8 @@ import {
   EmployeeMetric,
   EmployeeTapDetail,
   ProductionReportRow,
-  MachineMapping
+  MachineMapping,
+  SpinfoOverviewResponse
 } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
 import {
@@ -16,7 +17,7 @@ import {
   employeeLabel,
   employeeInitials
 } from '@/lib/iot/employeeDisplay';
-import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
+import { getTodayDateString, parseUniversalDateParts, resolveEffectiveMappingForDate } from '@/lib/utils';
 
 export interface TapModalState {
   employeeId: string;
@@ -40,6 +41,8 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
   const [employeeMetrics, setEmployeeMetrics] = useState<EmployeeMetric[]>([]);
   const [productionRows, setProductionRows] = useState<ProductionReportRow[]>([]);
   const [mappings, setMappings] = useState<MachineMapping[]>([]);
+  const [settings, setSettings] = useState<any>(null);
+  const [overview, setOverview] = useState<SpinfoOverviewResponse | null>(null);
 
   const [employeeId, setEmployeeId] = useState('');
   const [machineId, setMachineId] = useState('');
@@ -80,6 +83,49 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
   const [reportRows, setReportRows] = useState<ProductionReportRow[]>([]);
   const [reportLoading, setReportLoading] = useState(false);
 
+  const fetchSettingsAndOverview = useCallback(async (targetDate: string, targetShift?: string) => {
+    try {
+      const [stRes, ovRes] = await Promise.all([
+        fetch('/api/settings').then(r => r.ok ? r.json() : null).catch(() => null),
+        iotApi.getSpinfoOverview({ fromDate: targetDate, shift: targetShift }).catch(() => null)
+      ]);
+      if (stRes) setSettings(stRes);
+      if (ovRes?.machines?.length) {
+        setOverview(ovRes);
+      } else {
+        // Fallback directly to Railway common API to ensure live telemetry is always active
+        try {
+          const cRes = await fetch('https://iot-machine-backend-production.up.railway.app/api/common?limit=10');
+          if (cRes.ok) {
+            const cJson = await cRes.json();
+            const rec = Array.isArray(cJson) ? cJson[0] : (cJson.data?.[0] || cJson.data);
+            if (rec?.machines) {
+              setOverview({
+                machines: rec.machines.map((m: any) => ({
+                  machineId: m.machine || m.machineId,
+                  runStatus: m.runStatus || 'STOP',
+                  count: m.count || '',
+                  spindleSpeedCurrent: m.spindleSpeedCurrent || 0,
+                  shiftWaste: m.shiftWaste || 0,
+                  shiftProduction: m.shiftProduction || 0,
+                  shiftTargetProduction: m.shiftTargetProduction || m.shiftProduction || 0,
+                  productionUnit: m.productionUnit || 'kg',
+                  totalEndBreakCount: m.totalEndBreakCount || 0,
+                  sides: m.sides || []
+                })),
+                keyFigures: {
+                  productionYield: {
+                    value: `${rec.machines.reduce((acc: number, m: any) => acc + (m.shiftProduction || 0), 0).toFixed(2)} kg`
+                  }
+                }
+              } as any);
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }, []);
+
   const loadMasters = async () => {
     try {
       const [emps, machs, shfs, maps] = await Promise.all([
@@ -92,6 +138,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
       setMachines(machs || []);
       setShifts(shfs || []);
       setMappings(maps || []);
+      await fetchSettingsAndOverview(selectedDate, shiftName);
     } catch (err) {
       console.error('Failed to load masters:', err);
     }
@@ -104,10 +151,13 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
 
     if (showLoading) setLoading(true);
     try {
+      const isBackendDeviceId = machines.some(m => m.machineId === machineId);
+      const backendMachineFilter = isBackendDeviceId ? machineId : undefined;
+
       const [metrics, prod] = await Promise.all([
         iotApi.getEmployeePerformance({
           employeeId: employeeId || undefined,
-          machineId: machineId || undefined,
+          machineId: backendMachineFilter,
           date: selectedDate,
           shiftName: shiftName || undefined,
           shiftId: resolvedShiftId || undefined
@@ -115,9 +165,10 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
         iotApi.getProductionReport({
           date: selectedDate,
           shiftId: resolvedShiftId || undefined,
-          machineId: machineId || undefined,
+          machineId: backendMachineFilter,
           employeeId: employeeId || undefined
-        }).catch(() => [])
+        }).catch(() => []),
+        fetchSettingsAndOverview(selectedDate, shiftName)
       ]);
       setEmployeeMetrics(metrics || []);
       setProductionRows(prod || []);
@@ -170,16 +221,247 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     return employeeMetrics.filter(m => (m.avgGapMinutes || 0) <= 5).length;
   }, [employeeMetrics]);
 
-  // Filtered metrics by search query
+  // Machine resolution: maps raw device/station (IOT_D1, IOT_D2, IOT_01, IOT_02, etc.)
+  // -> Physical Spinning Frame (SP044) -> Telemetry Hardware Machine (RF44 / RF044)
+  // -> Live Telemetry (shiftProduction, speed, runStatus, count)
+  const resolveMachineInfo = useCallback((rawId: string) => {
+    if (!rawId) return {
+      rawId: '',
+      frameNo: '',
+      rfNo: '',
+      side: '',
+      liveProduction: 0,
+      targetProduction: 0,
+      yieldPercent: 100,
+      runStatus: 'OFFLINE' as const,
+      speed: 0,
+      count: ''
+    };
+
+    const clean = String(rawId).trim().toUpperCase();
+
+    // Side detection: D1/01/M1 -> LH (Left), D2/02/M2 -> RH (Right)
+    let side = '';
+    if (clean.includes('D1') || clean.includes('01') || clean.endsWith('_1') || clean.endsWith('-1') || clean.includes('M1') || clean.includes('LH') || clean.includes('LEFT')) {
+      side = 'LH';
+    } else if (clean.includes('D2') || clean.includes('02') || clean.endsWith('_2') || clean.endsWith('-2') || clean.includes('M2') || clean.includes('RH') || clean.includes('RIGHT')) {
+      side = 'RH';
+    }
+
+    let frameNo = '';
+    let rfNo = '';
+
+    // Direct frame or RF
+    if (clean.startsWith('SP') || clean.startsWith('K')) {
+      frameNo = clean;
+    } else if (clean.startsWith('RF')) {
+      rfNo = clean;
+    } else {
+      // Find matching profile from machine mappings / stationIds
+      let profileName = '';
+      for (const m of mappings) {
+        const stations = (m.stationIds || []).map(s => s.toUpperCase());
+        if (
+          stations.includes(clean) ||
+          stations.some(s => s.replace('_D', '_').replace('_0', '_') === clean.replace('_D', '_').replace('_0', '_'))
+        ) {
+          profileName = m.name;
+          break;
+        }
+      }
+
+      // If no profile matched from stationIds, check settings profile mappings
+      if (!profileName && settings?.iotProfileToFrameMapping) {
+        const keys = Object.keys(settings.iotProfileToFrameMapping);
+        if (keys.length === 1) profileName = keys[0];
+      }
+
+      if (profileName && settings?.iotProfileToFrameMapping?.[profileName]) {
+        frameNo = String(settings.iotProfileToFrameMapping[profileName]).trim().toUpperCase();
+      } else if (profileName && settings?.frameToIotProfileMapping) {
+        for (const [f, p] of Object.entries(settings.frameToIotProfileMapping)) {
+          if (p === profileName) {
+            frameNo = String(f).trim().toUpperCase();
+            break;
+          }
+        }
+      }
+
+      // Fallback: If single frame is mapped in frameToIotProfileMapping
+      if (!frameNo && settings?.frameToIotProfileMapping) {
+        const frames = Object.keys(settings.frameToIotProfileMapping);
+        if (frames.length === 1) frameNo = String(frames[0]).trim().toUpperCase();
+      }
+    }
+
+    // Resolve RF from frameNo using effective date mapping, allocationPeriods or settings
+    if (frameNo && !rfNo) {
+      const eff = resolveEffectiveMappingForDate(
+        selectedDate,
+        settings?.iotMachineAllocationPeriods || [],
+        settings?.iotMachineMappingByDate || {},
+        settings?.iotMachineMapping || {}
+      );
+      if (eff[frameNo]) {
+        rfNo = eff[frameNo];
+      } else if (settings?.iotMachineMapping?.[frameNo]) {
+        rfNo = settings.iotMachineMapping[frameNo];
+      } else if (settings?.machineToMachineMapping?.[frameNo]) {
+        rfNo = settings.machineToMachineMapping[frameNo];
+      } else {
+        // Natural numeric match: SP044 -> RF44
+        const num = parseInt(frameNo.replace(/\D/g, ''), 10);
+        if (!isNaN(num)) {
+          rfNo = `RF${num}`;
+        }
+      }
+    }
+
+    // Reverse resolve frameNo from rfNo if needed
+    if (rfNo && !frameNo) {
+      for (const [f, r] of Object.entries(settings?.iotMachineMapping || {})) {
+        if (r === rfNo || r === `RF${parseInt(rfNo.replace(/\D/g, ''), 10)}`) {
+          frameNo = f;
+          break;
+        }
+      }
+      if (!frameNo) {
+        const num = parseInt(rfNo.replace(/\D/g, ''), 10);
+        if (!isNaN(num)) frameNo = `SP${String(num).padStart(3, '0')}`;
+      }
+    }
+
+    // Live telemetry lookup from overview.machines
+    const liveMachines = overview?.machines || [];
+    let telemetry: any = null;
+    if (rfNo) {
+      const pInt = parseInt(rfNo.replace(/\D/g, ''), 10);
+      telemetry = liveMachines.find((m: any) => {
+        const mId = String(m.machine || m.machineId || '').trim().toUpperCase();
+        const mInt = parseInt(mId.replace(/\D/g, ''), 10);
+        return mId === rfNo || (!isNaN(mInt) && !isNaN(pInt) && mInt === pInt);
+      });
+    }
+
+    const liveProd = telemetry ? Number((telemetry.shiftProduction || 0).toFixed(2)) : 0;
+    const targetProd = telemetry ? Number((telemetry.shiftTargetProduction || 0).toFixed(2)) : 0;
+    const yieldPct = telemetry ? Number((telemetry.yieldPercent || (targetProd > 0 ? (liveProd / targetProd) * 100 : 100)).toFixed(1)) : 100;
+
+    return {
+      rawId,
+      frameNo: frameNo || clean,
+      rfNo: rfNo || (telemetry?.machineId || telemetry?.machine || clean),
+      side,
+      telemetry,
+      liveProduction: liveProd,
+      targetProduction: targetProd,
+      yieldPercent: yieldPct,
+      runStatus: (telemetry?.runStatus || 'STOP') as 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE',
+      speed: telemetry?.spindleSpeedCurrent || 0,
+      count: telemetry?.count || ''
+    };
+  }, [mappings, settings, overview, selectedDate]);
+
+  // Unique live machines assigned across displayed / filtered employee metrics
+  const assignedMachineMetrics = useMemo(() => {
+    const rfMap = new Map<string, { frameNo: string; rfNo: string; liveProduction: number; targetProduction: number; yieldPercent: number; runStatus: string }>();
+
+    employeeMetrics.forEach(m => {
+      const info = resolveMachineInfo(m.machineId);
+      if (info.rfNo && !rfMap.has(info.rfNo)) {
+        rfMap.set(info.rfNo, {
+          frameNo: info.frameNo,
+          rfNo: info.rfNo,
+          liveProduction: info.liveProduction,
+          targetProduction: info.targetProduction,
+          yieldPercent: info.yieldPercent,
+          runStatus: info.runStatus
+        });
+      }
+    });
+
+    return Array.from(rfMap.values());
+  }, [employeeMetrics, resolveMachineInfo]);
+
+  const totalLiveProduction = useMemo(() => {
+    if (assignedMachineMetrics.length > 0) {
+      const sum = assignedMachineMetrics.reduce((acc, m) => acc + m.liveProduction, 0);
+      if (sum > 0) return Number(sum.toFixed(2));
+    }
+    return totalProductionOutput;
+  }, [assignedMachineMetrics, totalProductionOutput]);
+
+  const assignedMachinesLabel = useMemo(() => {
+    if (!assignedMachineMetrics.length) return '';
+    return assignedMachineMetrics.map(m => m.frameNo ? `${m.frameNo} (${m.rfNo})` : m.rfNo).join(', ');
+  }, [assignedMachineMetrics]);
+
+  const avgAssignedYield = useMemo(() => {
+    if (!assignedMachineMetrics.length) return 100;
+    const sum = assignedMachineMetrics.reduce((acc, m) => acc + (m.yieldPercent || 100), 0);
+    return Math.round(sum / assignedMachineMetrics.length);
+  }, [assignedMachineMetrics]);
+
+  const totalAssignedTarget = useMemo(() => {
+    return Number(assignedMachineMetrics.reduce((acc, m) => acc + m.targetProduction, 0).toFixed(1));
+  }, [assignedMachineMetrics]);
+
+  const machineOptions = useMemo(() => {
+    const list: Array<{ value: string; label: string }> = [];
+    const added = new Set<string>();
+
+    // 1. All unique machines from employeeMetrics resolved
+    employeeMetrics.forEach(m => {
+      const info = resolveMachineInfo(m.machineId);
+      const val = m.machineId;
+      if (val && !added.has(val)) {
+        added.add(val);
+        const lbl = info.frameNo ? `${info.frameNo} (${info.rfNo || val}) · ${val}` : val;
+        list.push({ value: val, label: lbl });
+      }
+    });
+
+    // 2. Add mapped frames like SP044
+    if (settings?.frameToIotProfileMapping) {
+      Object.keys(settings.frameToIotProfileMapping).forEach(f => {
+        if (!added.has(f)) {
+          added.add(f);
+          const rf = settings?.iotMachineMapping?.[f] || `RF${parseInt(f.replace(/\D/g, ''), 10) || ''}`;
+          list.push({ value: f, label: `${f} (${rf})` });
+        }
+      });
+    }
+
+    // 3. Add machines from machines master
+    machines.forEach(m => {
+      if (!added.has(m.machineId)) {
+        added.add(m.machineId);
+        list.push({ value: m.machineId, label: `${m.machineName || m.machineId} (${m.machineId})` });
+      }
+    });
+
+    return list;
+  }, [employeeMetrics, machines, settings, resolveMachineInfo]);
+
+  // Filtered metrics by search query & machine dropdown
   const filteredMetrics = useMemo(() => {
-    if (!searchQuery.trim()) return employeeMetrics;
-    const q = searchQuery.toLowerCase().trim();
-    return employeeMetrics.filter(m =>
-      (m.employeeId && m.employeeId.toLowerCase().includes(q)) ||
-      (m.employeeName && m.employeeName.toLowerCase().includes(q)) ||
-      (m.machineId && m.machineId.toLowerCase().includes(q))
-    );
-  }, [employeeMetrics, searchQuery]);
+    return employeeMetrics.filter(m => {
+      const info = resolveMachineInfo(m.machineId);
+      const matchMachine = !machineId ||
+        m.machineId.toUpperCase() === machineId.toUpperCase() ||
+        info.frameNo.toUpperCase() === machineId.toUpperCase() ||
+        info.rfNo.toUpperCase() === machineId.toUpperCase();
+
+      const matchSearch = !searchQuery.trim() ||
+        (m.employeeId && m.employeeId.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (m.employeeName && m.employeeName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (m.machineId && m.machineId.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (info.frameNo && info.frameNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (info.rfNo && info.rfNo.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      return matchMachine && matchSearch;
+    });
+  }, [employeeMetrics, searchQuery, machineId, resolveMachineInfo]);
 
   // Open Tap Modal
   const openTapDetailsModal = (
@@ -208,10 +490,11 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     const startTime = taps.length ? taps[0].time : null;
     const endTime = taps.length ? taps[taps.length - 1].time : null;
 
+    const info = resolveMachineInfo(m.machineId);
     setSelectedTapModal({
       employeeId: m.employeeId,
       employeeName: m.employeeName,
-      machineId: m.machineId,
+      machineId: info.frameNo ? `${info.frameNo} (${info.rfNo || m.machineId})${info.side ? ' · ' + info.side + ' Side' : ''}` : m.machineId,
       hourLabel,
       taps,
       avgGap: gap,
@@ -301,9 +584,9 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                 id="emp-machine-select"
               >
                 <option value="">All machines</option>
-                {machines.map(m => (
-                  <option key={m.machineId} value={m.machineId}>
-                    {m.machineName} ({m.machineId})
+                {machineOptions.map(m => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
                   </option>
                 ))}
               </select>
@@ -450,7 +733,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
           </div>
         </div>
 
-        {/* KPI 4: Production Report (Action Card) */}
+        {/* KPI 4: Shift Production Output (Live Machine Telemetry) */}
         <button
           type="button"
           className="card kpi-card kpi-rose kpi-action-card text-left cursor-pointer"
@@ -464,20 +747,27 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
               <h3 className="kpi-title">Production Yield</h3>
             </div>
             <div className="kpi-badge-icon">
-              <span>📑</span>
+              <span>🏭</span>
             </div>
           </div>
           <div className="kpi-main">
             <div className="kpi-figure num-tabular">
-              <strong>{totalProductionOutput.toLocaleString()}</strong>
-              <span className="unit">O/P</span>
+              <strong>{totalLiveProduction.toLocaleString()}</strong>
+              <span className="unit">kg</span>
             </div>
             <div className="kpi-indicator positive">
-              <span>{productionRows.length} hourly entries recorded</span>
+              <span className="dot-indicator" />
+              <span>
+                {assignedMachinesLabel
+                  ? `Live output · ${assignedMachinesLabel}`
+                  : `${productionRows.length} hourly entries recorded`}
+              </span>
             </div>
           </div>
           <div className="kpi-meta-row action-meta-row">
-            <span className="action-text">View Detailed Report →</span>
+            <span className="action-text">
+              {totalAssignedTarget > 0 ? `Target: ${totalAssignedTarget} kg · Yield: ${avgAssignedYield}%` : 'View Detailed Report →'}
+            </span>
           </div>
         </button>
       </section>
@@ -559,7 +849,75 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                       </div>
                     </td>
                     <td>
-                      <span className="machine-tag num-tabular">{m.machineId}</span>
+                      {(() => {
+                        const info = resolveMachineInfo(m.machineId);
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span
+                                className="machine-tag num-tabular"
+                                style={{
+                                  fontWeight: 800,
+                                  color: '#0F172A',
+                                  background: '#E2E8F0',
+                                  fontSize: '0.86rem',
+                                  padding: '0.15rem 0.55rem',
+                                  borderRadius: '6px'
+                                }}
+                              >
+                                {info.frameNo || m.machineId}
+                              </span>
+                              {info.rfNo && (
+                                <span
+                                  style={{
+                                    fontSize: '0.74rem',
+                                    fontWeight: 800,
+                                    color: '#0F766E',
+                                    background: '#E6FFFA',
+                                    padding: '0.12rem 0.45rem',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(20, 184, 166, 0.35)'
+                                  }}
+                                  title={`Live IoT Telemetry Device: ${info.rfNo}`}
+                                >
+                                  {info.rfNo}
+                                </span>
+                              )}
+                              {info.side && (
+                                <span
+                                  style={{
+                                    fontSize: '0.72rem',
+                                    fontWeight: 800,
+                                    color: info.side === 'LH' ? '#2563eb' : '#7c3aed',
+                                    background: '#F1F5F9',
+                                    padding: '0.1rem 0.4rem',
+                                    borderRadius: '4px'
+                                  }}
+                                >
+                                  {info.side} Side
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem' }}>
+                              <span
+                                style={{
+                                  width: '6.5px',
+                                  height: '6.5px',
+                                  borderRadius: '50%',
+                                  background: info.runStatus === 'RUN' ? '#10B981' : info.runStatus === 'DOFF' ? '#f59e0b' : '#ef4444'
+                                }}
+                              />
+                              <span style={{ fontWeight: 800, color: '#0F172A' }}>
+                                {info.liveProduction > 0 ? `${info.liveProduction} kg` : info.runStatus}
+                              </span>
+                              {info.count && <span style={{ color: '#64748B', fontWeight: 700 }}>· {info.count}</span>}
+                              <span style={{ color: '#94a3b8', fontSize: '0.68rem' }} title={`Raw Station Node: ${m.machineId}`}>
+                                ({m.machineId})
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td>
                       <button
@@ -865,8 +1223,8 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                       }}
                     >
                       <option value="">All machines</option>
-                      {mappings.map(m => (
-                        <option key={m.mappingId} value={m.mappingId}>{m.name}</option>
+                      {machineOptions.map(m => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
                       ))}
                     </select>
                   </div>

@@ -161,6 +161,14 @@ export interface EmployeeMetric {
     status: string;
     gapMinutes: number;
   }>;
+  assignedFrameNo?: string;
+  assignedRfNo?: string;
+  side?: string;
+  liveProduction?: number;
+  liveTargetProduction?: number;
+  liveStatus?: string;
+  liveSpeed?: number;
+  liveCount?: string;
 }
 
 export interface MachineMetric {
