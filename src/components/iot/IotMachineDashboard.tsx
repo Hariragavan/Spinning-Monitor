@@ -1067,10 +1067,10 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   '#f8fafc';
 
                 const cardBorderColor =
-                  m.runStatus === 'RUN' ? '#86efac' :
-                  m.runStatus === 'DOFF' ? '#fde047' :
-                  m.runStatus === 'STOP' ? '#fca5a5' :
-                  '#cbd5e1';
+                  m.runStatus === 'RUN' ? 'rgba(22, 163, 74, 0.22)' :
+                  m.runStatus === 'DOFF' ? 'rgba(234, 179, 8, 0.28)' :
+                  m.runStatus === 'STOP' ? 'rgba(239, 68, 68, 0.22)' :
+                  'rgba(148, 163, 184, 0.25)';
 
                 return (
                   <div
@@ -1086,7 +1086,9 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                     }`}
                     style={{
                       backgroundColor: cardBgColor,
-                      borderColor: cardBorderColor
+                      borderColor: cardBorderColor,
+                      borderWidth: '1px',
+                      borderStyle: 'solid'
                     }}
                     onClick={() => openMachineModal(m.machineId)}
                   >
