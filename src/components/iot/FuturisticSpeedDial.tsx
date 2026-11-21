@@ -9,24 +9,17 @@ export interface FuturisticSpeedDialProps {
   label?: string;
   customUnit?: string;
   size?: number;
-  colorScheme?: 'teal' | 'cyan' | 'emerald' | 'amber' | 'rose' | 'indigo';
+  colorScheme?: 'cyan' | 'emerald' | 'amber' | 'rose' | 'indigo';
 }
 
 /**
- * High-Performance Futuristic Speedometer Dial
- * Exact Style matching "Idea 2: Teal Green (Modern & Professional)"
- * Palette:
- * - #E6FFFA (light teal background / pill)
- * - #14B8A6 (vibrant teal)
- * - #0F766E (dark teal)
- * - #0F172A (dark navy text)
- *
- * - Half-circle / 260° horseshoe perimeter arc touching left and right boundaries
- * - Smooth Teal Gradient: #2dd4bf -> #14B8A6 -> #0F766E
- * - Frosted white track underlay with subtle teal edge definition
- * - Sleek dark teal tapered needle with glowing pivot hub
- * - Fluid requestAnimationFrame ease-out animation on initial mount / refresh,
- *   run status changes (e.g. drop to 0 on stop/doff), and live telemetry updates
+ * High-Performance Futuristic Speedometer Dial (Dynamic Blue Theme)
+ * - Large spacious circular meter arc touching left and right boundaries
+ * - 260° perimeter band (140° bottom-left to 400° bottom-right)
+ * - Dynamic blue gradient: Light sky blue -> Rich cobalt -> Deep royal sapphire
+ * - Frosted white track with opacity underlay
+ * - Redesigned sleek 3D aerodynamic diamond needle with glowing metallic pivot
+ * - Fluid animation on initial mount / refresh, run status change (e.g. drop to 0 on stop), and live telemetry updates
  * - Clean digital readout placed below the meter
  */
 export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
@@ -35,8 +28,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
   status,
   label = 'RPM',
   customUnit,
-  size = 146,
-  colorScheme = 'teal'
+  size = 146
 }) => {
   const isStoppedOrDoffing = status === 'STOP' || status === 'OFFLINE' || status === 'DOFF';
   const targetVal = isStoppedOrDoffing ? 0 : Math.max(0, value);
@@ -55,7 +47,7 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
     const endVal = targetVal;
     const diff = Math.abs(endVal - startVal);
 
-    // Duration: 1.1s for large sweeps (start from 0, stop, or doff), 550ms for live telemetry adjustments
+    // Duration: 1.1s for large sweeps (start from 0, stop, or doff), 500ms for live telemetry adjustments
     const duration = diff > 2500 ? 1100 : 550;
     const startTime = performance.now();
 
@@ -139,20 +131,6 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
 
   const svgHeight = Math.round(size * 0.72);
 
-  // Determine color theme based on status and colorScheme
-  const isTeal = colorScheme === 'teal' || (status === 'RUN' && colorScheme !== 'amber' && colorScheme !== 'rose');
-  const isDoff = status === 'DOFF' || colorScheme === 'amber';
-  const isStop = status === 'STOP' || colorScheme === 'rose';
-
-  // Palette assignments
-  const labelColor = isStop ? '#b91c1c' : isDoff ? '#b45309' : '#0F766E';
-  const needleFacetLeft = isStop ? '#f87171' : isDoff ? '#fbbf24' : '#14B8A6';
-  const needleFacetRight = isStop ? '#dc2626' : isDoff ? '#d97706' : '#0F766E';
-  const hubStroke = isStop ? '#b91c1c' : isDoff ? '#b45309' : '#0F766E';
-  const hubFill = isStop ? '#ef4444' : isDoff ? '#f59e0b' : '#14B8A6';
-  const hubCoreFill = isStop ? '#fecaca' : isDoff ? '#fef08a' : '#5eead4';
-  const glowColor = isStop ? '#ef4444' : isDoff ? '#f59e0b' : '#0F766E';
-
   return (
     <div
       style={{
@@ -174,51 +152,46 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
         style={{ overflow: 'visible' }}
       >
         <defs>
-          {/* Active Gradient: Teal Green Theme (Idea 2: #2dd4bf -> #14B8A6 -> #0F766E) */}
-          {isTeal && (
-            <linearGradient id="speedDialTealGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#2dd4bf" />
-              <stop offset="45%" stopColor="#14B8A6" />
-              <stop offset="85%" stopColor="#0F766E" />
-              <stop offset="100%" stopColor="#115E59" />
-            </linearGradient>
-          )}
-
-          {/* Doffing Amber Gradient */}
-          {isDoff && (
-            <linearGradient id="speedDialAmberGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#fef08a" />
-              <stop offset="50%" stopColor="#f59e0b" />
-              <stop offset="100%" stopColor="#b45309" />
-            </linearGradient>
-          )}
-
-          {/* Stopped Rose/Red Gradient */}
-          {isStop && (
-            <linearGradient id="speedDialRoseGrad" x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="#fecaca" />
-              <stop offset="50%" stopColor="#ef4444" />
-              <stop offset="100%" stopColor="#b91c1c" />
-            </linearGradient>
-          )}
-
-          {/* Sleek Needle Left Facet Gradient */}
-          <linearGradient id="needleFacetLeftGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={needleFacetLeft} />
-            <stop offset="100%" stopColor={needleFacetRight} />
+          {/* Active Gradient: Dynamic blue shades (Light cyan-blue -> Cobalt -> Deep royal blue) */}
+          <linearGradient id="speedDialBlueGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#7dd3fc" />
+            <stop offset="25%" stopColor="#38bdf8" />
+            <stop offset="55%" stopColor="#0284c7" />
+            <stop offset="80%" stopColor="#2563eb" />
+            <stop offset="100%" stopColor="#1d4ed8" />
           </linearGradient>
 
+          {/* Sleek Needle Gradient Left Facet (Light cyan glow) */}
+          <linearGradient id="needleLeftFacetGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#bae6fd" />
+            <stop offset="100%" stopColor="#38bdf8" />
+          </linearGradient>
+
+          {/* Sleek Needle Gradient Right Facet (Deep sapphire blue) */}
+          <linearGradient id="needleRightFacetGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#0284c7" />
+            <stop offset="100%" stopColor="#1e40af" />
+          </linearGradient>
+
+          {/* Metallic Hub Gradient */}
+          <radialGradient id="needleHubGrad" cx="40%" cy="40%" r="60%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="45%" stopColor="#cbd5e1" />
+            <stop offset="85%" stopColor="#64748b" />
+            <stop offset="100%" stopColor="#334155" />
+          </radialGradient>
+
           {/* Glowing Drop Shadow Filter for Needle */}
-          <filter id="stylishNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor={glowColor} floodOpacity="0.45" />
+          <filter id="stylishBlueNeedleGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="0" stdDeviation="1.5" floodColor="#0284c7" floodOpacity="0.5" />
           </filter>
         </defs>
 
-        {/* Inactive Track Underlay (Subtle crisp border for track definition) */}
+        {/* Inactive Track Underlay (Subtle crisp border for white track definition) */}
         <path
           d={bgArcPath}
           fill="none"
-          stroke="rgba(15, 118, 110, 0.12)"
+          stroke="rgba(203, 213, 225, 0.45)"
           strokeWidth={bandThickness + 1.2}
           strokeLinecap="butt"
         />
@@ -232,18 +205,12 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           strokeLinecap="butt"
         />
 
-        {/* Active Track: Gradient fill */}
+        {/* Active Track: Gradient from Light Blue to Deep Royal Blue */}
         {activeArcPath && (
           <path
             d={activeArcPath}
             fill="none"
-            stroke={
-              isStop
-                ? 'url(#speedDialRoseGrad)'
-                : isDoff
-                ? 'url(#speedDialAmberGrad)'
-                : 'url(#speedDialTealGrad)'
-            }
+            stroke="url(#speedDialBlueGrad)"
             strokeWidth={bandThickness}
             strokeLinecap="butt"
           />
@@ -256,8 +223,8 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
             x={m.x}
             y={m.y}
             textAnchor="middle"
-            fill="#0F172A"
-            fontSize="9.5"
+            fill="#334155"
+            fontSize="9"
             fontWeight="800"
             fontFamily="system-ui, -apple-system, sans-serif"
           >
@@ -265,47 +232,47 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
           </text>
         ))}
 
-        {/* Sleek Tapered Needle (Idea 2: #0F766E dark teal with metallic pivot) */}
+        {/* Redesigned Sleek 3D Aerodynamic Needle */}
         <g transform={`rotate(${needleRotationDeg.toFixed(2)}, ${cx}, ${cy})`}>
-          {/* Left Facet */}
+          {/* Left 3D Facet */}
           <polygon
-            points={`${cx},${cy - 47} ${cx - 3.2},${cy - 22} ${cx - 2},${cy - 5} ${cx},${cy - 5}`}
-            fill="url(#needleFacetLeftGrad)"
-            filter="url(#stylishNeedleGlow)"
+            points={`${cx},${cy - 47} ${cx - 3.4},${cy - 24} ${cx - 2},${cy - 5} ${cx},${cy - 5}`}
+            fill="url(#needleLeftFacetGrad)"
+            filter="url(#stylishBlueNeedleGlow)"
           />
-          {/* Right Facet */}
+          {/* Right 3D Facet */}
           <polygon
-            points={`${cx},${cy - 47} ${cx + 3.2},${cy - 22} ${cx + 2},${cy - 5} ${cx},${cy - 5}`}
-            fill={needleFacetRight}
-            filter="url(#stylishNeedleGlow)"
+            points={`${cx},${cy - 47} ${cx + 3.4},${cy - 24} ${cx + 2},${cy - 5} ${cx},${cy - 5}`}
+            fill="url(#needleRightFacetGrad)"
+            filter="url(#stylishBlueNeedleGlow)"
           />
-          {/* Center Spine Line (Subtle highlight) */}
+          {/* Center Spine Line (Bright highlight) */}
           <line
             x1={cx}
             y1={cy - 46}
             x2={cx}
             y2={cy - 5}
-            stroke="rgba(255, 255, 255, 0.85)"
+            stroke="rgba(255, 255, 255, 0.95)"
             strokeWidth="0.8"
           />
 
-          {/* Central Pivot Hub (Teal outer ring with cyan/mint core) */}
+          {/* Central Pivot Hub (Metallic ring with glowing cyan core) */}
           <circle
             cx={cx}
             cy={cy}
-            r="7"
-            fill={hubFill}
-            stroke={hubStroke}
-            strokeWidth="1.2"
-            style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.22))' }}
+            r="6.5"
+            fill="url(#needleHubGrad)"
+            stroke="#ffffff"
+            strokeWidth="0.9"
+            style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.25))' }}
           />
           <circle
             cx={cx}
             cy={cy}
-            r="3.5"
-            fill={hubCoreFill}
-            stroke={hubStroke}
-            strokeWidth="0.8"
+            r="3"
+            fill="#0284c7"
+            stroke="#38bdf8"
+            strokeWidth="0.6"
           />
         </g>
       </svg>
@@ -322,21 +289,21 @@ export const FuturisticSpeedDial: React.FC<FuturisticSpeedDialProps> = ({
       >
         <span
           style={{
-            fontSize: displayString.length > 5 ? '19px' : '22px',
-            fontWeight: 900,
+            fontSize: displayString.length > 5 ? '18px' : '20px',
+            fontWeight: 800,
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            color: '#0F172A',
+            color: '#0f172a',
             letterSpacing: '-0.02em',
-            lineHeight: 1.12
+            lineHeight: 1.15
           }}
         >
           {displayString}
         </span>
         <span
           style={{
-            fontSize: '10px',
-            fontWeight: 800,
-            color: labelColor,
+            fontSize: '9.5px',
+            fontWeight: 700,
+            color: '#64748b',
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
             marginTop: '1px',
