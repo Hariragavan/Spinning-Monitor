@@ -2413,7 +2413,7 @@ export default function Home() {
               <ReportView
                 report={activeDailyReport}
                 isTvMode={isTvMode}
-                allReports={reportHistory}
+                allReports={dailyReport ? [...reportHistory.filter(r => !(r.date === dailyReport.date && normalizeShed(r.shed) === normalizeShed(dailyReport.shed))), dailyReport] : reportHistory}
                 currentShed={selectedShed}
                 onSelectShed={(shed) => setSelectedShed(shed as Shed)}
                 onSelectDate={handleTopDateChange}
@@ -2766,7 +2766,7 @@ export default function Home() {
               currentShed={selectedShed}
               onSelectShed={setSelectedShed}
               history={currentShedHistory}
-              allHistory={reportHistory}
+              allHistory={dailyReport ? [...reportHistory.filter(r => !(r.date === dailyReport.date && normalizeShed(r.shed) === normalizeShed(dailyReport.shed))), dailyReport] : reportHistory}
               workers={currentShedWorkers}
               allWorkers={workers}
               rules={currentShedRules}
@@ -2865,7 +2865,7 @@ export default function Home() {
               onDelete={deleteCountConversion}
               currentShed={selectedShed}
               report={activeDailyReport}
-              allReports={reportHistory}
+              allReports={dailyReport ? [...reportHistory.filter(r => !(r.date === dailyReport.date && normalizeShed(r.shed) === normalizeShed(dailyReport.shed))), dailyReport] : reportHistory}
               selectedDate={activeDailyReport.date}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
@@ -2915,7 +2915,7 @@ export default function Home() {
               workers={currentShedWorkers}
               countConversions={currentShedCountConversions}
               report={activeDailyReport}
-              allReports={reportHistory}
+              allReports={dailyReport ? [...reportHistory.filter(r => !(r.date === dailyReport.date && normalizeShed(r.shed) === normalizeShed(dailyReport.shed))), dailyReport] : reportHistory}
               selectedDate={activeDailyReport.date}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}

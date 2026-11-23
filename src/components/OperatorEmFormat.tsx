@@ -540,81 +540,79 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     return filtered;
   }, []);
 
-  // Machines list: Show ALL master machines for each shed wise (strictly isolated per shed in upload order)
+  // Machines list: Show ALL master machines for each shed wise (strictly isolated per shed matching Machine Matrix upload order)
   const machines = useMemo(() => {
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
     const seen = new Set<string>();
     const candidateList: string[] = [];
 
-    const addClean = (val: any, entryShed?: string) => {
+    const addClean = (val: any) => {
       if (val === null || val === undefined) return;
       const clean = String(val).trim();
-      if (!clean) return;
-      const upper = clean.toUpperCase();
+      if (!clean || clean === '-' || clean === '0' || clean.toUpperCase() === 'M' || clean.toUpperCase() === 'MC') return;
+      if (/^\d+$/.test(clean)) return; // Ignore bare unpadded numbers
       const lower = clean.toLowerCase();
       // Filter out grand totals, empty, dashes, and IoT device identifiers (RFxx)
       if (
         lower.includes('grand') ||
         lower.includes('total') ||
         lower.includes('rf no') ||
-        lower.startsWith('rf') ||
-        lower === '-' ||
-        lower === '0'
+        lower.startsWith('rf')
       ) {
         return;
       }
 
-      // Enforce strict shed partitioning using canonical getMachineShed with entryShed:
-      // Machine strictly belongs to the shed it was uploaded for!
-      const machineShed = getMachineShed(clean, entryShed);
-      if (machineShed !== targetNorm) return;
-
+      const upper = clean.toUpperCase();
       if (!seen.has(upper)) {
         seen.add(upper);
         candidateList.push(clean);
       }
     };
 
-    // 1. Scan this month's uploaded production reports (each day uploaded machine in sheet upload order)
-    (effectiveHistory || []).forEach(report => {
-      if (!report || !report.date) return;
+    // 1. Gather all reports for this month belonging to activeShedTab
+    const monthReports = (effectiveHistory || []).filter(report => {
+      if (!report || !report.date) return false;
+      if (report.shed && normalizeShed(report.shed) !== targetNorm) return false;
       const parts = parseUniversalDateParts(report.date);
-      if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
-        // First check report summaries (preserves sheet upload row order)
-        (report.summaries || []).forEach(s => {
-          if (!s || !s.frameNo) return;
-          addClean(s.frameNo, s.shed || report.shed);
-        });
-        (report.entries || []).forEach(e => {
-          if (!e || !e.frameNo) return;
-          addClean(e.frameNo, e.shed || report.shed);
-        });
-      }
+      return parts && parts.month === selectedMonth && parts.year === selectedYear;
     });
 
-    // 2. Also check machines registered in Machine Master for this shed
-    const fromRegistry = (machinesProp || []).filter(m => {
-      if (!m) return false;
-      const mShed = getMachineShed(m.rfNo || (m as any).frameNo, m.shed);
-      return mShed === targetNorm;
+    // Sort reports so the most recent report (e.g. today's statement) comes first
+    // This ensures today's upload row order from Machine Matrix is preserved at the top of candidateList!
+    const sortedReports = [...monthReports].sort((a, b) => {
+      const pA = parseUniversalDateParts(a.date);
+      const pB = parseUniversalDateParts(b.date);
+      if (!pA || !pB) return 0;
+      const tA = new Date(pA.year, pA.month - 1, pA.day).getTime();
+      const tB = new Date(pB.year, pB.month - 1, pB.day).getTime();
+      return tB - tA;
     });
 
-    // If candidateList has no reports uploaded for this month yet: include shed registry
+    sortedReports.forEach(report => {
+      // In the exact same extraction order as MasterDataTable Machine Matrix:
+      const frames = Array.from(new Set([
+        ...(report.summaries?.map(s => s.frameNo) || []),
+        ...(report.entries?.map(e => e.frameNo) || [])
+      ])).filter(Boolean);
+
+      frames.forEach(f => addClean(f));
+    });
+
+    // 2. If candidateList has no reports uploaded for this month yet: include shed registry from machinesProp
     if (candidateList.length === 0) {
-      fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId, m.shed));
+      (machinesProp || [])
+        .filter(m => {
+          if (!m) return false;
+          const mShed = normalizeShed(m.shed || 'Shed 1');
+          return mShed === targetNorm;
+        })
+        .forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
     }
-
-    // 3. Spinning frame numbers configured in IoT Machine Mapping for this month/shed
-    (registeredInfoForMonth.registeredFrames || []).forEach(f => {
-      if (!f || String(f).toUpperCase().startsWith('RF')) return;
-      addClean(f, activeShedTab);
-    });
 
     return deduplicateMachines(candidateList);
   }, [
     machinesProp,
     activeShedTab,
-    registeredInfoForMonth,
     effectiveHistory,
     selectedMonth,
     selectedYear,
@@ -653,8 +651,6 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
     const clean = String(frameNo).trim().toUpperCase();
     if (!clean) return false;
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
-    const machineShed = getMachineShed(clean);
-    if (machineShed !== targetNorm) return false;
 
     const isKttmTab = targetNorm === 'KTTM';
     const isCleanK = clean.startsWith('K');

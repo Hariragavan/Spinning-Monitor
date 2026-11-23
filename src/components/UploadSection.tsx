@@ -688,7 +688,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       s.avgUtil = utilVals.length > 0 ? Number((utilVals.reduce((a, b) => a + b, 0) / utilVals.length).toFixed(1)) : 0;
     });
 
-    return Array.from(frameMap.values()).sort((a, b) => a.frameNo.localeCompare(b.frameNo, undefined, { numeric: true }));
+    return Array.from(frameMap.values());
   };
 
   const renderModalKpis = (modal: ExtractedPreview) => {

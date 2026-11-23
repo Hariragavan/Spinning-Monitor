@@ -239,8 +239,7 @@ export const ensureSixMachines = (report: DailyReport, targetShed?: string): Dai
         return a.shift.localeCompare(b.shift);
       }),
     summaries: summaries
-      .map(s => ({ ...s, shed: s.shed || shed }))
-      .sort((a, b) => a.frameNo.localeCompare(b.frameNo)),
+      .map(s => ({ ...s, shed: s.shed || shed })),
     gaiters: report.gaiters || { I: [], II: [], III: [] },
     aiCones: report.aiCones || { I: [], II: [], III: [] },
     fitters: report.fitters || { I: [], II: [], III: [] },

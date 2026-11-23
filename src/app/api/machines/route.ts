@@ -217,8 +217,7 @@ export async function GET(req: Request) {
       .filter((m: any) => {
         if (!shed || shed === 'All' || shed === 'All Sheds') return true;
         return normalizeShed(m.shed) === normalizeShed(shed);
-      })
-      .sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+      });
 
     return NextResponse.json({ success: true, data: normalized });
   } catch (error: any) {
@@ -240,7 +239,7 @@ export async function POST(req: Request) {
         const rf = m.rfNo || m.frameNo || '';
         const trueShed = getMachineShed(rf, m.shed);
         return { ...m, shed: trueShed, rfNo: rf, frameNo: rf };
-      }).sort((a: any, b: any) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+      });
       return NextResponse.json({ success: true, count: restoredCount, data: normalized });
     }
 

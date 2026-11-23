@@ -282,148 +282,163 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
   }, [activeFormShed, countConversions, machines, editingId]);
 
-  // Collect all machines that were actually uploaded in this month's daily production reports
-  const thisMonthUploadedMachines = useMemo(() => {
-    const map = new Map<string, { rfNo: string; shed: string; count: string; stdGps: number; actualGps: number; datesCount: number }>();
-    const datesPerMachine = new Map<string, Set<string>>();
-
-    (allReports || []).forEach(r => {
-      if (!r || !r.date) return;
-      const parts = parseUniversalDateParts(r.date);
-      if (!parts || parts.month !== activeMonthParts.month || parts.year !== activeMonthParts.year) return;
-
-      const rShed = r.shed || 'Shed 1';
-      // 1. First process summaries to preserve sheet upload row order
-      (r.summaries || []).forEach(s => {
-        const rf = String(s.frameNo || (s as any).rfNo || '').trim().toUpperCase();
-        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-        const trueShed = getMachineShed(rf, s.shed || rShed);
-        const set = datesPerMachine.get(rf) || new Set<string>();
-        set.add(r.date);
-        datesPerMachine.set(rf, set);
-
-        const existing = map.get(rf);
-        map.set(rf, {
-          rfNo: s.frameNo || rf,
-          shed: trueShed,
-          count: (s.count || '').trim() || existing?.count || '',
-          stdGps: s.stdGps || existing?.stdGps || 0,
-          actualGps: s.avgGps || existing?.actualGps || 0,
-          datesCount: set.size
-        });
-      });
-
-      // 2. Next process entries for any machine not in summaries
-      (r.entries || []).forEach(e => {
-        const rf = String(e.frameNo || (e as any).rfNo || '').trim().toUpperCase();
-        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-        const trueShed = getMachineShed(rf, e.shed || rShed);
-        const set = datesPerMachine.get(rf) || new Set<string>();
-        set.add(r.date);
-        datesPerMachine.set(rf, set);
-
-        const existing = map.get(rf);
-        if (!existing) {
-          map.set(rf, {
-            rfNo: e.frameNo || rf,
-            shed: trueShed,
-            count: (e.count || '').trim(),
-            stdGps: e.gpsTarget || 0,
-            actualGps: e.gpsActual || 0,
-            datesCount: set.size
-          });
-        } else if (!existing.count && e.count) {
-          existing.count = (e.count || '').trim();
-        }
-      });
-    });
-
-    return map;
-  }, [allReports, activeMonthParts]);
-
-  // Master registered machines filtered strictly by this month's uploaded production and shed (in upload order, not numeric)
+  // Master registered machines: all machines registered in this month (November) in sheet upload order wise (not number wise)
   const masterMachines = useMemo(() => {
     const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
 
-    // If reports have been uploaded for this month, master machines are strictly derived
-    // from this month's uploaded production in upload order (unlisted machines not in this month are removed)!
-    if (thisMonthUploadedMachines.size > 0) {
+    // Collect all reports for active month
+    const pool: DailyReport[] = [];
+    if (report && report.date) {
+      const p = parseUniversalDateParts(report.date);
+      if (p && p.month === activeMonthParts.month && p.year === activeMonthParts.year) {
+        pool.push(report);
+      }
+    }
+    (allReports || []).forEach(r => {
+      if (!r || !r.date) return;
+      const p = parseUniversalDateParts(r.date);
+      if (p && p.month === activeMonthParts.month && p.year === activeMonthParts.year) {
+        if (!pool.some(existing => existing.date === r.date && normalizeShed(existing.shed) === normalizeShed(r.shed))) {
+          pool.push(r);
+        }
+      }
+    });
+
+    const relevantReports = pool.filter(r => selectedShedTab === 'All Sheds' || normalizeShed(r.shed || 'Shed 1') === targetNorm);
+
+    if (relevantReports.length > 0) {
+      // Sort reports by date descending so the most recent uploaded date establishes base row order
+      const sortedReports = [...relevantReports].sort((a, b) => {
+        const pA = parseUniversalDateParts(a.date);
+        const pB = parseUniversalDateParts(b.date);
+        if (!pA || !pB) return 0;
+        const tA = new Date(pA.year, pA.month - 1, pA.day).getTime();
+        const tB = new Date(pB.year, pB.month - 1, pB.day).getTime();
+        return tB - tA;
+      });
+
       const items: MachineMasterItem[] = [];
-      thisMonthUploadedMachines.forEach((info, rf) => {
-        if (selectedShedTab !== 'All Sheds' && info.shed !== targetNorm) return;
+      const seen = new Set<string>();
 
-        const existing = machines.find(m => {
-          const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
-          return mRf === rf;
-        });
+      sortedReports.forEach(rep => {
+        const repShed = rep.shed || 'Shed 1';
+        // Exact same extraction order as MasterDataTable Machine Matrix:
+        const frames = Array.from(new Set([
+          ...(rep.summaries?.map(s => s.frameNo) || []),
+          ...(rep.entries?.map(e => e.frameNo) || [])
+        ])).filter(Boolean);
 
-        items.push({
-          id: existing?.id || `m-${rf.toLowerCase()}-${info.shed.toLowerCase().replace(/\s+/g, '-')}`,
-          rfNo: info.rfNo || rf,
-          description: existing?.description || `RING FRAME ${info.rfNo || rf} (${info.shed})`,
-          shed: info.shed,
-          count: existing?.count || info.count || '030/1-PH-PC',
-          stdGps: existing?.stdGps || info.stdGps || 0,
-          actualGps: info.actualGps || existing?.actualGps,
-          assignedSider: existing?.assignedSider || '-',
-          assignedGaiter: existing?.assignedGaiter || '-'
+        frames.forEach(frameNo => {
+          const clean = String(frameNo).trim();
+          if (!clean || clean === '-' || clean === '0' || clean.toUpperCase() === 'M' || clean.toUpperCase() === 'MC') return;
+          if (/^\d+$/.test(clean)) return;
+
+          const upper = clean.toUpperCase();
+          const key = `${upper}__${repShed.toLowerCase()}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+
+          const summary = (rep.summaries || []).find(s => String(s.frameNo || '').trim().toUpperCase() === upper);
+          const entry = (rep.entries || []).find(e => String(e.frameNo || '').trim().toUpperCase() === upper);
+
+          const existingRegistered = machines.find(m => {
+            const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+            return mRf === upper && normalizeShed(m.shed) === normalizeShed(repShed);
+          });
+
+          items.push({
+            id: existingRegistered?.id || `m-${upper.toLowerCase()}-${repShed.toLowerCase().replace(/\s+/g, '-')}`,
+            rfNo: summary?.frameNo || entry?.frameNo || clean,
+            description: existingRegistered?.description || `RING FRAME ${clean} (${repShed})`,
+            shed: repShed,
+            count: summary?.count || entry?.count || existingRegistered?.count || '030/1-PH-PC',
+            actualGps: summary?.avgGps || entry?.gpsActual || existingRegistered?.actualGps,
+            stdGps: summary?.stdGps || entry?.gpsTarget || existingRegistered?.stdGps || 0,
+            productionKg: summary?.actualProd || entry?.productionActual || 0,
+            assignedSider: existingRegistered?.assignedSider || '-',
+            assignedGaiter: existingRegistered?.assignedGaiter || '-'
+          });
         });
       });
 
-      // Preserves sheet upload order wise (not numerical)
       return items;
     }
 
-    // Fallback if no reports exist: filter machines strictly by shed
+    // Fallback if no reports exist: filter machines strictly by shed without numeric sorting
     return machines.filter(m => {
       const rf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
-      if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return false;
-      const trueShed = getMachineShed(rf, m.shed);
+      if (!rf || rf === 'M' || rf === 'MC') return false;
       if (selectedShedTab === 'All Sheds') return true;
-      return trueShed === targetNorm;
+      return normalizeShed(m.shed || 'Shed 1') === targetNorm;
     });
-  }, [machines, selectedShedTab, thisMonthUploadedMachines]);
+  }, [machines, selectedShedTab, allReports, report, activeMonthParts]);
 
-  // Date-specific machines: If no data on date, returns empty! (in upload order, not numeric)
+  // Date-specific machines: strictly from uploaded statements on activeDate matching MasterDataTable Machine Matrix order
   const dateMachines = useMemo(() => {
-    if (!activeDateHasData) return [];
+    const pool: DailyReport[] = [];
+    if (report && report.date === activeDate) pool.push(report);
+    (allReports || []).forEach(r => {
+      if (r && r.date === activeDate && !pool.some(p => normalizeShed(p.shed) === normalizeShed(r.shed) && p.date === r.date)) {
+        pool.push(r);
+      }
+    });
 
     const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
+    const relevantReports = pool.filter(r => selectedShedTab === 'All Sheds' || normalizeShed(r.shed || 'Shed 1') === targetNorm);
+
     const items: MachineMasterItem[] = [];
-    dateMachineMap.forEach((data, key) => {
-      const [rfUpper] = key.split('__');
-      const trueShed = getMachineShed(rfUpper, data.shed);
-      if (selectedShedTab !== 'All Sheds' && trueShed !== targetNorm) return;
+    const seen = new Set<string>();
 
-      const existingRegistered = machines.find(m => {
-        const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
-        return mRf === rfUpper && getMachineShed(mRf, m.shed) === trueShed;
-      });
+    relevantReports.forEach(rep => {
+      const repShed = rep.shed || 'Shed 1';
+      // Exact same extraction order as MasterDataTable Machine Matrix:
+      const frames = Array.from(new Set([
+        ...(rep.summaries?.map(s => s.frameNo) || []),
+        ...(rep.entries?.map(e => e.frameNo) || [])
+      ])).filter(Boolean);
 
-      items.push({
-        id: existingRegistered?.id || `m-${rfUpper.toLowerCase()}-${trueShed.toLowerCase().replace(/\s+/g, '-')}`,
-        rfNo: data.rfNo || rfUpper,
-        description: existingRegistered?.description || `RING FRAME ${data.rfNo || rfUpper} (${trueShed})`,
-        shed: trueShed,
-        count: data.count || existingRegistered?.count || '030/1-PH-PC',
-        actualGps: data.actualGps,
-        stdGps: data.stdGps,
-        productionKg: data.prodKg,
-        assignedSider: existingRegistered?.assignedSider || '-',
-        assignedGaiter: existingRegistered?.assignedGaiter || '-'
+      frames.forEach(frameNo => {
+        const clean = String(frameNo).trim();
+        if (!clean || clean === '-' || clean === '0' || clean.toUpperCase() === 'M' || clean.toUpperCase() === 'MC') return;
+        if (/^\d+$/.test(clean)) return; // Ignore bare unpadded numbers
+
+        const upper = clean.toUpperCase();
+        const key = `${upper}__${repShed.toLowerCase()}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+
+        const summary = (rep.summaries || []).find(s => String(s.frameNo || '').trim().toUpperCase() === upper);
+        const entry = (rep.entries || []).find(e => String(e.frameNo || '').trim().toUpperCase() === upper);
+
+        const existingRegistered = machines.find(m => {
+          const mRf = (m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
+          return mRf === upper && normalizeShed(m.shed) === normalizeShed(repShed);
+        });
+
+        items.push({
+          id: existingRegistered?.id || `m-${upper.toLowerCase()}-${repShed.toLowerCase().replace(/\s+/g, '-')}`,
+          rfNo: summary?.frameNo || entry?.frameNo || clean,
+          description: existingRegistered?.description || `RING FRAME ${clean} (${repShed})`,
+          shed: repShed,
+          count: summary?.count || entry?.count || existingRegistered?.count || '030/1-PH-PC',
+          actualGps: summary?.avgGps || entry?.gpsActual || existingRegistered?.actualGps,
+          stdGps: summary?.stdGps || entry?.gpsTarget || existingRegistered?.stdGps || 0,
+          productionKg: summary?.actualProd || entry?.productionActual || 0,
+          assignedSider: existingRegistered?.assignedSider || '-',
+          assignedGaiter: existingRegistered?.assignedGaiter || '-'
+        });
       });
     });
 
-    // Preserves date sheet upload order wise (not numerical)
     return items;
-  }, [activeDateHasData, dateMachineMap, machines, selectedShedTab]);
+  }, [allReports, report, activeDate, selectedShedTab, machines]);
 
   // Effective list shown in table based on viewMode (falls back to master machines if date statement not uploaded)
   const displayMachines = (viewMode === 'date' && dateMachines.length > 0) ? dateMachines : masterMachines;
 
   const handleStartEdit = (machine: MachineMasterItem) => {
     setEditingId(machine.id);
-    const mShed = getMachineShed(machine.rfNo || (machine as any).frameNo, machine.shed || currentShed || 'Shed 1');
+    const mShed = machine.shed || (selectedShedTab !== 'All Sheds' ? selectedShedTab : (currentShed || 'Shed 1'));
     const shedCounts = getAvailableCountsForShed(mShed);
     const rf = (machine.rfNo || (machine as any).frameNo || '').trim().toUpperCase();
     const key = `${rf}__${mShed.toLowerCase()}`;

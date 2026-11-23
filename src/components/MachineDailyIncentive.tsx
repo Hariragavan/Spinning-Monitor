@@ -56,51 +56,35 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     onSelectDate(formattedDate);
   };
 
-  // Get active unique frame numbers strictly registered/uploaded on this date for the current shed (upload order, not numeric)
+  // Get active unique frame numbers strictly registered on this date for this shed (matching MasterDataTable Machine Matrix order)
   const machines = useMemo(() => {
-    const activeNorm = normalizeShed(shed || report.shed);
+    const activeNorm = normalizeShed(shed || report.shed || 'Shed 1');
+    const validSummaries = (report.summaries || []).filter(s => !s.shed || normalizeShed(s.shed) === activeNorm);
+    const validEntries = (report.entries || []).filter(e => !e.shed || normalizeShed(e.shed) === activeNorm);
+
+    // Exact same extraction order as MasterDataTable Machine Matrix:
+    const frames = Array.from(new Set([
+      ...validSummaries.map(s => s.frameNo),
+      ...validEntries.map(e => e.frameNo)
+    ])).filter(Boolean);
+
     const orderedMachines: string[] = [];
     const seen = new Set<string>();
 
-    const addMachine = (rawFrame: string, entryShed?: string) => {
-      if (!rawFrame) return;
-      const clean = String(rawFrame).trim();
-      if (!clean || clean === '-' || clean === '0' || clean === 'M' || clean === 'MC') return;
+    frames.forEach(frameNo => {
+      const clean = String(frameNo).trim();
+      if (!clean || clean === '-' || clean === '0' || clean.toUpperCase() === 'M' || clean.toUpperCase() === 'MC') return;
       if (/^\d+$/.test(clean)) return; // Ignore bare unpadded numbers
-
-      // Match shed: only include if matches current shed
-      const itemShed = entryShed ? normalizeShed(entryShed) : activeNorm;
-      if (itemShed !== activeNorm) return;
 
       const upper = clean.toUpperCase();
       if (!seen.has(upper)) {
         seen.add(upper);
         orderedMachines.push(clean);
       }
-    };
-
-    // 1. First from report.summaries (preserves the exact sheet upload row order)
-    (report.summaries || []).forEach(s => {
-      addMachine(s.frameNo, s.shed || report.shed);
     });
-
-    // 2. Next from report.entries (in case any machine wasn't in summaries)
-    (report.entries || []).forEach(e => {
-      addMachine(e.frameNo, e.shed || report.shed);
-    });
-
-    // If report has no entries/summaries yet, fallback to registered machines for this shed
-    if (orderedMachines.length === 0 && machinesProp && machinesProp.length > 0) {
-      machinesProp
-        .filter(m => normalizeShed(m.shed || 'Shed 1') === activeNorm)
-        .forEach(m => {
-          const rf = m.rfNo || (m as any).frameNo || (m as any).machineId;
-          addMachine(rf, m.shed);
-        });
-    }
 
     return orderedMachines;
-  }, [report.entries, report.summaries, shed, report.shed, machinesProp]);
+  }, [report.entries, report.summaries, shed, report.shed]);
 
   // Process data for the machine-wise rows
   const tableRows = useMemo(() => {
