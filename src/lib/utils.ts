@@ -31,10 +31,18 @@ export function isSameShed(shedA?: string | null, shedB?: string | null): boolea
  * Ensures strict shed separation detected from the database.
  */
 export function getMachineShed(frameNo: any, fallbackShed?: Shed | string): Shed {
-  if (!frameNo) return (normalizeShed(fallbackShed) || 'Shed 1') as Shed;
+  // 1. If explicit shed is provided, strictly respect it!
+  // Do NOT change machine shed based on machine numbers (e.g. if running in Shed 1 or Shed 2, keep in that shed)
+  if (fallbackShed) {
+    const norm = normalizeShed(fallbackShed);
+    if (norm) return norm as Shed;
+  }
+
+  if (!frameNo) return 'Shed 1';
   const f = String(frameNo).trim().toUpperCase();
   if (f.startsWith('K') || f.includes('KT')) return 'KTTM';
 
+  // 2. Only as fallback when shed is completely unspecified
   const digits = f.match(/\d+/);
   if (digits) {
     const num = parseInt(digits[0], 10);
@@ -43,9 +51,6 @@ export function getMachineShed(frameNo: any, fallbackShed?: Shed | string): Shed
     if (num >= 41) return 'Shed 3';
   }
 
-  if (fallbackShed) {
-    return (normalizeShed(fallbackShed) || 'Shed 1') as Shed;
-  }
   return 'Shed 1';
 }
 

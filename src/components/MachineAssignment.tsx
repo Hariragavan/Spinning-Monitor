@@ -223,7 +223,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
               MACHINE ALLOCATION ROSTER
             </h1>
             <p className="text-[10px] text-stone-400 font-bold uppercase tracking-wider leading-none mt-0.5">
-              {isKttm ? 'Assign Siders (LH & RH), KTTM Gaiters & Top AI Linkconer' : 'Assign Siders (LH & RH) per Ringframe'}
+              Assign Siders (LH &amp; RH), Shift Gaiters{isKttm ? ' &amp; Top AI Linkconer' : ''}
             </p>
           </div>
         </div>
@@ -521,128 +521,126 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2b. SECTION 1b: GAITER CREW ALLOCATIONS (KTTM SHED ONLY)                  */}
+      {/* 2b. SECTION 1b: GAITER CREW ALLOCATIONS (ALL SHEDS)                       */}
       {/* ========================================================================= */}
-      {isKttm && (
-        <div className="bg-gradient-to-r from-amber-950 via-amber-900 to-stone-900 rounded-2xl p-5 text-white shadow-sm border border-amber-700/40">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-800/50 mb-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-400/20">
-                <Users size={18} />
-              </div>
-              <div>
-                <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
-                  KTTM GAITER ALLOCATIONS
-                </h2>
-                <p className="text-[11px] text-amber-200/90 font-medium">
-                  Configured in Settings: Shift I ({gaiterCounts.I ?? 1}) · Shift II ({gaiterCounts.II ?? 1}) · Shift III ({gaiterCounts.III ?? 1})
-                </p>
-              </div>
+      <div className="bg-gradient-to-r from-amber-950 via-amber-900 to-stone-900 rounded-2xl p-5 text-white shadow-sm border border-amber-700/40">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-800/50 mb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-400/20">
+              <Users size={18} />
             </div>
-            <span className="px-3 py-1 bg-amber-500/20 text-amber-200 border border-amber-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
-              KTTM SHED CREW
-            </span>
+            <div>
+              <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
+                {(shed || 'MILL').toUpperCase()} GAITER ALLOCATIONS
+              </h2>
+              <p className="text-[11px] text-amber-200/90 font-medium">
+                Configured in Settings: Shift I ({gaiterCounts.I ?? 1}) · Shift II ({gaiterCounts.II ?? 1}) · Shift III ({gaiterCounts.III ?? 1})
+              </p>
+            </div>
           </div>
+          <span className="px-3 py-1 bg-amber-500/20 text-amber-200 border border-amber-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
+            {(shed || 'MILL').toUpperCase()} CREW
+          </span>
+        </div>
 
-          {/* 3 Shift Cards side-by-side */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {shifts.map(shift => {
-              const count = gaiterCounts[shift] ?? 1;
-              const currentGaiterIds = gaiters[shift] || [];
+        {/* 3 Shift Cards side-by-side */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {shifts.map(shift => {
+            const count = gaiterCounts[shift] ?? 1;
+            const currentGaiterIds = gaiters[shift] || [];
 
-              return (
-                <div 
-                  key={`kttm-gaiter-${shift}`} 
-                  className={cn(
-                    "p-3.5 rounded-xl border transition-all flex flex-col justify-between",
-                    selectedShift === shift 
-                      ? "bg-amber-950/80 border-amber-400 ring-2 ring-amber-400/30" 
-                      : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-amber-400/40"
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-amber-500/20">
-                    <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-amber-200">
-                      <span className="w-5 h-5 rounded-md bg-amber-400 text-amber-950 flex items-center justify-center text-[10px] font-black">
-                        {shift}
-                      </span>
-                      Shift {shift} Gaiter Crew
+            return (
+              <div 
+                key={`shed-gaiter-${shift}`} 
+                className={cn(
+                  "p-3.5 rounded-xl border transition-all flex flex-col justify-between",
+                  selectedShift === shift 
+                    ? "bg-amber-950/80 border-amber-400 ring-2 ring-amber-400/30" 
+                    : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-amber-400/40"
+                )}
+              >
+                <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-amber-500/20">
+                  <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-amber-200">
+                    <span className="w-5 h-5 rounded-md bg-amber-400 text-amber-950 flex items-center justify-center text-[10px] font-black">
+                      {shift}
                     </span>
-                    <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-900/60 px-2 py-0.5 rounded border border-amber-500/30">
-                      {count} {count === 1 ? 'Slot' : 'Slots'}
-                    </span>
+                    Shift {shift} Gaiter Crew
+                  </span>
+                  <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-900/60 px-2 py-0.5 rounded border border-amber-500/30">
+                    {count} {count === 1 ? 'Slot' : 'Slots'}
+                  </span>
+                </div>
+
+                {count <= 0 ? (
+                  <div className="py-3 text-center text-xs font-medium text-amber-200/60 italic">
+                    0 Gaiters configured in Settings for Shift {shift}
                   </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {Array.from({ length: count }).map((_, slotIdx) => {
+                      const currentId = currentGaiterIds[slotIdx] || '';
+                      const assignedWorker = workers.find(w => w.id === currentId);
 
-                  {count <= 0 ? (
-                    <div className="py-3 text-center text-xs font-medium text-amber-200/60 italic">
-                      0 Gaiters configured in Settings for Shift {shift}
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {Array.from({ length: count }).map((_, slotIdx) => {
-                        const currentId = currentGaiterIds[slotIdx] || '';
-                        const assignedWorker = workers.find(w => w.id === currentId);
-
-                        return (
-                          <div key={slotIdx} className="space-y-1">
-                            <div className="flex items-center justify-between text-[10px] text-amber-200/80 font-bold uppercase tracking-wider">
-                              <span>Slot #{slotIdx + 1} {count > 1 ? `(Gaiter ${slotIdx + 1})` : 'Gaiter'}</span>
-                              {assignedWorker && (
-                                <span className="font-mono text-emerald-300 font-bold bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/30">
-                                  T.No {assignedWorker.tNo}
-                                </span>
-                              )}
-                            </div>
-                            <div className="relative">
-                              <select
-                                value={currentId}
-                                onChange={(e) => {
-                                  const val = e.target.value || '';
-                                  if (val && currentGaiterIds.some((gid, idx) => idx !== slotIdx && gid === val)) {
-                                    alert('This worker is already assigned to another gaiter slot in this shift.');
-                                    return;
-                                  }
-                                  const updated = [...currentGaiterIds];
-                                  while (updated.length <= slotIdx) updated.push('');
-                                  updated[slotIdx] = val;
-                                  assignGaiter(shift, updated);
-                                }}
-                                className="w-full px-3 py-2 bg-amber-950/90 border border-amber-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer appearance-none"
-                              >
-                                <option value="" className="bg-stone-900 text-stone-400">
-                                  -- Select Gaiter {slotIdx + 1} --
-                                </option>
-                                {gaiterDeptWorkers.length > 0 && (
-                                  <optgroup label="Gaiter Department" className="bg-stone-900 text-amber-300 font-bold">
-                                    {gaiterDeptWorkers.map(w => (
-                                      <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                                        {w.name} ({w.tNo})
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )}
-                                <optgroup label="All Other Mill Staff" className="bg-stone-900 text-stone-400">
-                                  {otherGaiterWorkers.map(w => (
+                      return (
+                        <div key={slotIdx} className="space-y-1">
+                          <div className="flex items-center justify-between text-[10px] text-amber-200/80 font-bold uppercase tracking-wider">
+                            <span>Slot #{slotIdx + 1} {count > 1 ? `(Gaiter ${slotIdx + 1})` : 'Gaiter'}</span>
+                            {assignedWorker && (
+                              <span className="font-mono text-emerald-300 font-bold bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                                T.No {assignedWorker.tNo}
+                              </span>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <select
+                              value={currentId}
+                              onChange={(e) => {
+                                const val = e.target.value || '';
+                                if (val && currentGaiterIds.some((gid, idx) => idx !== slotIdx && gid === val)) {
+                                  alert('This worker is already assigned to another gaiter slot in this shift.');
+                                  return;
+                                }
+                                const updated = [...currentGaiterIds];
+                                while (updated.length <= slotIdx) updated.push('');
+                                updated[slotIdx] = val;
+                                assignGaiter(shift, updated);
+                              }}
+                              className="w-full px-3 py-2 bg-amber-950/90 border border-amber-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer appearance-none"
+                            >
+                              <option value="" className="bg-stone-900 text-stone-400">
+                                -- Select Gaiter {slotIdx + 1} --
+                              </option>
+                              {gaiterDeptWorkers.length > 0 && (
+                                <optgroup label="Gaiter Department" className="bg-stone-900 text-amber-300 font-bold">
+                                  {gaiterDeptWorkers.map(w => (
                                     <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                      {w.name} ({w.tNo})
                                     </option>
                                   ))}
                                 </optgroup>
-                              </select>
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-400">
-                                <Zap size={13} />
-                              </div>
+                              )}
+                              <optgroup label="All Other Mill Staff" className="bg-stone-900 text-stone-400">
+                                {otherGaiterWorkers.map(w => (
+                                  <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                                    {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-400">
+                              <Zap size={13} />
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
-      )}
+      </div>
 
       {/* ========================================================================= */}
       {/* 3. SECTION 2: SHIFT SELECTION BAR (TO SEPARATE BY SHIFT)                 */}

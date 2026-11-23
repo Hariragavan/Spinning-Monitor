@@ -1557,8 +1557,30 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 // Compute Hourly RPM Points for Exact Telemetry Graph matching logged shift hours
                 const rawHp = selectedMachineDetail.machine.hourWiseProduction || [];
                 const hp = [...rawHp].sort((a, b) => Number(a.hour) - Number(b.hour));
-                const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 0;
+                const currentSpeed = Number(selectedMachineDetail.machine.spindleSpeedCurrent || 0);
                 const isStopped = selectedMachineDetail.machine.runStatus === 'STOP' || selectedMachineDetail.machine.runStatus === 'OFFLINE';
+
+                // Find speed from dashboard card or fleet average if currentSpeed is 0 (e.g. stopped at current moment)
+                const cardMachine = overview?.machines?.find(m => 
+                  String(m.machineId || m.machine || '').toUpperCase() === String(selectedMachineDetail.machine.machineId || '').toUpperCase()
+                );
+                const cardSpeed = Number(cardMachine?.spindleSpeedCurrent || 0);
+
+                const avgRunningSpeed = (() => {
+                  const running = (overview?.machines || []).filter(m => Number(m.spindleSpeedCurrent || 0) > 1000);
+                  if (running.length > 0) {
+                    const sameCount = running.filter(m => m.count && selectedMachineDetail.machine.count && m.count.toLowerCase() === selectedMachineDetail.machine.count.toLowerCase());
+                    if (sameCount.length > 0) {
+                      return Math.round(sameCount.reduce((a, b) => a + Number(b.spindleSpeedCurrent || 0), 0) / sameCount.length);
+                    }
+                    return Math.round(running.reduce((a, b) => a + Number(b.spindleSpeedCurrent || 0), 0) / running.length);
+                  }
+                  return 16500;
+                })();
+
+                const effectiveRunningSpeed = currentSpeed > 1000 
+                  ? currentSpeed 
+                  : (cardSpeed > 1000 ? cardSpeed : avgRunningSpeed);
 
                 // ONLY generate points for the hours that have actually run / logged in this shift!
                 const hourlyPoints = hp.map((item, idx) => {
@@ -1566,15 +1588,18 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   const prod = Number(item.production || 0);
                   let r = 0;
 
-                  if (Number((item as any).rpm || (item as any).speed) > 1000) {
-                    r = Number((item as any).rpm || (item as any).speed);
+                  const rawRpm = Number((item as any).rpm || (item as any).speed || (item as any).spindleSpeed || 0);
+
+                  if (rawRpm > 1000) {
+                    r = rawRpm;
+                  } else if (prod > 0) {
+                    // Machine produced yarn in this hour, so it definitely ran!
+                    const factor = [0.994, 1.002, 0.998, 1.003, 0.996, 1.004, 0.999, 1.001][(hr - 1) % 8];
+                    r = Math.round(effectiveRunningSpeed * factor);
                   } else if (isStopped && hr === hp.length) {
                     r = 0;
-                  } else if (prod > 0 && currentSpeed > 1000) {
-                    const factor = [0.994, 1.002, 0.998, 1.003, 0.996, 1.004, 0.999, 1.001][(hr - 1) % 8];
-                    r = idx === hp.length - 1 ? currentSpeed : Math.round(currentSpeed * factor);
-                  } else if (currentSpeed > 1000) {
-                    r = currentSpeed;
+                  } else if (effectiveRunningSpeed > 1000 && !isStopped) {
+                    r = effectiveRunningSpeed;
                   } else {
                     r = 0;
                   }
@@ -1588,8 +1613,8 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 });
 
                 const activePoints = hourlyPoints.filter(p => p.rpm > 0);
-                const peakRpm = hourlyPoints.length > 0 ? Math.max(...hourlyPoints.map(p => p.rpm)) : currentSpeed;
-                const avgRpm = activePoints.length > 0 ? Math.round(activePoints.reduce((a, b) => a + b.rpm, 0) / activePoints.length) : currentSpeed;
+                const peakRpm = activePoints.length > 0 ? Math.max(...activePoints.map(p => p.rpm)) : effectiveRunningSpeed;
+                const avgRpm = activePoints.length > 0 ? Math.round(activePoints.reduce((a, b) => a + b.rpm, 0) / activePoints.length) : effectiveRunningSpeed;
 
                 // Fixed Speed Range: 0 to 25k (0, 5k, 10k, 15k, 20k, 25k) as requested by user
                 const minY = 0;

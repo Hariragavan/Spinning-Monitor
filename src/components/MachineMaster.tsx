@@ -162,7 +162,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     }
   }, [currentShed]);
 
-  // Find machine telemetry and running counts detected on activeDate
+  // Find machine telemetry and running counts detected on activeDate (in upload order)
   const { dateMachineMap, activeDateHasData } = useMemo(() => {
     const map = new Map<string, { count: string; actualGps: number; stdGps: number; prodKg: number; shed: string; rfNo: string }>();
     const pool: DailyReport[] = [];
@@ -173,32 +173,19 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       }
     });
 
-    const relevant = pool.filter(r => selectedShedTab === 'All Sheds' || (r.shed || 'Shed 1') === selectedShedTab);
+    const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
+    const relevant = pool.filter(r => selectedShedTab === 'All Sheds' || normalizeShed(r.shed || 'Shed 1') === targetNorm);
     let foundData = false;
 
     relevant.forEach(rep => {
       const repShed = rep.shed || 'Shed 1';
-      (rep.entries || []).forEach(e => {
-        const rf = (e.frameNo || '').trim().toUpperCase();
-        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-        foundData = true;
-        const key = `${rf}__${repShed.toLowerCase()}`;
-        const existing = map.get(key);
-        map.set(key, {
-          rfNo: e.frameNo || rf,
-          count: (e.count || '').trim() || existing?.count || '',
-          actualGps: e.gpsActual || existing?.actualGps || 0,
-          stdGps: e.gpsTarget || existing?.stdGps || 0,
-          prodKg: (existing?.prodKg || 0) + (e.productionActual || 0),
-          shed: repShed
-        });
-      });
-
+      // 1. First process summaries to preserve exact sheet upload row order
       (rep.summaries || []).forEach(s => {
         const rf = (s.frameNo || '').trim().toUpperCase();
         if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
         foundData = true;
-        const key = `${rf}__${repShed.toLowerCase()}`;
+        const entryShed = s.shed || repShed;
+        const key = `${rf}__${entryShed.toLowerCase()}`;
         const existing = map.get(key);
         map.set(key, {
           rfNo: s.frameNo || rf,
@@ -206,8 +193,31 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
           actualGps: s.avgGps || existing?.actualGps || 0,
           stdGps: s.stdGps || existing?.stdGps || 0,
           prodKg: s.actualProd || existing?.prodKg || 0,
-          shed: repShed
+          shed: entryShed
         });
+      });
+
+      // 2. Next process entries for any machine not in summaries
+      (rep.entries || []).forEach(e => {
+        const rf = (e.frameNo || '').trim().toUpperCase();
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
+        foundData = true;
+        const entryShed = e.shed || repShed;
+        const key = `${rf}__${entryShed.toLowerCase()}`;
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, {
+            rfNo: e.frameNo || rf,
+            count: (e.count || '').trim(),
+            actualGps: e.gpsActual || 0,
+            stdGps: e.gpsTarget || 0,
+            prodKg: e.productionActual || 0,
+            shed: entryShed
+          });
+        } else {
+          existing.prodKg = (existing.prodKg || 0) + (e.productionActual || 0);
+          if (!existing.count && e.count) existing.count = e.count.trim();
+        }
       });
     });
 
@@ -283,25 +293,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       if (!parts || parts.month !== activeMonthParts.month || parts.year !== activeMonthParts.year) return;
 
       const rShed = r.shed || 'Shed 1';
-      (r.entries || []).forEach(e => {
-        const rf = String(e.frameNo || (e as any).rfNo || '').trim().toUpperCase();
-        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-        const trueShed = getMachineShed(rf, e.shed || rShed);
-        const set = datesPerMachine.get(rf) || new Set<string>();
-        set.add(r.date);
-        datesPerMachine.set(rf, set);
-
-        const existing = map.get(rf);
-        map.set(rf, {
-          rfNo: rf,
-          shed: trueShed,
-          count: (e.count || '').trim() || existing?.count || '',
-          stdGps: e.gpsTarget || existing?.stdGps || 0,
-          actualGps: e.gpsActual || existing?.actualGps || 0,
-          datesCount: set.size
-        });
-      });
-
+      // 1. First process summaries to preserve sheet upload row order
       (r.summaries || []).forEach(s => {
         const rf = String(s.frameNo || (s as any).rfNo || '').trim().toUpperCase();
         if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
@@ -312,7 +304,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
         const existing = map.get(rf);
         map.set(rf, {
-          rfNo: rf,
+          rfNo: s.frameNo || rf,
           shed: trueShed,
           count: (s.count || '').trim() || existing?.count || '',
           stdGps: s.stdGps || existing?.stdGps || 0,
@@ -320,17 +312,41 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
           datesCount: set.size
         });
       });
+
+      // 2. Next process entries for any machine not in summaries
+      (r.entries || []).forEach(e => {
+        const rf = String(e.frameNo || (e as any).rfNo || '').trim().toUpperCase();
+        if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
+        const trueShed = getMachineShed(rf, e.shed || rShed);
+        const set = datesPerMachine.get(rf) || new Set<string>();
+        set.add(r.date);
+        datesPerMachine.set(rf, set);
+
+        const existing = map.get(rf);
+        if (!existing) {
+          map.set(rf, {
+            rfNo: e.frameNo || rf,
+            shed: trueShed,
+            count: (e.count || '').trim(),
+            stdGps: e.gpsTarget || 0,
+            actualGps: e.gpsActual || 0,
+            datesCount: set.size
+          });
+        } else if (!existing.count && e.count) {
+          existing.count = (e.count || '').trim();
+        }
+      });
     });
 
     return map;
   }, [allReports, activeMonthParts]);
 
-  // Master registered machines filtered strictly by this month's uploaded production and shed
+  // Master registered machines filtered strictly by this month's uploaded production and shed (in upload order, not numeric)
   const masterMachines = useMemo(() => {
     const targetNorm = normalizeShed(selectedShedTab || 'All Sheds');
 
     // If reports have been uploaded for this month, master machines are strictly derived
-    // from this month's uploaded production (unlisted machines not in this month are removed)!
+    // from this month's uploaded production in upload order (unlisted machines not in this month are removed)!
     if (thisMonthUploadedMachines.size > 0) {
       const items: MachineMasterItem[] = [];
       thisMonthUploadedMachines.forEach((info, rf) => {
@@ -343,8 +359,8 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
 
         items.push({
           id: existing?.id || `m-${rf.toLowerCase()}-${info.shed.toLowerCase().replace(/\s+/g, '-')}`,
-          rfNo: rf,
-          description: existing?.description || `RING FRAME ${rf} (${info.shed})`,
+          rfNo: info.rfNo || rf,
+          description: existing?.description || `RING FRAME ${info.rfNo || rf} (${info.shed})`,
           shed: info.shed,
           count: existing?.count || info.count || '030/1-PH-PC',
           stdGps: existing?.stdGps || info.stdGps || 0,
@@ -354,7 +370,8 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
         });
       });
 
-      return items.sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+      // Preserves sheet upload order wise (not numerical)
+      return items;
     }
 
     // Fallback if no reports exist: filter machines strictly by shed
@@ -367,7 +384,7 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
     });
   }, [machines, selectedShedTab, thisMonthUploadedMachines]);
 
-  // Date-specific machines: If no data on date, returns empty!
+  // Date-specific machines: If no data on date, returns empty! (in upload order, not numeric)
   const dateMachines = useMemo(() => {
     if (!activeDateHasData) return [];
 
@@ -397,7 +414,8 @@ export const MachineMaster: React.FC<MachineMasterProps> = ({
       });
     });
 
-    return items.sort((a, b) => (a.rfNo || '').localeCompare(b.rfNo || '', undefined, { numeric: true }));
+    // Preserves date sheet upload order wise (not numerical)
+    return items;
   }, [activeDateHasData, dateMachineMap, machines, selectedShedTab]);
 
   // Effective list shown in table based on viewMode (falls back to master machines if date statement not uploaded)

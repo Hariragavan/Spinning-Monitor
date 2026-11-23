@@ -537,16 +537,16 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       return true;
     });
 
-    return filtered.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return filtered;
   }, []);
 
-  // Machines list: Show ALL master machines for each shed wise (strictly isolated per shed)
+  // Machines list: Show ALL master machines for each shed wise (strictly isolated per shed in upload order)
   const machines = useMemo(() => {
     const targetNorm = normalizeShed(activeShedTab || 'Shed 1');
     const seen = new Set<string>();
     const candidateList: string[] = [];
 
-    const addClean = (val: any) => {
+    const addClean = (val: any, entryShed?: string) => {
       if (val === null || val === undefined) return;
       const clean = String(val).trim();
       if (!clean) return;
@@ -564,9 +564,9 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
         return;
       }
 
-      // Enforce strict shed partitioning using canonical getMachineShed:
-      // Machine must strictly belong to targetNorm!
-      const machineShed = getMachineShed(clean);
+      // Enforce strict shed partitioning using canonical getMachineShed with entryShed:
+      // Machine strictly belongs to the shed it was uploaded for!
+      const machineShed = getMachineShed(clean, entryShed);
       if (machineShed !== targetNorm) return;
 
       if (!seen.has(upper)) {
@@ -575,14 +575,19 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       }
     };
 
-    // 1. Scan this month's uploaded production reports (each day uploaded machine)
+    // 1. Scan this month's uploaded production reports (each day uploaded machine in sheet upload order)
     (effectiveHistory || []).forEach(report => {
-      if (!report || !report.date || !Array.isArray(report.entries)) return;
+      if (!report || !report.date) return;
       const parts = parseUniversalDateParts(report.date);
       if (parts && parts.month === selectedMonth && parts.year === selectedYear) {
-        report.entries.forEach(e => {
+        // First check report summaries (preserves sheet upload row order)
+        (report.summaries || []).forEach(s => {
+          if (!s || !s.frameNo) return;
+          addClean(s.frameNo, s.shed || report.shed);
+        });
+        (report.entries || []).forEach(e => {
           if (!e || !e.frameNo) return;
-          addClean(e.frameNo);
+          addClean(e.frameNo, e.shed || report.shed);
         });
       }
     });
@@ -594,24 +599,15 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       return mShed === targetNorm;
     });
 
-    // If candidateList already has machines found in this month's daily reports,
-    // only include registered machines that actually appeared in this month (or keep candidate list)
-    if (candidateList.length > 0) {
-      fromRegistry.forEach(m => {
-        const rf = String(m.rfNo || (m as any).frameNo || '').trim().toUpperCase();
-        if (seen.has(rf)) {
-          addClean(rf);
-        }
-      });
-    } else {
-      // Fallback if no reports uploaded for this month yet: include shed registry
-      fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId));
+    // If candidateList has no reports uploaded for this month yet: include shed registry
+    if (candidateList.length === 0) {
+      fromRegistry.forEach(m => addClean(m.rfNo || (m as any).frameNo || (m as any).machineId, m.shed));
     }
 
     // 3. Spinning frame numbers configured in IoT Machine Mapping for this month/shed
     (registeredInfoForMonth.registeredFrames || []).forEach(f => {
       if (!f || String(f).toUpperCase().startsWith('RF')) return;
-      addClean(f);
+      addClean(f, activeShedTab);
     });
 
     return deduplicateMachines(candidateList);

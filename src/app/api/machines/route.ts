@@ -108,26 +108,9 @@ async function syncMachinesFromReportsInternal(db: any, targetMonth?: number, ta
   // Source reports: strictly this month's reports (or allReports fallback only if zero reports exist for this month)
   const sourceReports = monthReports.length > 0 ? monthReports : allReports;
 
-  // 4. Ingest strictly from uploaded daily reports (NO hardcoded standard machine injection)
+  // 4. Ingest strictly from uploaded daily reports in sheet upload order (NO hardcoded standard machine injection)
   sourceReports.forEach((r: any) => {
-    (r.entries || []).forEach((e: any) => {
-      const rf = String(e.frameNo || e.rfNo || '').trim().toUpperCase();
-      if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
-      const canonicalShed = getMachineShed(rf, e.shed || r.shed);
-      const existing = machineMap.get(rf);
-      machineMap.set(rf, {
-        id: existing?.id || `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
-        rfNo: rf,
-        frameNo: rf,
-        shed: canonicalShed,
-        count: (e.count || '').trim() || existing?.count || '030/1-PH-PC',
-        spindles: e.spindles || existing?.spindles || 1008,
-        stdGps: e.gpsTarget || e.gpsActual || existing?.stdGps || 0,
-        status: 'Active',
-        description: `RING FRAME ${rf} (${canonicalShed})`
-      });
-    });
-
+    // 1. First process summaries to preserve sheet upload row order
     (r.summaries || []).forEach((s: any) => {
       const rf = String(s.frameNo || s.rfNo || '').trim().toUpperCase();
       if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
@@ -135,8 +118,8 @@ async function syncMachinesFromReportsInternal(db: any, targetMonth?: number, ta
       const existing = machineMap.get(rf);
       machineMap.set(rf, {
         id: existing?.id || `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
-        rfNo: rf,
-        frameNo: rf,
+        rfNo: s.frameNo || rf,
+        frameNo: s.frameNo || rf,
         shed: canonicalShed,
         count: (s.count || '').trim() || existing?.count || '030/1-PH-PC',
         spindles: existing?.spindles || 1008,
@@ -144,6 +127,29 @@ async function syncMachinesFromReportsInternal(db: any, targetMonth?: number, ta
         status: 'Active',
         description: `RING FRAME ${rf} (${canonicalShed})`
       });
+    });
+
+    // 2. Next process entries for any machine not in summaries
+    (r.entries || []).forEach((e: any) => {
+      const rf = String(e.frameNo || e.rfNo || '').trim().toUpperCase();
+      if (!rf || rf === 'M' || rf === 'MC' || !rf.match(/\d+/)) return;
+      const canonicalShed = getMachineShed(rf, e.shed || r.shed);
+      const existing = machineMap.get(rf);
+      if (!existing) {
+        machineMap.set(rf, {
+          id: `m-${rf.toLowerCase()}-${canonicalShed.toLowerCase().replace(/\s+/g, '-')}`,
+          rfNo: e.frameNo || rf,
+          frameNo: e.frameNo || rf,
+          shed: canonicalShed,
+          count: (e.count || '').trim() || '030/1-PH-PC',
+          spindles: e.spindles || 1008,
+          stdGps: e.gpsTarget || e.gpsActual || 0,
+          status: 'Active',
+          description: `RING FRAME ${rf} (${canonicalShed})`
+        });
+      } else if (!existing.count && e.count) {
+        existing.count = (e.count || '').trim();
+      }
     });
   });
 
