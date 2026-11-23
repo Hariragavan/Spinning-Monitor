@@ -76,8 +76,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const [showCopyPanel, setShowCopyPanel] = useState(false);
   const [chosenCopyDate, setChosenCopyDate] = useState('');
   const [chosenCopyShift, setChosenCopyShift] = useState<Shift | 'ALL'>('ALL');
-  const [batchGaiterModalOpen, setBatchGaiterModalOpen] = useState(false);
-  const [selectedBatchGaiter, setSelectedBatchGaiter] = useState('');
 
   const shifts: Shift[] = ['I', 'II', 'III'];
 
@@ -152,42 +150,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
     }
   };
 
-  // Safe machine gaiter update
-  const handleAssignMachineGaiter = (entryIdx: number, gaiterId: string) => {
-    if (assignMachineGaiter) {
-      assignMachineGaiter(entryIdx, gaiterId);
-    } else {
-      const entry = entries[entryIdx];
-      if (!entry) return;
-      const targetShift = entry.shift;
-      const curGaiters = gaiters[targetShift] || [];
-      const updated = Array.from(new Set([...curGaiters, gaiterId].filter(Boolean)));
-      assignGaiter(targetShift, updated);
-    }
-  };
-
-  // Safe machine gaiter side update: (LH, RH), (LH), (RH)
-  const handleAssignMachineGaiterSide = (entryIdx: number, side: string) => {
-    if (assignMachineGaiterSide) {
-      assignMachineGaiterSide(entryIdx, side);
-    }
-  };
-
-  // Batch assign gaiter to all filtered machines
-  const handleBatchAssignGaiter = () => {
-    if (!selectedBatchGaiter) return;
-    const indices = filteredEntriesWithIndex.map(item => item.idx);
-    const targetGaiterId = selectedBatchGaiter === '__NO_GAITER__' ? '' : selectedBatchGaiter;
-    if (assignMachineGaiter) {
-      assignMachineGaiter(indices, targetGaiterId);
-    } else {
-      const targetShift = selectedShift !== 'ALL' ? selectedShift : 'I';
-      assignGaiter(targetShift, targetGaiterId ? [targetGaiterId] : []);
-    }
-    setBatchGaiterModalOpen(false);
-    setSelectedBatchGaiter('');
-  };
-
   // Handle "Same as LH" (Both sides)
   const handleCopyLhToRh = (idx: number, lhId: string) => {
     if (!lhId) return;
@@ -233,7 +195,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
   const staffedS3Count = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 3 && entry.siderIds?.[2]).length;
   const s4NeededCount = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 4).length;
   const staffedS4Count = filteredEntriesWithIndex.filter(({ entry }) => (machineSiderCounts[entry.frameNo] ?? 2) >= 4 && entry.siderIds?.[3]).length;
-  const staffedGaiterCount = filteredEntriesWithIndex.filter(({ entry }) => Boolean(entry.gaiterId)).length;
 
   const currentReport = {
     date: selectedDate,
@@ -262,7 +223,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
               MACHINE ALLOCATION ROSTER
             </h1>
             <p className="text-[10px] text-stone-400 font-bold uppercase tracking-wider leading-none mt-0.5">
-              Assign Siders (LH & RH), Gaiters & Top AI Linkconer
+              {isKttm ? 'Assign Siders (LH & RH), KTTM Gaiters & Top AI Linkconer' : 'Assign Siders (LH & RH) per Ringframe'}
             </p>
           </div>
         </div>
@@ -447,8 +408,8 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                             }
                           } else if (alloc.role === 'GAITER') {
                             const entryIdx = entries.findIndex(e => e.gaiterId === dup.workerId && e.shift === shiftValue);
-                            if (entryIdx !== -1) {
-                              handleAssignMachineGaiter(entryIdx, "");
+                            if (entryIdx !== -1 && assignMachineGaiter) {
+                              assignMachineGaiter(entryIdx, "");
                             } else {
                               const currentGaiters = gaiters[shiftValue] || [];
                               assignGaiter(shiftValue, currentGaiters.map(id => id === dup.workerId ? "" : id));
@@ -560,6 +521,130 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
       )}
 
       {/* ========================================================================= */}
+      {/* 2b. SECTION 1b: GAITER CREW ALLOCATIONS (KTTM SHED ONLY)                  */}
+      {/* ========================================================================= */}
+      {isKttm && (
+        <div className="bg-gradient-to-r from-amber-950 via-amber-900 to-stone-900 rounded-2xl p-5 text-white shadow-sm border border-amber-700/40">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-800/50 mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center border border-amber-400/20">
+                <Users size={18} />
+              </div>
+              <div>
+                <h2 className="text-sm md:text-base font-black uppercase tracking-wider text-white">
+                  KTTM GAITER ALLOCATIONS
+                </h2>
+                <p className="text-[11px] text-amber-200/90 font-medium">
+                  Configured in Settings: Shift I ({gaiterCounts.I ?? 1}) · Shift II ({gaiterCounts.II ?? 1}) · Shift III ({gaiterCounts.III ?? 1})
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 bg-amber-500/20 text-amber-200 border border-amber-400/30 rounded-full text-[10px] font-black uppercase tracking-wider self-start sm:self-auto">
+              KTTM SHED CREW
+            </span>
+          </div>
+
+          {/* 3 Shift Cards side-by-side */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {shifts.map(shift => {
+              const count = gaiterCounts[shift] ?? 1;
+              const currentGaiterIds = gaiters[shift] || [];
+
+              return (
+                <div 
+                  key={`kttm-gaiter-${shift}`} 
+                  className={cn(
+                    "p-3.5 rounded-xl border transition-all flex flex-col justify-between",
+                    selectedShift === shift 
+                      ? "bg-amber-950/80 border-amber-400 ring-2 ring-amber-400/30" 
+                      : "bg-white/10 backdrop-blur-xs border-white/10 hover:border-amber-400/40"
+                  )}
+                >
+                  <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-amber-500/20">
+                    <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-amber-200">
+                      <span className="w-5 h-5 rounded-md bg-amber-400 text-amber-950 flex items-center justify-center text-[10px] font-black">
+                        {shift}
+                      </span>
+                      Shift {shift} Gaiter Crew
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-900/60 px-2 py-0.5 rounded border border-amber-500/30">
+                      {count} {count === 1 ? 'Slot' : 'Slots'}
+                    </span>
+                  </div>
+
+                  {count <= 0 ? (
+                    <div className="py-3 text-center text-xs font-medium text-amber-200/60 italic">
+                      0 Gaiters configured in Settings for Shift {shift}
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {Array.from({ length: count }).map((_, slotIdx) => {
+                        const currentId = currentGaiterIds[slotIdx] || '';
+                        const assignedWorker = workers.find(w => w.id === currentId);
+
+                        return (
+                          <div key={slotIdx} className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] text-amber-200/80 font-bold uppercase tracking-wider">
+                              <span>Slot #{slotIdx + 1} {count > 1 ? `(Gaiter ${slotIdx + 1})` : 'Gaiter'}</span>
+                              {assignedWorker && (
+                                <span className="font-mono text-emerald-300 font-bold bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-500/30">
+                                  T.No {assignedWorker.tNo}
+                                </span>
+                              )}
+                            </div>
+                            <div className="relative">
+                              <select
+                                value={currentId}
+                                onChange={(e) => {
+                                  const val = e.target.value || '';
+                                  if (val && currentGaiterIds.some((gid, idx) => idx !== slotIdx && gid === val)) {
+                                    alert('This worker is already assigned to another gaiter slot in this shift.');
+                                    return;
+                                  }
+                                  const updated = [...currentGaiterIds];
+                                  while (updated.length <= slotIdx) updated.push('');
+                                  updated[slotIdx] = val;
+                                  assignGaiter(shift, updated);
+                                }}
+                                className="w-full px-3 py-2 bg-amber-950/90 border border-amber-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer appearance-none"
+                              >
+                                <option value="" className="bg-stone-900 text-stone-400">
+                                  -- Select Gaiter {slotIdx + 1} --
+                                </option>
+                                {gaiterDeptWorkers.length > 0 && (
+                                  <optgroup label="Gaiter Department" className="bg-stone-900 text-amber-300 font-bold">
+                                    {gaiterDeptWorkers.map(w => (
+                                      <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                                        {w.name} ({w.tNo})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="All Other Mill Staff" className="bg-stone-900 text-stone-400">
+                                  {otherGaiterWorkers.map(w => (
+                                    <option key={w.id} value={w.id} className="bg-stone-900 text-white">
+                                      {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              </select>
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-400">
+                                <Zap size={13} />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* 3. SECTION 2: SHIFT SELECTION BAR (TO SEPARATE BY SHIFT)                 */}
       {/* ========================================================================= */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs">
@@ -569,7 +654,7 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
             <span>SELECT SHIFT FOR MACHINE ALLOCATIONS</span>
           </h3>
           <p className="text-[11px] text-stone-500 font-medium mt-0.5">
-            Switch shifts below to allocate LH Sider, RH Sider & Gaiter per machine
+            Switch shifts below to allocate LH Sider &amp; RH Sider per machine
           </p>
         </div>
 
@@ -627,22 +712,8 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                 Staffing: {staffedLhCount}/{totalMachinesInView} LH · {staffedRhCount}/{rhNeededCount} RH
                 {s3NeededCount > 0 && ` · ${staffedS3Count}/${s3NeededCount} S3`}
                 {s4NeededCount > 0 && ` · ${staffedS4Count}/${s4NeededCount} S4`}
-                 · {staffedGaiterCount}/{totalMachinesInView} Gaiters
               </p>
             </div>
-          </div>
-
-          {/* Batch Gaiter Quick Fill Action */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setBatchGaiterModalOpen(true)}
-              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs cursor-pointer transition-all active:scale-95"
-              title="Apply 1 gaiter to all machines in this shift view"
-            >
-              <Zap size={13} />
-              <span>Batch Fill Gaiter ({selectedShift === 'ALL' ? 'All' : `Shift ${selectedShift}`})</span>
-            </button>
           </div>
         </div>
 
@@ -681,19 +752,13 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                     </span>
                   </th>
                 )}
-                <th className="px-4 py-3 min-w-[210px]">
-                  <span className="flex items-center gap-1 text-amber-800">
-                    <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-                    GAITER ALLOCATION
-                  </span>
-                </th>
                 <th className="px-4 py-3 text-right w-36">COVERAGE STATUS</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 text-xs">
               {filteredEntriesWithIndex.length === 0 ? (
                 <tr>
-                  <td colSpan={4 + (maxSidesInView >= 3 ? 1 : 0) + (maxSidesInView >= 4 ? 1 : 0)} className="py-12 text-center text-stone-400 italic">
+                  <td colSpan={5 + (maxSidesInView >= 3 ? 1 : 0) + (maxSidesInView >= 4 ? 1 : 0)} className="py-12 text-center text-stone-400 italic">
                     No machine entries found for {selectedShift === 'ALL' ? 'any shift' : `Shift ${selectedShift}`}.
                   </td>
                 </tr>
@@ -707,7 +772,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   const rhWorkerId = entry.siderIds?.[1] || '';
                   const s3WorkerId = entry.siderIds?.[2] || '';
                   const s4WorkerId = entry.siderIds?.[3] || '';
-                  const machineGaiterId = entry.gaiterId || '';
 
                   const activeAssignedSlots = [
                     lhWorkerId,
@@ -719,8 +783,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                   const assignedCount = activeAssignedSlots.length;
                   const isSidersFull = assignedCount >= targetSides;
                   const isBothSides = targetSides === 2 && Boolean(lhWorkerId && rhWorkerId && lhWorkerId === rhWorkerId);
-                  const isFullCrew = isSidersFull && Boolean(machineGaiterId);
-                  const isStaffedWithoutGaiter = isSidersFull && !machineGaiterId;
 
                   return (
                     <tr 
@@ -879,53 +941,17 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                         </td>
                       )}
 
-                      {/* GAITER ALLOCATION (PER MACHINE) */}
-                      <td className="px-4 py-3.5 align-middle">
-                        <SearchableWorkerSelect
-                          value={machineGaiterId}
-                          onChange={(wId) => handleAssignMachineGaiter(idx, wId)}
-                          workers={workers}
-                          placeholder="-- No Gaiter --"
-                          className="bg-amber-50/40 border-amber-200"
-                          priorityDeptFilter={(w) => Boolean(w.department?.toLowerCase().includes('gaiter'))}
-                          priorityLabel="Gaiter Department Staff"
-                          otherLabel="Other Mill Staff"
-                        />
-                        {machineGaiterId && (
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <span className="text-[9px] font-black uppercase text-amber-900 tracking-wider">Side:</span>
-                            <select
-                              value={entry.gaiterSide || 'LH,RH'}
-                              onChange={(e) => handleAssignMachineGaiterSide(idx, e.target.value)}
-                              className="px-2 py-0.5 bg-white border border-amber-300 rounded text-[10px] font-black text-amber-950 outline-none cursor-pointer font-mono"
-                            >
-                              <option value="LH,RH">(LH, RH) Both Sides</option>
-                              <option value="LH">(LH) Left Side</option>
-                              <option value="RH">(RH) Right Side</option>
-                            </select>
-                          </div>
-                        )}
-                      </td>
-
                       {/* COVERAGE STATUS */}
                       <td className="px-4 py-3.5 align-middle text-right">
-                        {isFullCrew && isBothSides ? (
+                        {isBothSides ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-black uppercase">
                             <Check size={11} className="stroke-[3]" />
-                            <span>Both Sides + Gaiter</span>
+                            <span>Both Sides (100%)</span>
                           </span>
-                        ) : isFullCrew ? (
+                        ) : isSidersFull ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-black uppercase">
                             <Check size={11} className="stroke-[3]" />
-                            <span>{targetSides}/{targetSides} Full Crew</span>
-                          </span>
-                        ) : isStaffedWithoutGaiter && isBothSides ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase">
-                            <span>Both (No Gaiter)</span>
-                          </span>
-                        ) : isStaffedWithoutGaiter ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-black uppercase">
-                            <span>{targetSides}/{targetSides} Staffed</span>
+                            <span>{targetSides}/{targetSides} Fully Staffed</span>
                           </span>
                         ) : assignedCount > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-[10px] font-black uppercase">
@@ -945,100 +971,6 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
           </table>
         </div>
       </div>
-
-      {/* ========================================================================= */}
-      {/* 5. BATCH GAITER ASSIGN MODAL                                              */}
-      {/* ========================================================================= */}
-      {batchGaiterModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-2xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
-                  <Zap size={16} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-stone-900 uppercase">
-                    BATCH APPLY SHIFT GAITER
-                  </h3>
-                  <p className="text-[10px] text-stone-400 font-bold uppercase">
-                    Target: {selectedShift === 'ALL' ? 'All Active Shifts' : `Shift ${selectedShift}`} ({filteredEntriesWithIndex.length} Machines)
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setBatchGaiterModalOpen(false)}
-                className="text-stone-400 hover:text-stone-700 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">
-                  Choose Gaiter to Assign:
-                </label>
-                <select
-                  value={selectedBatchGaiter}
-                  onChange={(e) => setSelectedBatchGaiter(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-800 outline-none focus:border-amber-500 font-mono"
-                >
-                  <option value="">-- Select Gaiter Operator --</option>
-                  <option value="__NO_GAITER__" className="text-rose-600 font-black bg-rose-50">
-                    ❌ No Gaiter (Unassign / Clear All in View)
-                  </option>
-                  {gaiterDeptWorkers.length > 0 && (
-                    <optgroup label="Gaiter Department">
-                      {gaiterDeptWorkers.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name} ({w.tNo})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="All Other Workers">
-                    {otherGaiterWorkers.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-                <span className="block text-[10px] text-stone-400 mt-1">
-                  {selectedBatchGaiter === '__NO_GAITER__'
-                    ? `This will remove/unassign the gaiter for all ${filteredEntriesWithIndex.length} ringframes in the current view.`
-                    : `This will set the chosen gaiter for all ${filteredEntriesWithIndex.length} ringframes in the current view in one single click.`}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setBatchGaiterModalOpen(false)}
-                className="px-4 py-2 text-stone-500 font-bold text-xs cursor-pointer hover:text-stone-700"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!selectedBatchGaiter}
-                onClick={handleBatchAssignGaiter}
-                className={cn(
-                  "px-5 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-xs transition-all cursor-pointer",
-                  selectedBatchGaiter === '__NO_GAITER__'
-                    ? "bg-rose-600 hover:bg-rose-700 shadow-rose-600/30"
-                    : "bg-amber-500 hover:bg-amber-600 shadow-amber-500/30"
-                )}
-              >
-                {selectedBatchGaiter === '__NO_GAITER__' ? 'Unassign Gaiter from All' : 'Apply to All Machines'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
