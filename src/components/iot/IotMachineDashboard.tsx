@@ -183,8 +183,13 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
     loadOverview(true);
   }, [loadOverview]);
 
-  // 1. Lightweight 45-Second Status Poller (updates ONLY running status immediately)
+  // 1. Lightweight 45-Second Status Poller (updates ONLY running status immediately for live shift)
   useEffect(() => {
+    // Only poll live status if viewing today and "All Shifts" (or live shift)
+    const isViewingLive = (!userChangedDate || selectedFromDate === todayStr) && 
+      (selectedShift === 'All Shifts' || selectedShift === `Shift ${overview.shift || ''}`);
+    if (!isViewingLive) return;
+
     let isMounted = true;
     const statusInterval = setInterval(async () => {
       try {
@@ -229,7 +234,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
       isMounted = false;
       clearInterval(statusInterval);
     };
-  }, []);
+  }, [userChangedDate, selectedFromDate, todayStr, selectedShift, overview.shift]);
 
   // 2. Periodic 5-Minute Full Refresh & EM Sync (refreshes all charts/KPIs once every 5 minutes)
   useEffect(() => {
@@ -577,6 +582,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
               onChange={e => {
                 const val = e.target.value;
                 setSelectedFromDate(val);
+                setSelectedToDate(val);
                 setUserChangedDate(Boolean(val));
               }}
               className="date-input"

@@ -338,9 +338,10 @@ export async function fetchLiveRenderStream(
   date?: string
 ): Promise<any[]> {
   const queryParams = {
-    limit: limit || 5,
+    limit: limit || 50,
     sort: 'createdAt',
     order: 'desc',
+    shiftDate: date || undefined,
     date: date || undefined,
     shift: shiftNum !== undefined ? shiftNum : undefined
   };
@@ -386,6 +387,9 @@ export async function getIotOverview(
   const toDate = filter?.toDate;
   const targetDate = fromDate || toDate || filter?.shiftDate;
   const shiftFilter = filter?.shift;
+  const shiftNum = shiftFilter && shiftFilter !== 'All Shifts' && shiftFilter !== 'All'
+    ? parseInt(String(shiftFilter).replace(/\D/g, ''), 10) || undefined
+    : undefined;
   const cacheKey = `${shiftFilter ?? 'all'}_${fromDate ?? ''}_${toDate ?? ''}_${targetDate ?? 'any'}`;
   const now = Date.now();
 
@@ -394,14 +398,14 @@ export async function getIotOverview(
     return cached.data;
   }
 
-  // 1. Pull live telemetry from remote stream (limit: 5, fast & lightweight)
-  const liveRecords = await fetchLiveRenderStream(5, undefined, targetDate);
+  // 1. Pull live telemetry from remote stream (pass shiftNum and targetDate)
+  const liveRecords = await fetchLiveRenderStream(50, shiftNum, targetDate);
   if (liveRecords.length > 0) {
     const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(liveRecords, {
       fromDate,
       toDate,
       shiftDate: targetDate,
-      shift: shiftFilter
+      shift: shiftNum !== undefined ? shiftNum : shiftFilter
     });
     if (record) {
       const overview = transformCommonToOverview(record, { availableDates, availableShifts });
@@ -417,7 +421,11 @@ export async function getIotOverview(
     // 2a. If looking for past data (targetDate specified): query iot_shiftwise_data first
     if (targetDate) {
       const shiftQuery: any = { shiftDate: targetDate };
-      if (shiftFilter) shiftQuery.shift = Number(shiftFilter);
+      if (shiftNum !== undefined) {
+        shiftQuery.shift = shiftNum;
+      } else if (shiftFilter) {
+        shiftQuery.shift = Number(shiftFilter);
+      }
 
       const shiftDocs = await db
         .collection(IOT_COLLECTIONS.SHIFTWISE)

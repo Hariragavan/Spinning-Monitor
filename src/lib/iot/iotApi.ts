@@ -116,7 +116,7 @@ async function fetchLiveCommonPayload(filter?: {
   // 1. Direct GET call to https://iot-machine-backend-production.up.railway.app/api/common
   try {
     const url = new URL(IOT_COMMON_API_URL);
-    url.searchParams.set('limit', '50');
+    url.searchParams.set('limit', '100');
     if (shiftNum !== undefined) url.searchParams.set('shift', String(shiftNum));
     if (targetDate) url.searchParams.set('shiftDate', targetDate);
     url.searchParams.set('_t', String(Date.now()));
@@ -136,32 +136,32 @@ async function fetchLiveCommonPayload(filter?: {
       if (rec) return rec;
     }
   } catch (err) {
-    console.warn('Direct fetch from Railway common API failed, attempting unfiltered...', err);
+    console.warn('Direct fetch from Railway common API failed:', err);
   }
 
-  // 2. If filtered shift/date returned empty on remote, fetch latest unfiltered from Railway common API
-  if (shiftNum !== undefined || targetDate) {
-    try {
-      const url = new URL(IOT_COMMON_API_URL);
-      url.searchParams.set('limit', '50');
-      url.searchParams.set('_t', String(Date.now()));
+  // 2. Fallback: if unfiltered is needed (no specific shift/date requested) or to check broader pool
+  try {
+    const url = new URL(IOT_COMMON_API_URL);
+    url.searchParams.set('limit', '100');
+    if (targetDate && shiftNum === undefined) url.searchParams.set('shiftDate', targetDate);
+    if (shiftNum !== undefined && !targetDate) url.searchParams.set('shift', String(shiftNum));
+    url.searchParams.set('_t', String(Date.now()));
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 9000);
-      const res = await fetch(url.toString(), {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-      if (res.ok) {
-        const json = await res.json();
-        const rec = tryParseRecord(json);
-        if (rec) return rec;
-      }
-    } catch { }
-  }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const json = await res.json();
+      const rec = tryParseRecord(json);
+      if (rec) return rec;
+    }
+  } catch { }
 
   return null;
 }

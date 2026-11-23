@@ -89,7 +89,8 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
         fetch('/api/settings').then(r => r.ok ? r.json() : null).catch(() => null),
         iotApi.getSpinfoOverview({ fromDate: targetDate, shift: targetShift }).catch(() => null)
       ]);
-      if (stRes) setSettings(stRes);
+      const safeSettings = stRes?.data || stRes;
+      if (safeSettings) setSettings(safeSettings);
       if (ovRes?.machines?.length) {
         setOverview(ovRes);
       } else {
@@ -229,16 +230,20 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
       rawId: '',
       frameNo: '',
       rfNo: '',
+      profileName: '',
       side: '',
       liveProduction: 0,
       targetProduction: 0,
       yieldPercent: 100,
       runStatus: 'OFFLINE' as const,
       speed: 0,
-      count: ''
+      count: '',
+      waste: 0,
+      breaks: 0
     };
 
     const clean = String(rawId).trim().toUpperCase();
+    const cleanNorm = clean.replace(/[\s\-_]/g, '');
 
     // Side detection: D1/01/M1 -> LH (Left), D2/02/M2 -> RH (Right)
     let side = '';
@@ -250,6 +255,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
 
     let frameNo = '';
     let rfNo = '';
+    let profileName = '';
 
     // Direct frame or RF
     if (clean.startsWith('SP') || clean.startsWith('K')) {
@@ -258,39 +264,63 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
       rfNo = clean;
     } else {
       // Find matching profile from machine mappings / stationIds
-      let profileName = '';
       for (const m of mappings) {
         const stations = (m.stationIds || []).map(s => s.toUpperCase());
+        const stationNorms = stations.map(s => s.replace(/[\s\-_]/g, ''));
+        const mNorm = String(m.name || '').replace(/[\s\-_]/g, '').toUpperCase();
+        const idNorm = String(m.mappingId || '').replace(/[\s\-_]/g, '').toUpperCase();
+
         if (
           stations.includes(clean) ||
-          stations.some(s => s.replace('_D', '_').replace('_0', '_') === clean.replace('_D', '_').replace('_0', '_'))
+          stationNorms.includes(cleanNorm) ||
+          stations.some(s => s.replace('_D', '_').replace('_0', '_') === clean.replace('_D', '_').replace('_0', '_')) ||
+          cleanNorm === mNorm ||
+          cleanNorm === idNorm
         ) {
           profileName = m.name;
           break;
         }
       }
 
-      // If no profile matched from stationIds, check settings profile mappings
-      if (!profileName && settings?.iotProfileToFrameMapping) {
-        const keys = Object.keys(settings.iotProfileToFrameMapping);
-        if (keys.length === 1) profileName = keys[0];
-      }
+      // Check settings profile mappings with normalized case & whitespace
+      const normProf = profileName ? profileName.replace(/[\s\-_]/g, '').toUpperCase() : cleanNorm;
 
-      if (profileName && settings?.iotProfileToFrameMapping?.[profileName]) {
-        frameNo = String(settings.iotProfileToFrameMapping[profileName]).trim().toUpperCase();
-      } else if (profileName && settings?.frameToIotProfileMapping) {
-        for (const [f, p] of Object.entries(settings.frameToIotProfileMapping)) {
-          if (p === profileName) {
+      if (settings?.iotProfileToFrameMapping) {
+        for (const [p, f] of Object.entries(settings.iotProfileToFrameMapping)) {
+          const pNorm = String(p).replace(/[\s\-_]/g, '').toUpperCase();
+          if (pNorm === normProf || (profileName && pNorm === profileName.replace(/[\s\-_]/g, '').toUpperCase())) {
             frameNo = String(f).trim().toUpperCase();
+            if (!profileName) profileName = p;
             break;
           }
         }
       }
 
-      // Fallback: If single frame is mapped in frameToIotProfileMapping
       if (!frameNo && settings?.frameToIotProfileMapping) {
-        const frames = Object.keys(settings.frameToIotProfileMapping);
-        if (frames.length === 1) frameNo = String(frames[0]).trim().toUpperCase();
+        for (const [f, p] of Object.entries(settings.frameToIotProfileMapping)) {
+          const pNorm = String(p).replace(/[\s\-_]/g, '').toUpperCase();
+          if (pNorm === normProf || (profileName && pNorm === profileName.replace(/[\s\-_]/g, '').toUpperCase())) {
+            frameNo = String(f).trim().toUpperCase();
+            if (!profileName) profileName = String(p);
+            break;
+          }
+        }
+      }
+
+      // Fallback: If single frame is mapped in settings
+      if (!frameNo && settings?.iotProfileToFrameMapping) {
+        const entries = Object.entries(settings.iotProfileToFrameMapping);
+        if (entries.length === 1) {
+          profileName = profileName || entries[0][0];
+          frameNo = String(entries[0][1]).trim().toUpperCase();
+        }
+      }
+      if (!frameNo && settings?.frameToIotProfileMapping) {
+        const entries = Object.entries(settings.frameToIotProfileMapping);
+        if (entries.length === 1) {
+          frameNo = String(entries[0][0]).trim().toUpperCase();
+          profileName = profileName || String(entries[0][1]);
+        }
       }
     }
 
@@ -344,48 +374,80 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     }
 
     const liveProd = telemetry ? Number((telemetry.shiftProduction || 0).toFixed(2)) : 0;
-    const targetProd = telemetry ? Number((telemetry.shiftTargetProduction || 0).toFixed(2)) : 0;
+    const targetProd = telemetry ? Number((telemetry.shiftTargetProduction || telemetry.shiftProduction || 0).toFixed(2)) : 0;
     const yieldPct = telemetry ? Number((telemetry.yieldPercent || (targetProd > 0 ? (liveProd / targetProd) * 100 : 100)).toFixed(1)) : 100;
+    const waste = telemetry ? Number((telemetry.shiftWaste || 0).toFixed(2)) : 0;
+    const breaks = telemetry ? Number(telemetry.totalEndBreakCount || 0) : 0;
 
     return {
       rawId,
       frameNo: frameNo || clean,
       rfNo: rfNo || (telemetry?.machineId || telemetry?.machine || clean),
+      profileName: profileName || '',
       side,
       telemetry,
       liveProduction: liveProd,
       targetProduction: targetProd,
       yieldPercent: yieldPct,
       runStatus: (telemetry?.runStatus || 'STOP') as 'RUN' | 'DOFF' | 'STOP' | 'OFFLINE',
-      speed: telemetry?.spindleSpeedCurrent || 0,
-      count: telemetry?.count || ''
+      speed: telemetry?.spindleSpeedCurrent || telemetry?.speed || 0,
+      count: telemetry?.count || '',
+      waste,
+      breaks
     };
   }, [mappings, settings, overview, selectedDate]);
 
-  // Unique live machines assigned across displayed / filtered employee metrics
+  // Unique live machines assigned across displayed / filtered employee metrics or floor machine mappings
   const assignedMachineMetrics = useMemo(() => {
-    const rfMap = new Map<string, { frameNo: string; rfNo: string; liveProduction: number; targetProduction: number; yieldPercent: number; runStatus: string }>();
+    const rfMap = new Map<string, any>();
 
+    // 1. From employeeMetrics (the machines assigned to operators on duty)
     employeeMetrics.forEach(m => {
       const info = resolveMachineInfo(m.machineId);
       if (info.rfNo && !rfMap.has(info.rfNo)) {
         rfMap.set(info.rfNo, {
-          frameNo: info.frameNo,
-          rfNo: info.rfNo,
-          liveProduction: info.liveProduction,
-          targetProduction: info.targetProduction,
-          yieldPercent: info.yieldPercent,
-          runStatus: info.runStatus
+          ...info,
+          operatorId: m.employeeId,
+          operatorName: m.employeeName
         });
       }
     });
 
+    // 2. If employeeMetrics has no assigned machines, fallback to all mapped profiles in settings/mappings
+    if (rfMap.size === 0) {
+      mappings.forEach(m => {
+        const info = resolveMachineInfo(m.name || m.mappingId);
+        if (info.rfNo && !rfMap.has(info.rfNo)) {
+          rfMap.set(info.rfNo, {
+            ...info,
+            profileName: m.name,
+            operatorId: '',
+            operatorName: 'Floor Operator'
+          });
+        }
+      });
+
+      if (settings?.iotProfileToFrameMapping) {
+        Object.entries(settings.iotProfileToFrameMapping).forEach(([prof, frame]) => {
+          const info = resolveMachineInfo(String(frame));
+          if (info.rfNo && !rfMap.has(info.rfNo)) {
+            rfMap.set(info.rfNo, {
+              ...info,
+              profileName: prof,
+              operatorId: '',
+              operatorName: 'Floor Operator'
+            });
+          }
+        });
+      }
+    }
+
     return Array.from(rfMap.values());
-  }, [employeeMetrics, resolveMachineInfo]);
+  }, [employeeMetrics, resolveMachineInfo, mappings, settings]);
 
   const totalLiveProduction = useMemo(() => {
     if (assignedMachineMetrics.length > 0) {
-      const sum = assignedMachineMetrics.reduce((acc, m) => acc + m.liveProduction, 0);
+      const sum = assignedMachineMetrics.reduce((acc, m) => acc + (m.liveProduction || 0), 0);
       if (sum > 0) return Number(sum.toFixed(2));
     }
     return totalProductionOutput;
@@ -403,7 +465,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
   }, [assignedMachineMetrics]);
 
   const totalAssignedTarget = useMemo(() => {
-    return Number(assignedMachineMetrics.reduce((acc, m) => acc + m.targetProduction, 0).toFixed(1));
+    return Number(assignedMachineMetrics.reduce((acc, m) => acc + (m.targetProduction || 0), 0).toFixed(1));
   }, [assignedMachineMetrics]);
 
   const machineOptions = useMemo(() => {
@@ -1163,6 +1225,132 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             </div>
 
             <div className="modal-body">
+              {/* LIVE PAIRED MACHINE TELEMETRY SECTION */}
+              <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50/50 p-4 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between pb-3 border-b border-rose-200 mb-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <div>
+                      <h4 className="text-sm font-black uppercase tracking-wider text-rose-950 flex items-center gap-2">
+                        Live Paired Machines Telemetry
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white text-rose-700 border border-rose-200">
+                          {assignedMachineMetrics.length} {assignedMachineMetrics.length === 1 ? 'Machine' : 'Machines'}
+                        </span>
+                      </h4>
+                      <p className="text-xs text-rose-800/80 mt-0.5">
+                        Live stream from MAG SPinFO mapped to floor frames ({assignedMachinesLabel || 'Active Pairs'})
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Total Live Yield</div>
+                      <div className="text-base font-black text-emerald-800 num-tabular">
+                        {totalLiveProduction.toLocaleString()} kg
+                      </div>
+                    </div>
+                    {totalAssignedTarget > 0 && (
+                      <div className="text-right pl-3 border-l border-rose-200">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Yield %</div>
+                        <div className="text-base font-black text-rose-900 num-tabular">
+                          {avgAssignedYield}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="table-container modal-table-wrap bg-white rounded-lg border border-rose-200 overflow-x-auto shadow-2xs">
+                  <table className="refined-table modal-table text-xs w-full">
+                    <thead className="bg-rose-100/60 text-stone-700">
+                      <tr>
+                        <th>Machine / Profile</th>
+                        <th>Paired Frame</th>
+                        <th>Operator</th>
+                        <th className="text-right">Live Speed</th>
+                        <th className="text-right">Count</th>
+                        <th className="text-right font-black text-rose-950">Shift Output</th>
+                        <th className="text-right">Target</th>
+                        <th className="text-right">Yield %</th>
+                        <th className="text-right">Waste %</th>
+                        <th className="text-right">End Breaks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignedMachineMetrics.map((am, idx) => (
+                        <tr key={idx} className="hover:bg-rose-50/40">
+                          <td>
+                            <strong className="text-stone-900 font-bold">{am.frameNo || am.rawId}</strong>
+                            {am.profileName && am.profileName !== am.frameNo && (
+                              <span className="ml-1 text-[11px] text-stone-500 font-medium">({am.profileName})</span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded text-[11px] font-black bg-blue-100 text-blue-900 border border-blue-200">
+                                {am.rfNo}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                am.runStatus === 'RUN' ? 'bg-emerald-100 text-emerald-800' :
+                                am.runStatus === 'DOFF' ? 'bg-amber-100 text-amber-800' :
+                                'bg-rose-100 text-rose-800'
+                              }`}>
+                                {am.runStatus === 'RUN' ? 'Running' : am.runStatus === 'DOFF' ? 'Doffing' : 'Stopped'}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="font-semibold text-stone-800">
+                              {am.operatorName || am.operatorId || 'Floor Assigned'}
+                            </span>
+                          </td>
+                          <td className="text-right font-mono font-bold text-stone-900">
+                            {am.speed ? `${am.speed.toLocaleString()} rpm` : '0 rpm'}
+                          </td>
+                          <td className="text-right font-medium text-stone-700">
+                            {am.count || '—'}
+                          </td>
+                          <td className="text-right font-mono font-black text-emerald-700 text-sm">
+                            {am.liveProduction.toFixed(2)} kg
+                          </td>
+                          <td className="text-right font-mono text-stone-600">
+                            {am.targetProduction ? `${am.targetProduction.toFixed(2)} kg` : '—'}
+                          </td>
+                          <td className="text-right font-mono font-bold">
+                            <span className={am.yieldPercent >= 90 ? 'text-emerald-700' : 'text-amber-700'}>
+                              {am.yieldPercent}%
+                            </span>
+                          </td>
+                          <td className="text-right font-mono text-stone-700">
+                            {am.waste ? `${am.waste.toFixed(2)}%` : '0.00%'}
+                          </td>
+                          <td className="text-right font-mono text-stone-700">
+                            {am.breaks}
+                          </td>
+                        </tr>
+                      ))}
+                      {assignedMachineMetrics.length > 1 && (
+                        <tr className="bg-rose-100/70 font-black border-t-2 border-rose-300">
+                          <td colSpan={5} className="text-rose-950 uppercase tracking-wider text-right pr-3 font-extrabold">
+                            Total Assigned Machines Output:
+                          </td>
+                          <td className="text-right font-mono font-black text-emerald-800 text-sm">
+                            {totalLiveProduction.toFixed(2)} kg
+                          </td>
+                          <td className="text-right font-mono text-stone-800">
+                            {totalAssignedTarget ? `${totalAssignedTarget.toFixed(2)} kg` : '—'}
+                          </td>
+                          <td className="text-right font-mono text-emerald-800 font-extrabold">
+                            {avgAssignedYield}%
+                          </td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
               <div className="filters-card mb-4">
                 <div className="field">
                   <label>Date</label>

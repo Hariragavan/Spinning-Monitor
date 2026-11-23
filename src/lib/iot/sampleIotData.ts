@@ -128,10 +128,7 @@ export function selectAndMergeCommonRecord(
     const match = String(filter.shift).match(/\d+/);
     const shiftNum = match ? parseInt(match[0], 10) : undefined;
     if (shiftNum !== undefined) {
-      const shiftMatches = candidates.filter(r => Number(r.shift) === shiftNum);
-      if (shiftMatches.length > 0) {
-        candidates = shiftMatches;
-      }
+      candidates = candidates.filter(r => Number(r.shift) === shiftNum);
     }
   }
 
@@ -141,28 +138,16 @@ export function selectAndMergeCommonRecord(
   const exactDate = filter?.shiftDate;
 
   if (fromDate && toDate) {
-    const rangeMatches = candidates.filter(r => {
+    candidates = candidates.filter(r => {
       const d = String(r.shiftDate || '');
       return d >= fromDate && d <= toDate;
     });
-    if (rangeMatches.length > 0) {
-      candidates = rangeMatches;
-    }
   } else if (fromDate) {
-    const fromMatches = candidates.filter(r => String(r.shiftDate || '') >= fromDate);
-    if (fromMatches.length > 0) {
-      candidates = fromMatches;
-    }
+    candidates = candidates.filter(r => String(r.shiftDate || '') >= fromDate);
   } else if (toDate) {
-    const toMatches = candidates.filter(r => String(r.shiftDate || '') <= toDate);
-    if (toMatches.length > 0) {
-      candidates = toMatches;
-    }
+    candidates = candidates.filter(r => String(r.shiftDate || '') <= toDate);
   } else if (exactDate) {
-    const exactMatches = candidates.filter(r => String(r.shiftDate || '') === exactDate);
-    if (exactMatches.length > 0) {
-      candidates = exactMatches;
-    }
+    candidates = candidates.filter(r => String(r.shiftDate || '') === exactDate);
   }
 
   const primary = candidates[0];
