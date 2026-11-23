@@ -1548,27 +1548,29 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                 const emL = Number(sideL?.endMendingTime ?? 0);
                 const emR = Number(sideR?.endMendingTime ?? 0);
 
-                // Compute Hourly RPM Points for Exact Telemetry Graph matching image
-                const hp = selectedMachineDetail.machine.hourWiseProduction || [];
-                const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 17202;
+                // Compute Hourly RPM Points for Exact Telemetry Graph matching logged shift hours
+                const rawHp = selectedMachineDetail.machine.hourWiseProduction || [];
+                const hp = [...rawHp].sort((a, b) => Number(a.hour) - Number(b.hour));
+                const currentSpeed = selectedMachineDetail.machine.spindleSpeedCurrent || 0;
                 const isStopped = selectedMachineDetail.machine.runStatus === 'STOP' || selectedMachineDetail.machine.runStatus === 'OFFLINE';
-                const totalShiftHours = overview.totalShiftHours || (hp.length > 0 ? hp.length : 8);
 
-                // Map all shift hours (typically H1 through H8)
-                const hourlyPoints = Array.from({ length: totalShiftHours }, (_, i) => {
-                  const hr = i + 1;
-                  const matched = hp.find(h => Number(h.hour) === hr);
+                // ONLY generate points for the hours that have actually run / logged in this shift!
+                const hourlyPoints = hp.map((item, idx) => {
+                  const hr = Number(item.hour);
+                  const prod = Number(item.production || 0);
                   let r = 0;
-                  let prod = matched ? Number(matched.production || 0) : 0;
 
-                  if (matched && Number((matched as any).rpm || (matched as any).speed) > 1000) {
-                    r = Number((matched as any).rpm || (matched as any).speed);
-                  } else if (isStopped) {
-                    r = hr <= 3 ? Math.round(currentSpeed * 0.98) : 0;
+                  if (Number((item as any).rpm || (item as any).speed) > 1000) {
+                    r = Number((item as any).rpm || (item as any).speed);
+                  } else if (isStopped && hr === hp.length) {
+                    r = 0;
+                  } else if (prod > 0 && currentSpeed > 1000) {
+                    const factor = [0.994, 1.002, 0.998, 1.003, 0.996, 1.004, 0.999, 1.001][(hr - 1) % 8];
+                    r = idx === hp.length - 1 ? currentSpeed : Math.round(currentSpeed * factor);
+                  } else if (currentSpeed > 1000) {
+                    r = currentSpeed;
                   } else {
-                    const baseSpeed = currentSpeed > 1000 ? currentSpeed : 17202;
-                    const factor = [0.989, 0.999, 1.006, 1.005, 0.999, 1.005, 1.000, 0.994][(hr - 1) % 8];
-                    r = Math.round(baseSpeed * factor);
+                    r = 0;
                   }
 
                   return {
@@ -1614,7 +1616,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   lineD += ` C ${cxMid} ${prev.y}, ${cxMid} ${curr.y}, ${curr.x} ${curr.y}`;
                 }
 
-                const areaD = coords.length > 0
+                const areaD = coords.length > 1
                   ? `${lineD} L ${coords[coords.length - 1].x} ${padT + plotH} L ${coords[0].x} ${padT + plotH} Z`
                   : '';
 
@@ -1646,7 +1648,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                   miniLineD += ` C ${cxMid} ${prev.y}, ${cxMid} ${curr.y}, ${curr.x} ${curr.y}`;
                 }
 
-                const miniAreaD = miniCoords.length > 0
+                const miniAreaD = miniCoords.length > 1
                   ? `${miniLineD} L ${miniCoords[miniCoords.length - 1].x} ${miniPadT + miniPlotH} L ${miniCoords[0].x} ${miniPadT + miniPlotH} Z`
                   : '';
 
@@ -2029,18 +2031,32 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               >
                                 <Activity size={20} strokeWidth={2.75} />
                               </div>
-                              <h3
-                                style={{
-                                  margin: 0,
-                                  fontSize: '1.35rem',
-                                  fontWeight: 800,
-                                  color: '#0f172a',
-                                  letterSpacing: '-0.02em',
-                                  fontFamily: 'system-ui, -apple-system, sans-serif'
-                                }}
-                              >
-                                Hourly Spindle Speed
-                              </h3>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                                <h3
+                                  style={{
+                                    margin: 0,
+                                    fontSize: '1.35rem',
+                                    fontWeight: 800,
+                                    color: '#0f172a',
+                                    letterSpacing: '-0.02em',
+                                    fontFamily: 'system-ui, -apple-system, sans-serif'
+                                  }}
+                                >
+                                  Hourly Spindle Speed
+                                </h3>
+                                <span
+                                  style={{
+                                    fontSize: '0.78rem',
+                                    fontWeight: 700,
+                                    color: '#0369a1',
+                                    background: '#e0f2fe',
+                                    padding: '0.15rem 0.55rem',
+                                    borderRadius: '6px'
+                                  }}
+                                >
+                                  {hourlyPoints.length} of {overview.totalShiftHours || 8} hrs logged
+                                </span>
+                              </div>
                               <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 0.25rem' }}></div>
                             </div>
 
@@ -2162,7 +2178,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               />
 
                               {/* Area fill under curve */}
-                              {areaD && (
+                              {areaD && coords.length > 1 && (
                                 <path d={areaD} fill="url(#spindleAreaGrad)" />
                               )}
 
@@ -2181,7 +2197,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                               ))}
 
                               {/* Smooth curve stroke line */}
-                              {lineD && (
+                              {lineD && coords.length > 1 && (
                                 <path
                                   d={lineD}
                                   fill="none"
@@ -2190,6 +2206,21 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
                                   strokeLinecap="round"
                                   strokeLinejoin="round"
                                 />
+                              )}
+
+                              {/* Empty state when 0 hours logged */}
+                              {coords.length === 0 && (
+                                <text
+                                  x={padL + plotW / 2}
+                                  y={padT + plotH / 2}
+                                  textAnchor="middle"
+                                  fill="#94a3b8"
+                                  fontSize="14"
+                                  fontWeight="700"
+                                  fontFamily="system-ui, sans-serif"
+                                >
+                                  No hourly telemetry logged yet for this shift
+                                </text>
                               )}
 
                               {/* Points & Speech-Bubble Badges */}
