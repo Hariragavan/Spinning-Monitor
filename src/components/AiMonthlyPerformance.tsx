@@ -39,6 +39,23 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<number>(month || currentMonthNum);
   const [selectedYear, setSelectedYear] = useState<number>(year || currentYearNum);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
+  const [isPrintingAll, setIsPrintingAll] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isPrintingAll) {
+      const timer = setTimeout(() => {
+        window.print();
+        setIsPrintingAll(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isPrintingAll]);
+
+  const formatDisplayDate = (d: string) => {
+    const p = parseUniversalDateParts(d);
+    if (!p) return d;
+    return `${p.day.toString().padStart(2, '0')}/${p.month.toString().padStart(2, '0')}/${p.year}`;
+  };
 
   useEffect(() => {
     if (month) setSelectedMonth(month);
@@ -217,7 +234,7 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
   }, [activeWorkerData]);
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-500">
+    <div className={cn("space-y-4 animate-in fade-in duration-500", isPrintingAll && "print:hidden")}>
       {/* FILTER TOOLS PANEL */}
       {!activeTv && (
         <div className="bg-white rounded-2xl border border-stone-200/90 p-4 md:p-5 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4 no-print">
@@ -266,6 +283,14 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
             >
               <Printer size={13} />
               <span>Print Ledger</span>
+            </button>
+            <button
+              onClick={() => setIsPrintingAll(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+              title="Print Monthly Statements for all AI operators"
+            >
+              <Printer size={13} />
+              <span>Print All Operators</span>
             </button>
           </div>
         </div>
@@ -467,6 +492,106 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* PRINT ALL CONTAINER */}
+      {isPrintingAll && (
+        <div className="print-all-container hidden print:block text-black bg-white font-sans w-full p-0">
+          {activeWorkersWithData.map((workerItem, idx) => {
+            const avgUtil = workerItem.rows.length > 0
+              ? workerItem.rows.reduce((acc, curr) => acc + curr.utility, 0) / workerItem.rows.length
+              : 0;
+
+            return (
+              <div key={`print-worker-${workerItem.worker.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
+                <div>
+                  <div className="text-center pb-1.5 border-b border-black mb-2">
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
+                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">AI LINKCONER OPERATOR MONTHLY PERFORMANCE STATEMENT</h1>
+                    
+                    <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
+                      <div>OPERATOR NAME: <span className="text-black font-extrabold text-[14px]">{workerItem.worker.name}</span></div>
+                      <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{workerItem.worker.tNo || '—'}</span></div>
+                      <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{monthOptions.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-center border-collapse border border-black mb-2">
+                    <thead>
+                      <tr className="bg-stone-50 border-b border-black text-[11.5px] font-black uppercase text-black">
+                        <th className="border border-black px-1.5 py-1 text-center w-12">S.NO</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-28">DATE</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-16">SHIFT</th>
+                        <th className="border border-black px-1.5 py-1 text-center">SHIFT COUNT</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-28">UTILITY %</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-32">INCENTIVE (RS)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {workerItem.rows.map((row, rIdx) => (
+                        <tr key={rIdx} className="border-b border-black text-[11px] leading-tight font-bold text-black">
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{rIdx + 1}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{formatDisplayDate(row.date)}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{row.shift}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{row.count}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{row.utility > 0 ? `${row.utility.toFixed(1)}%` : '—'}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-black text-black">₹{Math.round(row.incentive)}</td>
+                        </tr>
+                      ))}
+                      {workerItem.rows.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="border border-black text-center py-2 text-[11px] text-stone-500 font-bold uppercase tracking-wider">
+                            No shift duties recorded for this operator in this period
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div>
+                  {/* Individual Summary block */}
+                  <div className="p-2 px-3 border border-black bg-stone-50 rounded flex justify-between items-center mb-2">
+                    <div className="text-left">
+                      <span className="text-[10px] font-black tracking-widest text-stone-500 uppercase">Payout Summary</span>
+                      <div className="text-black font-black uppercase text-[13px] mt-0.5">AI Linkconer Performance Record</div>
+                      <p className="text-[11.5px] font-semibold text-stone-500 uppercase mt-0.5 leading-normal">
+                        Includes {workerItem.rows.length} shift duties logged under active utility frameworks.
+                      </p>
+                    </div>
+                    <div className="flex gap-4 items-center">
+                      <div className="text-center">
+                        <span className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">Average Utility</span>
+                        <span className="text-[14px] font-black text-black">{avgUtil > 0 ? `${avgUtil.toFixed(1)}%` : '—'}</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">Total Duties</span>
+                        <span className="text-[14px] font-black text-black">{workerItem.rows.length}</span>
+                      </div>
+                      <div className="border border-black px-2.5 py-1 bg-black text-white text-center rounded">
+                        <span className="block text-[10px] font-black text-stone-300 uppercase tracking-widest">Total Amount</span>
+                        <span className="text-[16px] font-black font-mono">₹{Math.round(workerItem.total)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Signatures block for operator sheet */}
+                  <div className="mt-1.5 pt-1.5 border-t border-black grid grid-cols-3 gap-6 text-center text-[11px] font-bold uppercase tracking-wider text-stone-700">
+                    <div>
+                      <div className="pt-1">AM/AM</div>
+                    </div>
+                    <div>
+                      <div className="pt-1">GM</div>
+                    </div>
+                    <div>
+                      <div className="pt-1">DIRECTOR</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

@@ -40,6 +40,23 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
   const [selectedMonth, setSelectedMonth] = useState<number>(month || currentMonthNum);
   const [selectedYear, setSelectedYear] = useState<number>(year || currentYearNum);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string>('ALL');
+  const [isPrintingAll, setIsPrintingAll] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isPrintingAll) {
+      const timer = setTimeout(() => {
+        window.print();
+        setIsPrintingAll(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isPrintingAll]);
+
+  const formatDisplayDate = (d: string) => {
+    const p = parseUniversalDateParts(d);
+    if (!p) return d;
+    return `${p.day.toString().padStart(2, '0')}/${p.month.toString().padStart(2, '0')}/${p.year}`;
+  };
 
   // State for manual metric entry / editing
   const [editingDate, setEditingDate] = useState<string | null>(null);
@@ -236,7 +253,7 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
   };
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-500">
+    <div className={cn("space-y-4 animate-in fade-in duration-500", isPrintingAll && "print:hidden")}>
       {/* FILTER CONTROLS PANEL */}
       {!activeTv && (
         <div className="bg-white rounded-2xl border border-stone-200/90 p-4 md:p-5 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4 no-print">
@@ -281,6 +298,14 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
             >
               <Printer size={13} />
               <span>Print Report</span>
+            </button>
+            <button
+              onClick={() => setIsPrintingAll(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+              title="Print Mill Summary + All Individual Fitter Performance Records"
+            >
+              <Printer size={13} />
+              <span>Print All Fitters</span>
             </button>
           </div>
         </div>
@@ -545,6 +570,212 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
           </table>
         </div>
       </div>
+
+      {/* PRINT ALL CONTAINER */}
+      {isPrintingAll && (
+        <div className="print-all-container hidden print:block text-black bg-white font-sans w-full p-0">
+          {/* PAGE 1: MILL-WIDE FITTER PERFORMANCE MONTHLY ABSTRACT */}
+          <div className="print-page-break p-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between mb-8 text-black bg-white">
+            <div>
+              <div className="text-center pb-2 border-b-2 border-black mb-3">
+                <img
+                  src="/scm-logo-horizontal.png"
+                  alt="SCM Textile Spinners"
+                  className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
+                />
+                <h1 className="text-2xl font-black text-black uppercase tracking-tight">Mill-Wide Fitter Monthly Performance Abstract</h1>
+                <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-4">
+                  <span>
+                    Month: <span className="text-black font-extrabold text-sm">{reportMonthYear}</span>
+                  </span>
+                  <span className="text-stone-700 font-extrabold">
+                    Consolidated Mechanical &amp; Maintenance Performance
+                  </span>
+                </div>
+              </div>
+
+              <table className="w-full text-center border-collapse border border-black mb-3">
+                <thead>
+                  <tr className="bg-stone-100 border-b-2 border-black text-black text-xs font-black uppercase">
+                    <th className="border border-black px-3 py-1.5 text-center w-14">S. NO</th>
+                    <th className="border border-black px-3 py-1.5 text-left w-24">TK NO</th>
+                    <th className="border border-black px-3 py-1.5 text-left">FITTER NAME</th>
+                    <th className="border border-black px-3 py-1.5 text-center w-28">DAYS LOGGED</th>
+                    <th className="border border-black px-3 py-1.5 text-center w-24">UTILISATION %</th>
+                    <th className="border border-black px-3 py-1.5 text-center w-24">SLIP %</th>
+                    <th className="border border-black px-3 py-1.5 text-center w-24">IDLE %</th>
+                    <th className="border border-black px-3 py-1.5 text-center w-24">ROGUE %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fitterWorkers.map((fitter, idx) => {
+                    const fData = getFitterMonthlyRows(fitter.id);
+                    return (
+                      <tr key={fitter.id} className="border-b border-black text-xs font-bold">
+                        <td className="border border-black px-3 py-1.5 text-center">{idx + 1}</td>
+                        <td className="border border-black px-3 py-1.5 text-left font-mono font-black">{fitter.tNo || '—'}</td>
+                        <td className="border border-black px-3 py-1.5 text-left uppercase">{fitter.name}</td>
+                        <td className="border border-black px-3 py-1.5 text-center">{fData.rows.length}</td>
+                        <td className="border border-black px-3 py-1.5 text-center font-mono font-black">{fData.avgUtil}%</td>
+                        <td className="border border-black px-3 py-1.5 text-center font-mono">{fData.avgSlip}%</td>
+                        <td className="border border-black px-3 py-1.5 text-center font-mono">{fData.avgIdle}%</td>
+                        <td className="border border-black px-3 py-1.5 text-center font-mono">{fData.avgRogue}%</td>
+                      </tr>
+                    );
+                  })}
+                  {fitterWorkers.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="border border-black text-center py-4 text-xs font-bold uppercase text-stone-500">
+                        No fitters registered in this department
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              {/* Plant Summary block */}
+              {(() => {
+                const plantData = getFitterMonthlyRows('ALL');
+                return (
+                  <div className="p-3 border-2 border-black bg-stone-50 rounded-lg flex items-center justify-between mb-3">
+                    <div className="text-left">
+                      <span className="text-[9px] font-black tracking-widest text-stone-500 uppercase">Plant Overall Metrics</span>
+                      <div className="text-black font-black uppercase text-base mt-0.5">Mill Maintenance Performance Average</div>
+                      <p className="text-[9px] font-bold text-stone-500 uppercase mt-0.5">
+                        Consolidated across all ({fitterWorkers.length}) fitters for {reportMonthYear}.
+                      </p>
+                    </div>
+                    <div className="flex gap-6 items-center">
+                      <div className="text-center">
+                        <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">Plant Utilisation</span>
+                        <span className="text-lg font-black text-black">{plantData.avgUtil}%</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">Avg Slip</span>
+                        <span className="text-lg font-black text-black">{plantData.avgSlip}%</span>
+                      </div>
+                      <div className="bg-black text-white px-4 py-2 rounded text-center">
+                        <span className="block text-[8px] font-black text-stone-300 uppercase tracking-widest">Avg Idle</span>
+                        <span className="text-xl font-extrabold font-mono">{plantData.avgIdle}%</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Signatures block */}
+              <div className="pt-2 grid grid-cols-3 gap-6 text-center text-xs font-bold uppercase tracking-wider text-stone-700">
+                <div>
+                  <div className="border-t border-black pt-1">AM/AM</div>
+                </div>
+                <div>
+                  <div className="border-t border-black pt-1">GM</div>
+                </div>
+                <div>
+                  <div className="border-t border-black pt-1">DIRECTOR</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* PAGES 2+: INDIVIDUAL FITTER PERFORMANCE RECORDS */}
+          {fitterWorkers.map((fitter, idx) => {
+            const fData = getFitterMonthlyRows(fitter.id);
+            return (
+              <div key={`print-fitter-${fitter.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
+                <div>
+                  <div className="text-center pb-1.5 border-b border-black mb-2">
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">FITTER WISE HISTORY — PERFORMANCE &amp; MAINTENANCE AUDIT</span>
+                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">FITTER MONTHLY PERFORMANCE RECORD</h1>
+                    
+                    <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
+                      <div>FITTER NAME: <span className="text-black font-extrabold text-[14px]">{fitter.name}</span></div>
+                      <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{fitter.tNo || '—'}</span></div>
+                      <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{reportMonthYear}</span></div>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-center border-collapse border border-black mb-2">
+                    <thead>
+                      <tr className="bg-stone-50 border-b border-black text-[11.5px] font-black uppercase text-black">
+                        <th className="border border-black px-1.5 py-1 text-center w-12">S.NO</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-28">DATE</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-24">SHIFTS LOGGED</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-28">UTILISATION %</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-24">SLIP %</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-24">IDLE %</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-24">ROGUE %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fData.rows.map((row, rIdx) => (
+                        <tr key={rIdx} className="border-b border-black text-[11px] leading-tight font-bold text-black">
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{rIdx + 1}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{formatDisplayDate(row.date)}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{row.shiftsLogged}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{row.dayUtilization}%</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{row.slipPercent}%</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{row.idlePercent}%</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{row.roguePercent}%</td>
+                        </tr>
+                      ))}
+                      {fData.rows.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="border border-black text-center py-2 text-[11px] text-stone-500 font-bold uppercase tracking-wider">
+                            No shift duties recorded for this fitter in this period
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div>
+                  {/* Summary block */}
+                  <div className="p-2 px-3 border border-black bg-stone-50 rounded flex justify-between items-center mb-2">
+                    <div className="text-left">
+                      <span className="text-[10px] font-black tracking-widest text-stone-500 uppercase">Performance Summary</span>
+                      <div className="text-black font-black uppercase text-[13px] mt-0.5">Fitter Monthly Performance Record</div>
+                      <p className="text-[11.5px] font-semibold text-stone-500 uppercase mt-0.5 leading-normal">
+                        Includes {fData.rows.length} working days monitored.
+                      </p>
+                    </div>
+                    <div className="flex gap-4 items-center">
+                      <div className="text-center">
+                        <span className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">Avg Utilisation</span>
+                        <span className="text-[14px] font-black text-black">{fData.avgUtil}%</span>
+                      </div>
+                      <div className="text-center">
+                        <span className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">Avg Slip</span>
+                        <span className="text-[14px] font-black text-black">{fData.avgSlip}%</span>
+                      </div>
+                      <div className="border border-black px-2.5 py-1 bg-black text-white text-center rounded">
+                        <span className="block text-[10px] font-black text-stone-300 uppercase tracking-widest">Avg Idle</span>
+                        <span className="text-[16px] font-black font-mono">{fData.avgIdle}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Signatures block */}
+                  <div className="mt-1.5 pt-1.5 border-t border-black grid grid-cols-3 gap-6 text-center text-[11px] font-bold uppercase tracking-wider text-stone-700">
+                    <div>
+                      <div className="pt-1">AM/AM</div>
+                    </div>
+                    <div>
+                      <div className="pt-1">GM</div>
+                    </div>
+                    <div>
+                      <div className="pt-1">DIRECTOR</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

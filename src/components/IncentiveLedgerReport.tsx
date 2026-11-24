@@ -29,6 +29,100 @@ interface LedgerEntry {
   em?: number;
 }
 
+export interface CombinedLedgerEntry {
+  date: string;
+  shift: Shift;
+  frameNo: string;
+  count: string;
+  gps: string;
+  em: string;
+  incentiveText: string;
+  incentiveTotal: number;
+  role: 'OPERATOR' | 'GAITER';
+  rawEntries: LedgerEntry[];
+}
+
+export const combineLedgerEntriesByShift = (entries: LedgerEntry[]): CombinedLedgerEntry[] => {
+  if (!entries || entries.length === 0) return [];
+
+  // Group by date + '__' + shift + '__' + role
+  const groups = new Map<string, LedgerEntry[]>();
+  entries.forEach(entry => {
+    const key = `${entry.date}__${entry.shift}__${entry.role}`;
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(entry);
+  });
+
+  const combined: CombinedLedgerEntry[] = [];
+
+  groups.forEach((groupEntries) => {
+    const first = groupEntries[0];
+    const role = first.role;
+    const date = first.date;
+    const shift = first.shift;
+
+    // 1. Frame numbers
+    let frameNo = '';
+    if (role === 'GAITER') {
+      frameNo = 'GAITER';
+    } else {
+      frameNo = groupEntries.map(e => e.frameNo).join(', ');
+    }
+
+    // 2. Count
+    let count = '';
+    const distinctCounts = Array.from(new Set(groupEntries.map(e => (e.count || '').trim()))).filter(Boolean);
+    if (distinctCounts.length === 1 && groupEntries.length > 1) {
+      count = `${distinctCounts[0]} (both)`;
+    } else if (distinctCounts.length > 0) {
+      count = distinctCounts.join(', ');
+    } else {
+      count = '—';
+    }
+
+    // 3. Achieved GPS
+    const formatNum = (num: number) => {
+      if (typeof num !== 'number' || isNaN(num)) return '0';
+      return num % 1 === 0 ? num.toString() : parseFloat(num.toFixed(2)).toString();
+    };
+    const gps = groupEntries.map(e => formatNum(e.gps)).join(', ');
+
+    // 4. EM
+    const hasAnyEm = groupEntries.some(e => e.em !== undefined && e.em > 0);
+    let em = '—';
+    if (hasAnyEm) {
+      em = groupEntries.map(e => (e.em !== undefined && e.em > 0 ? parseFloat(e.em.toFixed(2)).toString() : '—')).join(', ');
+    }
+
+    // 5. Incentive
+    const incentiveTotal = groupEntries.reduce((sum, e) => sum + e.incentive, 0);
+    let incentiveText = '';
+    if (groupEntries.length > 1) {
+      const parts = groupEntries.map(e => Math.round(e.incentive));
+      incentiveText = `(${parts.join('+')})=${Math.round(incentiveTotal)}`;
+    } else {
+      incentiveText = `${Math.round(incentiveTotal)}`;
+    }
+
+    combined.push({
+      date,
+      shift,
+      frameNo,
+      count,
+      gps,
+      em,
+      incentiveText,
+      incentiveTotal,
+      role,
+      rawEntries: groupEntries
+    });
+  });
+
+  return combined;
+};
+
 export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ 
   history, 
   workers, 
@@ -326,6 +420,16 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
       ? emEntries.reduce((sum, item) => sum + item.em!, 0) / emEntries.length
       : 0;
   }, [individualLedger]);
+
+  const combinedIndividualLedger = useMemo(() => {
+    return combineLedgerEntriesByShift(individualLedger);
+  }, [individualLedger]);
+
+  const formatDisplayDate = (d: string) => {
+    const p = parseUniversalDateParts(d);
+    if (!p) return d;
+    return `${p.day.toString().padStart(2, '0')}/${p.month.toString().padStart(2, '0')}/${p.year}`;
+  };
 
   // Filter and prepare workers list for the selection dropdown (excluding No T.No and zero-amount)
   const eligibleLedgerWorkers = useMemo(() => {
@@ -735,8 +839,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
     const chunks: any[][] = [];
     if (remaining.length === 0) return chunks;
 
-    const M_nf = 18; // Max rows on non-final page
-    const M_f = 13;  // Max rows on final page (with consolidation block)
+    const M_nf = 27; // Max rows on non-final page to pack the page without leaving blank gap
+    const M_f = 21;  // Max rows on final page (leaving room for Accounts Consolidation & Signatures)
 
     // 1. Determine the number of pages P
     let P = 1;
@@ -748,43 +852,25 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
       P++;
     }
 
-    // 2. Distribute rows across P pages
-    const pageSizes: number[] = [];
-    let tempRemaining = remaining.length;
-
     if (P === 1) {
-      pageSizes.push(tempRemaining);
-    } else {
-      // Find average size target
-      const avg = Math.ceil(tempRemaining / P);
-      if (avg > M_f) {
-        // Final page gets max capacity M_f
-        // Remaining are distributed as evenly as possible over the first P-1 pages
-        let remainingForNonFinal = tempRemaining - M_f;
-        const numNonFinal = P - 1;
-        const baseSize = Math.floor(remainingForNonFinal / numNonFinal);
-        const extra = remainingForNonFinal % numNonFinal;
-
-        for (let i = 0; i < numNonFinal; i++) {
-          pageSizes.push(baseSize + (i < extra ? 1 : 0));
-        }
-        pageSizes.push(M_f);
-      } else {
-        // Distribute evenly among all P pages
-        const baseSize = Math.floor(tempRemaining / P);
-        const extra = tempRemaining % P;
-        for (let i = 0; i < P; i++) {
-          pageSizes.push(baseSize + (i < extra ? 1 : 0));
-        }
-      }
+      chunks.push(remaining);
+      return chunks;
     }
 
-    // 3. Slice the remaining list into chunks based on calculated pageSizes
+    // 2. Pack rows to fill pages without gaps: non-final pages get packed up to M_nf
     let sliceStart = 0;
-    for (const size of pageSizes) {
-      chunks.push(remaining.slice(sliceStart, sliceStart + size));
-      sliceStart += size;
+    for (let p = 0; p < P - 1; p++) {
+      const pagesLeftAfterThis = P - 1 - p;
+      const maxCapacityAfterThis = (pagesLeftAfterThis - 1) * M_nf + M_f;
+      const remainingItems = remaining.length - sliceStart;
+      
+      const minForThis = Math.max(1, remainingItems - maxCapacityAfterThis);
+      const countForThis = Math.min(M_nf, Math.max(minForThis, remainingItems - pagesLeftAfterThis));
+      
+      chunks.push(remaining.slice(sliceStart, sliceStart + countForThis));
+      sliceStart += countForThis;
     }
+    chunks.push(remaining.slice(sliceStart));
 
     return chunks;
   }, [printedAbstract]);
@@ -1528,7 +1614,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                 </div>
 
                 {/* Ledger Data Table */}
-                {individualLedger.length > 0 ? (
+                {combinedIndividualLedger.length > 0 ? (
                   <div className="space-y-8">
                     {/* Main transaction ledger table */}
                     <div className="overflow-x-auto rounded-2xl border-2 border-stone-900/10 mb-6">
@@ -1538,7 +1624,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                             <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left">S. NO</th>
                             <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left">Date</th>
                             <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Shift</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Alloted RF (MC No)</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">MC No</th>
                             <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Count</th>
                             <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Achieved GPS</th>
                             <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">EM</th>
@@ -1546,7 +1632,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                           </tr>
                         </thead>
                         <tbody>
-                          {individualLedger.map((item, idx) => {
+                          {combinedIndividualLedger.map((item, idx) => {
                             const isRowDup = duplicateAllocations.some(
                               d => d.date === item.date && (d.workerId === selectedWorkerId || d.tNo === selectedWorkerId)
                             );
@@ -1561,7 +1647,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                                 <td className="px-6 py-4 text-xs text-stone-400 font-bold text-left">{idx + 1}</td>
                                 <td className="px-6 py-4 text-sm font-black text-stone-900 text-left font-mono">
                                   <div className="flex items-center gap-2">
-                                    <span>{item.date}</span>
+                                    <span>{formatDisplayDate(item.date)}</span>
                                     {isRowDup && (
                                       <span className="bg-red-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded tracking-wider uppercase shrink-0 no-print">
                                         ⚠️ DUP
@@ -1581,8 +1667,19 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                                 </td>
                                 <td className="px-6 py-4 text-sm font-bold text-stone-600 font-mono">{item.count}</td>
                                 <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono">{item.gps}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono">{item.em !== undefined && item.em > 0 ? item.em.toFixed(2) : '—'}</td>
-                                <td className="px-6 py-4 text-lg font-black text-emerald-800 text-right tabular-nums font-mono">₹{item.incentive}</td>
+                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono">{item.em}</td>
+                                <td className="px-6 py-4 text-right">
+                                  <div className="font-mono font-black text-emerald-800 inline-block text-right">
+                                    {item.incentiveText.includes('=') ? (
+                                      <div className="flex flex-col items-end">
+                                        <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
+                                        <span className="text-[10.5px] text-stone-400 font-mono font-medium">{item.incentiveText.split('=')[0]}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
+                                    )}
+                                  </div>
+                                </td>
                               </tr>
                             );
                           })}
@@ -1596,7 +1693,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                         <span className="text-[9px] font-black tracking-widest text-stone-400 uppercase">Payout Calculation Summary</span>
                         <div className="text-stone-900 font-black uppercase text-xl mt-1">Payable Incentive Record</div>
                         <p className="text-[10px] font-bold text-stone-400 uppercase mt-1 leading-relaxed">
-                          Includes {individualLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {individualLedger.filter(i => i.role === 'GAITER').length} Gaiter duties under active frameworks
+                          Includes {combinedIndividualLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {combinedIndividualLedger.filter(i => i.role === 'GAITER').length} Gaiter duties under active frameworks
                         </p>
                       </div>
                       
@@ -1610,7 +1707,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
 
                         <div className="bg-white border border-stone-200 px-6 py-4 rounded-2xl text-center shadow-sm">
                           <span className="block text-[8px] font-black text-stone-400 uppercase tracking-widest">Total Duties</span>
-                          <span className="text-2xl font-black text-stone-800 font-mono tabular-nums">{individualLedger.length}</span>
+                          <span className="text-2xl font-black text-stone-800 font-mono tabular-nums">{combinedIndividualLedger.length}</span>
                         </div>
                         
                         <div className="bg-emerald-900 px-8 py-5 rounded-2xl text-center text-white shadow-xl shadow-emerald-950/20">
@@ -2557,57 +2654,52 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
 
           {/* PAGES 2+: INDIVIDUAL OPERATOR LEDGERS */}
           {isPrintingAll && printedAbstract.map((workerRow, idx) => {
-            const workerLedger = getWorkerLedgerForMonth(workerRow.workerId, selectedMonth, selectedYear);
-            const workerTotal = workerLedger.reduce((sum, item) => sum + item.incentive, 0);
-            const emEntries = workerLedger.filter(item => item.em !== undefined && item.em > 0);
+            const rawLedger = getWorkerLedgerForMonth(workerRow.workerId, selectedMonth, selectedYear);
+            const workerLedger = combineLedgerEntriesByShift(rawLedger);
+            const workerTotal = rawLedger.reduce((sum, item) => sum + item.incentive, 0);
+            const emEntries = rawLedger.filter(item => item.em !== undefined && item.em > 0);
             const emAverage = emEntries.length > 0
               ? emEntries.reduce((sum, item) => sum + item.em!, 0) / emEntries.length
               : 0;
 
             return (
-              <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[238mm] flex flex-col justify-between text-black bg-white">
+              <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
-                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">Worker Wise History — Supporting Documents for Payout</span>
-                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">Sider Incentive Ledger Statement</h1>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
+                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">SIDER INCENTIVE STATEMENT</h1>
                     
                     <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
-                      <div>Sider Name: <span className="text-black font-extrabold text-[14px]">{workerRow.name}</span></div>
-                      <div>TK. No: <span className="text-black font-extrabold text-[14px]">{workerRow.tNo || '—'}</span></div>
-                      <div>Period: <span className="text-black font-extrabold text-[14px]">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>
+                      <div>SIDER NAME: <span className="text-black font-extrabold text-[14px]">{workerRow.name}</span></div>
+                      <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{workerRow.tNo || '—'}</span></div>
+                      <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>
                     </div>
                   </div>
 
                   <table className="w-full text-center border-collapse border border-black mb-2">
                     <thead>
                       <tr className="bg-stone-50 border-b border-black text-[11.5px] font-black uppercase text-black">
-                        <th className="border border-black px-1.5 py-1 text-left">S. NO</th>
-                        <th className="border border-black px-1.5 py-1 text-left">Date</th>
-                        <th className="border border-black px-1.5 py-1">Shift</th>
-                        <th className="border border-black px-1.5 py-1">Alloted RF (MC No)</th>
-                        <th className="border border-black px-1.5 py-1">Count</th>
-                        <th className="border border-black px-1.5 py-1">Achieved GPS</th>
-                        <th className="border border-black px-1.5 py-1">EM</th>
-                        <th className="border border-black px-1.5 py-1 text-right">Incentive (Rs)</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-12">S.NO</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-24">DATE</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-14">SHIFT</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-28">MC NO</th>
+                        <th className="border border-black px-1.5 py-1 text-center">COUNT</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-32">ACHIEVED GPS</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-20">EM</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-28">INCENTIVE (RS)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {workerLedger.map((item, idx) => (
-                        <tr key={idx} className="border-b border-stone-300 text-[11px] leading-tight font-bold text-stone-900">
-                          <td className="border border-black px-1.5 py-1 text-left font-bold text-stone-600">{idx + 1}</td>
-                          <td className="border border-black px-1.5 py-1 text-left font-mono font-bold text-black">{item.date}</td>
-                          <td className="border border-black px-1.5 py-1 font-bold text-black">{item.shift}</td>
-                          <td className="border border-black px-1.5 py-1 text-black">
-                            {item.role === 'GAITER' ? (
-                              <span className="text-stone-700 text-[10px] font-bold uppercase tracking-wider">Gaiter Duty</span>
-                            ) : (
-                              item.frameNo
-                            )}
-                          </td>
-                          <td className="border border-black px-1.5 py-1 text-stone-800 font-medium">{item.count}</td>
-                          <td className="border border-black px-1.5 py-1 font-mono text-black">{item.gps}</td>
-                          <td className="border border-black px-1.5 py-1 font-mono text-black">{item.em !== undefined && item.em > 0 ? item.em.toFixed(2) : '—'}</td>
-                          <td className="border border-black px-1.5 py-1 font-mono font-black text-right">₹{item.incentive}</td>
+                      {workerLedger.map((item, rowIdx) => (
+                        <tr key={rowIdx} className="border-b border-black text-[11px] leading-tight font-bold text-black">
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{rowIdx + 1}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{formatDisplayDate(item.date)}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{item.shift}</td>
+                          <td className="border border-black px-1.5 py-1 text-center text-black font-bold">{item.frameNo}</td>
+                          <td className="border border-black px-1.5 py-1 text-center text-black font-bold">{item.count}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono text-black font-bold">{item.gps}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono text-black font-bold">{item.em}</td>
+                          <td className="border border-black px-1.5 py-1 text-center font-mono font-black text-black">{item.incentiveText}</td>
                         </tr>
                       ))}
                       {workerLedger.length === 0 && (
@@ -2628,7 +2720,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                       <span className="text-[10px] font-black tracking-widest text-stone-500 uppercase">Payout Summary</span>
                       <div className="text-black font-black uppercase text-[13px] mt-0.5">Payable Incentive Record</div>
                       <p className="text-[11.5px] font-semibold text-stone-500 uppercase mt-0.5 leading-normal">
-                        Includes {workerLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {workerLedger.filter(i => i.role === 'GAITER').length} Gaiter duties.
+                        Includes {rawLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {rawLedger.filter(i => i.role === 'GAITER').length} Gaiter duties.
                       </p>
                     </div>
                     <div className="flex gap-4 items-center">
@@ -2648,12 +2740,15 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                   </div>
 
                   {/* Signatures block for operator sheet */}
-                  <div className="mt-1.5 pt-1.5 border-t border-stone-200 grid grid-cols-2 gap-4 text-center text-[11px] font-bold uppercase tracking-wider text-stone-700">
+                  <div className="mt-1.5 pt-1.5 border-t border-black grid grid-cols-3 gap-6 text-center text-[11px] font-bold uppercase tracking-wider text-stone-700">
                     <div>
-                      <div className="border-t border-black pt-1">Worker Signature</div>
+                      <div className="pt-1">AM/AM</div>
                     </div>
                     <div>
-                      <div className="border-t border-black pt-1">Authorised Signature</div>
+                      <div className="pt-1">GM</div>
+                    </div>
+                    <div>
+                      <div className="pt-1">DIRECTOR</div>
                     </div>
                   </div>
                 </div>

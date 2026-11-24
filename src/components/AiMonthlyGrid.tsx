@@ -418,14 +418,32 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
         </div>
       </div>
 
+      {/* Print-Only Header */}
+      <div className="hidden print:block text-center pb-2 border-b-2 border-black mb-3">
+        <img
+          src="/scm-logo-horizontal.png"
+          alt="SCM Textile Spinners"
+          className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
+        />
+        <h1 className="text-xl font-black text-black uppercase tracking-tight">AI Cone Linkconer Monthly Grid Ledger</h1>
+        <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-2">
+          <span>
+            Month: <span className="text-black font-extrabold text-sm">{dataMonthDisplay}</span>
+          </span>
+          <span className="text-stone-700 font-extrabold uppercase">
+            {metricType === 'incentive' ? 'Daily Incentives (INR)' : 'Daily Utilisation Average (U%)'}
+          </span>
+        </div>
+      </div>
+
       {/* Main Table Card */}
       <div className={cn(
-        "bg-white border border-stone-200/90 shadow-xs overflow-hidden",
+        "bg-white border border-stone-200/90 shadow-xs overflow-hidden print:border-black",
         isTvMode ? "rounded-3xl" : "rounded-2xl"
       )}>
         {/* Card Header */}
         <div className={cn(
-          "border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2",
+          "border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 no-print",
           isTvMode ? "p-6" : "p-4"
         )}>
           <div>
@@ -448,7 +466,7 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
         </div>
 
         {/* Scrollable Table */}
-        <div className="overflow-x-auto overflow-y-auto max-h-[65vh]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[65vh] print:max-h-none print:overflow-visible">
           <table className={cn("w-full text-center border-collapse", isTvMode ? "text-base md:text-lg" : "text-xs")}>
             <thead>
               <tr className={cn(
@@ -535,6 +553,19 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
               </tfoot>
             )}
           </table>
+        </div>
+      </div>
+
+      {/* Print Signatures */}
+      <div className="hidden print:grid grid-cols-3 gap-6 text-center text-xs font-bold uppercase tracking-wider text-stone-700 mt-6 pt-2 border-t border-black">
+        <div>
+          <div className="pt-1">AM/AM</div>
+        </div>
+        <div>
+          <div className="pt-1">GM</div>
+        </div>
+        <div>
+          <div className="pt-1">DIRECTOR</div>
         </div>
       </div>
     </div>
