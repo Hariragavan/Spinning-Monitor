@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/mongodb';
 import { DailyReport } from '@/types';
-import { getHistoricalAprilData } from '@/lib/historicalData';
 import { parseUniversalDate, parseUniversalDateParts } from '@/lib/utils';
 import { ensureSixMachines } from '@/lib/parser';
 
@@ -50,19 +49,6 @@ export async function POST(req: Request) {
   try {
     const db = await getDb();
     const body = await req.json();
-
-    if (body.action === 'seed_april') {
-      const aprilReports = getHistoricalAprilData();
-      for (const report of aprilReports) {
-        const shed = report.shed || 'Shed 1';
-        await db.collection('reports').updateOne(
-          { date: report.date, shed },
-          { $set: { ...report, shed, timestamp: report.timestamp || Date.now() } },
-          { upsert: true }
-        );
-      }
-      return NextResponse.json({ success: true, count: aprilReports.length, message: 'April historical data seeded' });
-    }
 
     if (body.action === 'batch_save') {
       const reports: DailyReport[] = body.reports || [];

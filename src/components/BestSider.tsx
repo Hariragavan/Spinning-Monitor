@@ -59,7 +59,7 @@ export const BestSider: React.FC<BestSiderProps> = ({
   const topSix = useMemo(() => {
     const totals = new Map<string, { id: string; name: string; tNo: string; amount: number; duties: number; photoUrl?: string }>();
     
-    // Seed with workers
+    // Populate map with workers
     workers.forEach(w => {
       totals.set(w.tNo || w.id, { id: w.id, name: w.name, tNo: w.tNo, amount: 0, duties: 0, photoUrl: w.photoUrl });
     });

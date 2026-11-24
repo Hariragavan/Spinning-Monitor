@@ -83,7 +83,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
       entriesCount: number;
     }>();
     
-    // Seed with current workers to ensure we have their correct names/TNo
+    // Initialize map with current workers to ensure we have their correct names/TNo
     workers.forEach(w => {
       const key = w.tNo || w.id;
       if (key) {
