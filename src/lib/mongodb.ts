@@ -78,7 +78,7 @@ export const REQUIRED_COLLECTIONS: string[] = [
   'millcalendars',
   'users',
 
-  // 2. IoT Telemetry Collections (8)
+  // 2. IoT Telemetry Collections (10)
   'iot_shiftwise_data',
   'iot_devices',
   'iot_employees',
@@ -86,7 +86,9 @@ export const REQUIRED_COLLECTIONS: string[] = [
   'iot_spinfo_lives',
   'iot_employee_activities',
   'iot_employee_performances',
-  'iot_em'
+  'iot_em',
+  'telegramconfigs',
+  'telegramsubscribers'
 ];
 
 let isInitialized = false;

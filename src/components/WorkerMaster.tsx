@@ -6,11 +6,12 @@ import {
   X, Save, AlertCircle, FileSpreadsheet, Users, 
   Image as ImageIcon, CheckCircle2, LayoutGrid, List,
   Building2, CheckSquare, Square, RefreshCw, UserCheck,
-  Sparkles, ShieldCheck, AlertTriangle
+  Sparkles, ShieldCheck, AlertTriangle, Radio
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Sider } from '../types';
 import { cn, compressImage, normalizeShed } from '../lib/utils';
+import { IotEmployeeMapping } from './IotEmployeeMapping';
 
 interface WorkerMasterProps {
   workers: Sider[];
@@ -32,6 +33,7 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
   currentShed = 'Shed 1'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeMasterView, setActiveMasterView] = useState<'workers' | 'rfid_mapping'>('workers');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [photoFilter, setPhotoFilter] = useState<'all' | 'has_photo' | 'no_photo'>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -465,6 +467,40 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
         className="hidden" 
       />
 
+      {/* View Switcher: Spinning Mill Siders vs IoT RFID Card Mapping */}
+      <div className="flex items-center gap-2 p-1 bg-stone-100 rounded-2xl border border-stone-200/80 w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveMasterView('workers')}
+          className={cn(
+            "px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer",
+            activeMasterView === 'workers'
+              ? "bg-white text-stone-900 shadow-2xs"
+              : "text-stone-500 hover:text-stone-800"
+          )}
+        >
+          <Users className="w-4 h-4" />
+          Spinning Mill Siders ({workers.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMasterView('rfid_mapping')}
+          className={cn(
+            "px-4 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 cursor-pointer",
+            activeMasterView === 'rfid_mapping'
+              ? "bg-emerald-600 text-white shadow-2xs"
+              : "text-stone-500 hover:text-stone-800"
+          )}
+        >
+          <Radio className="w-4 h-4" />
+          IoT RFID Card Mapping
+        </button>
+      </div>
+
+      {activeMasterView === 'rfid_mapping' ? (
+        <IotEmployeeMapping millWorkers={workers} />
+      ) : (
+        <>
       {/* 1. HERO HEADER */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200 shadow-2xs">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
@@ -1319,6 +1355,8 @@ export const WorkerMaster: React.FC<WorkerMasterProps> = ({
             )}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

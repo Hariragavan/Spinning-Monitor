@@ -15,6 +15,8 @@ import { iotApi } from '@/lib/iot/iotApi';
 import { apiClient } from '@/lib/api';
 import { employeeLabel } from '@/lib/iot/employeeDisplay';
 import { cn } from '@/lib/utils';
+import { IotEmployeeMapping } from '../IotEmployeeMapping';
+import { TelegramSettings } from '../TelegramSettings';
 
 export interface IotConfigurationProps {
   workers?: Sider[];
@@ -29,7 +31,7 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
   systemSettings,
   onUpdateSettings
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'assign_devices' | 'rpm_bounds' | 'machine_config' | 'device_mapping' | 'machine_mapping'>('assign_devices');
+  const [activeSubTab, setActiveSubTab] = useState<'assign_devices' | 'rpm_bounds' | 'machine_config' | 'device_mapping' | 'machine_mapping' | 'employee_mapping' | 'telegram'>('assign_devices');
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [devices, setDevices] = useState<DeviceHealth[]>([]);
@@ -676,6 +678,18 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
           onClick={() => setActiveSubTab('machine_mapping')}
         >
           🔄 5. Machine Mapping
+        </button>
+        <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'employee_mapping' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('employee_mapping')}
+        >
+          🏷️ 6. Employee RFID Mapping
+        </button>
+        <button
+          className={`tab-btn cursor-pointer ${activeSubTab === 'telegram' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('telegram')}
+        >
+          📱 7. Telegram Notifications
         </button>
       </section>
 
@@ -1383,6 +1397,20 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
             </table>
           </div>
         </section>
+      )}
+
+      {/* Section 6: Employee RFID Mapping */}
+      {activeSubTab === 'employee_mapping' && (
+        <div className="pt-2">
+          <IotEmployeeMapping millWorkers={masterWorkers} />
+        </div>
+      )}
+
+      {/* Section 7: Telegram Notifications & Alerts */}
+      {activeSubTab === 'telegram' && (
+        <div className="pt-2">
+          <TelegramSettings />
+        </div>
       )}
     </div>
   );

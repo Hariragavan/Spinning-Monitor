@@ -42,6 +42,8 @@ import { IotMaintenance } from '@/components/iot/IotMaintenance';
 import { IotConfiguration } from '@/components/iot/IotConfiguration';
 import { IotShifts } from '@/components/iot/IotShifts';
 import { IotMachineMatchingSettings } from '@/components/IotMachineMatchingSettings';
+import { IotEmployeeMapping } from '@/components/IotEmployeeMapping';
+import { TelegramSettings } from '@/components/TelegramSettings';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
@@ -2317,6 +2319,18 @@ export default function Home() {
         return (
           <div className="iot-system-scope w-full">
             <IotShifts />
+          </div>
+        );
+      case 'iot-employee-mapping':
+        return (
+          <div className="iot-system-scope w-full">
+            <IotEmployeeMapping millWorkers={workers} />
+          </div>
+        );
+      case 'iot-telegram':
+        return (
+          <div className="iot-system-scope w-full">
+            <TelegramSettings />
           </div>
         );
 
