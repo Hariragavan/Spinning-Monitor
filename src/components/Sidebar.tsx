@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Users, Coins, Trophy,
   Gauge, Monitor, BarChart3, Calendar, Database, Grid3X3, Wrench, UserCheck,
   FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity,
-  FileSpreadsheet, Cpu, Clock
+  FileSpreadsheet, Cpu, Clock, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -90,6 +90,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Track accordion open/closed state for each section tray
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    'Daily Operations': true,
+    'IOT Dashboard': true,
+    'Monthly Analytics': true,
+    'Master Data & System': true,
+  });
+
+  const toggleSection = (title: string) => {
+    setOpenSections(prev => ({
+      ...prev,
+      [title]: !prev[title]
+    }));
+  };
+
+  // Auto-expand section if it contains the currently active tab
+  useEffect(() => {
+    const activeSection = NAV_SECTIONS.find(s => 
+      s.items.some(item => item.id === activeTab ||
+        (item.id === 'all-data' && activeTab === 'count-summary') ||
+        (item.id === 'daily-incentive' && activeTab === 'daily-incentive-machine') ||
+        (item.id === 'ai-maintenance' && ['ai-maintenance', 'ai-month-view', 'ai-month-abstract', 'ai-monthly-performance', 'fitter-monthly-performance'].includes(activeTab))
+      )
+    );
+    if (activeSection && !openSections[activeSection.title]) {
+      setOpenSections(prev => ({ ...prev, [activeSection.title]: true }));
+    }
+  }, [activeTab]);
+
   const filteredSections = NAV_SECTIONS.map(section => ({
     ...section,
     items: section.items.filter(item =>
@@ -102,24 +131,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside
       className={cn(
         "flex flex-col h-screen select-none transition-all duration-300 ease-in-out z-40 shrink-0 overflow-x-hidden bg-white text-stone-900 border-r border-stone-200/80 shadow-xs",
-        isCollapsed ? "w-[68px]" : "w-[250px]"
+        isCollapsed ? "w-[68px]" : "w-[245px]"
       )}
     >
       {/* Brand Header */}
       <div className={cn(
-        "h-16 shrink-0 flex items-center border-b border-stone-200/80 px-3 gap-2 transition-all duration-300",
+        "h-14 shrink-0 flex items-center border-b border-stone-200/80 px-2.5 gap-2 transition-all duration-300",
         isCollapsed && "justify-center px-1.5"
       )}>
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 hover:text-stone-900 border border-stone-200/80 transition-all cursor-pointer active:scale-95 shrink-0 group"
+            className="p-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 hover:text-stone-900 border border-stone-200/80 transition-all cursor-pointer active:scale-95 shrink-0 group"
             title={isCollapsed ? "Open menu" : "Close menu"}
           >
             {isCollapsed ? (
-              <Menu size={16} className="transition-transform group-hover:scale-110" />
+              <Menu size={15} className="transition-transform group-hover:scale-110" />
             ) : (
-              <ArrowLeft size={16} className="transition-transform group-hover:-translate-x-0.5" />
+              <ArrowLeft size={15} className="transition-transform group-hover:-translate-x-0.5" />
             )}
           </button>
         )}
@@ -129,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img 
               src="/scm-logo-horizontal.png" 
               alt="SCM Textile Spinners" 
-              className="h-10.5 w-auto max-w-[195px] object-contain drop-shadow-2xs" 
+              className="h-9 w-auto max-w-[185px] object-contain drop-shadow-2xs" 
             />
           </div>
         )}
@@ -137,15 +166,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Quick Search */}
       {!isCollapsed && (
-        <div className="px-3 pt-2.5 pb-1 shrink-0">
+        <div className="px-2.5 pt-2 pb-1 shrink-0">
           <div className="relative">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+            <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
             <input
               type="text"
               placeholder="Search views..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-200/80 rounded-xl pl-7 pr-2.5 py-1 text-[11px] font-bold text-stone-700 placeholder-stone-400 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+              className="w-full bg-stone-50 border border-stone-200/80 rounded-lg pl-6.5 pr-2 py-1 text-[10.5px] font-bold text-stone-700 placeholder-stone-400 outline-none focus:ring-1 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
             />
           </div>
         </div>
@@ -153,102 +182,129 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Sections */}
       <nav className={cn(
-        "flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-2.5 py-2 space-y-2.5",
+        "flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-2 py-1.5 space-y-1.5",
         isCollapsed && "px-1.5 py-2 space-y-2"
       )}>
-        {filteredSections.map((section, idx) => (
-          <div key={section.title} className="space-y-1">
-            {!isCollapsed ? (
-              <div className="px-2.5 pb-1 text-[9.5px] font-extrabold uppercase tracking-[1.5px] text-stone-400 flex items-center justify-between">
-                <span>{section.title}</span>
-                {section.title === 'IOT Dashboard' && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                )}
-              </div>
-            ) : (
-              idx > 0 && <div className="w-5 h-px my-1.5 mx-auto bg-stone-200" />
-            )}
+        {filteredSections.map((section, idx) => {
+          const isOpen = searchQuery.trim().length > 0 || (openSections[section.title] ?? true);
 
-            {section.items.map((item) => {
-              const isActive = activeTab === item.id ||
-                (item.id === 'all-data' && activeTab === 'count-summary') ||
-                (item.id === 'daily-incentive' && activeTab === 'daily-incentive-machine') ||
-                (item.id === 'ai-maintenance' && ['ai-maintenance', 'ai-month-view', 'ai-month-abstract', 'ai-monthly-performance', 'fitter-monthly-performance'].includes(activeTab));
-              const Icon = item.icon;
-
-              if (isCollapsed) {
-                return (
-                  <div key={item.id} className="flex justify-center w-full">
-                    <button
-                      onClick={() => setActiveTab(item.id)}
-                      title={item.label}
-                      className={cn(
-                        "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150 cursor-pointer relative",
-                        isActive
-                          ? "bg-stone-900 text-white shadow-md ring-2 ring-stone-900/10 font-bold"
-                          : "text-stone-500 hover:text-stone-900 hover:bg-stone-100"
-                      )}
-                    >
-                      {item.emoji ? (
-                        <span className="text-base">{item.emoji}</span>
-                      ) : (
-                        <Icon
-                          size={17}
-                          className={cn(
-                            "shrink-0 transition-colors",
-                            isActive ? "text-emerald-400" : "text-stone-500 hover:text-stone-900"
-                          )}
-                        />
-                      )}
-                      {item.badge && (
-                        <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
-                      )}
-                    </button>
-                  </div>
-                );
-              }
-
-              return (
+          return (
+            <div key={section.title} className="space-y-0.5">
+              {!isCollapsed ? (
+                /* Tray Section Accordion Header */
                 <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-150 group text-left cursor-pointer",
-                    isActive
-                      ? "bg-stone-900 text-stone-50 shadow-sm font-black translate-x-0.5"
-                      : "text-stone-600 hover:text-stone-900 hover:bg-stone-100 font-bold text-xs"
-                  )}
+                  type="button"
+                  onClick={() => toggleSection(section.title)}
+                  className="w-full px-2 py-1 text-[9.5px] font-black uppercase tracking-wider text-stone-400 hover:text-stone-800 hover:bg-stone-100/70 rounded-md flex items-center justify-between transition-colors cursor-pointer group select-none"
+                  title={isOpen ? `Collapse ${section.title}` : `Expand ${section.title}`}
                 >
-                  {item.emoji ? (
-                    <span className="text-base shrink-0 leading-none">{item.emoji}</span>
-                  ) : (
-                    <Icon
-                      size={16}
-                      className={cn(
-                        "shrink-0 transition-colors",
-                        isActive ? "text-emerald-400" : "text-stone-400 group-hover:text-stone-800"
-                      )}
-                    />
-                  )}
-                  <span className="text-[13px] truncate leading-tight flex-1">
-                    {item.label}
-                  </span>
-                  {item.badge && (
-                    <span className={cn(
-                      "text-[8px] font-black uppercase px-1.5 py-0.5 rounded",
-                      isActive ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-800"
-                    )}>
-                      {item.badge}
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span>{section.title}</span>
+                    {section.title === 'IOT Dashboard' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 text-stone-400 group-hover:text-stone-600 shrink-0">
+                    <span className="text-[8.5px] font-bold text-stone-400 tabular-nums">
+                      {section.items.length}
                     </span>
-                  )}
+                    {isOpen ? (
+                      <ChevronDown size={12} className="transition-transform duration-200" />
+                    ) : (
+                      <ChevronRight size={12} className="transition-transform duration-200" />
+                    )}
+                  </div>
                 </button>
-              );
-            })}
-          </div>
-        ))}
+              ) : (
+                idx > 0 && <div className="w-5 h-px my-1.5 mx-auto bg-stone-200" />
+              )}
+
+              {/* Items List (Collapsible in expanded sidebar, visible as icons in collapsed sidebar) */}
+              {(isOpen || isCollapsed) && (
+                <div className={cn("space-y-0.5", !isCollapsed && "pl-0.5")}>
+                  {section.items.map((item) => {
+                    const isActive = activeTab === item.id ||
+                      (item.id === 'all-data' && activeTab === 'count-summary') ||
+                      (item.id === 'daily-incentive' && activeTab === 'daily-incentive-machine') ||
+                      (item.id === 'ai-maintenance' && ['ai-maintenance', 'ai-month-view', 'ai-month-abstract', 'ai-monthly-performance', 'fitter-monthly-performance'].includes(activeTab));
+                    const Icon = item.icon;
+
+                    if (isCollapsed) {
+                      return (
+                        <div key={item.id} className="flex justify-center w-full">
+                          <button
+                            onClick={() => setActiveTab(item.id)}
+                            title={item.label}
+                            className={cn(
+                              "w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150 cursor-pointer relative",
+                              isActive
+                                ? "bg-stone-900 text-white shadow-xs ring-2 ring-stone-900/10 font-bold"
+                                : "text-stone-500 hover:text-stone-900 hover:bg-stone-100"
+                            )}
+                          >
+                            {item.emoji ? (
+                              <span className="text-sm">{item.emoji}</span>
+                            ) : (
+                              <Icon
+                                size={15}
+                                className={cn(
+                                  "shrink-0 transition-colors",
+                                  isActive ? "text-emerald-400" : "text-stone-500 hover:text-stone-900"
+                                )}
+                              />
+                            )}
+                            {item.badge && (
+                              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                            )}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveTab(item.id)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all duration-150 group text-left cursor-pointer",
+                          isActive
+                            ? "bg-stone-900 text-stone-50 shadow-xs font-black translate-x-0.5"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-100/80 font-bold text-[11.5px]"
+                        )}
+                      >
+                        {item.emoji ? (
+                          <span className="text-sm shrink-0 leading-none">{item.emoji}</span>
+                        ) : (
+                          <Icon
+                            size={14}
+                            className={cn(
+                              "shrink-0 transition-colors",
+                              isActive ? "text-emerald-400" : "text-stone-400 group-hover:text-stone-800"
+                            )}
+                          />
+                        )}
+                        <span className="text-[11.5px] truncate leading-tight flex-1">
+                          {item.label}
+                        </span>
+                        {item.badge && (
+                          <span className={cn(
+                            "text-[7.5px] font-black uppercase px-1.5 py-0.5 rounded tracking-wide",
+                            isActive ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-800"
+                          )}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {/* Action Buttons inside Nav */}
-        <div className={cn("pt-2 border-t border-stone-100", isCollapsed ? "space-y-1.5 flex flex-col items-center" : "space-y-1.5")}>
+        <div className={cn("pt-1.5 border-t border-stone-100", isCollapsed ? "space-y-1 flex flex-col items-center" : "space-y-1")}>
           {isCollapsed ? (
             <>
               <div className="flex justify-center w-full">
@@ -259,9 +315,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }
                   }}
                   title="Import History"
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-all cursor-pointer"
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-all cursor-pointer"
                 >
-                  <Database size={16} className="text-amber-600" />
+                  <Database size={14} className="text-amber-600" />
                 </button>
               </div>
 
@@ -269,9 +325,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={onTvMode}
                   title="Play TV Mode"
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer shadow-2xs"
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer shadow-2xs"
                 >
-                  <Monitor size={16} className="text-emerald-600" />
+                  <Monitor size={14} className="text-emerald-600" />
                 </button>
               </div>
             </>
@@ -283,17 +339,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onSeedData();
                   }
                 }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all text-left text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 cursor-pointer font-black text-[10.5px] uppercase tracking-wider"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 cursor-pointer font-black text-[10px] uppercase tracking-wider"
               >
-                <Database size={15} className="shrink-0 text-amber-600" />
+                <Database size={13} className="shrink-0 text-amber-600" />
                 <span>Import History</span>
               </button>
 
               <button
                 onClick={onTvMode}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all text-left text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs cursor-pointer font-black text-[10.5px] uppercase tracking-wider"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs cursor-pointer font-black text-[10px] uppercase tracking-wider"
               >
-                <Monitor size={15} className="shrink-0 text-emerald-600" />
+                <Monitor size={13} className="shrink-0 text-emerald-600" />
                 <span>Play TV Mode</span>
               </button>
             </>
@@ -304,24 +360,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar Footer User Card */}
       <div className={cn(
         "border-t border-stone-200/80 bg-stone-50/50 shrink-0",
-        isCollapsed ? "p-3 flex justify-center" : "p-3.5"
+        isCollapsed ? "p-2 flex justify-center" : "p-2.5"
       )}>
         {isCollapsed ? (
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden font-black text-xs uppercase shadow-2xs cursor-default bg-emerald-100 text-emerald-700 border border-emerald-200">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden font-black text-[10px] uppercase shadow-2xs cursor-default bg-emerald-100 text-emerald-700 border border-emerald-200">
             AD
           </div>
         ) : (
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center overflow-hidden shrink-0 font-black text-xs uppercase shadow-xs bg-emerald-100 text-emerald-700 border border-emerald-200">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden shrink-0 font-black text-[10px] uppercase shadow-xs bg-emerald-100 text-emerald-700 border border-emerald-200">
               AD
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-black text-stone-900 truncate uppercase leading-tight">
+              <p className="text-[10.5px] font-black text-stone-900 truncate uppercase leading-tight">
                 Direct Access
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-emerald-500" />
-                <p className="text-[9px] font-bold uppercase tracking-widest leading-none text-emerald-700">
+                <p className="text-[8.5px] font-bold uppercase tracking-wider leading-none text-emerald-700">
                   Database Connected
                 </p>
               </div>

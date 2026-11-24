@@ -866,8 +866,24 @@ export function calculateSiderSlotIncentive(
   if (sidesOnThisMachine === 0) return 0;
 
   // KTTM RULE: "if worker assigned for 1 side 50% , 2sides 100% no 3rd and 4th side"
+  // SPECIAL EXCEPTION: For 20/1-CW-WVG in KTTM, if an operator is assigned for one side, give them the whole amount (100%).
+  // If two operators are assigned (one for LH, another for RH), give them both 100%.
+  // For all other counts in KTTM: 1 side gets 50%, 2 sides get 100% (50% per slot).
   if (isKttm) {
     if (!worker || (!worker.id && !worker.tNo && !worker.name)) return 0;
+
+    const normCount = normalizeCountName(entry.count || '');
+    const upperCount = (entry.count || '').toUpperCase().trim();
+    const isSpecial20CW = 
+      isCountNameMatching(entry.count || '', '20/1-CW-WVG') || 
+      normCount === '201cwwvg' || 
+      normCount.startsWith('201cw') ||
+      (upperCount.includes('20/1') && upperCount.includes('CW'));
+
+    if (isSpecial20CW) {
+      return baseIncentive;
+    }
+
     if (sidesOnThisMachine === 1) {
       return Math.round(baseIncentive * 0.5);
     }

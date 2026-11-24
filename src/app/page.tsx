@@ -88,6 +88,10 @@ const DEFAULT_COUNT_CONVERSIONS: CountConversion[] = [
   { count: '60s Super Combed', multiplicationFactor: 1.837, description: '60s Super Combed Yarn', shed: 'Shed 3' },
 
   // KTTM Counts
+  { count: '20/1-CW-WVG', multiplicationFactor: 0.3536, description: '20/1 Carded Weft Weaving', shed: 'KTTM' },
+  { count: '30/1CH', multiplicationFactor: 0.6495, description: '30/1 Comb Hosiery', shed: 'KTTM' },
+  { count: '32/1CHY', multiplicationFactor: 0.70, description: '32/1 Comb Hosiery Yarn', shed: 'KTTM' },
+  { count: '36/1-CHY', multiplicationFactor: 0.80, description: '36/1 Comb Hosiery Yarn', shed: 'KTTM' },
   { count: '60s CW', multiplicationFactor: 1.837, description: '60s Combed Warp', shed: 'KTTM' },
   { count: '40s KTTM', multiplicationFactor: 1.0, description: '40s KTTM High Speed Standard', shed: 'KTTM' },
   { count: '80s Compact', multiplicationFactor: 2.45, description: '80s Compact Yarn', shed: 'KTTM' },
@@ -259,6 +263,18 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
   },
 
   // KTTM Rules
+  {
+    count: '20/1-CW-WVG',
+    department: 'Sider',
+    shed: 'KTTM',
+    payouts: [
+      { gpsThreshold: 385, amount: 110, fromGps: 385, toGps: 385, conditionText: 'for GPSS 385', ruleText: 'Rs 110 for GPSS 385' },
+      { gpsThreshold: 365, amount: 95, fromGps: 365, toGps: 385, conditionText: 'for 365 to 385', ruleText: 'Rs 95 for 365 to 385' },
+      { gpsThreshold: 345, amount: 85, fromGps: 345, toGps: 365, conditionText: 'for 345 to 365', ruleText: 'Rs 85 for 345 to 365' },
+      { gpsThreshold: 325, amount: 70, fromGps: 325, toGps: 345, conditionText: 'for 325 to 345', ruleText: 'Rs 70 for 325 to 345' },
+      { gpsThreshold: 310, amount: 60, fromGps: 310, toGps: 325, conditionText: 'for 310 to 325', ruleText: 'Rs 60 for 310 to 325' }
+    ]
+  },
   {
     count: '60s CW',
     department: 'Sider',
