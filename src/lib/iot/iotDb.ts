@@ -57,7 +57,7 @@ export const IOT_COMMON_API_URL =
 const overviewCache = new Map<string, { data: SpinfoOverviewResponse; timestamp: number }>();
 const CACHE_TTL_MS = 2500;
 
-export async function ensureIotMasterSynced(): Promise<void> {
+export async function ensureIotSeeded(): Promise<void> {
   try {
     const db = await getIotDb();
 
@@ -122,7 +122,7 @@ export async function ensureIotMasterSynced(): Promise<void> {
       } catch (_) {}
     }
   } catch (err) {
-    console.warn('[IoT DB] ensureIotMasterSynced error:', err);
+    console.warn('[IoT DB] ensureIotSeeded error:', err);
   }
 }
 
@@ -512,7 +512,7 @@ export async function getIotMachinesList(): Promise<SpinfoMachineItem[]> {
 }
 
 export async function getIotMachinesMaster(): Promise<Machine[]> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
 
   try {
     const res = await fetch(`${REMOTE_IOT_API}/master/machines`, { cache: 'no-store' });
@@ -562,7 +562,7 @@ export async function getIotMachinesMaster(): Promise<Machine[]> {
 // Employees Master (https://iot-machine-backend.onrender.com/api/master/employees)
 // -------------------------------------------------------------
 export async function getIotEmployeesMaster(): Promise<Employee[]> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
 
   try {
     const res = await fetch(`${REMOTE_IOT_API}/master/employees`, { cache: 'no-store' });
@@ -607,7 +607,7 @@ export async function getIotEmployeesMaster(): Promise<Employee[]> {
 // Devices Master (https://iot-machine-backend.onrender.com/api/master/devices)
 // -------------------------------------------------------------
 export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
 
   try {
     const res = await fetch(`${REMOTE_IOT_API}/master/devices`, { cache: 'no-store' });
@@ -783,7 +783,7 @@ export async function getIotShifts(): Promise<Shift[]> {
 }
 
 export async function saveIotShift(shift: Shift): Promise<Shift> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
   try {
     const db = await getIotDb();
     await db.collection<Shift>(IOT_COLLECTIONS.SHIFTS).updateOne(
@@ -796,7 +796,7 @@ export async function saveIotShift(shift: Shift): Promise<Shift> {
 }
 
 export async function deleteIotShift(shiftId: string): Promise<boolean> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
   try {
     const db = await getIotDb();
     const res = await db.collection(IOT_COLLECTIONS.SHIFTS).deleteOne({ shiftId });
@@ -917,7 +917,7 @@ export async function saveIotMaintenance(entry: MaintenanceEntry): Promise<Maint
 // Configuration & Mappings (https://iot-machine-backend.onrender.com/api/master/machine-mappings)
 // -------------------------------------------------------------
 export async function getIotMappings(): Promise<MachineMapping[]> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
 
   try {
     const res = await fetch(`${REMOTE_IOT_API}/master/machine-mappings`, { cache: 'no-store' });
@@ -959,7 +959,7 @@ export async function getIotMappings(): Promise<MachineMapping[]> {
 }
 
 export async function saveIotMapping(mapping: MachineMapping): Promise<MachineMapping> {
-  await ensureIotMasterSynced();
+  await ensureIotSeeded();
   try {
     const db = await getIotDb();
     await db.collection<MachineMapping>(IOT_COLLECTIONS.MAPPINGS).updateOne(

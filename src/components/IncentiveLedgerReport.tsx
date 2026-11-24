@@ -660,7 +660,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
       emCount: number;
     }>();
 
-    // Initialize container with all current workers
+    // Seed all current workers
     workers.forEach(w => {
       summaryMap.set(w.tNo || w.id, {
         workerId: w.id,

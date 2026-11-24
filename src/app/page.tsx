@@ -1766,6 +1766,13 @@ export default function Home() {
     }
   }, [frozenMonths, reportHistory, workers, incentiveRules]);
 
+  const seedHistoricalData = async () => {
+    await apiClient.seedHistoricalApril();
+    const refreshed = await apiClient.fetchInitialData();
+    if (refreshed.history) setReportHistory(refreshed.history);
+    alert('April historical reports imported into Database successfully!');
+  };
+
   const availableYears = useMemo(() => {
     const yearSet = new Set<string>();
     const currentYear = new Date().getFullYear();
@@ -3875,6 +3882,7 @@ export default function Home() {
                 }
               } catch {}
             }}
+            onSeedData={seedHistoricalData}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
           />

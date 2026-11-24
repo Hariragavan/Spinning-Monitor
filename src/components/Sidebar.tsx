@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Users, Coins, Trophy,
-  Gauge, Monitor, BarChart3, Calendar, Grid3X3, Wrench, UserCheck,
+  Gauge, Monitor, BarChart3, Calendar, Database, Grid3X3, Wrench, UserCheck,
   FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity,
   FileSpreadsheet, Cpu, Clock, ChevronDown, ChevronRight
 } from 'lucide-react';
@@ -24,6 +24,7 @@ export interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onTvMode: () => void;
+  onSeedData: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -82,6 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
   onTvMode,
+  onSeedData,
   isCollapsed = false,
   onToggleCollapse
 }) => {
@@ -303,23 +305,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Action Buttons inside Nav */}
         <div className={cn("pt-1.5 border-t border-stone-100", isCollapsed ? "space-y-1 flex flex-col items-center" : "space-y-1")}>
           {isCollapsed ? (
-            <div className="flex justify-center w-full">
+            <>
+              <div className="flex justify-center w-full">
+                <button
+                  onClick={() => {
+                    if (window.confirm('Import historical data for April 2026? This will merge with Database history.')) {
+                      onSeedData();
+                    }
+                  }}
+                  title="Import History"
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-all cursor-pointer"
+                >
+                  <Database size={14} className="text-amber-600" />
+                </button>
+              </div>
+
+              <div className="flex justify-center w-full">
+                <button
+                  onClick={onTvMode}
+                  title="Play TV Mode"
+                  className="w-9 h-9 rounded-lg flex items-center justify-center text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer shadow-2xs"
+                >
+                  <Monitor size={14} className="text-emerald-600" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  if (window.confirm('Import historical data for April 2026? This will merge with Database history.')) {
+                    onSeedData();
+                  }
+                }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 cursor-pointer font-black text-[10px] uppercase tracking-wider"
+              >
+                <Database size={13} className="shrink-0 text-amber-600" />
+                <span>Import History</span>
+              </button>
+
               <button
                 onClick={onTvMode}
-                title="Play TV Mode"
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer shadow-2xs"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs cursor-pointer font-black text-[10px] uppercase tracking-wider"
               >
-                <Monitor size={14} className="text-emerald-600" />
+                <Monitor size={13} className="shrink-0 text-emerald-600" />
+                <span>Play TV Mode</span>
               </button>
-            </div>
-          ) : (
-            <button
-              onClick={onTvMode}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs cursor-pointer font-black text-[10px] uppercase tracking-wider"
-            >
-              <Monitor size={13} className="shrink-0 text-emerald-600" />
-              <span>Play TV Mode</span>
-            </button>
+            </>
           )}
         </div>
       </nav>

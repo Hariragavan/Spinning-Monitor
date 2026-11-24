@@ -53,6 +53,15 @@ export const apiClient = {
     return res.ok;
   },
 
+  async seedHistoricalApril(): Promise<boolean> {
+    const res = await fetch('/api/reports/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'seed_april' })
+    });
+    return res.ok;
+  },
+
   async deleteHistoryRecord(date: string): Promise<boolean> {
     const res = await fetch(`/api/reports/history?date=${encodeURIComponent(date)}`, {
       method: 'DELETE'

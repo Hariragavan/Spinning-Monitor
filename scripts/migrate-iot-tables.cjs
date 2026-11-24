@@ -177,7 +177,7 @@ async function runMigration() {
       }
     }
 
-    // Initial migration for iot_em from latest remote common telemetry
+    // Initial seed for iot_em from latest remote common telemetry
     console.log('\n--- Initializing iot_em from Remote Telemetry ---');
     const commonResp = await fetchJson('/api/common?limit=1');
     if (commonResp && commonResp.data && commonResp.data[0]) {
@@ -256,7 +256,7 @@ async function runMigration() {
       console.log(`  ${prefix.padEnd(23)} ${c.name.padEnd(30)} : ${cnt} docs`);
     }
 
-    console.log('\n✓ Migration and synchronization complete!');
+    console.log('\n✓ Migration and seeding complete!');
   } catch (err) {
     console.error('Migration failed:', err);
   } finally {
