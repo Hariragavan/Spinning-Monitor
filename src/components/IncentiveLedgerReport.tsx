@@ -839,8 +839,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
     const chunks: any[][] = [];
     if (remaining.length === 0) return chunks;
 
-    const M_nf = 27; // Max rows on non-final page to pack the page without leaving blank gap
-    const M_f = 21;  // Max rows on final page (leaving room for Accounts Consolidation & Signatures)
+    const M_nf = 28; // Max rows on non-final page to pack the page without leaving blank gap
+    const M_f = 22;  // Max rows on final page (leaving room for Accounts Consolidation & Signatures)
 
     // 1. Determine the number of pages P
     let P = 1;
@@ -1585,11 +1585,11 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             </button>
           </div>
 
-          <div className="bg-white p-10 rounded-[3rem] border border-stone-200 shadow-sm relative overflow-hidden">
+          <div className="bg-white p-10 rounded-[3rem] border border-stone-200 shadow-sm relative overflow-hidden print:p-4 print:rounded-lg print:border-2 print:border-black print:shadow-none">
             {selectedWorkerId ? (
-              <div className="space-y-8">
-                {/* Print layout header */}
-                <div className="text-center pb-6 border-b-4 border-stone-950/15">
+              <div className="space-y-8 print:space-y-2">
+                {/* Screen layout header */}
+                <div className="text-center pb-6 border-b-4 border-stone-950/15 print:hidden">
                   <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">Worker Wise History — Supporting Documents for Payout</span>
                   <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">Sider Incentive Ledger Statement</h1>
                   
@@ -1613,22 +1613,45 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                   })()}
                 </div>
 
+                {/* Print Only Header (matching Image 4) */}
+                {(() => {
+                  const detail = getWorkerDetails(selectedWorkerId);
+                  if (!detail) return null;
+                  const fParts = fromDate.split('-');
+                  const tParts = toDate.split('-');
+                  const displayFrom = fParts.length === 3 ? `${fParts[2]}/${fParts[1]}/${fParts[0]}` : fromDate;
+                  const displayTo = tParts.length === 3 ? `${tParts[2]}/${tParts[1]}/${tParts[0]}` : toDate;
+                  return (
+                    <div className="hidden print:block text-center mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
+                      <div className="border border-black py-1 my-1 w-full text-center">
+                        <h1 className="text-base font-black text-black uppercase tracking-widest">SIDER INCENTIVE STATEMENT</h1>
+                      </div>
+                      <div className="mt-1 flex justify-center gap-8 text-[12px] font-black text-black uppercase tracking-wider">
+                        <div>SIDER NAME: <span className="font-extrabold">{detail.name}</span></div>
+                        <div>TK. NO: <span className="font-extrabold">{detail.tNo || '—'}</span></div>
+                        <div>PERIOD: <span className="font-extrabold">{displayFrom} to {displayTo}</span></div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Ledger Data Table */}
                 {combinedIndividualLedger.length > 0 ? (
-                  <div className="space-y-8">
+                  <div className="space-y-8 print:space-y-2">
                     {/* Main transaction ledger table */}
-                    <div className="overflow-x-auto rounded-2xl border-2 border-stone-900/10 mb-6">
-                      <table className="w-full text-center border-collapse">
+                    <div className="overflow-x-auto rounded-2xl border-2 border-stone-900/10 mb-6 print:border print:border-black print:rounded-none print:mb-2">
+                      <table className="w-full text-center border-collapse print:border print:border-black">
                         <thead>
-                          <tr className="bg-stone-50 border-b border-stone-900/10">
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left">S. NO</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left">Date</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Shift</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">MC No</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Count</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">Achieved GPS</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider">EM</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-right">Incentive (Rs)</th>
+                          <tr className="bg-stone-50 border-b border-stone-900/10 print:bg-white print:border-b print:border-black print:text-[11px] print:text-black">
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-12">S. NO</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-24">Date</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-14">Shift</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-28">MC No</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">Count</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-36">Achieved GPS</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-20">EM</th>
+                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-right print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-32">Incentive (Rs)</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1640,13 +1663,13 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                               <tr 
                                 key={idx} 
                                 className={cn(
-                                  "border-b last:border-b-0 border-stone-100 hover:bg-stone-50/50 transition-colors",
+                                  "border-b last:border-b-0 border-stone-100 hover:bg-stone-50/50 transition-colors print:border-b print:border-black print:text-[11px] print:text-black",
                                   isRowDup && "bg-red-50 hover:bg-red-100/50"
                                 )}
                               >
-                                <td className="px-6 py-4 text-xs text-stone-400 font-bold text-left">{idx + 1}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 text-left font-mono">
-                                  <div className="flex items-center gap-2">
+                                <td className="px-6 py-4 text-xs text-stone-400 font-bold text-left print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:font-bold">{idx + 1}</td>
+                                <td className="px-6 py-4 text-sm font-black text-stone-900 text-left font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
+                                  <div className="flex items-center gap-2 print:justify-center">
                                     <span>{formatDisplayDate(item.date)}</span>
                                     {isRowDup && (
                                       <span className="bg-red-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded tracking-wider uppercase shrink-0 no-print">
@@ -1655,29 +1678,32 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                                     )}
                                   </div>
                                 </td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-950">
-                                  <span className="px-2 py-1 bg-stone-100 text-stone-800 rounded font-bold">{item.shift}</span>
+                                <td className="px-6 py-4 text-sm font-black text-stone-950 print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
+                                  <span className="px-2 py-1 bg-stone-100 text-stone-800 rounded font-bold print:bg-transparent print:p-0 print:text-black">{item.shift}</span>
                                 </td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-700">
+                                <td className="px-6 py-4 text-sm font-black text-stone-700 print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
                                   {item.role === 'GAITER' ? (
-                                    <span className="text-emerald-700 text-xs font-extrabold tracking-widest bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full uppercase">Gaiter Duty</span>
+                                    <span className="text-emerald-700 text-xs font-extrabold tracking-widest bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full uppercase print:border-0 print:bg-transparent print:text-black">Gaiter Duty</span>
                                   ) : (
                                     item.frameNo
                                   )}
                                 </td>
-                                <td className="px-6 py-4 text-sm font-bold text-stone-600 font-mono">{item.count}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono">{item.gps}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono">{item.em}</td>
-                                <td className="px-6 py-4 text-right">
-                                  <div className="font-mono font-black text-emerald-800 inline-block text-right">
-                                    {item.incentiveText.includes('=') ? (
-                                      <div className="flex flex-col items-end">
+                                <td className="px-6 py-4 text-sm font-bold text-stone-600 font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">{item.count}</td>
+                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">{item.gps}</td>
+                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">{item.em}</td>
+                                <td className="px-6 py-4 text-right print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
+                                  <div className="font-mono font-black text-emerald-800 inline-block text-right print:text-black print:text-center print:w-full">
+                                    <span className="hidden print:inline text-xs font-black font-mono">{item.incentiveText}</span>
+                                    <span className="print:hidden">
+                                      {item.incentiveText.includes('=') ? (
+                                        <div className="flex flex-col items-end">
+                                          <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
+                                          <span className="text-[10.5px] text-stone-400 font-mono font-medium">{item.incentiveText.split('=')[0]}</span>
+                                        </div>
+                                      ) : (
                                         <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
-                                        <span className="text-[10.5px] text-stone-400 font-mono font-medium">{item.incentiveText.split('=')[0]}</span>
-                                      </div>
-                                    ) : (
-                                      <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
-                                    )}
+                                      )}
+                                    </span>
                                   </div>
                                 </td>
                               </tr>
@@ -2564,7 +2590,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           
           {/* PAGES: KTTM RING FRAME OPERATOR INCENTIVE ABSTRACT */}
           {abstractChunks.map((chunk, chunkIdx) => (
-            <div key={`abstract-chunk-${chunkIdx}`} className="print-page-break p-5 border-2 border-black rounded-lg min-h-[238mm] flex flex-col mb-8">
+            <div key={`abstract-chunk-${chunkIdx}`} className="print-page-break p-5 border-2 border-black rounded-lg flex flex-col justify-between mb-8 text-black bg-white" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
               <div className="text-center pb-2 border-b-2 border-black mb-3">
                 <img
                   src="/scm-logo-horizontal.png"
@@ -2598,7 +2624,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                     const previousCount = abstractChunks.slice(0, chunkIdx).reduce((sum, c) => sum + c.length, 0);
                     const absoluteIdx = previousCount + idx + 1;
                     return (
-                      <tr key={`${row.workerId}-${row.tNo || idx}-${idx}`} className="border-b border-stone-400 text-sm">
+                      <tr key={`${row.workerId}-${row.tNo || idx}-${idx}`} className="border-b border-black text-xs">
                         <td className="border border-black px-3 py-1.5 text-left font-bold">{absoluteIdx}</td>
                         <td className="border border-black px-3 py-1.5 text-left font-mono font-black">{row.tNo || '—'}</td>
                         <td className="border border-black px-3 py-1.5 text-left uppercase font-bold">{row.name}</td>
@@ -2635,7 +2661,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                     </div>
                   </div>
 
-                  {/* Signatures block at bottom of first page */}
+                  {/* Signatures block at bottom of final abstract page */}
                   <div className="mt-auto pt-2 grid grid-cols-3 gap-6 text-center text-xs font-bold uppercase tracking-wider text-stone-700">
                     <div>
                       <div className="border-t border-black pt-1">AM/AM</div>
@@ -2663,30 +2689,32 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
               : 0;
 
             return (
-              <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white">
+              <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg text-black bg-white flex flex-col justify-between mb-8" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
                 <div>
-                  <div className="text-center pb-1.5 border-b border-black mb-2">
-                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
-                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">SIDER INCENTIVE STATEMENT</h1>
+                  <div className="text-center mb-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
+                    <div className="border border-black py-1 my-1 w-full text-center">
+                      <h1 className="text-base font-black text-black uppercase tracking-widest">SIDER INCENTIVE STATEMENT</h1>
+                    </div>
                     
-                    <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
-                      <div>SIDER NAME: <span className="text-black font-extrabold text-[14px]">{workerRow.name}</span></div>
-                      <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{workerRow.tNo || '—'}</span></div>
-                      <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>
+                    <div className="mt-1 flex justify-center gap-8 text-[12px] font-black text-black uppercase tracking-wider">
+                      <div>SIDER NAME: <span className="font-extrabold">{workerRow.name}</span></div>
+                      <div>TK. NO: <span className="font-extrabold">{workerRow.tNo || '—'}</span></div>
+                      <div>PERIOD: <span className="font-extrabold">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>
                     </div>
                   </div>
 
                   <table className="w-full text-center border-collapse border border-black mb-2">
                     <thead>
-                      <tr className="bg-stone-50 border-b border-black text-[11.5px] font-black uppercase text-black">
+                      <tr className="bg-white border-b border-black text-[11px] font-black uppercase text-black">
                         <th className="border border-black px-1.5 py-1 text-center w-12">S.NO</th>
                         <th className="border border-black px-1.5 py-1 text-center w-24">DATE</th>
                         <th className="border border-black px-1.5 py-1 text-center w-14">SHIFT</th>
                         <th className="border border-black px-1.5 py-1 text-center w-28">MC NO</th>
                         <th className="border border-black px-1.5 py-1 text-center">COUNT</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-32">ACHIEVED GPS</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-36">ACHIEVED GPS</th>
                         <th className="border border-black px-1.5 py-1 text-center w-20">EM</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-28">INCENTIVE (RS)</th>
+                        <th className="border border-black px-1.5 py-1 text-center w-32">INCENTIVE (RS)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2715,40 +2743,40 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
 
                 <div>
                   {/* Individual Summary block */}
-                  <div className="p-2 px-3 border border-black bg-stone-50 rounded flex justify-between items-center mb-2">
+                  <div className="p-1.5 px-3 border border-black bg-stone-50 rounded flex justify-between items-center mb-1.5">
                     <div className="text-left">
-                      <span className="text-[10px] font-black tracking-widest text-stone-500 uppercase">Payout Summary</span>
-                      <div className="text-black font-black uppercase text-[13px] mt-0.5">Payable Incentive Record</div>
-                      <p className="text-[11.5px] font-semibold text-stone-500 uppercase mt-0.5 leading-normal">
+                      <span className="text-[9px] font-black tracking-widest text-stone-500 uppercase">Payout Summary</span>
+                      <div className="text-black font-black uppercase text-[11px] leading-tight">Payable Incentive Record</div>
+                      <p className="text-[9.5px] font-semibold text-stone-500 uppercase leading-tight">
                         Includes {rawLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {rawLedger.filter(i => i.role === 'GAITER').length} Gaiter duties.
                       </p>
                     </div>
                     <div className="flex gap-4 items-center">
                       <div className="text-center">
-                        <span className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">EM Average</span>
-                        <span className="text-[14px] font-black text-black">{emAverage > 0 ? emAverage.toFixed(2) : '—'}</span>
+                        <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">EM Average</span>
+                        <span className="text-[12px] font-black text-black">{emAverage > 0 ? emAverage.toFixed(2) : '—'}</span>
                       </div>
                       <div className="text-center">
-                        <span className="block text-[10px] font-black text-stone-500 uppercase tracking-widest">Total Duties</span>
-                        <span className="text-[14px] font-black text-black">{workerLedger.length}</span>
+                        <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">Total Duties</span>
+                        <span className="text-[12px] font-black text-black">{workerLedger.length}</span>
                       </div>
-                      <div className="border border-black px-2.5 py-1 bg-black text-white text-center rounded">
-                        <span className="block text-[10px] font-black text-stone-300 uppercase tracking-widest">Total Amount</span>
-                        <span className="text-[16px] font-black font-mono">₹{workerTotal}</span>
+                      <div className="border border-black px-2 py-0.5 bg-black text-white text-center rounded">
+                        <span className="block text-[8px] font-black text-stone-300 uppercase tracking-widest">Total Amount</span>
+                        <span className="text-[14px] font-black font-mono">₹{workerTotal}</span>
                       </div>
                     </div>
                   </div>
 
                   {/* Signatures block for operator sheet */}
-                  <div className="mt-1.5 pt-1.5 border-t border-black grid grid-cols-3 gap-6 text-center text-[11px] font-bold uppercase tracking-wider text-stone-700">
+                  <div className="pt-1 border-t border-black grid grid-cols-3 gap-6 text-center text-[10px] font-bold uppercase tracking-wider text-stone-700">
                     <div>
-                      <div className="pt-1">AM/AM</div>
+                      <div className="pt-0.5">AM/AM</div>
                     </div>
                     <div>
-                      <div className="pt-1">GM</div>
+                      <div className="pt-0.5">GM</div>
                     </div>
                     <div>
-                      <div className="pt-1">DIRECTOR</div>
+                      <div className="pt-0.5">DIRECTOR</div>
                     </div>
                   </div>
                 </div>

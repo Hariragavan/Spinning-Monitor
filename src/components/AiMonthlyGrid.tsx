@@ -306,9 +306,10 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
               <button 
                 onClick={() => window.print()}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 bg-stone-900 text-white font-bold rounded-xl uppercase text-xs hover:bg-black transition-all shadow-xs cursor-pointer active:scale-95"
+                title="Print Full Month Incentive Grid with Summary and Signatures"
               >
                 <Printer size={14} />
-                <span>Print</span>
+                <span>Print All (Full Grid)</span>
               </button>
 
               <button 
