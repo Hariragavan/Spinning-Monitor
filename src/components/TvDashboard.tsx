@@ -2448,6 +2448,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                       rules={rules}
                       settings={settings}
                       selectedShed={selectedShed as Shed}
+                      onSelectDate={onSelectDate}
+                      history={history}
                     />
                   </div>
                 );

@@ -9,7 +9,7 @@ import {
 import { DailyReport, MachineMasterItem, Sider, SystemSettings, Shed, IncentiveRule } from '@/types';
 import { Employee, EmployeeMetric, MachineMapping, DeviceHealth } from '@/types/iot';
 import { iotApi } from '@/lib/iot/iotApi';
-import { cn, calculateIncentive, getActiveRule, parseUniversalDateParts, resolveEffectiveMappingForDate, resolveMappedDevice } from '@/lib/utils';
+import { cn, calculateIncentive, getActiveRule, parseUniversalDateParts, resolveEffectiveMappingForDate, resolveMappedDevice, normalizeShed } from '@/lib/utils';
 
 export interface IotTvPerformanceProps {
   report?: DailyReport;
@@ -18,6 +18,8 @@ export interface IotTvPerformanceProps {
   rules?: IncentiveRule[];
   settings?: SystemSettings;
   selectedShed?: Shed;
+  onSelectDate?: (date: string) => void;
+  history?: DailyReport[];
 }
 
 export interface DeviceOperatorItem {
@@ -133,7 +135,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
   workers = [],
   rules = [],
   settings,
-  selectedShed = 'Shed 1'
+  selectedShed = 'Shed 1',
+  onSelectDate,
+  history = []
 }) => {
   const [slides, setSlides] = useState<AssignedMachineSlide[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -142,48 +146,120 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
   const [timeRemaining, setTimeRemaining] = useState(15);
   const SLIDE_DURATION = 15; // seconds per assigned machine slide
 
-  // Load live telemetry and build per-machine assigned slides
+  // Helper to convert any universal/canonical date string to ISO (YYYY-MM-DD)
+  const toIsoDate = useCallback((dStr?: string): string => {
+    if (!dStr) return '';
+    const parts = parseUniversalDateParts(dStr);
+    if (!parts) return dStr.slice(0, 10);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+  }, []);
+
+  // Helper to convert any universal/ISO date string to Canonical (DD/MM/YYYY)
+  const toCanonicalDate = useCallback((dStr?: string): string => {
+    if (!dStr) return '';
+    const parts = parseUniversalDateParts(dStr);
+    if (!parts) return dStr;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(parts.day)}/${pad(parts.month)}/${parts.year}`;
+  }, []);
+
+  // Determine Current Live Date and Shift (IST: Shift 1 = 06-14, Shift 2 = 14-22, Shift 3 = 22-06)
+  const getLiveShiftInfo = useCallback(() => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const totalMins = hours * 60 + minutes;
+
+    let shiftNum = 1;
+    let windowLabel = '06:00 AM – 02:00 PM';
+    if (totalMins >= 360 && totalMins < 840) {
+      shiftNum = 1;
+      windowLabel = '06:00 AM – 02:00 PM';
+    } else if (totalMins >= 840 && totalMins < 1320) {
+      shiftNum = 2;
+      windowLabel = '02:00 PM – 10:00 PM';
+    } else {
+      shiftNum = 3;
+      windowLabel = '10:00 PM – 06:00 AM';
+    }
+
+    const shiftDateObj = new Date(now);
+    if (totalMins < 360) {
+      shiftDateObj.setDate(shiftDateObj.getDate() - 1);
+    }
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateIso = `${shiftDateObj.getFullYear()}-${pad(shiftDateObj.getMonth() + 1)}-${pad(shiftDateObj.getDate())}`;
+    const dateCanonical = `${pad(shiftDateObj.getDate())}/${pad(shiftDateObj.getMonth() + 1)}/${shiftDateObj.getFullYear()}`;
+
+    return { shiftNum, windowLabel, dateIso, dateCanonical };
+  }, []);
+
+  // Default is LIVE ON when the page is opened
+  const [isLive, setIsLive] = useState<boolean>(true);
+  const [selectedShift, setSelectedShift] = useState<number>(() => getLiveShiftInfo().shiftNum);
+  const [selectedDateIso, setSelectedDateIso] = useState<string>(() => getLiveShiftInfo().dateIso);
+
+  const prevReportDateRef = useRef<string | undefined>(report?.date);
+
+  // Sync date changes from the top navbar date picker
+  useEffect(() => {
+    if (!report?.date) return;
+    if (prevReportDateRef.current === report.date) return;
+    prevReportDateRef.current = report.date;
+
+    const reportIso = toIsoDate(report.date);
+    const live = getLiveShiftInfo();
+
+    if (reportIso && reportIso !== live.dateIso) {
+      // User picked a specific historical date at the top -> turn off Live!
+      setIsLive(false);
+      setSelectedDateIso(reportIso);
+    } else if (reportIso === live.dateIso) {
+      setSelectedDateIso(reportIso);
+    }
+  }, [report?.date, getLiveShiftInfo, toIsoDate]);
+
+  const handleToggleLive = () => {
+    if (!isLive) {
+      const live = getLiveShiftInfo();
+      setIsLive(true);
+      setSelectedDateIso(live.dateIso);
+      setSelectedShift(live.shiftNum);
+      if (onSelectDate) {
+        onSelectDate(live.dateCanonical);
+      }
+    } else {
+      setIsLive(false);
+    }
+  };
+
+  const handleSelectShift = (sNum: number) => {
+    setIsLive(false);
+    setSelectedShift(sNum);
+  };
+
+  // Load telemetry and build per-machine assigned slides
   const loadSlideData = useCallback(async (isSilent = false) => {
     if (!isSilent) setIsLoading(true);
     try {
-      // 1. Determine Current Live Date and Shift (IST: Shift 1 = 06-14, Shift 2 = 14-22, Shift 3 = 22-06)
-      const now = new Date();
-      const hours = now.getHours();
-      const minutes = now.getMinutes();
-      const totalMins = hours * 60 + minutes;
+      const liveInfo = getLiveShiftInfo();
+      const primaryTargetDate = isLive ? liveInfo.dateIso : (selectedDateIso || liveInfo.dateIso);
+      const targetShiftNum = isLive ? liveInfo.shiftNum : (selectedShift || liveInfo.shiftNum);
+      const targetShiftName = `Shift ${targetShiftNum}`;
+      const targetWindowLabel = targetShiftNum === 1
+        ? '06:00 AM – 02:00 PM'
+        : targetShiftNum === 2
+        ? '02:00 PM – 10:00 PM'
+        : '10:00 PM – 06:00 AM';
 
-      let liveShiftNum = 1;
-      let liveWindowLabel = '06:00 AM – 02:00 PM';
-      if (totalMins >= 360 && totalMins < 840) {
-        liveShiftNum = 1;
-        liveWindowLabel = '06:00 AM – 02:00 PM';
-      } else if (totalMins >= 840 && totalMins < 1320) {
-        liveShiftNum = 2;
-        liveWindowLabel = '02:00 PM – 10:00 PM';
-      } else {
-        liveShiftNum = 3;
-        liveWindowLabel = '10:00 PM – 06:00 AM';
-      }
-
-      // If Shift 3 runs between midnight and 06:00, the shift date belongs to yesterday
-      const shiftDateObj = new Date(now);
-      if (totalMins < 360) {
-        shiftDateObj.setDate(shiftDateObj.getDate() - 1);
-      }
-      const yStr = shiftDateObj.getFullYear();
-      const mStr = String(shiftDateObj.getMonth() + 1).padStart(2, '0');
-      const dStr = String(shiftDateObj.getDate()).padStart(2, '0');
-      const liveShiftDate = `${yStr}-${mStr}-${dStr}`;
-      const liveShiftName = `Shift ${liveShiftNum}`;
-
-      // IoT TV Patrol is strictly live for today's current shift
-      const primaryTargetDate = liveShiftDate;
-
-      // Direct live employee metrics from Railway API strictly for current date:
-      // https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date
-      const fetchRailwayEmployeeData = async (dStr: string) => {
+      // Direct employee metrics from Railway API for target date & shift:
+      const fetchRailwayEmployeeData = async (dStr: string, sName?: string) => {
         try {
-          const url = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
+          let url = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
+          if (sName) {
+            url += `&shiftName=${encodeURIComponent(sName)}`;
+          }
           const res = await fetch(url, { cache: 'no-store' });
           if (res.ok) {
             const json = await res.json();
@@ -192,13 +268,25 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             }
           }
         } catch (_) {}
+        if (sName) {
+          try {
+            const url2 = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
+            const res2 = await fetch(url2, { cache: 'no-store' });
+            if (res2.ok) {
+              const json2 = await res2.json();
+              if (Array.isArray(json2?.data) && json2.data.length > 0) {
+                return json2.data;
+              }
+            }
+          } catch (_) {}
+        }
         return [];
       };
 
-      // 2. Fetch live IoT devices, mappings, fresh settings, and live machine telemetry
+      // 2. Fetch live IoT devices, mappings, fresh settings, and live/historical machine telemetry
       const [lightStatus, liveOverview, devices, iotEmployees, deviceMappings, freshSettingsRes] = await Promise.all([
-        iotApi.getLightweightMachineStatus().catch(() => null),
-        iotApi.getSpinfoOverview({ shift: String(liveShiftNum), fromDate: liveShiftDate }).catch(() => null),
+        isLive ? iotApi.getLightweightMachineStatus().catch(() => null) : Promise.resolve(null),
+        iotApi.getSpinfoOverview({ shift: String(targetShiftNum), fromDate: primaryTargetDate }).catch(() => null),
         iotApi.getDevices().catch(() => [] as DeviceHealth[]),
         iotApi.getEmployees().catch(() => [] as Employee[]),
         iotApi.getMachineMappings().catch(() => [] as MachineMapping[]),
@@ -209,7 +297,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         ? freshSettingsRes.data
         : (settings || ({} as SystemSettings));
 
-      // Resolve effective date-range machine mapping from Settings for today's active date
+      // Resolve effective date-range machine mapping from Settings for target date
       const effectiveDateMap = resolveEffectiveMappingForDate(
         primaryTargetDate,
         effectiveSettings?.iotMachineAllocationPeriods || [],
@@ -217,11 +305,18 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         effectiveSettings?.iotMachineMapping || {}
       );
 
-      // Fetch employee performance strictly for today's live shift (no past-date fallbacks)
-      const employeeMetrics: EmployeeMetric[] = await fetchRailwayEmployeeData(primaryTargetDate);
+      // Fetch employee performance for target date & shift
+      const employeeMetrics: EmployeeMetric[] = await fetchRailwayEmployeeData(primaryTargetDate, targetShiftName);
 
       const lightMachines = lightStatus?.machines || [];
       const liveMachines = liveOverview?.machines || [];
+
+      // Locate historical report for primaryTargetDate
+      const targetReport = (history || []).find(r => {
+        if (!r || !r.date) return false;
+        const rIso = toIsoDate(r.date);
+        return rIso === primaryTargetDate && (!r.shed || normalizeShed(r.shed) === normalizeShed(selectedShed || 'Shed 1'));
+      }) || report;
 
       // 1. Physical Frame -> IoT Machine Unit (strictly from Tab 5 Configuration, e.g. SP044 -> M1)
       const frameToIotMap: Record<string, string> = {
@@ -441,52 +536,65 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         const lightM = findTelemetryMachine(lightMachines);
         const liveM = findTelemetryMachine(liveMachines);
 
-        const reportEntry = report?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
+        const roman = targetShiftNum === 1 ? 'I' : targetShiftNum === 2 ? 'II' : 'III';
+        const reportEntry = targetReport?.entries?.find(e => {
+          if (!e.frameNo || e.frameNo.trim().toUpperCase() !== frameNo) return false;
+          if (!e.shift) return true;
+          const sStr = String(e.shift).trim().toUpperCase();
+          return sStr === roman || sStr === String(targetShiftNum) || sStr.includes(String(targetShiftNum));
+        }) || targetReport?.entries?.find(e => e.frameNo && e.frameNo.trim().toUpperCase() === frameNo);
+
         let rawCount = String(lightM?.count || liveM?.count || reportEntry?.count || '').trim();
         if (rawCount && /\bch\s*\d+$/i.test(rawCount)) {
           rawCount = rawCount.replace(/\s*ch\s*\d+$/i, ' CH');
         }
         let yarnCount = rawCount || '-';
 
+        let productionKg = 0;
+        if (typeof lightM?.shiftProduction === 'number' && lightM.shiftProduction > 0) {
+          productionKg = lightM.shiftProduction;
+        } else if (typeof lightM?.production === 'number' && lightM.production > 0) {
+          productionKg = lightM.production;
+        } else if (typeof liveM?.shiftProduction === 'number' && liveM.shiftProduction > 0) {
+          productionKg = liveM.shiftProduction;
+        } else if (typeof (liveM as any)?.production === 'number' && (liveM as any).production > 0) {
+          productionKg = Number((liveM as any).production);
+        } else if ((reportEntry as any)?.productionKg && (reportEntry as any).productionKg > 0) {
+          productionKg = Number((reportEntry as any).productionKg);
+        } else if ((reportEntry as any)?.actualKg && (reportEntry as any).actualKg > 0) {
+          productionKg = Number((reportEntry as any).actualKg);
+        }
+
+        let gpsActual = 0;
+        if (typeof lightM?.gps === 'number' && lightM.gps > 0) {
+          gpsActual = lightM.gps;
+        } else if (typeof liveM?.gps === 'number' && liveM.gps > 0) {
+          gpsActual = liveM.gps;
+        } else if (reportEntry?.gpsActual && reportEntry.gpsActual > 0) {
+          gpsActual = reportEntry.gpsActual;
+        } else if (productionKg > 0) {
+          const spindles = Number((reportEntry as any)?.spindles || 1200);
+          gpsActual = Number(((productionKg * 1000) / spindles / 8).toFixed(1));
+        }
+
         // Machine Live Running Status: RUNNING, DOFFING, STOPPED from paired telemetry machine (RF44 / RF09)
         let machineLiveStatus: 'RUNNING' | 'DOFFING' | 'STOPPED' = 'RUNNING';
-        const rawRunStatus = String(lightM?.runStatus || liveM?.runStatus || (liveM as any)?.status || '').toUpperCase();
-        if (rawRunStatus.includes('DOFF')) {
-          machineLiveStatus = 'DOFFING';
-        } else if (rawRunStatus === 'STOP' || rawRunStatus === 'OFFLINE' || rawRunStatus.includes('STOP')) {
-          machineLiveStatus = 'STOPPED';
-        } else if (rawRunStatus === 'RUN' || rawRunStatus.includes('RUN') || (lightM?.speed || 0) > 500) {
-          machineLiveStatus = 'RUNNING';
+        if (isLive) {
+          const rawRunStatus = String(lightM?.runStatus || liveM?.runStatus || (liveM as any)?.status || '').toUpperCase();
+          if (rawRunStatus.includes('DOFF')) {
+            machineLiveStatus = 'DOFFING';
+          } else if (rawRunStatus === 'STOP' || rawRunStatus === 'OFFLINE' || rawRunStatus.includes('STOP')) {
+            machineLiveStatus = 'STOPPED';
+          } else if (rawRunStatus === 'RUN' || rawRunStatus.includes('RUN') || (lightM?.speed || 0) > 500) {
+            machineLiveStatus = 'RUNNING';
+          }
+        } else {
+          machineLiveStatus = (productionKg > 0 || gpsActual > 0 || reportEntry) ? 'RUNNING' : 'STOPPED';
         }
 
         let rpm = 0;
         if (machineLiveStatus !== 'STOPPED' && machineLiveStatus !== 'DOFFING') {
-          rpm = Number(lightM?.speed ?? liveM?.spindleSpeedCurrent ?? liveM?.speed ?? 0);
-        }
-
-        let productionKg = 0;
-        if (machineLiveStatus !== 'STOPPED') {
-          productionKg = Number(
-            lightM?.shiftProduction ?? 
-            lightM?.production ?? 
-            liveM?.shiftProduction ?? 
-            (liveM as any)?.production ?? 
-            0
-          );
-        }
-
-        let gpsActual = 0;
-        if (machineLiveStatus !== 'STOPPED') {
-          if (typeof lightM?.gps === 'number' && lightM.gps > 0) {
-            gpsActual = lightM.gps;
-          } else if (typeof liveM?.gps === 'number' && liveM.gps > 0) {
-            gpsActual = liveM.gps;
-          } else if (reportEntry?.gpsActual && reportEntry.gpsActual > 0) {
-            gpsActual = reportEntry.gpsActual;
-          } else if (productionKg > 0) {
-            const spindles = Number((reportEntry as any)?.spindles || 1200);
-            gpsActual = Number(((productionKg * 1000) / spindles / 8).toFixed(1));
-          }
+          rpm = Number(lightM?.speed ?? liveM?.spindleSpeedCurrent ?? liveM?.speed ?? (productionKg > 0 ? 17160 : 0));
         }
 
         // EM Left and EM Right from paired telemetry machine (RF44 / RF09)
@@ -508,7 +616,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             emRight = Number(sideR.endMendingTime);
           }
         }
-        const emAvg = Number(((emLeft + emRight) / 2).toFixed(2));
+        const emAvg = Number(((emLeft + emRight) / 2).toFixed(2)) || (reportEntry?.doffEmt || 0);
 
         // Auto-select operator for Device 1 (D1) and Device 2 (D2) for this live shift strictly from today's taps
         const resolveDeviceAuto = (devId: string, sideIndex: number) => {
@@ -528,7 +636,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             else side = devObj.side;
           }
 
-          // Check employee metrics for this device strictly from today's live shift
+          // Check employee metrics for this device strictly from target date & shift
           const met = employeeMetrics.find(m => 
             (m.machineId && m.machineId.toUpperCase() === cleanDevId) || 
             (devObj?.deviceId && m.machineId && m.machineId.toUpperCase() === devObj.deviceId.toUpperCase()) ||
@@ -539,6 +647,34 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           const hasTapsToday = metTaps.length > 0 || Number(met?.roundsCompleted || met?.rounds || 0) > 0;
 
           if (!hasTapsToday) {
+            // Fallback: check reportEntry for assigned operator from Daily Report (especially for historical dates!)
+            const siderRaw = reportEntry?.siderName || reportEntry?.siderId || (reportEntry?.siderIds && reportEntry.siderIds[sideIndex]);
+            const matchedSider = siderRaw ? resolveWorkerMaster(siderRaw) : null;
+
+            if (matchedSider || siderRaw) {
+              const operatorName = matchedSider?.name || siderRaw || 'OPERATOR';
+              const operatorToken = matchedSider?.tNo || siderRaw || '—';
+              const operatorPhoto = matchedSider?.photoUrl;
+              const estRounds = gpsActual > 0 ? Math.min(60, Math.max(10, Math.round((gpsActual / 6) * 60))) : 0;
+              const estTaps = estRounds;
+
+              return {
+                deviceId: devId,
+                side,
+                operatorName,
+                operatorToken,
+                operatorPhoto,
+                isAssigned: true,
+                tapsCount: estTaps,
+                rounds: estRounds,
+                startTimeIso: null,
+                endTimeIso: null,
+                lastTapTime: isLive ? '' : 'Completed Shift',
+                lastTapTimestamp: 0,
+                metric: null
+              };
+            }
+
             return {
               deviceId: devId,
               side,
@@ -650,7 +786,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           if (earliestStart && latestEnd) {
             activityWindow = `${formatTimeAmPm(earliestStart)} – ${formatTimeAmPm(latestEnd)}`;
           } else {
-            activityWindow = liveWindowLabel;
+            activityWindow = targetWindowLabel;
           }
         }
 
@@ -821,8 +957,8 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           emRight,
           emAvg,
           activityWindow,
-          liveShiftNum,
-          liveShiftName,
+          liveShiftNum: targetShiftNum,
+          liveShiftName: targetShiftName,
           lastTapTime,
           isBestPerformer
         });
@@ -842,16 +978,30 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
     } finally {
       if (!isSilent) setIsLoading(false);
     }
-  }, [report, machines, workers, rules, settings, selectedShed]);
+  }, [
+    isLive,
+    selectedDateIso,
+    selectedShift,
+    report,
+    history,
+    machines,
+    workers,
+    rules,
+    settings,
+    selectedShed,
+    getLiveShiftInfo,
+    toIsoDate
+  ]);
 
-  // Periodic 45s background live refresh
+  // Periodic 45s background live refresh (only active when isLive is true)
   useEffect(() => {
     loadSlideData(false);
+    if (!isLive) return;
     const interval = setInterval(() => {
       loadSlideData(true);
     }, 45000);
     return () => clearInterval(interval);
-  }, [loadSlideData]);
+  }, [loadSlideData, isLive]);
 
   // Slide Rotation Timer
   useEffect(() => {
@@ -919,27 +1069,73 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
   return (
     <div className="w-full min-h-[85vh] bg-slate-100/90 rounded-3xl p-4 sm:p-6 lg:p-8 flex flex-col space-y-4">
-      {/* 1. TOP CONTROLS & LIVE ROTATION HEADER (Clean White Bar) */}
+      {/* 1. TOP CONTROLS & ROTATION HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-6 py-3.5 rounded-2xl border border-slate-200 shadow-md">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-widest text-emerald-700">
-              LIVE TV TELEMETRY (1-MIN REFRESH)
-            </span>
-          </div>
-          <span className="text-slate-300">•</span>
+        {/* Left Side: Machine Number and Shift Information / Selectors */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Machine Numbers */}
           <span className="text-xs font-black uppercase tracking-wider text-slate-800">
             MACHINE {currentIndex + 1} OF {slides.length} ({currentSlide.frameNo}{currentSlide.rfMachineNo ? ` · ${currentSlide.rfMachineNo}` : ''})
           </span>
+
           <span className="text-slate-300">•</span>
-          <span className="text-[11px] font-bold text-slate-500 uppercase">
-            LIVE {currentSlide.liveShiftName} ({currentSlide.activityWindow})
-          </span>
+
+          {/* Shift Display / Selector */}
+          {isLive ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                CURRENT SHIFT {currentSlide.liveShiftNum}
+              </span>
+              <span className="text-[11px] font-bold text-slate-500 uppercase">
+                ({currentSlide.activityWindow && currentSlide.activityWindow !== '0' ? currentSlide.activityWindow : 'LIVE'})
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 px-2">Shift:</span>
+              {[1, 2, 3].map(sNum => (
+                <button
+                  key={sNum}
+                  type="button"
+                  onClick={() => handleSelectShift(sNum)}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-black uppercase transition-all cursor-pointer",
+                    currentSlide.liveShiftNum === sNum
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                  )}
+                >
+                  Shift {sNum}
+                </button>
+              ))}
+              <span className="text-[11px] font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                {toCanonicalDate(selectedDateIso)}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Slide Controls & Timer */}
+        {/* Right Side: LIVE Button, Timer & Rotation Controls */}
         <div className="flex items-center gap-3 self-end sm:self-auto">
+          {/* LIVE Button */}
+          <button
+            type="button"
+            onClick={handleToggleLive}
+            className={cn(
+              "flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer shadow-xs",
+              isLive
+                ? "bg-emerald-600 text-white border border-emerald-500 shadow-emerald-500/20 hover:bg-emerald-700 active:scale-95"
+                : "bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200 hover:text-emerald-700 active:scale-95"
+            )}
+            title={isLive ? "Live Telemetry Active (Click to pause live)" : "Click to return to Live Telemetry"}
+          >
+            <span className={cn(
+              "w-2.5 h-2.5 rounded-full inline-block",
+              isLive ? "bg-white animate-pulse" : "bg-slate-400"
+            )} />
+            <span>LIVE</span>
+          </button>
+
           {/* Progress Timer */}
           <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 text-xs font-mono font-bold">
             <Clock size={13} className="text-emerald-600" />
@@ -1144,9 +1340,12 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
                     <span className="text-sm font-black uppercase tracking-wider text-slate-400">NO PHOTO</span>
                   </div>
                 )}
-                {/* Live Shift Active Badge */}
-                <div className="absolute top-4 right-4 px-3.5 py-1.5 rounded-full bg-emerald-500 text-white text-xs font-black uppercase tracking-wider shadow-lg flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                {/* Shift Badge */}
+                <div className={cn(
+                  "absolute top-4 right-4 px-3.5 py-1.5 rounded-full text-white text-xs font-black uppercase tracking-wider shadow-lg flex items-center gap-1.5",
+                  isLive ? "bg-emerald-500" : "bg-slate-700"
+                )}>
+                  {isLive && <span className="w-2 h-2 rounded-full bg-white animate-ping" />}
                   {currentSlide.liveShiftName}
                 </div>
               </div>
