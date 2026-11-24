@@ -19,6 +19,7 @@ import { MachineAssignment } from '@/components/MachineAssignment';
 import { IncentiveMaster } from '@/components/IncentiveMaster';
 import { RunningCountIncentives } from '@/components/RunningCountIncentives';
 import { IncentiveLedgerReport } from '@/components/IncentiveLedgerReport';
+import { AssignmentAudit } from '@/components/AssignmentAudit';
 import { SiderMonthlyPerformance } from '@/components/SiderMonthlyPerformance';
 import { AiMonthlyGrid } from '@/components/AiMonthlyGrid';
 import { AiMonthAbstract } from '@/components/AiMonthAbstract';
@@ -2224,6 +2225,7 @@ export default function Home() {
     { id: 'daily-incentive', icon: Coins, label: 'Daily Incentive' },
     { id: 'daily-incentive-machine', icon: Grid3X3, label: 'Daily Incentive - Machine Wise' },
     { id: 'assignments', icon: UserCheck, label: 'Assignments' },
+    { id: 'assignment-audit', icon: AlertTriangle, label: 'Assignment Audit' },
     { id: 'reports', icon: TrendingUp, label: 'Daily Statement' },
     { id: 'month-view', icon: Calendar, label: 'Monthly Incentive' },
     { id: 'month-abstract', icon: BarChart3, label: 'Monthly Abstract' },
@@ -2516,6 +2518,22 @@ export default function Home() {
             onChangeReportDate={changeReportDate}
             isSupervisorMode={isSupervisorMode}
             shed={selectedShed}
+          />
+        );
+
+      case 'assignment-audit':
+        return (
+          <AssignmentAudit
+            history={reportHistory}
+            workers={workers}
+            currentShed={selectedShed}
+            onSelectShed={(s) => setSelectedShed(s as Shed)}
+            initialMonth={selectedMonth}
+            initialYear={selectedYear}
+            onEditDate={(date) => {
+              handleTopDateChange(date);
+              setActiveTab('assignments');
+            }}
           />
         );
 

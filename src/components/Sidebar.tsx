@@ -36,6 +36,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'all-data', label: 'All Data Master Table', icon: Table },
       { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
+      { id: 'assignment-audit', label: 'Assignment Audit', icon: AlertTriangle },
       { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
       { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
     ]
@@ -57,6 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'monthly-count-gpss', label: 'Monthly Count GPSS', icon: FileSpreadsheet },
       { id: 'month-view', label: 'Monthly Incentive Grid', icon: Calendar },
+      { id: 'month-abstract', label: 'Monthly Abstract', icon: BarChart3 },
       { id: 'incentive-ledger-report', label: 'Incentive Ledger & Abstract', icon: FileText },
       { id: 'sider-monthly-performance', label: 'Sider Monthly Performance', icon: FileText },
       { id: 'operator-em-format', label: 'Operator EM Format', icon: FileText },

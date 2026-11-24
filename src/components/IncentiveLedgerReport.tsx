@@ -28,7 +28,7 @@ interface LedgerEntry {
 
 export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ history, workers, rules, onEditDate, machineEm, initialMonth, initialYear }) => {
   // Navigation between the sub-views
-  const [activeSubTab, setActiveSubTab] = useState<'individual' | 'consolidated' | 'duplicates' | 'monthlyProduction' | 'machineWiseProduction'>('individual');
+  const [activeSubTab, setActiveSubTab] = useState<'individual' | 'consolidated' | 'monthlyProduction' | 'machineWiseProduction'>('individual');
 
   // Printing all reports state
   const [isPrintingAll, setIsPrintingAll] = useState<boolean>(false);
@@ -1413,18 +1413,6 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
         >
           <Database size={15} /> Machine Monthly Report
         </button>
-        <button
-          onClick={() => setActiveSubTab('duplicates')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
-            activeSubTab === 'duplicates'
-              ? 'bg-white text-rose-800 shadow-sm border border-rose-100'
-              : 'text-stone-500 hover:text-rose-600'
-          }`}
-        >
-          <span className="relative text-center">
-            ⚠️ Duplicate Assignment Audit Ledger
-          </span>
-        </button>
       </div>
 
       {activeSubTab === 'individual' ? (
@@ -2410,142 +2398,6 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           </div>
         </div>
       ) : null}
-
-      {activeSubTab === 'duplicates' && (
-        <div className="space-y-6">
-          {/* Date Range Selection Filter */}
-          <div className="flex flex-col sm:flex-row sm:items-end gap-6 bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm no-print">
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-xl">
-              {/* From Date */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">From Date</label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
-                  onChange={e => setFromDate(e.target.value)}
-                  className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
-                />
-              </div>
-
-              {/* To Date */}
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-stone-400 mb-2">To Date</label>
-                <input
-                  type="date"
-                  value={toDate}
-                  onClick={(e) => { try { (e.currentTarget as any).showPicker?.(); } catch {} }}
-                  onChange={e => setToDate(e.target.value)}
-                  className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-stone-800 font-bold outline-none focus:border-stone-900 transition-colors text-sm cursor-pointer"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-3xl border-2 border-stone-900/10 p-8 shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-              <div>
-                <h3 className="text-xl font-black text-stone-900 uppercase tracking-tight">Duplicate Assignment Audit Ledger</h3>
-                <p className="text-[11px] text-stone-400 font-bold uppercase tracking-widest leading-none mt-1.5 no-print">
-                  Separate report highlighting double-allocated workers for selected date range
-                </p>
-                <p className="text-xs font-black text-stone-800 uppercase tracking-wider mt-1.5 hidden print:block">
-                  Audit Period: {fromDate ? fromDate.split('-').reverse().join('/') : 'All'} to {toDate ? toDate.split('-').reverse().join('/') : 'All'}
-                </p>
-                <p className="text-[10px] text-rose-800 font-black uppercase tracking-wider mt-2.5 bg-rose-50 border border-rose-100/50 rounded-lg px-2.5 py-1 w-fit no-print flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                  Audit Range: {fromDate ? fromDate.split('-').reverse().join('/') : 'All'} - {toDate ? toDate.split('-').reverse().join('/') : 'All'}
-                </p>
-              </div>
-              <div className="flex items-center gap-3 no-print">
-                <button
-                  onClick={() => {
-                    const headers = [["S. NO", "Date", "Ticket No", "Worker Name", "Conflict Details"]];
-                    const rows = duplicateAllocations.map((d, i) => [
-                      i + 1,
-                      d.date,
-                      d.tNo,
-                      d.workerName,
-                      d.allotments.map((det: any) => `Shift ${det.shift}: ${det.detail}`).join(' | ')
-                    ]);
-                    const wb = XLSX.utils.book_new();
-                    const ws = XLSX.utils.aoa_to_sheet([...headers, ...rows]);
-                    XLSX.utils.book_append_sheet(wb, ws, "Duplicate Assignments");
-                    XLSX.writeFile(wb, `Duplicate_Assignments_Report_${fromDate}_to_${toDate}.xlsx`);
-                  }}
-                  className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-emerald-800 shadow-sm transition-all cursor-pointer animate-in fade-in"
-                >
-                  <Download size={14} /> Export Report
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-stone-800 shadow-sm transition-all cursor-pointer"
-                >
-                  <Printer size={14} /> Print Report
-                </button>
-              </div>
-            </div>
-
-            {duplicateAllocations.length > 0 ? (
-              <div className="overflow-x-auto rounded-2xl border-2 border-stone-900/10">
-                <table className="w-full text-center border-collapse">
-                  <thead>
-                    <tr className="bg-stone-50 border-b border-stone-900/10 h-14">
-                      <th className="px-6 text-xs font-black text-stone-500 uppercase tracking-wider text-left w-20">S. NO</th>
-                      <th className="px-6 text-xs font-black text-stone-500 uppercase tracking-wider text-left w-36">Date</th>
-                      <th className="px-6 text-xs font-black text-stone-500 uppercase tracking-wider text-left w-36">Ticket No</th>
-                      <th className="px-6 text-xs font-black text-stone-500 uppercase tracking-wider text-left">Worker Name</th>
-                      <th className="px-6 text-xs font-black text-stone-500 uppercase tracking-wider text-left">Duplicate Allocation Details</th>
-                      {onEditDate && <th className="px-6 text-xs font-black text-stone-500 uppercase tracking-wider text-center no-print w-36">Action</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {duplicateAllocations.map((dup, idx) => (
-                      <tr key={`${dup.date}-${dup.workerId}-${idx}`} className="bg-red-50/40 hover:bg-red-100/40 transition-colors h-14">
-                        <td className="px-6 text-xs text-stone-400 font-bold text-left">{idx + 1}</td>
-                        <td className="px-6 text-sm font-black text-stone-900 text-left font-mono">{dup.date}</td>
-                        <td className="px-6 text-sm font-black text-emerald-800 text-left font-mono">{dup.tNo}</td>
-                        <td className="px-6 text-sm font-black text-stone-850 text-left uppercase">{dup.workerName}</td>
-                        <td className="px-6 text-xs text-left py-4">
-                          <div className="flex flex-wrap gap-2">
-                            {dup.allotments.map((detail: any, dIdx: number) => (
-                              <span 
-                                key={dIdx} 
-                                className="px-2.5 py-1 bg-red-100 border border-red-200 text-red-900 rounded-lg font-black text-[10px] uppercase tracking-wide flex items-center gap-1.5"
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse"></span>
-                                Shift {detail.shift}: {detail.detail}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        {onEditDate && (
-                          <td className="px-6 text-center py-4 no-print">
-                            <button
-                              onClick={() => onEditDate(dup.date)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-sm"
-                            >
-                              Edit Assignment <ArrowUpRight size={12} className="text-emerald-400" />
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-16 bg-stone-50 border border-dashed border-stone-200 rounded-2xl">
-                <div className="w-12 h-12 bg-emerald-100 border border-emerald-200 text-emerald-700 flex items-center justify-center rounded-full mx-auto mb-3">
-                  <Database size={18} />
-                </div>
-                <h4 className="text-sm font-black text-stone-800 uppercase tracking-wider">Perfect Allocation Database</h4>
-                <p className="text-[10px] text-stone-400 font-bold uppercase mt-1">No duplicate worker assignments found for the selected date range!</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
       </div>
 
       {/* PRINT-ALL OVERLAY (ON-SCREEN INDICATION ONLY) */}
