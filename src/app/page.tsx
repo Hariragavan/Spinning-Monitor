@@ -2765,6 +2765,8 @@ export default function Home() {
             machineEm={machineEm}
             initialMonth={selectedMonth}
             initialYear={selectedYear}
+            frozenMonths={frozenMonths}
+            onToggleFreezeMonth={handleToggleFreezeMonth}
             onEditDate={(date) => {
               handleTopDateChange(date);
               setActiveTab('assignments');

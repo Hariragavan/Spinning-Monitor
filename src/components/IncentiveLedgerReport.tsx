@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry, MachineEmData } from '../types';
+import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry, MachineEmData, FrozenMonthRecord } from '../types';
 import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
-import { Coins, Calendar, User, Search, Printer, FileText, ChevronRight, Download, Users, ArrowUpRight, BarChart3, Database } from 'lucide-react';
+import { Coins, Calendar, User, Search, Printer, FileText, ChevronRight, Download, Users, ArrowUpRight, BarChart3, Database, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
+import { MonthAbstract } from './MonthAbstract';
 
 interface IncentiveLedgerReportProps {
   history: DailyReport[];
@@ -13,6 +14,8 @@ interface IncentiveLedgerReportProps {
   machineEm?: MachineEmData;
   initialMonth?: number;
   initialYear?: number;
+  frozenMonths?: Record<string, FrozenMonthRecord>;
+  onToggleFreezeMonth?: (month: number, year: number) => void;
 }
 
 interface LedgerEntry {
@@ -26,9 +29,19 @@ interface LedgerEntry {
   em?: number;
 }
 
-export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ history, workers, rules, onEditDate, machineEm, initialMonth, initialYear }) => {
+export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ 
+  history, 
+  workers, 
+  rules, 
+  onEditDate, 
+  machineEm, 
+  initialMonth, 
+  initialYear,
+  frozenMonths,
+  onToggleFreezeMonth 
+}) => {
   // Navigation between the sub-views
-  const [activeSubTab, setActiveSubTab] = useState<'individual' | 'consolidated' | 'monthlyProduction' | 'machineWiseProduction'>('individual');
+  const [activeSubTab, setActiveSubTab] = useState<'individual' | 'consolidated' | 'monthlyProduction' | 'machineWiseProduction' | 'monthlyIncentiveAbstract'>('individual');
 
   // Printing all reports state
   const [isPrintingAll, setIsPrintingAll] = useState<boolean>(false);
@@ -1372,7 +1385,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       <div className={(isPrintingAll || isPrintingAbstract) ? "print:hidden" : ""}>
         {/* Sub-tab selection menu */}
-      <div className="flex bg-stone-100 p-1.5 rounded-2xl no-print max-w-4xl">
+      <div className="flex bg-stone-100 p-1.5 rounded-2xl no-print max-w-5xl">
         <button
           onClick={() => setActiveSubTab('individual')}
           className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
@@ -1412,6 +1425,16 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           }`}
         >
           <Database size={15} /> Machine Monthly Report
+        </button>
+        <button
+          onClick={() => setActiveSubTab('monthlyIncentiveAbstract')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3.5 text-[10px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all cursor-pointer ${
+            activeSubTab === 'monthlyIncentiveAbstract'
+              ? 'bg-white text-stone-900 shadow-sm'
+              : 'text-stone-500 hover:text-stone-900'
+          }`}
+        >
+          <Trophy size={15} /> Monthly Incentive Abstract
         </button>
       </div>
 
@@ -2398,6 +2421,20 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ hi
           </div>
         </div>
       ) : null}
+
+      {activeSubTab === 'monthlyIncentiveAbstract' && (
+        <div className="space-y-6">
+          <MonthAbstract
+            history={history}
+            workers={workers}
+            rules={rules}
+            month={selectedMonth}
+            year={selectedYear}
+            frozenMonths={frozenMonths}
+            onToggleFreezeMonth={onToggleFreezeMonth}
+          />
+        </div>
+      )}
       </div>
 
       {/* PRINT-ALL OVERLAY (ON-SCREEN INDICATION ONLY) */}
