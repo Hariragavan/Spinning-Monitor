@@ -136,7 +136,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   }, [allWorkers, workers, activeShedTab]);
 
   const [activeSubTab, setActiveSubTab] = useState<'grid' | 'individual' | 'abstract' | 'operator-monthly-em' | 'daily-em-report'>(
-    appIsTvMode ? 'operator-monthly-em' : 'grid'
+    'operator-monthly-em'
   );
 
   // Grid / Monthly select state
@@ -1222,15 +1222,28 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
   const exportOperatorMonthlyToExcel = () => {
     if (operatorEmGridData.length === 0) return;
     
-    const headers = ['TNo', 'Sider Name', ...calendarDates];
+    const headers = ['TNo', 'Sider Name', ...calendarDates, 'Avg EM'];
     const dataRows = operatorEmGridData.map(row => {
       const r: any[] = [row.worker?.tNo || '-', String(row.worker?.name || '').toUpperCase()];
       calendarDates.forEach(dateStr => {
         const val = row.dateValues[dateStr];
         r.push(val !== null ? val : '');
       });
+      r.push(row.averageEm !== null ? row.averageEm : '');
       return r;
     });
+
+    // Average EM footer summary row
+    const avgRow: any[] = ['Average EM', ''];
+    calendarDates.forEach(dateStr => {
+      const validVals = operatorEmGridData.map(d => d.dateValues[dateStr]).filter((v): v is number => v !== null && v !== undefined);
+      const dayAvg = validVals.length > 0 ? (validVals.reduce((a, b) => a + b, 0) / validVals.length) : null;
+      avgRow.push(dayAvg !== null ? Number(dayAvg.toFixed(2)) : '');
+    });
+    const validAvgs = operatorEmGridData.map(d => d.averageEm).filter((v): v is number => v !== null && v !== undefined);
+    const overallAvg = validAvgs.length > 0 ? (validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length) : null;
+    avgRow.push(overallAvg !== null ? Number(overallAvg.toFixed(2)) : '');
+    dataRows.push(avgRow);
     
     const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
     const wb = XLSX.utils.book_new();
@@ -1645,8 +1658,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
       dataRows.push(row);
     });
 
-    // Row 9: Grand Total
-    const rTotal: any[] = ['Grand Total'];
+    // Row 9: Average EM
+    const rTotal: any[] = ['Average EM'];
     selectedMonthDates.forEach(date => {
       shifts.forEach(shift => {
         const avg = calculateColAverage(date, shift);
@@ -2101,11 +2114,11 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                         })
                       )}
 
-                      {/* Grand Total Row */}
+                      {/* Average EM Row */}
                       {machines.length > 0 && (
                         <tr className="bg-stone-100/50 font-bold border-t-2 border-stone-200 text-stone-900">
                           <td className="p-4 font-bold uppercase tracking-wider text-[10px] text-stone-850 border-r border-stone-200">
-                            Grand Total
+                            Average EM
                           </td>
                           {selectedMonthDates.map(date => (
                             <React.Fragment key={`total-${date}`}>
@@ -2525,6 +2538,29 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="bg-stone-100 font-bold border-t-2 border-stone-200 text-stone-900">
+                        <td colSpan={2} className="p-3 text-left font-black uppercase tracking-wider text-[11px] text-stone-800 border border-stone-200">
+                          Average EM
+                        </td>
+                        {calendarDates.map(dateStr => {
+                          const validVals = filteredOperatorGridData.map(d => d.dateValues[dateStr]).filter((v): v is number => v !== null && v !== undefined);
+                          const dayAvg = validVals.length > 0 ? (validVals.reduce((a, b) => a + b, 0) / validVals.length) : null;
+                          return (
+                            <td key={`avg-${dateStr}`} className="p-1 font-mono font-extrabold text-[12px] text-stone-850 border border-stone-200 text-center bg-stone-50">
+                              {dayAvg !== null ? dayAvg.toFixed(1) : '-'}
+                            </td>
+                          );
+                        })}
+                        <td className="p-3 font-mono font-black text-emerald-800 border border-stone-200 bg-emerald-100/50">
+                          {(() => {
+                            const validAvgs = filteredOperatorGridData.map(d => d.averageEm).filter((v): v is number => v !== null && v !== undefined);
+                            const overallAvg = validAvgs.length > 0 ? (validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length) : null;
+                            return overallAvg !== null ? overallAvg.toFixed(2) : '-';
+                          })()}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
@@ -2662,7 +2698,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                       Total Machine Duties: <strong className="font-mono text-stone-900 ml-1">{dailyEmRows.length}</strong>
                     </span>
                     <span className="px-4 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 shadow-2xs">
-                      Selected Date Total Average EM: <strong className="font-mono text-emerald-700 text-sm ml-1.5">{(dailyEmRows.reduce((sum, r) => sum + (r.em || 0), 0) / dailyEmRows.length).toFixed(2)} min</strong>
+                      Selected Date Average EM: <strong className="font-mono text-emerald-700 text-sm ml-1.5">{(dailyEmRows.reduce((sum, r) => sum + (r.em || 0), 0) / dailyEmRows.length).toFixed(2)} min</strong>
                     </span>
                   </div>
                 )}
@@ -2946,16 +2982,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
                         : (activeEmDetail.emTotal > 0 ? (activeEmDetail.emTotal / 2) : 0)).toFixed(2)}
                       <span className="text-sm font-normal text-emerald-100 ml-1.5">min</span>
                     </div>
-                    <div className="text-xs text-emerald-100 font-medium">
-                      Total: {activeEmDetail.emTotal.toFixed(2)} min
-                    </div>
                   </div>
-                </div>
-
-                {/* Total Machine EM Breakdown */}
-                <div className="bg-stone-50 border border-stone-200 p-3.5 rounded-2xl text-stone-800 flex items-center justify-between">
-                  <span className="text-xs font-bold text-stone-600 uppercase tracking-wider">Total Combined EM</span>
-                  <span className="font-mono text-base font-black text-stone-900">{activeEmDetail.emTotal.toFixed(2)} min</span>
                 </div>
               </>
             )}
