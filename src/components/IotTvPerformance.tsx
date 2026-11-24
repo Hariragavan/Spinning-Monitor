@@ -1035,12 +1035,77 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
 
   if (isLoading) {
     return (
-      <div className="min-h-[75vh] flex flex-col items-center justify-center bg-white border-2 border-slate-200 text-stone-900 rounded-3xl p-10 shadow-lg">
-        <Activity size={44} className="text-emerald-500 animate-spin mb-4" />
-        <h3 className="text-xl font-black uppercase tracking-wider text-stone-800">
+      <div className="min-h-[75vh] flex flex-col items-center justify-center bg-white border-2 border-slate-200 text-stone-900 rounded-3xl p-10 shadow-lg relative overflow-hidden">
+        {/* Ambient background glow */}
+        <div className="absolute w-72 h-72 bg-emerald-100/40 rounded-full blur-3xl pointer-events-none -top-10 -left-10" />
+        <div className="absolute w-72 h-72 bg-teal-100/30 rounded-full blur-3xl pointer-events-none -bottom-10 -right-10" />
+
+        {/* Bouncing Ball Animation Container */}
+        <div className="relative flex flex-col items-center justify-center mb-6 z-10">
+          {/* Main Bouncing Ball with squash & stretch and dynamic shadow */}
+          <div className="relative w-28 h-32 flex flex-col items-center justify-end">
+            <motion.div
+              animate={{
+                y: [0, -60, 0],
+                scaleY: [0.75, 1.18, 0.75],
+                scaleX: [1.28, 0.88, 1.28]
+              }}
+              transition={{
+                duration: 0.65,
+                repeat: Infinity,
+                ease: ["easeOut", "easeIn"]
+              }}
+              className="w-14 h-14 rounded-full bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 shadow-xl shadow-emerald-500/40 relative z-10 flex items-center justify-center cursor-default select-none"
+            >
+              {/* Ball 3D glossy highlight */}
+              <div className="absolute top-2 left-3 w-4 h-2.5 rounded-full bg-white/70 rotate-[-25deg] blur-[0.5px]" />
+              <Activity size={20} className="text-white/85" />
+            </motion.div>
+
+            {/* Synchronized floor shadow */}
+            <motion.div
+              animate={{
+                scale: [1.35, 0.45, 1.35],
+                opacity: [0.6, 0.15, 0.6]
+              }}
+              transition={{
+                duration: 0.65,
+                repeat: Infinity,
+                ease: ["easeOut", "easeIn"]
+              }}
+              className="w-12 h-3 rounded-full bg-emerald-950/20 blur-[3px] mt-1"
+            />
+          </div>
+
+          {/* Staggered 3-Ball Bouncing Wave */}
+          <div className="flex items-center gap-2.5 mt-4">
+            {[0, 1, 2].map(i => (
+              <motion.div
+                key={i}
+                animate={{
+                  y: [0, -14, 0],
+                  scale: [1, 1.15, 1]
+                }}
+                transition={{
+                  duration: 0.55,
+                  repeat: Infinity,
+                  delay: i * 0.15,
+                  ease: "easeInOut"
+                }}
+                className={cn(
+                  "w-3 h-3 rounded-full shadow-xs",
+                  i === 0 ? "bg-emerald-500 shadow-emerald-500/30" :
+                  i === 1 ? "bg-teal-500 shadow-teal-500/30" : "bg-emerald-600 shadow-emerald-600/30"
+                )}
+              />
+            ))}
+          </div>
+        </div>
+
+        <h3 className="text-xl font-black uppercase tracking-wider text-stone-800 z-10">
           Syncing Live Shift Telemetry...
         </h3>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-slate-500 mt-1 z-10">
           Loading assigned machines, rounds &amp; device taps for the live shift
         </p>
       </div>
