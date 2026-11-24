@@ -3,7 +3,7 @@ import {
   LayoutDashboard, FileUp, Settings, TrendingUp, Users, Coins, Trophy,
   Gauge, Monitor, BarChart3, Calendar, Database, Grid3X3, Wrench, UserCheck,
   FileText, Star, AlertTriangle, Search, Table, Menu, ArrowLeft, Layers, Activity,
-  FileSpreadsheet, Cpu, Clock, ChevronDown, ChevronRight, Radio, MessageSquare
+  FileSpreadsheet, Cpu, Clock, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -47,8 +47,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'iot-machine-dashboard', label: 'Machine Dashboard', icon: Cpu, badge: 'Live' },
       { id: 'iot-daily-production', label: 'Daily Production', icon: Layers },
       { id: 'iot-employee-dashboard', label: 'Employee Dashboard', icon: Users },
-      { id: 'iot-employee-mapping', label: 'Employee RFID Mapping', icon: Radio },
-      { id: 'iot-telegram', label: 'Telegram Notifications', icon: MessageSquare },
       { id: 'iot-reports', label: 'Reports (5)', icon: BarChart3 },
       { id: 'iot-maintenance', label: 'Maintenance Calendar', icon: Calendar },
       { id: 'iot-configuration', label: 'Configuration', icon: Settings },
