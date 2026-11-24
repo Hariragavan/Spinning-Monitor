@@ -142,7 +142,8 @@ export async function GET(req: NextRequest) {
       const tapInfo = deviceLastTapMap.get(devId);
       if (tapInfo) {
         const diffMinutes = Math.floor((now - new Date(tapInfo.lastTapTime).getTime()) / 60000);
-        const isActive = diffMinutes >= 0 && diffMinutes <= 10;
+        // Allow for minor device clock skew (up to 15 min ahead) and <= 10 min idle
+        const isActive = diffMinutes >= -15 && diffMinutes <= 10;
         return {
           deviceId: devId,
           status: isActive ? 'ACTIVE' : 'INACTIVE',
@@ -177,7 +178,8 @@ export async function GET(req: NextRequest) {
 
       const diffMinutes = Math.floor((now - new Date(tapInfo.lastTapTime).getTime()) / 60000);
       // "show when the tap detected in the device, othervice show inactive when tap is started and not taped until 10 min show inactive"
-      const isCurrentlyActive = diffMinutes >= 0 && diffMinutes <= 10;
+      // Allow for minor hardware clock skew (up to 15 min ahead) and <= 10 min idle
+      const isCurrentlyActive = diffMinutes >= -15 && diffMinutes <= 10;
 
       const employeeName = mapped?.employeeName || mapped?.name || tapInfo.detectedEmployeeName || `RFID ${cardId}`;
       const tNo = mapped?.tNo || (employeeName.match(/\((\d+)\)/)?.[1] || null);
