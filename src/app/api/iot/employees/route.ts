@@ -8,103 +8,216 @@ export const revalidate = 0;
 /**
  * API route for IoT Employee RFID Mapping
  * Supports:
- * - GET: List all mapped employees, assigned devices, unmapped recent RFID cards, and summary stats
- * - POST: Upsert single employee mapping OR bulk import from JSON (matching employee-names.json format)
- * - DELETE: Delete employee mapping and remove device assignments
+ * - GET: List only available RFID cards that are tapped on hardware devices (IOT_D1, IOT_D2...)
+ *        Active when tap is <= 10 minutes ago, otherwise Inactive.
+ *        Excludes un-tapped / phantom cards ("if not taped and not device is detected so not recorded").
+ * - POST: Upsert employee mapping (no manual hardware device assignment required)
+ * - DELETE: Delete employee mapping
  */
+
+function extractRealDevice(act: any): string | null {
+  const m = String(act.machineId || '').trim().toUpperCase();
+  const d = String(act.deviceId || '').trim().toUpperCase();
+
+  // "iot_m1,2.. is not the device, iot_d1,d2 is the device"
+  // Look for IOT_D... or D1/D2
+  if (m.startsWith('IOT_D') || /^D\d+$/i.test(m)) {
+    return m.startsWith('IOT_') ? m : `IOT_${m}`;
+  }
+  if (d.startsWith('IOT_D') || /^D\d+$/i.test(d)) {
+    return d.startsWith('IOT_') ? d : `IOT_${d}`;
+  }
+
+  // If machineId or deviceId is non-empty and does NOT start with IOT_M
+  if (m && !m.startsWith('IOT_M')) return m;
+  if (d && !d.startsWith('IOT_M')) return d;
+
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
     const db = await getIotDb();
     const { searchParams } = new URL(req.url);
     const search = (searchParams.get('search') || '').trim().toLowerCase();
+    const now = Date.now();
 
-    // 1. Fetch all employees from iot_employees
-    const employees = await db
+    // 1. Fetch mapped employees from iot_employees
+    const mappedEmployees = await db
       .collection(IOT_COLLECTIONS.EMPLOYEES)
       .find({})
-      .sort({ updatedAt: -1, employeeName: 1, employeeId: 1 })
+      .sort({ updatedAt: -1, employeeName: 1 })
       .toArray();
 
-    // 2. Fetch all devices to get real-time device assignments
-    const devices = await db
-      .collection(IOT_COLLECTIONS.DEVICES)
-      .find({})
-      .toArray();
-
-    // Build map of employeeId -> assigned devices
-    const deviceMap = new Map<string, Array<{ deviceId: string; machineId?: string; side?: string }>>();
-    for (const d of devices) {
-      const empId = d.assignedEmployeeId || d.employeeId;
-      if (empId) {
-        const idStr = String(empId);
-        const list = deviceMap.get(idStr) || [];
-        list.push({
-          deviceId: String(d.deviceId),
-          machineId: d.machineId ? String(d.machineId) : undefined,
-          side: d.side ? String(d.side) : undefined
-        });
-        deviceMap.set(idStr, list);
-      }
+    const mappedMap = new Map<string, any>();
+    for (const e of mappedEmployees) {
+      if (e.employeeId) mappedMap.set(String(e.employeeId).trim(), e);
     }
 
-    // 3. Find recent RFID cards seen in employee activities / card taps
+    // 2. Fetch recent employee activities / card taps
     const recentActivities = await db
       .collection(IOT_COLLECTIONS.EMPLOYEE_ACTIVITIES)
       .find({ employeeId: { $exists: true, $nin: [null, ''] } })
-      .sort({ activityAt: -1, tapTime: -1, timestamp: -1 })
-      .limit(300)
+      .sort({ tapTime: -1, activityAt: -1, recordedAt: -1, timestamp: -1 })
+      .limit(3000)
       .toArray();
 
-    const mappedIdSet = new Set(employees.map(e => String(e.employeeId).trim()));
-    const unmappedCardSet = new Set<string>();
-    const lastSeenMap = new Map<string, string | Date>();
+    // Group activities by RFID card (employeeId)
+    const tappedInfoByCard = new Map<string, {
+      lastTapTime: string;
+      lastDevice: string;
+      detectedDevices: Set<string>;
+      tapsCount: number;
+      lastShift?: number;
+      lastShiftDate?: string;
+      detectedEmployeeName?: string;
+    }>();
+
+    // Group activities by real device (e.g. IOT_D1, IOT_D2)
+    const deviceLastTapMap = new Map<string, {
+      lastTapTime: string;
+      employeeId: string;
+      employeeName: string;
+      shift?: number;
+      shiftDate?: string;
+    }>();
+
+    // Default devices guaranteed to exist
+    const knownDevices = new Set<string>(['IOT_D1', 'IOT_D2']);
 
     for (const act of recentActivities) {
-      const id = String(act.employeeId || '').trim();
-      if (!id) continue;
-      const seenTime = act.activityAt || act.tapTime || act.timestamp || act.createdAt;
-      if (seenTime && (!lastSeenMap.has(id) || new Date(seenTime) > new Date(lastSeenMap.get(id)!))) {
-        lastSeenMap.set(id, seenTime);
+      const cardId = String(act.employeeId || '').trim();
+      if (!cardId) continue;
+
+      const realDev = extractRealDevice(act);
+      // "if not taped and not device is detected so not recorded"
+      if (!realDev) continue;
+
+      knownDevices.add(realDev);
+
+      const rawTime = act.tapTime || act.activityAt || act.recordedAt || act.timestamp || act.createdAt;
+      if (!rawTime) continue;
+
+      const tapTimeStr = new Date(rawTime).toISOString();
+      const tapTimeMs = new Date(rawTime).getTime();
+
+      // Update card taps telemetry
+      if (!tappedInfoByCard.has(cardId)) {
+        tappedInfoByCard.set(cardId, {
+          lastTapTime: tapTimeStr,
+          lastDevice: realDev,
+          detectedDevices: new Set([realDev]),
+          tapsCount: 1,
+          lastShift: act.shift,
+          lastShiftDate: act.shiftDate,
+          detectedEmployeeName: act.employeeName
+        });
+      } else {
+        const info = tappedInfoByCard.get(cardId)!;
+        info.tapsCount += 1;
+        info.detectedDevices.add(realDev);
+        if (tapTimeMs > new Date(info.lastTapTime).getTime()) {
+          info.lastTapTime = tapTimeStr;
+          info.lastDevice = realDev;
+          info.lastShift = act.shift;
+          info.lastShiftDate = act.shiftDate;
+          if (act.employeeName) info.detectedEmployeeName = act.employeeName;
+        }
       }
-      if (!mappedIdSet.has(id)) {
-        unmappedCardSet.add(id);
+
+      // Update device last tap telemetry
+      if (!deviceLastTapMap.has(realDev) || tapTimeMs > new Date(deviceLastTapMap.get(realDev)!.lastTapTime).getTime()) {
+        deviceLastTapMap.set(realDev, {
+          lastTapTime: tapTimeStr,
+          employeeId: cardId,
+          employeeName: act.employeeName || cardId,
+          shift: act.shift,
+          shiftDate: act.shiftDate
+        });
       }
     }
 
-    // Enrich employees with assigned device list and last seen
-    const enrichedEmployees = employees.map(e => {
-      const idStr = String(e.employeeId);
-      const assignedDevices = deviceMap.get(idStr) || [];
-      const assignedDeviceIds = (e.assignedDeviceIds && e.assignedDeviceIds.length > 0)
-        ? e.assignedDeviceIds
-        : assignedDevices.map(d => d.deviceId);
+    // Build device status summary: Active if tapped within 10 min, otherwise Inactive
+    const devicesList = Array.from(knownDevices).map(devId => {
+      const tapInfo = deviceLastTapMap.get(devId);
+      if (tapInfo) {
+        const diffMinutes = Math.floor((now - new Date(tapInfo.lastTapTime).getTime()) / 60000);
+        const isActive = diffMinutes >= 0 && diffMinutes <= 10;
+        return {
+          deviceId: devId,
+          status: isActive ? 'ACTIVE' : 'INACTIVE',
+          lastTapTime: tapInfo.lastTapTime,
+          diffMinutes,
+          lastEmployeeId: tapInfo.employeeId,
+          lastEmployeeName: tapInfo.employeeName,
+          shift: tapInfo.shift,
+          shiftDate: tapInfo.shiftDate
+        };
+      }
+      return {
+        deviceId: devId,
+        status: 'INACTIVE',
+        lastTapTime: null,
+        diffMinutes: null,
+        lastEmployeeId: null,
+        lastEmployeeName: null,
+        shift: null,
+        shiftDate: null
+      };
+    }).sort((a, b) => a.deviceId.localeCompare(b.deviceId));
+
+    // Build available taped RFID records (ONLY RFIDs that have been tapped in devices)
+    const unmappedCards: string[] = [];
+    const availableTapedRecords = Array.from(tappedInfoByCard.entries()).map(([cardId, tapInfo]) => {
+      const mapped = mappedMap.get(cardId);
+      const isRegistered = !!mapped;
+      if (!isRegistered) {
+        unmappedCards.push(cardId);
+      }
+
+      const diffMinutes = Math.floor((now - new Date(tapInfo.lastTapTime).getTime()) / 60000);
+      // "show when the tap detected in the device, othervice show inactive when tap is started and not taped until 10 min show inactive"
+      const isCurrentlyActive = diffMinutes >= 0 && diffMinutes <= 10;
+
+      const employeeName = mapped?.employeeName || mapped?.name || tapInfo.detectedEmployeeName || `RFID ${cardId}`;
+      const tNo = mapped?.tNo || (employeeName.match(/\((\d+)\)/)?.[1] || null);
+      const department = mapped?.department || 'Sider';
 
       return {
-        _id: e._id,
-        employeeId: idStr,
-        employeeName: e.employeeName || e.name || idStr,
-        name: e.name || e.employeeName || idStr,
-        department: e.department || 'Sider',
-        tNo: e.tNo || (e.employeeName ? (e.employeeName.match(/\((\d+)\)/)?.[1] || null) : null),
-        active: e.active !== false,
-        assignedDeviceIds,
-        assignedDevices,
-        lastSeen: e.lastSeen || lastSeenMap.get(idStr) || null,
-        lastLoginAt: e.lastLoginAt || null,
-        loginStatus: e.loginStatus || 'LOGGED_OUT',
-        updatedAt: e.updatedAt || e.createdAt || null
+        _id: mapped?._id,
+        employeeId: cardId,
+        employeeName,
+        name: employeeName,
+        department,
+        tNo,
+        active: mapped ? mapped.active !== false : true,
+        isRegistered,
+        // Automatically detected devices from API per completed shift
+        assignedDeviceIds: Array.from(tapInfo.detectedDevices),
+        detectedDevices: Array.from(tapInfo.detectedDevices),
+        lastDevice: tapInfo.lastDevice,
+        lastTapTime: tapInfo.lastTapTime,
+        tapsCount: tapInfo.tapsCount,
+        lastShift: tapInfo.lastShift,
+        lastShiftDate: tapInfo.lastShiftDate,
+        tapAgeMinutes: diffMinutes,
+        tapStatus: isCurrentlyActive ? 'ACTIVE' : 'INACTIVE',
+        loginStatus: isCurrentlyActive ? 'LOGGED_IN' : 'LOGGED_OUT',
+        updatedAt: mapped?.updatedAt || tapInfo.lastTapTime
       };
     });
 
+    // Sort by latest tap time descending (most recently active card first)
+    availableTapedRecords.sort((a, b) => new Date(b.lastTapTime).getTime() - new Date(a.lastTapTime).getTime());
+
     // Filter if search query provided
-    let filtered = enrichedEmployees;
+    let filtered = availableTapedRecords;
     if (search) {
-      filtered = enrichedEmployees.filter(e =>
+      filtered = availableTapedRecords.filter(e =>
         e.employeeId.toLowerCase().includes(search) ||
-        (e.employeeName && e.employeeName.toLowerCase().includes(search)) ||
+        e.employeeName.toLowerCase().includes(search) ||
         (e.tNo && String(e.tNo).toLowerCase().includes(search)) ||
-        (e.department && e.department.toLowerCase().includes(search))
+        e.detectedDevices.some(d => d.toLowerCase().includes(search))
       );
     }
 
@@ -112,12 +225,15 @@ export async function GET(req: NextRequest) {
       success: true,
       count: filtered.length,
       data: filtered,
-      unmappedCards: Array.from(unmappedCardSet),
+      devices: devicesList,
+      unmappedCards,
       stats: {
-        total: enrichedEmployees.length,
-        active: enrichedEmployees.filter(e => e.active).length,
-        assignedToDevices: enrichedEmployees.filter(e => e.assignedDeviceIds.length > 0).length,
-        unmappedCount: unmappedCardSet.size
+        totalTaped: availableTapedRecords.length,
+        activeNow: availableTapedRecords.filter(e => e.tapStatus === 'ACTIVE').length,
+        inactive: availableTapedRecords.filter(e => e.tapStatus === 'INACTIVE').length,
+        registered: availableTapedRecords.filter(e => e.isRegistered).length,
+        unmapped: unmappedCards.length,
+        devicesCount: devicesList.length
       }
     }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
