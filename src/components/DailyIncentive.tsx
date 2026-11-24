@@ -152,7 +152,7 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
         }
 
         let incentive = 0;
-        if (matchedRule) {
+        if (matchedRule && Array.isArray(matchedRule.payouts)) {
           const sortedPayouts = [...matchedRule.payouts].sort(
             (a, b) => b.gpsThreshold - a.gpsThreshold,
           );

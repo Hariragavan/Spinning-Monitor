@@ -188,7 +188,7 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
     }
 
     let aiIncentive = 0;
-    if (matchedRule) {
+    if (matchedRule && Array.isArray(matchedRule.payouts)) {
       const sortedPayouts = [...matchedRule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
       const bestPayout = sortedPayouts.find(p => Math.round(avgUtility) >= p.gpsThreshold);
       aiIncentive = bestPayout ? bestPayout.amount : 0;

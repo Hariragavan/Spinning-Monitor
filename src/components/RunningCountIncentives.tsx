@@ -16,7 +16,7 @@ interface RunningCountIncentivesProps {
 }
 
 export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({ 
-  rules, 
+  rules = [], 
   isTvMode = false, 
   report,
   history = [],
@@ -26,8 +26,26 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
   const activeShed = currentShed || report?.shed || 'Shed 1';
   const [showOnlyActive, setShowOnlyActive] = React.useState(true);
 
+  // Helper to extract payouts array safely from a rule (supporting both .payouts and legacy .rules)
+  const getRulePayouts = (rule: any): any[] => {
+    if (!rule) return [];
+    if (Array.isArray(rule.payouts) && rule.payouts.length > 0) {
+      return rule.payouts;
+    }
+    if (Array.isArray(rule.rules) && rule.rules.length > 0) {
+      return rule.rules.map((r: any) => ({
+        gpsThreshold: r.minGps ?? r.gpsThreshold ?? 0,
+        amount: r.amount ?? 0,
+        fromGps: r.minGps ?? 0,
+        toGps: r.maxGps ?? 0
+      }));
+    }
+    return [];
+  };
+
   // Helper to get first numeric value from count string for sorting
-  const getNumericValue = (countStr: string) => {
+  const getNumericValue = (countStr: any) => {
+    if (!countStr || typeof countStr !== 'string') return 0;
     const match = countStr.match(/\d+/);
     return match ? parseInt(match[0], 10) : 0;
   };
@@ -61,7 +79,8 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
 
   // Filter rules strictly belonging to the active shed (or universal support rules)
   const shedRules = React.useMemo(() => {
-    return rules.filter(r => {
+    return (rules || []).filter(r => {
+      if (!r) return false;
       const s = r.shed || 'Shed 1';
       return s === activeShed || s === 'All Sheds';
     });
@@ -69,7 +88,8 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
 
   // Filter standard (non-AI Linkconer) rules based on active running counts in this shed
   const standardRules = React.useMemo(() => {
-    const allStd = shedRules.filter(r => {
+    const allStd = (shedRules || []).filter(r => {
+      if (!r) return false;
       const lower = (r.count || '').toLowerCase().trim();
       const dept = (r.department || 'Sider').toLowerCase().trim();
       if (['all', 'ai linkconer', 'gaiter', 'fitter'].includes(lower)) return false;
@@ -80,6 +100,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     
     // Find active counts that are standard (do not contain 'ai' or 'cone')
     const activeStdCounts = activeList.filter(ac => {
+      if (!ac) return false;
       const isAi = ac.toLowerCase().includes('ai') || ac.toLowerCase().includes('cone') || ac.toLowerCase().includes('link');
       return !isAi;
     });
@@ -88,7 +109,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
       // Return all standard rules for this shed, marked as active if running
       return allStd.map(rule => ({
         ...rule,
-        isActive: activeStdCounts.some(ac => isCountNameMatching(rule.count, ac)),
+        isActive: activeStdCounts.some(ac => isCountNameMatching(rule?.count || '', ac)),
         isPlaceholder: false
       }));
     }
@@ -96,12 +117,12 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     // Otherwise, filter to only active standard counts
     // 1. Matched standard rules for this shed
     const matched = allStd.filter(rule => 
-      activeStdCounts.some(ac => isCountNameMatching(rule.count, ac))
+      activeStdCounts.some(ac => isCountNameMatching(rule?.count || '', ac))
     ).map(rule => ({ ...rule, isActive: true, isPlaceholder: false }));
 
     // 2. Unmatched active standard counts (virtual placeholders for this shed)
     const missing = activeStdCounts.filter(ac => 
-      !allStd.some(rule => isCountNameMatching(rule.count, ac))
+      !allStd.some(rule => isCountNameMatching(rule?.count || '', ac))
     );
 
     const placeholders = missing.map(ac => ({
@@ -120,7 +141,8 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     // Process from end so latest/newest rule is preferred
     for (let i = matched.length - 1; i >= 0; i--) {
       const r = matched[i];
-      const norm = normalizeCountName(r.count);
+      if (!r) continue;
+      const norm = normalizeCountName(r.count || '');
       const key = `${norm}__${r.shed || activeShed}`;
       if (!seen.has(key)) {
         seen.add(key);
@@ -131,28 +153,36 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     return [...dedupMatched, ...placeholders];
   }, [shedRules, activeCountsOnMachines, showOnlyActive, activeShed]);
 
-  const sortedStandardRules = [...standardRules].sort((a, b) => getNumericValue(a.count) - getNumericValue(b.count));
+  const sortedStandardRules = React.useMemo(() => {
+    return [...standardRules].sort((a, b) => getNumericValue(a?.count) - getNumericValue(b?.count));
+  }, [standardRules]);
 
   // Define standard columns (INR payout amounts) dynamically from the active standard rules
   const payoutColumns = React.useMemo(() => {
-    const nonPlaceholderRules = sortedStandardRules.filter(r => !r.isPlaceholder);
+    const nonPlaceholderRules = sortedStandardRules.filter(r => !r?.isPlaceholder);
     if (nonPlaceholderRules.length > 0) {
-      return Array.from(new Set(nonPlaceholderRules.flatMap(r => r.payouts.map(p => p.amount)))).sort((a, b) => a - b);
+      const amounts = Array.from(new Set(
+        nonPlaceholderRules.flatMap(r => getRulePayouts(r).map(p => p?.amount).filter((amt): amt is number => typeof amt === 'number' && !isNaN(amt)))
+      )).sort((a, b) => a - b);
+      if (amounts.length > 0) return amounts;
     }
     return [80, 85, 95, 100, 110];
   }, [sortedStandardRules]);
 
   // AI Linkconer always uses the same rules statically (no count filtering)
   const sortedAiRules = React.useMemo(() => {
-    return rules
-      .filter(r => r.department === 'AI Linkconer' && ((r.shed || 'All Sheds') === activeShed || r.shed === 'All Sheds'))
-      .sort((a, b) => getNumericValue(a.count) - getNumericValue(b.count));
+    return (rules || [])
+      .filter(r => r && r.department === 'AI Linkconer' && ((r.shed || 'All Sheds') === activeShed || r.shed === 'All Sheds'))
+      .sort((a, b) => getNumericValue(a?.count) - getNumericValue(b?.count));
   }, [rules, activeShed]);
 
   // Define AI Linkconer columns dynamically from active AI rules
   const aiLinkconerPayoutColumns = React.useMemo(() => {
     if (sortedAiRules.length > 0) {
-      return Array.from(new Set(sortedAiRules.flatMap(r => r.payouts.map(p => p.amount)))).sort((a, b) => b - a);
+      const amounts = Array.from(new Set(
+        sortedAiRules.flatMap(r => getRulePayouts(r).map(p => p?.amount).filter((amt): amt is number => typeof amt === 'number' && !isNaN(amt)))
+      )).sort((a, b) => b - a);
+      if (amounts.length > 0) return amounts;
     }
     return [100, 90, 80];
   }, [sortedAiRules]);
@@ -160,9 +190,9 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
   // Helper to get GPS threshold for a static payout amount from a rule
   const getGpsThreshold = (rule: any, targetAmount: number) => {
     if (!rule || rule.isPlaceholder) return null;
-    // Find precise match for payout amount
-    const match = rule.payouts.find((p: any) => p.amount === targetAmount);
-    return match ? match.gpsThreshold : null;
+    const payouts = getRulePayouts(rule);
+    const match = payouts.find((p: any) => p && p.amount === targetAmount);
+    return match ? (match.gpsThreshold ?? match.fromGps ?? null) : null;
   };
 
   const handlePrint = () => {
@@ -415,9 +445,9 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
               </thead>
               <tbody>
                 {sortedAiRules.map((rule, idx) => {
-                  const displayCount = (rule.count && rule.count.toLowerCase() !== 'all') ? rule.count : 'AI LINKCONER';
+                  const displayCount = (rule?.count && typeof rule.count === 'string' && rule.count.toLowerCase() !== 'all') ? rule.count : 'AI LINKCONER';
                   return (
-                    <tr key={`ai-rule-${rule.count || 'ai'}-${idx}`} className="border-b last:border-b-0 border-purple-950/80 h-12 hover:bg-purple-50/20 transition-colors">
+                    <tr key={`ai-rule-${rule?.count || 'ai'}-${idx}`} className="border-b last:border-b-0 border-purple-950/80 h-12 hover:bg-purple-50/20 transition-colors">
                       {/* Count Name Column */}
                       <td className="px-3 py-2 text-xs md:text-sm font-black text-white border-r border-purple-950 bg-purple-900 sticky left-0 z-10 font-mono text-left uppercase">
                         <div className="flex flex-col gap-0.5">

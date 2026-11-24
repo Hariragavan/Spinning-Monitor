@@ -40,6 +40,56 @@ import { MonthlyCountGpss } from './MonthlyCountGpss';
 import { CalendarDatePicker } from './CalendarPickers';
 import { IotTvPerformance } from './IotTvPerformance';
 
+interface TvSlideErrorBoundaryProps {
+  children: React.ReactNode;
+  currentTitle?: string;
+}
+
+interface TvSlideErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class TvSlideErrorBoundary extends React.Component<TvSlideErrorBoundaryProps, TvSlideErrorBoundaryState> {
+  constructor(props: TvSlideErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("TV Slide Error in " + this.props.currentTitle + ":", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full min-h-[450px] flex flex-col items-center justify-center p-8 bg-stone-900/90 text-white rounded-3xl border-2 border-stone-800 text-center">
+          <div className="w-16 h-16 bg-amber-500/20 rounded-2xl flex items-center justify-center text-amber-400 mb-4">
+            <Activity size={32} />
+          </div>
+          <h3 className="text-xl font-black uppercase tracking-wider text-white mb-2">
+            Loading {this.props.currentTitle || 'TV View'}
+          </h3>
+          <p className="text-stone-400 text-sm max-w-md mb-4 font-mono">
+            Synchronizing data with production database. View will refresh on next rotation cycle.
+          </p>
+          <button 
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-4 py-2 bg-stone-800 hover:bg-stone-700 text-amber-400 text-xs font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+          >
+            Retry Slide
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export interface TvSubPageDef {
   id: string; // matches component routing key
   title: string;
@@ -1528,7 +1578,8 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
               transition={{ duration: 0.35, ease: 'easeOut' }}
               className="w-full"
             >
-              {(() => {
+              <TvSlideErrorBoundary currentTitle={currentSub?.title || currentMain?.title || 'Slide'}>
+                {(() => {
                 const subId = currentSub?.id?.startsWith('count-frames') ? 'count-frames' : (currentSub?.id || 'dashboard');
                 switch (subId) {
               case 'monthly-count-gpss':
@@ -1653,6 +1704,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                     history={history}
                     isTvMode={true}
                     onSelectDate={onSelectDate}
+                    currentShed={selectedShed}
                   />
                 );
 
@@ -2464,6 +2516,7 @@ export const TvDashboard: React.FC<TvDashboardProps> = ({
                 );
             }
           })()}
+              </TvSlideErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </div>

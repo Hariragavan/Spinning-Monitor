@@ -464,7 +464,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
         if (!matchedRule) {
           matchedRule = aiRules[0];
         }
-        if (matchedRule) {
+        if (matchedRule && Array.isArray(matchedRule.payouts)) {
           const sortedPayouts = [...matchedRule.payouts].sort((a, b) => b.gpsThreshold - a.gpsThreshold);
           const bestPayout = sortedPayouts.find(p => Math.round(avgUtility) >= p.gpsThreshold);
           incentive = bestPayout ? bestPayout.amount : 0;
