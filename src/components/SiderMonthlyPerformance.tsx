@@ -5,6 +5,7 @@ import { Calendar, User, Search, Printer, Coins, Tv, Monitor, ChevronRight, Acti
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { CalendarMonthPicker } from './CalendarPickers';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface SiderMonthlyPerformanceProps {
   history: DailyReport[];
@@ -329,6 +330,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
     <div className="bg-stone-50 min-h-screen text-stone-900 pb-16">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
           {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — SIDER MONTHLY PERFORMANCE CYCLES
         </h1>

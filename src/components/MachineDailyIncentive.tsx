@@ -3,6 +3,7 @@ import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift } from '../ty
 import { Coins, Printer, Calendar, ArrowRight, Zap, Target, Award, Download, FileSpreadsheet } from 'lucide-react';
 import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts, normalizeShed } from '../lib/utils';
 import * as XLSX from 'xlsx';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface MachineDailyIncentiveProps {
   report: DailyReport;
@@ -598,6 +599,7 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full px-2 mx-auto pb-12">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
           {(shed || report.shed || 'Shed 1').toUpperCase()} — MACHINE WISE DAILY INCENTIVE STATEMENT
         </h1>

@@ -6,6 +6,7 @@ import { motion } from 'motion/react';
 import { getMonthKey } from '../lib/frozenMonths';
 import { CalendarMonthPicker } from './CalendarPickers';
 import * as XLSX from 'xlsx';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface AiMonthAbstractProps {
   history: DailyReport[];
@@ -597,6 +598,7 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
           <div className="print-page-break p-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between mb-8 text-black bg-white">
             <div>
               <div className="text-center pb-2 border-b-2 border-black mb-3">
+                <PrintBrandHeader compact />
                 <h1 className="text-2xl font-black text-black uppercase tracking-tight">
                   {shedLabel} — AI Linkconer Monthly Incentive Abstract
                 </h1>
@@ -690,6 +692,7 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
               <div key={`ai-worker-${item.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
+                    <PrintBrandHeader compact />
                     <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">
                       {shedLabel} · WORKER WISE HISTORY
                     </span>

@@ -3,6 +3,7 @@ import { DailyReport, Sider, IncentiveRule, Shift } from '../types';
 import { Calendar, User, Printer, Coins, Tv, Monitor, ChevronRight, Activity, Award, Percent, TrendingUp } from 'lucide-react';
 import { parseUniversalDateParts, parseUniversalDate, cn } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface AiMonthlyPerformanceProps {
   history: DailyReport[];
@@ -300,6 +301,7 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
       )}
 
       <div className="hidden print-only mb-4 border-b-2 border-black pb-2 text-center">
+        <PrintBrandHeader compact />
         <h1 className="text-lg font-black uppercase tracking-tight text-black">
           {shedLabel} — AI LINKCONER OPERATOR MONTHLY PERFORMANCE STATEMENT
         </h1>
@@ -519,6 +521,7 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
               <div key={`print-worker-${workerItem.worker.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
+                    <PrintBrandHeader compact />
                     <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">
                       {shedLabel} · WORKER WISE HISTORY
                     </span>

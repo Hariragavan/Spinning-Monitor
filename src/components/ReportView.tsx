@@ -3,6 +3,7 @@ import { DailyReport, Shed, Shift } from '../types';
 import { cn, parseUniversalDateParts } from '../lib/utils';
 import { Printer, Download, FileSpreadsheet, Calendar, ChevronDown, Check, Building2, Layers } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 export interface ReportViewProps {
   report: DailyReport;
@@ -610,6 +611,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     )}>
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
           {(currentShed || report.shed || 'Shed 1').toUpperCase()} — SPINNING PRODUCTION REPORT
         </h1>

@@ -5,6 +5,7 @@ import { DailyReport, Sider, Shed } from '../types';
 import { cn, findDuplicatesInReport, parseUniversalDate, parseUniversalDateParts, normalizeShed } from '../lib/utils';
 import { AlertTriangle, Printer, Download, ArrowUpRight, Database, Calendar, Search, CheckCircle2, ShieldAlert } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface AssignmentAuditProps {
   history: DailyReport[];
@@ -161,6 +162,7 @@ export const AssignmentAudit: React.FC<AssignmentAuditProps> = ({
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-4 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black">
           {selectedShedTab.toUpperCase()} — DUPLICATE ASSIGNMENT &amp; CONFLICT AUDIT LEDGER
         </h1>

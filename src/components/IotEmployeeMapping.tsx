@@ -53,6 +53,8 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
   onRefreshWorkers
 }) => {
   const [employees, setEmployees] = useState<IotEmployeeRecord[]>([]);
+  const [fallbackWorkers, setFallbackWorkers] = useState<Sider[]>([]);
+  const effectiveWorkers = useMemo(() => (millWorkers && millWorkers.length > 0 ? millWorkers : fallbackWorkers), [millWorkers, fallbackWorkers]);
   const [registeredMappings, setRegisteredMappings] = useState<Array<{
     employeeId: string;
     employeeName: string;
@@ -154,6 +156,19 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!millWorkers || millWorkers.length === 0) {
+      fetch('/api/workers', { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(res => {
+          if (res?.success && Array.isArray(res.data)) {
+            setFallbackWorkers(res.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [millWorkers]);
+
   const copyToClipboard = (text: string) => {
     navigator.clipboard?.writeText(text);
     setCopiedId(text);
@@ -195,9 +210,9 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
 
     // Match worker in mill worker master
     const baseEmpName = (emp.employeeName || '').replace(/\([^)]*\)/g, '').trim().toLowerCase();
-    const matched = millWorkers.find(w =>
+    const matched = effectiveWorkers.find(w =>
       (emp as any).workerId && String(w.id) === String((emp as any).workerId)
-    ) || millWorkers.find(w =>
+    ) || effectiveWorkers.find(w =>
       (emp.tNo && String(w.tNo) === String(emp.tNo)) ||
       (w.name && baseEmpName && w.name.trim().toLowerCase() === baseEmpName)
     );
@@ -216,7 +231,7 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
       return;
     }
 
-    const chosenWorker = millWorkers.find(w => w.id === selectedMillWorkerId);
+    const chosenWorker = effectiveWorkers.find(w => w.id === selectedMillWorkerId);
     if (!chosenWorker) {
       setFormError('Please select an Operator from Worker Master');
       return;
@@ -830,8 +845,8 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
 
       {/* Add / Edit Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-lg w-full overflow-visible animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between p-5 border-b border-stone-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
@@ -917,7 +932,7 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
                     setSelectedMillWorkerId(workerId);
                     setFormError(null);
                   }}
-                  workers={millWorkers}
+                  workers={effectiveWorkers}
                   placeholder="Select operator by name or token no..."
                   disabledOptionReason={(w) => {
                     const rfid = getWorkerConflictingRfid(w, formCardId);

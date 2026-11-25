@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { cn, normalizeCountName, isCountNameMatching } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface RunningCountIncentivesProps {
   rules: IncentiveRule[];
@@ -228,6 +229,7 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
           {activeShed.toUpperCase()} — INCENTIVE AMOUNT MATRIX BASED IN GPS
         </h1>

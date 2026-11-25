@@ -6,6 +6,7 @@ import { motion } from 'motion/react';
 import { getMonthKey } from '../lib/frozenMonths';
 import * as XLSX from 'xlsx';
 import { CalendarMonthPicker } from './CalendarPickers';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface MonthlyGridProps {
   history: DailyReport[];
@@ -968,6 +969,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
           </div>
         )}
         <div className="hidden print-only w-full text-center border-b-2 border-black pb-1 mb-1">
+          <PrintBrandHeader compact />
           <h1 className="text-lg font-black uppercase tracking-tight text-black">{shedLabel} — SIDER INCENTIVE REPORT ({dataMonthDisplay})</h1>
         </div>
         <h2 className="text-lg print:hidden font-bold text-stone-900 border-b-2 border-stone-900 inline-block px-12 print:px-6">

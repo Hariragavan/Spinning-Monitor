@@ -321,14 +321,37 @@ export default function Home() {
   }, []);
 
   const [activeTab, setActiveTabState] = useState<string>("dashboard");
+  const activeTabRef = useRef<string>("dashboard");
+  activeTabRef.current = activeTab;
+
+  const [isAutoRefreshPaused, setIsAutoRefreshPaused] = useState<boolean>(false);
+  const isAutoRefreshPausedRef = useRef<boolean>(false);
+  const manualPinnedDateRef = useRef<string | null>(null);
+  const refreshAllDataRef = useRef<(options?: { isInitial?: boolean; silent?: boolean; preserveDate?: boolean }) => Promise<void>>(async () => {});
 
   const setActiveTab = useCallback((newTab: string) => {
+    const prevTab = activeTabRef.current;
+    activeTabRef.current = newTab;
     setActiveTabState(newTab);
+
     if (typeof window !== "undefined") {
       const newPath = newTab === "dashboard" ? "/" : "/" + newTab;
       if (window.location.pathname !== newPath) {
         window.history.pushState({ tab: newTab }, "", newPath + window.location.search);
       }
+    }
+
+    if (newTab !== prevTab) {
+      if (newTab === 'assignment') {
+        // Pause periodic background auto-refresh while editing on Allocation page
+        isAutoRefreshPausedRef.current = true;
+        setIsAutoRefreshPaused(true);
+      } else {
+        // Switching to any other page: resume auto-refresh and refresh immediately
+        isAutoRefreshPausedRef.current = false;
+        setIsAutoRefreshPaused(false);
+      }
+      refreshAllDataRef.current({ silent: true, preserveDate: true });
     }
   }, []);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -607,7 +630,7 @@ export default function Home() {
   const lastRefreshTimeRef = useRef(Date.now());
 
   // Master refresh function: Refetches all data across devices from the server database
-  const refreshAllData = useCallback(async (options: { isInitial?: boolean; silent?: boolean } = {}) => {
+  const refreshAllData = useCallback(async (options: { isInitial?: boolean; silent?: boolean; preserveDate?: boolean } = {}) => {
     try {
       if (!options.silent) {
         setIsRefreshing(true);
@@ -622,7 +645,7 @@ export default function Home() {
       setReportHistory(loadedHistory);
 
       const yesterdayStr = getYesterdayUniversalDate();
-      const currentSelectedDate = dailyReportRef.current?.date || yesterdayStr;
+      const currentSelectedDate = manualPinnedDateRef.current || dailyReportRef.current?.date || yesterdayStr;
       const currentShed = selectedShedRef.current || 'Shed 1';
 
       // Helper to find the lastly updated report with valid data
@@ -673,10 +696,10 @@ export default function Home() {
           })
           .sort((a, b) => (parseUniversalDate(b.date)?.getTime() || 0) - (parseUniversalDate(a.date)?.getTime() || 0))[0];
 
-        if (futureReport) {
-          // Future date data uploaded! Switch directly to this future date
+        // Only jump to newer/future dates automatically in TV Mode; keep manual date selection intact otherwise
+        if (isTv && !options.preserveDate && futureReport) {
           setDailyReport(ensureSixMachines(futureReport, currentShed));
-        } else if (isTv && latestReport && latestReport.date !== currentSelectedDate) {
+        } else if (isTv && !options.preserveDate && latestReport && latestReport.date !== currentSelectedDate) {
           setDailyReport(ensureSixMachines(latestReport, currentShed));
         } else {
           let updatedReport: DailyReport | null = null;
@@ -772,23 +795,29 @@ export default function Home() {
     }
   }, []);
 
-  // 5-Minute Auto-Refresh Timer for all data across devices
+  refreshAllDataRef.current = refreshAllData;
+
+  // 5-Minute Auto-Refresh Timer for all data across devices (paused while on Allocation or manual date selection)
   useEffect(() => {
     // 1. Initial Load
     refreshAllData({ isInitial: true });
 
+    const shouldPauseBackgroundSync = () =>
+      !isTvModeRef.current && (isAutoRefreshPausedRef.current || activeTabRef.current === 'assignment');
+
     // 2. 5-Minute Periodic Auto-Refresh (300,000 ms)
     const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     const intervalTimer = setInterval(() => {
-      refreshAllData({ silent: true });
+      if (shouldPauseBackgroundSync()) return;
+      refreshAllData({ silent: true, preserveDate: true });
     }, AUTO_REFRESH_INTERVAL_MS);
 
-    // 3. Fast-refresh on window focus / tab visibility change:
-    // If someone uploaded on another device and returns to this window, refresh automatically!
+    // 3. Fast-refresh on window focus / tab visibility change (unless paused on manual date or Allocation)
     const handleFocusOrVisible = () => {
+      if (shouldPauseBackgroundSync()) return;
       const now = Date.now();
       if (now - lastRefreshTimeRef.current > 20000) {
-        refreshAllData({ silent: true });
+        refreshAllData({ silent: true, preserveDate: true });
       }
     };
 
@@ -803,7 +832,8 @@ export default function Home() {
     // 4. Cross-tab instant synchronization via storage event
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'spinning_data_updated') {
-        refreshAllData({ silent: true });
+        if (shouldPauseBackgroundSync()) return;
+        refreshAllData({ silent: true, preserveDate: true });
       }
     };
     window.addEventListener('storage', handleStorageChange);
@@ -1437,14 +1467,31 @@ export default function Home() {
     }
   };
 
-  const handleTopDateChange = (newDate: string) => {
+  const handleTopDateChange = (newDate: string, options?: { resumeAutoRefresh?: boolean }) => {
     if (!newDate) return;
+    if (options?.resumeAutoRefresh) {
+      manualPinnedDateRef.current = null;
+      if (activeTabRef.current !== 'assignment') {
+        isAutoRefreshPausedRef.current = false;
+        setIsAutoRefreshPaused(false);
+      }
+    } else {
+      // Manual date selection: pause ongoing periodic auto-refresh, then instantly refresh this date's data
+      manualPinnedDateRef.current = newDate;
+      isAutoRefreshPausedRef.current = true;
+      setIsAutoRefreshPaused(true);
+    }
+
     const existing = currentShedHistory.find(r => r.date === newDate);
     if (existing) {
+      dailyReportRef.current = existing;
       setDailyReport(existing);
     } else {
       createBlankReport(newDate, true);
     }
+
+    // Immediately pull fresh server data for the chosen date (while preserving newDate)
+    refreshAllData({ silent: true, preserveDate: true });
   };
 
   // Auto-detect calendar day rollover at midnight: silently check for updates without advancing date to an empty tomorrow
@@ -1455,7 +1502,10 @@ export default function Home() {
       if (currentToday !== calendarDayRef.current) {
         console.log(`[Midnight Rollover] Calendar day changed from ${calendarDayRef.current} to ${currentToday}. Silently checking for newly uploaded data...`);
         calendarDayRef.current = currentToday;
-        refreshAllData({ silent: true });
+        if (!isTvModeRef.current && (isAutoRefreshPausedRef.current || activeTabRef.current === 'assignment')) {
+          return;
+        }
+        refreshAllData({ silent: true, preserveDate: true });
       }
     };
 
@@ -4065,24 +4115,44 @@ export default function Home() {
                       {mounted && activeDailyReport.date !== getYesterdayUniversalDate() && (
                         <button
                           type="button"
-                          onClick={() => handleTopDateChange(getYesterdayUniversalDate())}
+                          onClick={() => handleTopDateChange(getYesterdayUniversalDate(), { resumeAutoRefresh: true })}
                           className="px-2 py-1 text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-all shadow-2xs cursor-pointer hidden sm:inline-flex"
-                          title="Jump to Yesterday's Date"
+                          title="Jump to Today & Resume Auto-Refresh"
                         >
                           Today
                         </button>
                       )}
                     </div>
 
-                    {/* Auto Refresh Button (Symbol Only) */}
+                    {/* Auto Refresh Button (with Paused state indicator when manual date / Allocation active) */}
                     <button
                       type="button"
-                      onClick={() => refreshAllData()}
+                      onClick={() => {
+                        if (activeTab !== 'assignment') {
+                          isAutoRefreshPausedRef.current = false;
+                          setIsAutoRefreshPaused(false);
+                        }
+                        refreshAllData({ preserveDate: true });
+                      }}
                       disabled={isRefreshing}
-                      className="p-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl transition-all border border-stone-200 cursor-pointer shadow-2xs flex items-center justify-center"
-                      title="Auto-refreshes every 5 minutes. Click to refresh latest data immediately"
+                      className={cn(
+                        "px-2.5 py-2 rounded-xl transition-all border cursor-pointer shadow-2xs flex items-center justify-center gap-1.5",
+                        isAutoRefreshPaused
+                          ? "bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300"
+                          : "bg-stone-100 hover:bg-stone-200 text-stone-800 border-stone-200"
+                      )}
+                      title={
+                        isAutoRefreshPaused
+                          ? "Auto-refresh paused (manual date or Allocation edit). Click to refresh & resume"
+                          : "Auto-refreshes every 5 minutes. Click to refresh latest data immediately"
+                      }
                     >
-                      <RefreshCw size={15} className={cn("text-emerald-700 shrink-0", isRefreshing && "animate-spin")} />
+                      <RefreshCw size={15} className={cn(isAutoRefreshPaused ? "text-amber-700" : "text-emerald-700", "shrink-0", isRefreshing && "animate-spin")} />
+                      {isAutoRefreshPaused && (
+                        <span className="text-[9px] font-black uppercase tracking-wider hidden md:inline">
+                          Paused
+                        </span>
+                      )}
                     </button>
                   </>
                 )}
@@ -4091,6 +4161,9 @@ export default function Home() {
 
                 <button
                   onClick={() => {
+                    manualPinnedDateRef.current = null;
+                    isAutoRefreshPausedRef.current = false;
+                    setIsAutoRefreshPaused(false);
                     setIsTvMode(true);
                     try {
                       if (!document.fullscreenElement && document.documentElement.requestFullscreen) {

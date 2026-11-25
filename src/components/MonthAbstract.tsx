@@ -5,6 +5,7 @@ import { Printer, TrendingUp, Sparkles, ChevronRight, Download, Lock, Unlock } f
 import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { getMonthKey } from '../lib/frozenMonths';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface MonthAbstractProps {
   history: DailyReport[];
@@ -650,6 +651,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
 
       <div className="text-center mb-10 print:mb-3 relative flex flex-col items-center justify-center">
         <div className="hidden print-only mb-1.5 border-b-2 border-black pb-1.5 w-full">
+          <PrintBrandHeader compact />
           <h1 className="text-lg font-black uppercase tracking-widest text-black">{shedLabel} — MONTHLY INCENTIVE ABSTRACT ({reportMonthYear})</h1>
         </div>
         <h2 className="text-5xl print:hidden font-black uppercase tracking-tight">Monthly Incentive Abstract — {shedLabel} ({reportMonthYear})</h2>

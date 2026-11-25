@@ -5,6 +5,7 @@ import { Coins, Calendar, User, Search, Printer, FileText, ChevronRight, Downloa
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import { MonthAbstract } from './MonthAbstract';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface IncentiveLedgerReportProps {
   history: DailyReport[];
@@ -1735,6 +1736,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                   const shedName = (shed || history[0]?.shed || 'Shed 1').toUpperCase();
                   return (
                     <div className="hidden print:block text-center mb-1.5">
+                      <PrintBrandHeader compact />
                       <div className="border-2 border-black py-1 w-full text-center bg-stone-50">
                         <h1 className="text-base font-black text-black uppercase tracking-widest">
                           {shedName} — SIDER INCENTIVE STATEMENT
@@ -1886,6 +1888,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             <div className="space-y-8">
               {/* Report Header */}
               <div className="text-center pb-6 border-b-4 border-stone-950/15">
+                <PrintBrandHeader className="h-12 max-w-[260px] mb-2" />
                 <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">
                   {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Operator Incentive Abstract
                 </h1>
@@ -2096,7 +2099,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             <div className="space-y-8">
               {/* Report Header Layout */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-4 border-stone-950/15 gap-6">
-                <div>
+                <div className="flex items-center gap-4">
+                  <PrintBrandHeader className="mx-0 mb-0 h-11 max-w-[220px]" />
                   <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-900 uppercase">
                     {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Ringframe Production Report
                   </h2>
@@ -2279,7 +2283,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             <div className="space-y-8">
               {/* Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-4 border-stone-950/15 gap-6">
-                <div>
+                <div className="flex items-center gap-4">
+                  <PrintBrandHeader className="mx-0 mb-0 h-11 max-w-[220px]" />
                   <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-900 uppercase">
                     {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Ringframe Machine Wise Production Report
                   </h2>
@@ -2427,6 +2432,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           <div className="bg-white p-10 rounded-[3rem] border border-stone-200 shadow-sm relative overflow-hidden space-y-10">
             {/* Header for printing */}
             <div className="text-center pb-6 border-b-4 border-stone-950/15">
+              <PrintBrandHeader className="h-11 max-w-[240px] mb-2" />
               <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">Cross-Reference supporting statement</span>
               <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight font-sans">
                 {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Sider Duty &amp; Machine Allocation Register
@@ -2637,6 +2643,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           {abstractChunks.map((chunk, chunkIdx) => (
             <div key={`abstract-chunk-${chunkIdx}`} className="print-page-break p-3 border-2 border-black flex flex-col gap-3 mb-0 text-black bg-white" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
               <div className="text-center pb-2 border-b-2 border-black mb-2">
+                <PrintBrandHeader compact />
                 <h1 className="text-lg font-black text-black uppercase tracking-tight">
                   {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Operator Incentive Abstract
                 </h1>
@@ -2738,6 +2745,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             return (
               <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-3 border-2 border-black text-black bg-white flex flex-col gap-2 mb-0" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
                 <div className="text-center">
+                  <PrintBrandHeader compact />
                   <div className="border-2 border-black py-1 w-full text-center bg-stone-50">
                     <h1 className="text-base font-black text-black uppercase tracking-widest">
                       {shedName} — SIDER INCENTIVE STATEMENT

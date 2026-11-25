@@ -3,6 +3,7 @@ import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry } from '../ty
 import { Trophy, Star, Activity, Coins, Zap, Target, Calendar, Printer } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn, calculateIncentive, resolveWorker, getGaiterIncentive } from '../lib/utils';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface BestShiftProps {
   report: DailyReport;
@@ -604,6 +605,9 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
 
         {/* Heading Header */}
         <div className="text-center py-6 print:py-3 border-b-4 border-stone-950 uppercase tracking-tight">
+          <div className="hidden print-only mb-1">
+            <PrintBrandHeader compact />
+          </div>
           <h1 className="text-4xl md:text-6xl print:text-3xl font-black text-stone-900 tracking-tighter">
             {shedLabel} — Best Shift Of the Day
           </h1>

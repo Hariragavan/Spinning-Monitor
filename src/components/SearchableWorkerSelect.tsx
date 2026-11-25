@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, X, Check, User, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { Search, X, Check, ChevronDown } from 'lucide-react';
 import { Sider } from '../types';
 import { cn } from '../lib/utils';
 
@@ -32,7 +33,15 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [popoverCoords, setPopoverCoords] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    openUpward: boolean;
+    maxHeight: number;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Selected worker resolution
@@ -46,30 +55,68 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
     ) || null;
   }, [value, workers]);
 
-  // Click outside to close
+  // Compute viewport-safe coordinates so dropdown is never clipped by modal overflow-hidden
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const viewportH = window.innerHeight;
+    const viewportW = window.innerWidth;
+    const spaceBelow = viewportH - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const openUpward = spaceBelow < 240 && spaceAbove > spaceBelow;
+    const maxListH = Math.max(160, Math.min(280, (openUpward ? spaceAbove : spaceBelow) - 56));
+    const width = Math.min(rect.width, viewportW - 16);
+    const left = Math.max(8, Math.min(rect.left, viewportW - width - 8));
+
+    setPopoverCoords({
+      top: openUpward ? rect.top - 6 : rect.bottom + 6,
+      left,
+      width,
+      openUpward,
+      maxHeight: maxListH
+    });
+  }, []);
+
+  // Click outside to close (respecting portaled popoverRef)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        (!popoverRef.current || !popoverRef.current.contains(target))
+      ) {
         setIsOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
     if (isOpen) {
+      updatePosition();
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('resize', updatePosition);
+      window.addEventListener('scroll', updatePosition, true);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [isOpen]);
+  }, [isOpen, updatePosition]);
 
   // Auto-focus search input when opened
   useEffect(() => {
     if (isOpen) {
       setSearch('');
       setTimeout(() => {
+        updatePosition();
         searchInputRef.current?.focus();
-      }, 50);
+      }, 30);
     }
-  }, [isOpen]);
+  }, [isOpen, updatePosition]);
 
   // Split and filter workers based on search and priority department
   const { priorityMatches, otherMatches, totalMatches } = useMemo(() => {
@@ -153,9 +200,20 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
         </span>
       </button>
 
-      {/* Dropdown Popover */}
-      {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-stone-200 rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      {/* Dropdown Popover (portaled to body so ancestor overflow-hidden never clips it) */}
+      {isOpen && typeof document !== 'undefined' && popoverCoords && createPortal(
+        <div
+          ref={popoverRef}
+          style={{
+            position: 'fixed',
+            top: popoverCoords.top,
+            left: popoverCoords.left,
+            width: popoverCoords.width,
+            transform: popoverCoords.openUpward ? 'translateY(-100%)' : undefined,
+            zIndex: 9999
+          }}
+          className="bg-white border border-stone-200 rounded-2xl shadow-2xl overflow-hidden"
+        >
           {/* Search Input Box */}
           <div className="p-2 border-b border-stone-100 bg-stone-50/70">
             <div className="relative">
@@ -172,7 +230,7 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 cursor-pointer"
                 >
                   <X size={12} />
                 </button>
@@ -181,7 +239,10 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
           </div>
 
           {/* List Options */}
-          <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+          <div
+            style={{ maxHeight: `${popoverCoords.maxHeight}px` }}
+            className="overflow-y-auto p-1.5 space-y-1"
+          >
             {/* Unassigned / Clear Option */}
             <button
               type="button"
@@ -307,7 +368,8 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

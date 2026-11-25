@@ -5,6 +5,7 @@ import { cn, parseUniversalDateParts } from '../lib/utils';
 import { getMonthKey } from '../lib/frozenMonths';
 import { CalendarMonthPicker } from './CalendarPickers';
 import * as XLSX from 'xlsx';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface AiMonthlyGridProps {
   history: DailyReport[];
@@ -424,6 +425,7 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
 
       {/* Print-Only Header */}
       <div className="hidden print:block text-center pb-2 border-b-2 border-black mb-3">
+        <PrintBrandHeader compact />
         <h1 className="text-xl font-black text-black uppercase tracking-tight">
           {shedLabel} — AI Cone Linkconer Monthly Grid Ledger
         </h1>

@@ -130,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside
       className={cn(
         "flex flex-col h-screen select-none transition-all duration-300 ease-in-out z-40 shrink-0 overflow-x-hidden bg-white text-stone-900 border-r border-stone-200/80 shadow-xs",
-        isCollapsed ? "w-[68px]" : "w-[245px]"
+        isCollapsed ? "w-[68px]" : "w-[252px]"
       )}
     >
       {/* Brand Header */}
@@ -165,15 +165,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Quick Search */}
       {!isCollapsed && (
-        <div className="px-2.5 pt-2 pb-1 shrink-0">
+        <div className="px-2 pt-2 pb-1 shrink-0">
           <div className="relative">
-            <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
             <input
               type="text"
               placeholder="Search views..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-stone-50 border border-stone-200/80 rounded-lg pl-6.5 pr-2 py-1 text-[10.5px] font-bold text-stone-700 placeholder-stone-400 outline-none focus:ring-1 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
+              className="w-full bg-stone-50 border border-stone-200/80 rounded-lg pl-7 pr-2 py-1.5 text-xs font-bold text-stone-700 placeholder-stone-400 outline-none focus:ring-1 focus:ring-emerald-500/30 focus:border-emerald-500 transition-all"
             />
           </div>
         </div>
@@ -181,7 +181,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Sections */}
       <nav className={cn(
-        "flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-2 py-1.5 space-y-1.5",
+        "flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-1.5 py-1.5 space-y-1.5",
         isCollapsed && "px-1.5 py-2 space-y-2"
       )}>
         {filteredSections.map((section, idx) => {
@@ -194,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => toggleSection(section.title)}
-                  className="w-full px-2 py-1 text-[9.5px] font-black uppercase tracking-wider text-stone-400 hover:text-stone-800 hover:bg-stone-100/70 rounded-md flex items-center justify-between transition-colors cursor-pointer group select-none"
+                  className="w-full px-1.5 py-1 text-[10.5px] font-black uppercase tracking-wider text-stone-400 hover:text-stone-800 hover:bg-stone-100/70 rounded-md flex items-center justify-between transition-colors cursor-pointer group select-none"
                   title={isOpen ? `Collapse ${section.title}` : `Expand ${section.title}`}
                 >
                   <div className="flex items-center gap-1.5 truncate">
@@ -204,13 +204,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
                   <div className="flex items-center gap-1 text-stone-400 group-hover:text-stone-600 shrink-0">
-                    <span className="text-[8.5px] font-bold text-stone-400 tabular-nums">
+                    <span className="text-[9.5px] font-bold text-stone-400 tabular-nums">
                       {section.items.length}
                     </span>
                     {isOpen ? (
-                      <ChevronDown size={12} className="transition-transform duration-200" />
+                      <ChevronDown size={13} className="transition-transform duration-200" />
                     ) : (
-                      <ChevronRight size={12} className="transition-transform duration-200" />
+                      <ChevronRight size={13} className="transition-transform duration-200" />
                     )}
                   </div>
                 </button>
@@ -220,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* Items List (Collapsible in expanded sidebar, visible as icons in collapsed sidebar) */}
               {(isOpen || isCollapsed) && (
-                <div className={cn("space-y-0.5", !isCollapsed && "pl-0.5")}>
+                <div className="space-y-0.5">
                   {section.items.map((item) => {
                     const isActive = activeTab === item.id ||
                       (item.id === 'all-data' && activeTab === 'count-summary') ||
@@ -265,29 +265,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         key={item.id}
                         onClick={() => setActiveTab(item.id)}
                         className={cn(
-                          "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all duration-150 group text-left cursor-pointer",
+                          "w-full flex items-center gap-2 pl-2 pr-1.5 py-1.5 rounded-lg transition-all duration-150 group text-left cursor-pointer",
                           isActive
-                            ? "bg-stone-900 text-stone-50 shadow-xs font-black translate-x-0.5"
-                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-100/80 font-bold text-[11.5px]"
+                            ? "bg-stone-900 text-stone-50 shadow-xs font-black"
+                            : "text-stone-600 hover:text-stone-900 hover:bg-stone-100/80 font-bold"
                         )}
                       >
                         {item.emoji ? (
                           <span className="text-sm shrink-0 leading-none">{item.emoji}</span>
                         ) : (
                           <Icon
-                            size={14}
+                            size={16}
                             className={cn(
                               "shrink-0 transition-colors",
                               isActive ? "text-emerald-400" : "text-stone-400 group-hover:text-stone-800"
                             )}
                           />
                         )}
-                        <span className="text-[11.5px] truncate leading-tight flex-1">
+                        <span className="text-[13px] truncate leading-snug flex-1">
                           {item.label}
                         </span>
                         {item.badge && (
                           <span className={cn(
-                            "text-[7.5px] font-black uppercase px-1.5 py-0.5 rounded tracking-wide",
+                            "text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded tracking-wide shrink-0",
                             isActive ? "bg-emerald-500/20 text-emerald-300" : "bg-emerald-100 text-emerald-800"
                           )}>
                             {item.badge}
@@ -338,17 +338,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onSeedData();
                   }
                 }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 cursor-pointer font-black text-[10px] uppercase tracking-wider"
+                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-all text-left text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 cursor-pointer font-black text-[11px] uppercase tracking-wider"
               >
-                <Database size={13} className="shrink-0 text-amber-600" />
+                <Database size={14} className="shrink-0 text-amber-600" />
                 <span>Import History</span>
               </button>
 
               <button
                 onClick={onTvMode}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all text-left text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs cursor-pointer font-black text-[10px] uppercase tracking-wider"
+                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg transition-all text-left text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 shadow-2xs cursor-pointer font-black text-[11px] uppercase tracking-wider"
               >
-                <Monitor size={13} className="shrink-0 text-emerald-600" />
+                <Monitor size={14} className="shrink-0 text-emerald-600" />
                 <span>Play TV Mode</span>
               </button>
             </>
@@ -371,12 +371,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               AD
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-[10.5px] font-black text-stone-900 truncate uppercase leading-tight">
+              <p className="text-xs font-black text-stone-900 truncate uppercase leading-tight">
                 Direct Access
               </p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-emerald-500" />
-                <p className="text-[8.5px] font-bold uppercase tracking-wider leading-none text-emerald-700">
+                <p className="text-[9.5px] font-bold uppercase tracking-wider leading-none text-emerald-700">
                   Database Connected
                 </p>
               </div>

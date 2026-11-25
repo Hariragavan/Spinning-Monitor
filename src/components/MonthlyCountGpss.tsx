@@ -8,6 +8,7 @@ import {
   Calendar, Layers, Download, Check, X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface MonthlyCountGpssProps {
   history: DailyReport[];
@@ -370,6 +371,7 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
     )}>
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-4 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
           {(selectedShed || 'Shed 1').toUpperCase()} — RUNNING COUNT GPSS MONTHLY REPORT
         </h1>

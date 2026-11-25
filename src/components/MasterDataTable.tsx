@@ -9,6 +9,7 @@ import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, isC
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
 import { CountSummary } from './CountSummary';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface MasterDataTableProps {
   report: DailyReport;
@@ -414,6 +415,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
     )}>
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
+        <PrintBrandHeader />
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
           {(shed || report.shed || 'Shed 1').toUpperCase()} — MILL MASTER PRODUCTION &amp; INCENTIVE STATEMENT
         </h1>

@@ -3,6 +3,7 @@ import { DailyReport, Sider, Shift, ProductionEntry } from '../types';
 import { Calendar, User, Printer, Tv, Monitor, ChevronRight, Activity, Wrench, Edit3, Save, X, Percent, AlertCircle } from 'lucide-react';
 import { parseUniversalDateParts, parseUniversalDate, cn } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
+import { PrintBrandHeader } from './PrintBrandHeader';
 
 interface FitterMonthlyPerformanceProps {
   history: DailyReport[];
@@ -315,6 +316,7 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
       )}
 
       <div className="hidden print-only mb-4 border-b-2 border-black pb-2 text-center">
+        <PrintBrandHeader compact />
         <h1 className="text-lg font-black uppercase tracking-tight text-black">
           {shedLabel} — FITTER MONTHLY PERFORMANCE RECORD
         </h1>
@@ -590,6 +592,7 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
           <div className="print-page-break p-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between mb-8 text-black bg-white">
             <div>
               <div className="text-center pb-2 border-b-2 border-black mb-3">
+                <PrintBrandHeader compact />
                 <h1 className="text-2xl font-black text-black uppercase tracking-tight">
                   {shedLabel} — Fitter Monthly Performance Abstract
                 </h1>
@@ -699,6 +702,7 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
               <div key={`print-fitter-${fitter.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
+                    <PrintBrandHeader compact />
                     <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">
                       {shedLabel} · FITTER WISE HISTORY
                     </span>
