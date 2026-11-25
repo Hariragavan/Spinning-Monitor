@@ -469,7 +469,8 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
 
   const exportToCSV = () => {
     const safeDate = (report.date || 'live').replace(/[/\\?%*:|"<>]/g, '-');
-    let csv = `KTTM SPINNING MILLS - DAILY INCENTIVE STATEMENT (${report.date})\n\n`;
+    const activeShedName = (shed || report.shed || 'Shed 1').toUpperCase();
+    let csv = `SCM SPINNING MILLS - ${activeShedName} - DAILY INCENTIVE STATEMENT (${report.date})\n\n`;
     csv += `S.No,T.No,Operator Name,Machine,Shift,Count,GPSS,Incentive (INR)\n`;
     
     let sNo = 1;
@@ -505,9 +506,11 @@ export const DailyIncentive: React.FC<DailyIncentiveProps> = ({
     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full px-2 mx-auto pb-12">
       {/* Printable Sheet Header (Only visible on paper / print preview) */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
-        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">KTTM SPINNING MILLS - UNIT 01</h1>
-        <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Daily Sider Incentive Statement</h2>
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {(shed || report.shed || 'Shed 1').toUpperCase()} — DAILY SIDER INCENTIVE STATEMENT
+        </h1>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{(shed || report.shed || 'Shed 1').toUpperCase()}</strong></span>
           <span>Date: <strong>{report.date}</strong></span>
           <span>Shift Summary: <strong>Shifts I, II, III</strong></span>
           <span>Total Daily Payout: <strong>₹{totalIncentive.toLocaleString()}</strong></span>

@@ -253,8 +253,19 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         ? '02:00 PM – 10:00 PM'
         : '10:00 PM – 06:00 AM';
 
-      // Direct employee metrics from Railway API for target date & shift:
+      // Local + Railway employee metrics for target date & shift (merges MongoDB RFID mapped names):
       const fetchRailwayEmployeeData = async (dStr: string, sName?: string) => {
+        try {
+          let localUrl = `/api/iot/dashboard/employee?date=${encodeURIComponent(dStr)}&_t=${Date.now()}`;
+          if (sName) localUrl += `&shiftName=${encodeURIComponent(sName)}`;
+          const localRes = await fetch(localUrl, { cache: 'no-store' });
+          if (localRes.ok) {
+            const localJson = await localRes.json();
+            if (Array.isArray(localJson?.data) && localJson.data.length > 0) {
+              return localJson.data;
+            }
+          }
+        } catch (_) {}
         try {
           let url = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
           if (sName) {
@@ -284,14 +295,32 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
       };
 
       // 2. Fetch live IoT devices, mappings, fresh settings, and live/historical machine telemetry
-      const [lightStatus, liveOverview, devices, iotEmployees, deviceMappings, freshSettingsRes] = await Promise.all([
+      const [lightStatus, liveOverview, devices, iotEmployees, rfidRes, deviceMappings, freshSettingsRes] = await Promise.all([
         isLive ? iotApi.getLightweightMachineStatus().catch(() => null) : Promise.resolve(null),
         iotApi.getSpinfoOverview({ shift: String(targetShiftNum), fromDate: primaryTargetDate }).catch(() => null),
         iotApi.getDevices().catch(() => [] as DeviceHealth[]),
         iotApi.getEmployees().catch(() => [] as Employee[]),
+        fetch(`/api/iot/employees?_t=${Date.now()}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
         iotApi.getMachineMappings().catch(() => [] as MachineMapping[]),
         fetch(`/api/settings?_t=${Date.now()}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null)
       ]);
+
+      // Build authoritative RFID Card ID -> Mapped Operator lookup across both registeredMappings & iotEmployees
+      const rfidMappedEmpMap = new Map<string, { employeeName: string; tNo?: string | null; workerId?: string | null }>();
+      for (const e of (iotEmployees || [])) {
+        if (e?.employeeId && e?.employeeName && e.employeeName !== e.employeeId) {
+          rfidMappedEmpMap.set(String(e.employeeId).trim(), { employeeName: e.employeeName });
+        }
+      }
+      for (const r of (rfidRes?.registeredMappings || [])) {
+        if (r?.employeeId && r?.employeeName) {
+          rfidMappedEmpMap.set(String(r.employeeId).trim(), {
+            employeeName: r.employeeName,
+            tNo: r.tNo,
+            workerId: r.workerId
+          });
+        }
+      }
 
       const effectiveSettings: SystemSettings = (freshSettingsRes && freshSettingsRes.data)
         ? freshSettingsRes.data
@@ -693,12 +722,13 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           }
 
           // If operator has tapped and initiated activation today:
-          let rawName = met?.employeeName || '';
           let rawId = met?.employeeId || '';
+          const mappedRfid = rawId ? rfidMappedEmpMap.get(String(rawId).trim()) : undefined;
+          let rawName = mappedRfid?.employeeName || met?.employeeName || '';
 
           // Parse Name(Token) format (e.g. "Mangal(33786)" -> Name: Mangal, Token: 33786)
           let extName = rawName ? String(rawName).trim() : '';
-          let extToken = rawId ? String(rawId).trim() : '';
+          let extToken = mappedRfid?.tNo ? String(mappedRfid.tNo).trim() : (rawId ? String(rawId).trim() : '');
           const match = extName.match(/^([^\(]+)\s*\(([0-9A-Za-z]+)\)$/);
           if (match) {
             extName = match[1].trim();
@@ -706,9 +736,13 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
           }
 
           // Match in Employee Master
-          const matched = resolveWorkerMaster(extToken) || resolveWorkerMaster(rawId) || resolveWorkerMaster(extName);
-          const operatorName = matched?.name || extName || (rawId ? `Operator #${rawId}` : 'OPERATOR');
-          const operatorToken = matched?.tNo || extToken || rawId || '—';
+          const matched =
+            (mappedRfid?.workerId ? workers.find(w => w.id === mappedRfid.workerId) : null) ||
+            resolveWorkerMaster(extToken) ||
+            resolveWorkerMaster(rawId) ||
+            resolveWorkerMaster(extName);
+          const operatorName = matched?.name || extName || (rawId ? `RFID ${rawId}` : 'OPERATOR');
+          const operatorToken = matched?.tNo || mappedRfid?.tNo || (extToken !== rawId ? extToken : '') || rawId || '—';
           const operatorPhoto = matched?.photoUrl;
 
           // Real Live Taps from Railway API

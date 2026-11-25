@@ -277,9 +277,20 @@ export const iotApi = {
     return this.getSpinfoOverview();
   },
 
-  // 2. Employees & Duty Tracking (https://iot-machine-backend.onrender.com/api)
+  // 2. Employees & Duty Tracking (Local Next.js API first so MongoDB RFID mappings always resolve)
   async getEmployees(): Promise<Employee[]> {
     const stored = getStored<Employee[]>('employees', []);
+    try {
+      const localRes = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
+        `/api/iot/master/employees?_t=${Date.now()}`,
+        { method: 'GET' }
+      );
+      if (localRes?.data && localRes.data.length > 0) {
+        setStored('employees', localRes.data);
+        return localRes.data;
+      }
+    } catch { }
+
     try {
       const res = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
         `${this.baseUrl}/master/employees`
@@ -290,12 +301,7 @@ export const iotApi = {
       }
     } catch { }
 
-    const localRes = await fetchWithFallback<{ success: boolean; data: Employee[] }>(
-      `/api/iot/master/employees`,
-      { method: 'GET' },
-      { success: true, data: stored }
-    );
-    return localRes.data || stored;
+    return stored;
   },
 
   async getEmployeePerformance(filter?: {
@@ -322,20 +328,21 @@ export const iotApi = {
     }
 
     try {
+      const localRes = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
+        `/api/iot/dashboard/employee?${params.toString()}`,
+        { method: 'GET' }
+      );
+      if (localRes?.data && localRes.data.length > 0) return localRes.data;
+    } catch { }
+
+    try {
       const res = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
         `${this.baseUrl}/dashboard/employee?${params.toString()}`
       );
       if (res?.data && res.data.length > 0) return res.data;
     } catch { }
 
-    const localRes = await fetchWithFallback<{ success: boolean; data: EmployeeMetric[] }>(
-      `/api/iot/dashboard/employee?${params.toString()}`,
-      { method: 'GET' },
-      { success: true, data: list }
-    );
-    if (localRes?.data && localRes.data.length > 0) return localRes.data;
-
-    return localRes?.data || [];
+    return list;
   },
 
   // 3. Machines & Mappings (https://iot-machine-backend.onrender.com/api)
@@ -835,31 +842,43 @@ export const iotApi = {
     if (filter?.shiftId) params.set('shiftId', filter.shiftId);
     if (filter?.machineId) params.set('machineId', filter.machineId);
     if (filter?.employeeId) params.set('employeeId', filter.employeeId);
+    params.set('_t', String(Date.now()));
+
+    const mapProdRows = (rows: any[]): ProductionReportRow[] => rows.map((r: any) => ({
+      entryId: r.entryId || r._id || '',
+      date: r.date || r.shiftDate || '',
+      shiftDate: r.shiftDate || r.date || '',
+      enteredAt: r.enteredAt || r.createdAt || '',
+      shiftId: r.shiftId || '',
+      shiftName: r.shiftName || '',
+      machineId: r.machineId || '',
+      machineName: r.machineName || r.machineId || '',
+      employeeId: r.employeeId || '',
+      employeeName: r.employeeName || '',
+      counts: r.counts ?? null,
+      speed: r.speed ?? null,
+      productionOutput: Number(r.productionOutput ?? 0),
+      wastePercent: r.wastePercent,
+      runtimeMinutes: r.runtimeMinutes,
+      targetOutput: r.targetOutput,
+      notes: r.notes ?? null
+    }));
+
+    try {
+      const localRes = await fetchWithFallback<{ success: boolean; data: any[] }>(
+        `/api/iot/production/report?${params.toString()}`
+      );
+      if (localRes?.data && localRes.data.length > 0) {
+        return mapProdRows(localRes.data);
+      }
+    } catch { }
 
     try {
       const res = await fetchWithFallback<{ success: boolean; data: any[] }>(
         `${this.baseUrl}/production/report?${params.toString()}`
       );
       if (res?.data) {
-        return res.data.map((r: any) => ({
-          entryId: r.entryId || r._id || '',
-          date: r.date || r.shiftDate || '',
-          shiftDate: r.shiftDate || r.date || '',
-          enteredAt: r.enteredAt || r.createdAt || '',
-          shiftId: r.shiftId || '',
-          shiftName: r.shiftName || '',
-          machineId: r.machineId || '',
-          machineName: r.machineName || r.machineId || '',
-          employeeId: r.employeeId || '',
-          employeeName: r.employeeName || '',
-          counts: r.counts ?? null,
-          speed: r.speed ?? null,
-          productionOutput: Number(r.productionOutput ?? 0),
-          wastePercent: r.wastePercent,
-          runtimeMinutes: r.runtimeMinutes,
-          targetOutput: r.targetOutput,
-          notes: r.notes ?? null
-        }));
+        return mapProdRows(res.data);
       }
     } catch { }
 
@@ -982,6 +1001,24 @@ export const iotApi = {
     };
 
     try {
+      const localRes = await fetch(`/api/iot/reports/round-performance?${params.toString()}&_t=${Date.now()}`, { cache: 'no-store' });
+      if (localRes.ok) {
+        const json = await localRes.json();
+        const payload = json?.data ?? {};
+        if (Array.isArray(payload.rounds) || Array.isArray(payload.employees)) {
+          return {
+            rounds: payload.rounds || [],
+            deviceGaps: payload.deviceGaps || [],
+            employees: payload.employees || [],
+            totalCompletedRounds: Number(payload.totalCompletedRounds || 0),
+            totalGapMinutes: Number(payload.totalGapMinutes || 0),
+            averageGapMinutes: Number(payload.averageGapMinutes || 0)
+          };
+        }
+      }
+    } catch { }
+
+    try {
       const res = await fetch(`${this.baseUrl}/dashboard/machine?${params.toString()}`);
       if (res.ok) {
         const json = await res.json();
@@ -1053,6 +1090,21 @@ export const iotApi = {
       duty_coverage: 'Device & Employee Duty Coverage Report',
       cleaning_maintenance: 'Machine Cleaning & Maintenance Schedule Report'
     };
+
+    try {
+      const localRes = await fetch(`/api/iot/reports?${params.toString()}&_t=${Date.now()}`, { cache: 'no-store' });
+      if (localRes.ok) {
+        const json = await localRes.json();
+        if (json?.data) {
+          return {
+            success: json.success ?? true,
+            reportType: json.reportType || filter.reportType,
+            title: json.title || defaultTitles[filter.reportType] || 'Database Analytical Reports',
+            data: json.data || []
+          };
+        }
+      }
+    } catch { }
 
     try {
       const res = await fetch(`${this.baseUrl}/master/reports?${params.toString()}`);

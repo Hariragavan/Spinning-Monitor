@@ -2447,6 +2447,7 @@ export default function Home() {
               isTvMode={isTvMode}
               onSelectDate={handleTopDateChange}
               availableDates={availableReportDates}
+              shed={selectedShed}
             />
           </motion.div>
         );
@@ -2620,6 +2621,7 @@ export default function Home() {
             emHighLimit={settings.emHighLimit}
             frozenMonths={frozenMonths}
             onToggleFreezeMonth={handleToggleFreezeMonth}
+            shed={selectedShed}
             onEditDate={(date) => {
               const report = currentShedHistory.find(r => r.date === date);
               if (report) setDailyReport(report);
@@ -2645,6 +2647,7 @@ export default function Home() {
             tvPageInterval={settings.tvPageIntervals?.['month-abstract']}
             frozenMonths={frozenMonths}
             onToggleFreezeMonth={handleToggleFreezeMonth}
+            shed={selectedShed}
           />
         );
       }
@@ -2730,6 +2733,7 @@ export default function Home() {
                 isTvMode={isTvMode}
                 frozenMonths={frozenMonths}
                 onToggleFreezeMonth={handleToggleFreezeMonth}
+                shed={selectedShed}
                 onEditDate={(date) => {
                   const report = currentShedHistory.find(r => r.date === date);
                   if (report) setDailyReport(report);
@@ -2751,6 +2755,7 @@ export default function Home() {
                 tvPageInterval={settings.tvPageIntervals?.['ai-month-abstract']}
                 frozenMonths={frozenMonths}
                 onToggleFreezeMonth={handleToggleFreezeMonth}
+                shed={selectedShed}
               />
             )}
 
@@ -2762,6 +2767,7 @@ export default function Home() {
                 isTvMode={isTvMode}
                 month={tvActiveMonth}
                 year={tvActiveYear}
+                shed={selectedShed}
               />
             )}
 
@@ -2772,6 +2778,7 @@ export default function Home() {
                 isTvMode={isTvMode}
                 month={tvActiveMonth}
                 year={tvActiveYear}
+                shed={selectedShed}
                 onUpdateReport={(updatedReport) => {
                   setReportHistory(prev => prev.map(r => r.date === updatedReport.date && normalizeShed(r.shed) === normalizeShed(selectedShed) ? updatedReport : r));
                   if (dailyReport.date === updatedReport.date) setDailyReport(updatedReport);
@@ -2794,6 +2801,7 @@ export default function Home() {
             initialYear={selectedYear}
             frozenMonths={frozenMonths}
             onToggleFreezeMonth={handleToggleFreezeMonth}
+            shed={selectedShed}
             onEditDate={(date) => {
               handleTopDateChange(date);
               setActiveTab('assignments');
@@ -2815,6 +2823,7 @@ export default function Home() {
             machineEm={machineEm}
             tvPageInterval={settings.tvPageIntervals?.['sider-monthly-performance']}
             emHighLimit={settings.emHighLimit}
+            shed={selectedShed}
           />
         );
       }
@@ -2879,7 +2888,7 @@ export default function Home() {
         );
 
       case 'best-shift':
-        return <BestShift report={activeDailyReport} workers={currentShedWorkers} rules={currentShedRules} isTvMode={isTvMode} />;
+        return <BestShift report={activeDailyReport} workers={currentShedWorkers} rules={currentShedRules} isTvMode={isTvMode} shed={selectedShed} />;
 
       case 'best':
         return (

@@ -18,6 +18,7 @@ interface AiMonthlyGridProps {
   isTvMode?: boolean;
   frozenMonths?: Record<string, FrozenMonthRecord>;
   onToggleFreezeMonth?: (month: number, year: number) => void;
+  shed?: string;
 }
 
 export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
@@ -31,8 +32,10 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
   onEditDate,
   isTvMode = false,
   frozenMonths,
-  onToggleFreezeMonth
+  onToggleFreezeMonth,
+  shed
 }) => {
+  const shedLabel = (shed || history[0]?.shed || 'KTTM').toUpperCase();
   const monthKey = getMonthKey(selectedMonth, selectedYear);
   const frozenRecord = frozenMonths?.[monthKey];
   const isFrozen = !!frozenRecord;
@@ -421,13 +424,13 @@ export const AiMonthlyGrid: React.FC<AiMonthlyGridProps> = ({
 
       {/* Print-Only Header */}
       <div className="hidden print:block text-center pb-2 border-b-2 border-black mb-3">
-        <img
-          src="/scm-logo-horizontal.png"
-          alt="SCM Textile Spinners"
-          className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
-        />
-        <h1 className="text-xl font-black text-black uppercase tracking-tight">AI Cone Linkconer Monthly Grid Ledger</h1>
+        <h1 className="text-xl font-black text-black uppercase tracking-tight">
+          {shedLabel} — AI Cone Linkconer Monthly Grid Ledger
+        </h1>
         <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-2">
+          <span>
+            Shed: <span className="text-black font-extrabold text-sm">{shedLabel}</span>
+          </span>
           <span>
             Month: <span className="text-black font-extrabold text-sm">{dataMonthDisplay}</span>
           </span>

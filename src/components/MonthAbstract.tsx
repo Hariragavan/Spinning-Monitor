@@ -17,6 +17,7 @@ interface MonthAbstractProps {
   tvPageInterval?: number;
   frozenMonths?: Record<string, FrozenMonthRecord>;
   onToggleFreezeMonth?: (month: number, year: number) => void;
+  shed?: string;
 }
 
 export const MonthAbstract: React.FC<MonthAbstractProps> = ({ 
@@ -29,8 +30,10 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
   onPagesDetermined,
   tvPageInterval,
   frozenMonths,
-  onToggleFreezeMonth
+  onToggleFreezeMonth,
+  shed
 }) => {
+  const shedLabel = (shed || history[0]?.shed || 'Shed 1').toUpperCase();
   const monthKey = getMonthKey(month, year);
   const frozenRecord = frozenMonths?.[monthKey];
   const isFrozen = !!frozenRecord;
@@ -272,7 +275,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
   };
 
   const handleExportToCSV = () => {
-    let csv = `KTTM SPINNING MILLS - MONTHLY INCENTIVE ABSTRACT (${reportMonthYear})\n\n`;
+    let csv = `SCM SPINNING MILLS (${shedLabel}) - MONTHLY INCENTIVE ABSTRACT (${reportMonthYear})\n\n`;
     csv += `S. NO,TNo,Operator / Sider Name,Days Worked,Duties Assigned,Monthly Avg GPS,Incentive Payout (INR)\n`;
 
     siderTotals.forEach((row, idx) => {
@@ -645,8 +648,11 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
         )}
       </div>
 
-      <div className="text-center mb-10 relative flex items-center justify-center">
-        <h2 className="text-5xl font-black uppercase tracking-tight">Monthly Incentive Abstract {reportMonthYear}</h2>
+      <div className="text-center mb-10 print:mb-3 relative flex flex-col items-center justify-center">
+        <div className="hidden print-only mb-1.5 border-b-2 border-black pb-1.5 w-full">
+          <h1 className="text-lg font-black uppercase tracking-widest text-black">{shedLabel} — MONTHLY INCENTIVE ABSTRACT ({reportMonthYear})</h1>
+        </div>
+        <h2 className="text-5xl print:hidden font-black uppercase tracking-tight">Monthly Incentive Abstract — {shedLabel} ({reportMonthYear})</h2>
         <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-3 no-print">
           <button 
             onClick={handleExportToExcel}
@@ -665,7 +671,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto flex gap-16 justify-center items-start">
+      <div className="max-w-[1600px] mx-auto flex gap-16 print:gap-4 justify-center items-start">
         {/* Left Table */}
         <div className="flex-1">
           <table className="w-full border-collapse border-[2px] border-stone-800">
@@ -697,7 +703,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
               })}
               {/* Fill remaining to balance view if needed */}
               {Array.from({ length: Math.max(0, 13 - leftColumn.length) }).map((_, i) => (
-                <tr key={`empty-l-${i}`} className="border border-stone-800 h-11">
+                <tr key={`empty-l-${i}`} className="border border-stone-800 h-11 no-print">
                   <td className="border-r border-stone-800">&nbsp;</td>
                   <td className="border-r border-stone-800">&nbsp;</td>
                   <td className="border-r border-stone-800">&nbsp;</td>
@@ -745,7 +751,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
               })}
               {/* Fill remaining to balance view if needed */}
               {Array.from({ length: Math.max(0, 13 - rightColumn.length) }).map((_, i) => (
-                <tr key={`empty-r-${i}`} className="border border-stone-800 h-11">
+                <tr key={`empty-r-${i}`} className="border border-stone-800 h-11 no-print">
                   <td className="border-r border-stone-800">&nbsp;</td>
                   <td className="border-r border-stone-800">&nbsp;</td>
                   <td className="border-r border-stone-800">&nbsp;</td>
@@ -764,9 +770,9 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
       </div>
 
       {/* Global Total Bar */}
-      <div className="max-w-[1600px] mx-auto mt-10 border-4 border-stone-800 flex h-24 items-center overflow-hidden rounded-sm shadow-xl">
-        <div className="w-[200px] text-4xl font-black italic text-rose-600 px-8 uppercase tracking-tighter bg-stone-50 h-full flex items-center border-r-4 border-stone-800">Total</div>
-        <div className="flex-1 text-7xl font-black text-rose-600 text-center tracking-[0.25em] bg-white h-full flex items-center justify-center tabular-nums">
+      <div className="max-w-[1600px] mx-auto mt-10 print:mt-3 border-4 print:border-2 border-stone-800 flex h-24 print:h-10 items-center overflow-hidden rounded-sm shadow-xl print:shadow-none">
+        <div className="w-[200px] print:w-[140px] text-4xl print:text-lg font-black italic text-rose-600 px-8 print:px-4 uppercase tracking-tighter bg-stone-50 h-full flex items-center border-r-4 print:border-r-2 border-stone-800">Total</div>
+        <div className="flex-1 text-7xl print:text-2xl font-black text-rose-600 text-center tracking-[0.25em] print:tracking-widest bg-white h-full flex items-center justify-center tabular-nums">
           ₹{grandTotal.toLocaleString()}
         </div>
       </div>

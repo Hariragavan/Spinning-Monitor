@@ -18,6 +18,7 @@ interface MasterDataTableProps {
   isTvMode?: boolean;
   onSelectDate?: (date: string) => void;
   availableDates?: string[];
+  shed?: string;
 }
 
 type ViewMode = 'machines' | 'entries' | 'counts' | 'workers';
@@ -29,7 +30,8 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
   countConversions = [],
   isTvMode = false,
   onSelectDate,
-  availableDates = []
+  availableDates = [],
+  shed
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('machines');
   const [searchQuery, setSearchQuery] = useState('');
@@ -412,9 +414,11 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
     )}>
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
-        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">KTTM SPINNING MILLS - UNIT 01</h1>
-        <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Mill Master Production & Incentive Statement</h2>
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {(shed || report.shed || 'Shed 1').toUpperCase()} — MILL MASTER PRODUCTION &amp; INCENTIVE STATEMENT
+        </h1>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{(shed || report.shed || 'Shed 1').toUpperCase()}</strong></span>
           <span>Date: <strong>{report.date}</strong></span>
           <span>View Mode: <strong>{viewMode.toUpperCase()}</strong></span>
           <span>Total Prod: <strong>{overallTotals.actual.toLocaleString()} Kg</strong></span>

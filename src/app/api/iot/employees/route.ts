@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       if (e.employeeId) mappedMap.set(String(e.employeeId).trim(), e);
     }
 
-    // 2. Fetch recent employee activities / card taps
+    // 2. Fetch recent employee activities / card taps from local DB
     const recentActivities = await db
       .collection(IOT_COLLECTIONS.EMPLOYEE_ACTIVITIES)
       .find({ employeeId: { $exists: true, $nin: [null, ''] } })
@@ -62,11 +62,56 @@ export async function GET(req: NextRequest) {
       .limit(3000)
       .toArray();
 
-    // Group activities by RFID card (employeeId)
+    // 2b. Also merge real-time live taps from REMOTE_IOT_API for today (so D1/D2 live taps appear immediately)
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const liveMergedActs: any[] = [...recentActivities];
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`${REMOTE_IOT_API}/dashboard/employee?date=${todayIso}&_t=${now}`, {
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const json = await res.json();
+        const empList = Array.isArray(json?.data) ? json.data : [];
+        for (const emp of empList) {
+          const cardId = String(emp.employeeId || '').trim();
+          if (!cardId) continue;
+          const tapsArr = Array.isArray(emp.taps) ? emp.taps : [];
+          if (tapsArr.length > 0) {
+            for (const tap of tapsArr) {
+              liveMergedActs.push({
+                employeeId: cardId,
+                employeeName: emp.employeeName || null,
+                deviceId: tap.deviceId || tap.stationId || emp.machineId || '',
+                machineId: tap.machineId || emp.machineId || '',
+                tapTime: tap.time || tap.timestamp || emp.lastActiveTime,
+                shift: emp.shift,
+                shiftDate: emp.date || todayIso
+              });
+            }
+          } else if (emp.lastActiveTime && extractRealDevice({ machineId: emp.machineId })) {
+            liveMergedActs.push({
+              employeeId: cardId,
+              employeeName: emp.employeeName || null,
+              machineId: emp.machineId,
+              tapTime: emp.lastActiveTime,
+              shift: emp.shift,
+              shiftDate: emp.date || todayIso
+            });
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Deduplicate taps and group activities by RFID card (employeeId)
+    const seenTapKeys = new Set<string>();
     const tappedInfoByCard = new Map<string, {
       lastTapTime: string;
       lastDevice: string;
-      detectedDevices: Set<string>;
+      deviceLastTapMs: Map<string, number>;
       tapsCount: number;
       lastShift?: number;
       lastShiftDate?: string;
@@ -85,7 +130,7 @@ export async function GET(req: NextRequest) {
     // Default devices guaranteed to exist
     const knownDevices = new Set<string>(['IOT_D1', 'IOT_D2']);
 
-    for (const act of recentActivities) {
+    for (const act of liveMergedActs) {
       const cardId = String(act.employeeId || '').trim();
       if (!cardId) continue;
 
@@ -98,15 +143,21 @@ export async function GET(req: NextRequest) {
       const rawTime = act.tapTime || act.activityAt || act.recordedAt || act.timestamp || act.createdAt;
       if (!rawTime) continue;
 
-      const tapTimeStr = new Date(rawTime).toISOString();
-      const tapTimeMs = new Date(rawTime).getTime();
+      const parsedDate = new Date(rawTime);
+      if (isNaN(parsedDate.getTime())) continue;
+      const tapTimeStr = parsedDate.toISOString();
+      const tapTimeMs = parsedDate.getTime();
+
+      const dedupKey = `${cardId}|${realDev}|${tapTimeStr}`;
+      if (seenTapKeys.has(dedupKey)) continue;
+      seenTapKeys.add(dedupKey);
 
       // Update card taps telemetry
       if (!tappedInfoByCard.has(cardId)) {
         tappedInfoByCard.set(cardId, {
           lastTapTime: tapTimeStr,
           lastDevice: realDev,
-          detectedDevices: new Set([realDev]),
+          deviceLastTapMs: new Map([[realDev, tapTimeMs]]),
           tapsCount: 1,
           lastShift: act.shift,
           lastShiftDate: act.shiftDate,
@@ -115,7 +166,10 @@ export async function GET(req: NextRequest) {
       } else {
         const info = tappedInfoByCard.get(cardId)!;
         info.tapsCount += 1;
-        info.detectedDevices.add(realDev);
+        const prevDevMs = info.deviceLastTapMs.get(realDev) ?? -Infinity;
+        if (tapTimeMs > prevDevMs) {
+          info.deviceLastTapMs.set(realDev, tapTimeMs);
+        }
         if (tapTimeMs > new Date(info.lastTapTime).getTime()) {
           info.lastTapTime = tapTimeStr;
           info.lastDevice = realDev;
@@ -127,10 +181,11 @@ export async function GET(req: NextRequest) {
 
       // Update device last tap telemetry
       if (!deviceLastTapMap.has(realDev) || tapTimeMs > new Date(deviceLastTapMap.get(realDev)!.lastTapTime).getTime()) {
+        const mappedEmp = mappedMap.get(cardId);
         deviceLastTapMap.set(realDev, {
           lastTapTime: tapTimeStr,
           employeeId: cardId,
-          employeeName: act.employeeName || cardId,
+          employeeName: mappedEmp?.employeeName || mappedEmp?.name || act.employeeName || cardId,
           shift: act.shift,
           shiftDate: act.shiftDate
         });
@@ -144,13 +199,14 @@ export async function GET(req: NextRequest) {
         const diffMinutes = Math.floor((now - new Date(tapInfo.lastTapTime).getTime()) / 60000);
         // Allow for minor device clock skew (up to 15 min ahead) and <= 10 min idle
         const isActive = diffMinutes >= -15 && diffMinutes <= 10;
+        const mappedEmp = mappedMap.get(tapInfo.employeeId);
         return {
           deviceId: devId,
           status: isActive ? 'ACTIVE' : 'INACTIVE',
           lastTapTime: tapInfo.lastTapTime,
           diffMinutes,
           lastEmployeeId: tapInfo.employeeId,
-          lastEmployeeName: tapInfo.employeeName,
+          lastEmployeeName: mappedEmp?.employeeName || mappedEmp?.name || tapInfo.employeeName,
           shift: tapInfo.shift,
           shiftDate: tapInfo.shiftDate
         };
@@ -176,10 +232,19 @@ export async function GET(req: NextRequest) {
         unmappedCards.push(cardId);
       }
 
+      // Live detected devices ONLY: devices tapped by this RFID within the 10-minute active window (e.g. IOT_D1, IOT_D2)
+      const liveDetectedDevices: string[] = [];
+      for (const [devId, devMs] of tapInfo.deviceLastTapMs.entries()) {
+        const devDiffMins = Math.floor((now - devMs) / 60000);
+        if (devDiffMins >= -15 && devDiffMins <= 10) {
+          liveDetectedDevices.push(devId);
+        }
+      }
+      liveDetectedDevices.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
       const diffMinutes = Math.floor((now - new Date(tapInfo.lastTapTime).getTime()) / 60000);
-      // "show when the tap detected in the device, othervice show inactive when tap is started and not taped until 10 min show inactive"
       // Allow for minor hardware clock skew (up to 15 min ahead) and <= 10 min idle
-      const isCurrentlyActive = diffMinutes >= -15 && diffMinutes <= 10;
+      const isCurrentlyActive = liveDetectedDevices.length > 0 || (diffMinutes >= -15 && diffMinutes <= 10);
 
       const employeeName = mapped?.employeeName || mapped?.name || tapInfo.detectedEmployeeName || `RFID ${cardId}`;
       const tNo = mapped?.tNo || (employeeName.match(/\((\d+)\)/)?.[1] || null);
@@ -188,15 +253,16 @@ export async function GET(req: NextRequest) {
       return {
         _id: mapped?._id,
         employeeId: cardId,
+        workerId: mapped?.workerId || null,
         employeeName,
         name: employeeName,
         department,
         tNo,
         active: mapped ? mapped.active !== false : true,
         isRegistered,
-        // Automatically detected devices from API per completed shift
-        assignedDeviceIds: Array.from(tapInfo.detectedDevices),
-        detectedDevices: Array.from(tapInfo.detectedDevices),
+        // Live detected devices ONLY (if both D1 and D2 tapped live by this RFID, both appear here)
+        assignedDeviceIds: liveDetectedDevices,
+        detectedDevices: liveDetectedDevices,
         lastDevice: tapInfo.lastDevice,
         lastTapTime: tapInfo.lastTapTime,
         tapsCount: tapInfo.tapsCount,
@@ -223,12 +289,20 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const registeredMappings = mappedEmployees.map(e => ({
+      employeeId: String(e.employeeId || '').trim(),
+      employeeName: String(e.employeeName || e.name || '').trim(),
+      workerId: e.workerId ? String(e.workerId).trim() : null,
+      tNo: e.tNo ? String(e.tNo).trim() : (String(e.employeeName || '').match(/\((\d+)\)/)?.[1] || null)
+    })).filter(e => e.employeeId);
+
     return NextResponse.json({
       success: true,
       count: filtered.length,
       data: filtered,
       devices: devicesList,
       unmappedCards,
+      registeredMappings,
       stats: {
         totalTaped: availableTapedRecords.length,
         activeNow: availableTapedRecords.filter(e => e.tapStatus === 'ACTIVE').length,
@@ -329,13 +403,55 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. Single Employee Add / Update
-    const { employeeId, employeeName, name, department, tNo, assignedDeviceIds, active } = body;
+    // 2. Single Employee Add / Update (Strict 1-to-1 RFID <-> Operator Mapping)
+    const { employeeId, employeeName, name, department, tNo, workerId, assignedDeviceIds, mode } = body;
     const cleanId = String(employeeId || '').trim();
-    const cleanName = String(employeeName || name || cleanId).trim();
+    const cleanName = String(employeeName || name || '').trim();
+    const cleanWorkerId = workerId ? String(workerId).trim() : '';
 
     if (!cleanId) {
-      return NextResponse.json({ success: false, message: 'Employee RFID Card ID is required' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'RFID Card No. is required' }, { status: 400 });
+    }
+    if (!cleanName) {
+      return NextResponse.json({ success: false, message: 'Operator selection from Worker Master is required' }, { status: 400 });
+    }
+
+    const extractedTNo = tNo ? String(tNo).trim() : (cleanName.match(/\((\d+)\)/)?.[1] || '');
+    const normalizedBaseName = cleanName.replace(/\([^)]*\)/g, '').trim().toLowerCase();
+
+    // Enforce 1-to-1 rule:
+    // (a) In create mode, reject if this RFID is already registered
+    const existingByCard = await db.collection(IOT_COLLECTIONS.EMPLOYEES).findOne({ employeeId: cleanId });
+    if (mode === 'create' && existingByCard) {
+      return NextResponse.json({
+        success: false,
+        message: `RFID "${cleanId}" is already mapped to ${existingByCard.employeeName || existingByCard.name}. Edit the existing mapping instead.`
+      }, { status: 409 });
+    }
+
+    // (b) Ensure this operator is NOT already mapped to any other RFID card
+    const otherMappings = await db
+      .collection(IOT_COLLECTIONS.EMPLOYEES)
+      .find({ employeeId: { $ne: cleanId } })
+      .toArray();
+
+    for (const other of otherMappings) {
+      const oWorkerId = other.workerId ? String(other.workerId).trim() : '';
+      const oName = String(other.employeeName || other.name || '').trim();
+      const oTNo = other.tNo ? String(other.tNo).trim() : (oName.match(/\((\d+)\)/)?.[1] || '');
+      const oBaseName = oName.replace(/\([^)]*\)/g, '').trim().toLowerCase();
+
+      const sameWorker =
+        (cleanWorkerId && oWorkerId && cleanWorkerId === oWorkerId) ||
+        (extractedTNo && oTNo && extractedTNo === oTNo) ||
+        (!extractedTNo && !oTNo && normalizedBaseName && oBaseName && normalizedBaseName === oBaseName);
+
+      if (sameWorker) {
+        return NextResponse.json({
+          success: false,
+          message: `Operator "${cleanName}" is already mapped to RFID "${other.employeeId}". Only one operator can be mapped to one RFID.`
+        }, { status: 409 });
+      }
     }
 
     const now = new Date();
@@ -344,15 +460,15 @@ export async function POST(req: NextRequest) {
       employeeName: cleanName,
       name: cleanName,
       department: department || 'Sider',
-      active: active !== false,
+      active: true,
       updatedAt: now
     };
 
-    if (tNo) {
-      updateDoc.tNo = String(tNo).trim();
-    } else {
-      const match = cleanName.match(/\((\d+)\)/);
-      if (match) updateDoc.tNo = match[1];
+    if (cleanWorkerId) {
+      updateDoc.workerId = cleanWorkerId;
+    }
+    if (extractedTNo) {
+      updateDoc.tNo = extractedTNo;
     }
 
     if (Array.isArray(assignedDeviceIds)) {
@@ -372,15 +488,12 @@ export async function POST(req: NextRequest) {
       { upsert: true }
     );
 
-    // Synchronize device assignments in iot_devices
+    // Synchronize device assignments & propagate mapped operator name across all IoT collections
     if (Array.isArray(assignedDeviceIds)) {
-      // 1. Clear previous assignments for this employee
       await db.collection(IOT_COLLECTIONS.DEVICES).updateMany(
         { assignedEmployeeId: cleanId, deviceId: { $nin: assignedDeviceIds } },
         { $set: { assignedEmployeeId: null, assignedEmployeeName: null } }
       );
-
-      // 2. Set new assignments for this employee
       if (assignedDeviceIds.length > 0) {
         await db.collection(IOT_COLLECTIONS.DEVICES).updateMany(
           { deviceId: { $in: assignedDeviceIds } },
@@ -388,12 +501,35 @@ export async function POST(req: NextRequest) {
         );
       }
     } else {
-      // Update assignedEmployeeName on already assigned devices
       await db.collection(IOT_COLLECTIONS.DEVICES).updateMany(
         { assignedEmployeeId: cleanId },
         { $set: { assignedEmployeeName: cleanName } }
       );
     }
+
+    await Promise.all([
+      db.collection(IOT_COLLECTIONS.EMPLOYEE_ACTIVITIES).updateMany(
+        { employeeId: cleanId },
+        { $set: { employeeName: cleanName } }
+      ),
+      db.collection(IOT_COLLECTIONS.PERFORMANCES).updateMany(
+        { employeeId: cleanId },
+        { $set: { employeeName: cleanName } }
+      ),
+      db.collection(IOT_COLLECTIONS.PRODUCTION_ENTRIES).updateMany(
+        { employeeId: cleanId },
+        { $set: { employeeName: cleanName } }
+      )
+    ]).catch(() => {});
+
+    // Best-effort sync to remote IoT backend so remote reports also reflect the mapped name
+    try {
+      await fetch(`${REMOTE_IOT_API}/master/employees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'bulk_import', entries: { [cleanId]: cleanName } })
+      }).catch(() => {});
+    } catch (_) {}
 
     // Return the updated employee
     const saved = await db.collection(IOT_COLLECTIONS.EMPLOYEES).findOne({ employeeId: cleanId });

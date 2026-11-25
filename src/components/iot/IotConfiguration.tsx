@@ -349,8 +349,9 @@ export const IotConfiguration: React.FC<IotConfigurationProps> = ({
     }
 
     // Operator has tapped and initiated activation today:
-    let rawName = met?.employeeName || '';
     let rawId = met?.employeeId || '';
+    const mappedEmp = rawId ? employees.find(e => String(e.employeeId).trim() === String(rawId).trim()) : undefined;
+    let rawName = (mappedEmp?.employeeName && mappedEmp.employeeName !== mappedEmp.employeeId ? mappedEmp.employeeName : '') || met?.employeeName || '';
 
     // Parse Name(Token) format, e.g. "Mangal(33786)" or numeric "1819705349"
     let extractedName = rawName ? String(rawName).trim() : '';

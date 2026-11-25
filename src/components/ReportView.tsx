@@ -610,9 +610,11 @@ export const ReportView: React.FC<ReportViewProps> = ({
     )}>
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
-        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">KTTM SPINNING MILLS - UNIT 01</h1>
-        <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Spinning Production Report</h2>
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {(currentShed || report.shed || 'Shed 1').toUpperCase()} — SPINNING PRODUCTION REPORT
+        </h1>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{(currentShed || report.shed || 'Shed 1').toUpperCase()}</strong></span>
           <span>Date: <strong>{statementDate}</strong></span>
           <span>Total Plant Frames: <strong>{allShedData.totalRf}</strong></span>
           <span>Target Production: <strong>{allShedData.totalStd.toLocaleString()} Kg</strong></span>

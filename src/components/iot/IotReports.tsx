@@ -168,6 +168,21 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
     }
   };
 
+  const empNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of employees) {
+      if (e.employeeId && e.employeeName && e.employeeName !== e.employeeId) {
+        map.set(String(e.employeeId).trim(), e.employeeName);
+      }
+    }
+    return map;
+  }, [employees]);
+
+  const resolveMappedName = (empId: any, fallbackName: any) => {
+    const k = empId ? String(empId).trim() : '';
+    return (k && empNameMap.get(k)) || fallbackName;
+  };
+
   const selectedMachineLabel = useMemo(() => {
     const m = machines.find(x => x.machineId === machineId);
     if (m) return `${m.machineName} (${m.machineId})`;
@@ -190,7 +205,7 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
   };
 
   const barLabel = (row: any) => {
-    return row.machineName || employeeLabel(row.employeeId, row.employeeName) || row.mode || row.deviceId || 'Item';
+    return row.machineName || employeeLabel(row.employeeId, resolveMappedName(row.employeeId, row.employeeName)) || row.mode || row.deviceId || 'Item';
   };
 
   const exportCSV = () => {
@@ -487,7 +502,7 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
                 {reportData.map((row, i) => (
                   <tr key={i}>
                     <td>
-                      <strong>{employeeDisplayName(row.employeeId, row.employeeName)}</strong>
+                      <strong>{employeeDisplayName(row.employeeId, resolveMappedName(row.employeeId, row.employeeName))}</strong>
                     </td>
                     <td>{row.machinesOperated}</td>
                     <td>{row.totalCardTaps} Taps</td>
@@ -552,10 +567,10 @@ export const IotReports: React.FC<IotReportsProps> = ({ selectedDate: propDate }
                     <td>{row.minRPM} - {row.maxRPM} Spinning</td>
                     <td>
                       <strong>
-                        {employeeDisplayName(row.assignedEmployeeId, row.assignedEmployeeName, 'Unassigned')}
+                        {employeeDisplayName(row.assignedEmployeeId, resolveMappedName(row.assignedEmployeeId, row.assignedEmployeeName), 'Unassigned')}
                       </strong>
                     </td>
-                    <td>{employeeDisplayName(row.lastActiveEmployeeId, row.lastActiveEmployeeName, 'N/A')}</td>
+                    <td>{employeeDisplayName(row.lastActiveEmployeeId, resolveMappedName(row.lastActiveEmployeeId, row.lastActiveEmployeeName), 'N/A')}</td>
                     <td>{row.lastSeenAt ? new Date(row.lastSeenAt).toLocaleString() : 'N/A'}</td>
                   </tr>
                 ))}

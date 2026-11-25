@@ -18,6 +18,7 @@ import {
   saveIotMapping,
   getIotEmployeeMetrics,
   getIotCardTaps,
+  getMappedEmployeeNameMap,
   syncShiftEndNonMachineIotData,
   fetchLiveRenderStream,
   persistLiveIotPayload,
@@ -262,12 +263,35 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
         if (res.ok) {
           const json = await res.json();
           const roundGaps = json.data?.roundGaps || json.roundGaps || {};
+          const empNameMap = await getMappedEmployeeNameMap();
+          const resolveName = (eId: any, fallback: any) => {
+            const k = eId ? String(eId).trim() : '';
+            return (k && empNameMap.get(k)?.employeeName) || fallback || null;
+          };
+          const rounds = (Array.isArray(roundGaps.rounds) ? roundGaps.rounds : []).map((r: any) => ({
+            ...r,
+            employeeName: resolveName(r.employeeId, r.employeeName),
+            transitions: Array.isArray(r.transitions)
+              ? r.transitions.map((t: any) => ({
+                  ...t,
+                  employeeName: resolveName(t.employeeId, t.employeeName)
+                }))
+              : []
+          }));
+          const deviceGaps = (Array.isArray(roundGaps.deviceGaps) ? roundGaps.deviceGaps : []).map((g: any) => ({
+            ...g,
+            employeeName: resolveName(g.employeeId, g.employeeName)
+          }));
+          const employees = (Array.isArray(roundGaps.employees) ? roundGaps.employees : []).map((e: any) => ({
+            ...e,
+            employeeName: resolveName(e.employeeId, e.employeeName)
+          }));
           return NextResponse.json({
             success: true,
             data: {
-              rounds: Array.isArray(roundGaps.rounds) ? roundGaps.rounds : [],
-              deviceGaps: Array.isArray(roundGaps.deviceGaps) ? roundGaps.deviceGaps : [],
-              employees: Array.isArray(roundGaps.employees) ? roundGaps.employees : [],
+              rounds,
+              deviceGaps,
+              employees,
               totalCompletedRounds: Number(roundGaps.completedRounds ?? roundGaps.totalCompletedRounds ?? 0),
               totalGapMinutes: Number(roundGaps.totalGapMinutes ?? 0),
               averageGapMinutes: Number(roundGaps.averageGapMinutes ?? 0)
@@ -347,7 +371,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
         });
         if (res.ok) {
           const json = await res.json();
-          return NextResponse.json(json, {
+          const empNameMap = await getMappedEmployeeNameMap();
+          const rows = Array.isArray(json.data)
+            ? json.data.map((row: any) => {
+                const eId = row.employeeId ? String(row.employeeId).trim() : '';
+                const assId = row.assignedEmployeeId ? String(row.assignedEmployeeId).trim() : '';
+                const actId = row.lastActiveEmployeeId ? String(row.lastActiveEmployeeId).trim() : '';
+                return {
+                  ...row,
+                  ...(eId && empNameMap.get(eId) ? { employeeName: empNameMap.get(eId)!.employeeName } : {}),
+                  ...(assId && empNameMap.get(assId) ? { assignedEmployeeName: empNameMap.get(assId)!.employeeName } : {}),
+                  ...(actId && empNameMap.get(actId) ? { lastActiveEmployeeName: empNameMap.get(actId)!.employeeName } : {})
+                };
+              })
+            : json.data;
+          return NextResponse.json({ ...json, data: rows }, {
             headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
           });
         }

@@ -24,6 +24,7 @@ interface MonthlyGridProps {
   emHighLimit?: number;
   frozenMonths?: Record<string, FrozenMonthRecord>;
   onToggleFreezeMonth?: (month: number, year: number) => void;
+  shed?: string;
 }
 
 export const MonthlyGrid: React.FC<MonthlyGridProps> = ({ 
@@ -42,8 +43,10 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
   tvPageInterval,
   emHighLimit = 4,
   frozenMonths,
-  onToggleFreezeMonth
+  onToggleFreezeMonth,
+  shed
 }) => {
+  const shedLabel = (shed || history[0]?.shed || 'Shed 1').toUpperCase();
   const monthKey = getMonthKey(selectedMonth, selectedYear);
   const frozenRecord = frozenMonths?.[monthKey];
   const isFrozen = !!frozenRecord;
@@ -925,7 +928,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
               </button>
               <button 
                 onClick={() => {
-                  let csv = `SPINMONITOR AI - MONTHLY INCENTIVE GRID (${dataMonthDisplay} ${selectedYear})\n\n`;
+                  let csv = `SCM SPINNING MILLS (${shedLabel}) - MONTHLY INCENTIVE GRID (${dataMonthDisplay} ${selectedYear})\n\n`;
                   csv += `TK No,Name,` + displayedDays.map(d => `Day ${d}`).join(',') + `,Avg EM,Total Payout\n`;
 
                   rowsWithTotals.forEach(row => {
@@ -955,7 +958,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
         </div>
       </div>
 
-      <div className="text-center py-2 bg-white relative flex flex-col items-center justify-center gap-2">
+      <div className="text-center py-2 print:py-1 print:mb-1 bg-white relative flex flex-col items-center justify-center gap-2 print:gap-0.5">
         {isFrozen && frozenRecord && (
           <div className="w-full max-w-4xl mx-auto my-1 p-2 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-center gap-2 text-amber-900 text-xs font-bold no-print">
             <Lock size={16} className="text-amber-600" />
@@ -964,8 +967,11 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
             </span>
           </div>
         )}
-        <h2 className="text-lg font-bold text-stone-900 border-b-2 border-stone-900 inline-block px-12">
-          Sider Incentive Report for the Month Of {dataMonthDisplay} {isTvMode && "(Last 15 Days TV View)"}
+        <div className="hidden print-only w-full text-center border-b-2 border-black pb-1 mb-1">
+          <h1 className="text-lg font-black uppercase tracking-tight text-black">{shedLabel} — SIDER INCENTIVE REPORT ({dataMonthDisplay})</h1>
+        </div>
+        <h2 className="text-lg print:hidden font-bold text-stone-900 border-b-2 border-stone-900 inline-block px-12 print:px-6">
+          {shedLabel} · Sider Incentive Report for the Month Of {dataMonthDisplay} {isTvMode && "(Last 15 Days TV View)"}
         </h2>
         {metricType === 'incentive' && (
           <div className="md:absolute md:right-4 flex items-center gap-2 bg-red-50 border border-red-200/60 px-3 py-1 rounded-full shadow-sm">

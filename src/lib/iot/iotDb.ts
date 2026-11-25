@@ -559,48 +559,82 @@ export async function getIotMachinesMaster(): Promise<Machine[]> {
 }
 
 // -------------------------------------------------------------
-// Employees Master (https://iot-machine-backend.onrender.com/api/master/employees)
+// Employees Master (Local MongoDB RFID Mappings take authoritative priority)
 // -------------------------------------------------------------
-export async function getIotEmployeesMaster(): Promise<Employee[]> {
-  await ensureIotSeeded();
-
+export async function getMappedEmployeeNameMap(dbArg?: any): Promise<Map<string, { employeeName: string; tNo?: string; workerId?: string }>> {
+  const nameMap = new Map<string, { employeeName: string; tNo?: string; workerId?: string }>();
   try {
-    const res = await fetch(`${REMOTE_IOT_API}/master/employees`, { cache: 'no-store' });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        const mapped: Employee[] = json.data.map((e: any) => ({
-          employeeId: String(e.employeeId || e.id),
-          employeeName: String(e.employeeName || e.name || e.employeeId),
-          lastSeen: e.lastSeen || null,
-          assignedDeviceIds: Array.isArray(e.assignedDeviceIds) ? e.assignedDeviceIds : []
-        }));
-
-        try {
-          const db = await getIotDb();
-          for (const emp of mapped) {
-            await db.collection(IOT_COLLECTIONS.EMPLOYEES).updateOne(
-              { employeeId: emp.employeeId },
-              { $set: emp },
-              { upsert: true }
-            );
-          }
-        } catch (_) {}
-        return mapped;
+    const db = dbArg || await getIotDb();
+    const docs = await db
+      .collection(IOT_COLLECTIONS.EMPLOYEES)
+      .find({}, { projection: { employeeId: 1, employeeName: 1, name: 1, tNo: 1, workerId: 1 } })
+      .toArray();
+    for (const d of docs) {
+      const id = String(d.employeeId || '').trim();
+      const disp = String(d.employeeName || d.name || '').trim();
+      if (id && disp) {
+        nameMap.set(id, {
+          employeeName: disp,
+          tNo: d.tNo ? String(d.tNo).trim() : undefined,
+          workerId: d.workerId ? String(d.workerId).trim() : undefined
+        });
       }
     }
   } catch (_) {}
+  return nameMap;
+}
 
+export async function getIotEmployeesMaster(): Promise<Employee[]> {
+  await ensureIotSeeded();
+
+  const localMap = new Map<string, Employee>();
   try {
     const db = await getIotDb();
     const list = await db
       .collection<Employee>(IOT_COLLECTIONS.EMPLOYEES)
       .find({}, { projection: { _id: 0 } })
       .toArray();
-    if (list.length > 0) return list;
+    for (const emp of list) {
+      if (emp.employeeId) {
+        localMap.set(String(emp.employeeId).trim(), {
+          ...emp,
+          employeeId: String(emp.employeeId).trim(),
+          employeeName: String(emp.employeeName || (emp as any).name || emp.employeeId).trim()
+        });
+      }
+    }
   } catch (_) {}
 
-  return [];
+  try {
+    const res = await fetch(`${REMOTE_IOT_API}/master/employees`, { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        for (const e of json.data) {
+          const id = String(e.employeeId || e.id || '').trim();
+          if (!id) continue;
+          const existing = localMap.get(id);
+          if (existing) {
+            // Preserve user's locally mapped RFID operator name; merge any missing metadata
+            if ((!existing.assignedDeviceIds || existing.assignedDeviceIds.length === 0) && Array.isArray(e.assignedDeviceIds)) {
+              existing.assignedDeviceIds = e.assignedDeviceIds;
+            }
+            if (!existing.lastSeen && e.lastSeen) existing.lastSeen = e.lastSeen;
+          } else {
+            const empObj: Employee = {
+              employeeId: id,
+              employeeName: String(e.employeeName || e.name || id).trim(),
+              lastSeen: e.lastSeen || null,
+              assignedDeviceIds: Array.isArray(e.assignedDeviceIds) ? e.assignedDeviceIds : []
+            };
+            localMap.set(id, empObj);
+          }
+        }
+      }
+    }
+  } catch (_) {}
+
+  return Array.from(localMap.values());
 }
 
 // -------------------------------------------------------------
@@ -608,27 +642,32 @@ export async function getIotEmployeesMaster(): Promise<Employee[]> {
 // -------------------------------------------------------------
 export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
   await ensureIotSeeded();
+  const empNameMap = await getMappedEmployeeNameMap();
 
   try {
     const res = await fetch(`${REMOTE_IOT_API}/master/devices`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        const mapped: DeviceHealth[] = json.data.map((d: any) => ({
-          deviceId: String(d.deviceId || d.id),
-          machineId: d.machineId ? String(d.machineId) : undefined,
-          machineName: d.machineName ? String(d.machineName) : undefined,
-          position: d.position ?? 1,
-          side: d.side || 'LEFT',
-          minRPM: Number(d.minRPM ?? d.minRpm ?? 700),
-          maxRPM: Number(d.maxRPM ?? d.maxRpm ?? 1000),
-          minRpm: Number(d.minRPM ?? d.minRpm ?? 700),
-          maxRpm: Number(d.maxRPM ?? d.maxRpm ?? 1000),
-          expectedRPM: Number(d.expectedRPM ?? 850),
-          assignedEmployeeId: d.assignedEmployeeId ? String(d.assignedEmployeeId) : undefined,
-          assignedEmployeeName: d.assignedEmployeeName ? String(d.assignedEmployeeName) : undefined,
-          lastSeen: d.lastSeen || new Date().toISOString()
-        }));
+        const mapped: DeviceHealth[] = json.data.map((d: any) => {
+          const assignedEmpId = d.assignedEmployeeId ? String(d.assignedEmployeeId).trim() : undefined;
+          const mappedName = assignedEmpId ? empNameMap.get(assignedEmpId)?.employeeName : undefined;
+          return {
+            deviceId: String(d.deviceId || d.id),
+            machineId: d.machineId ? String(d.machineId) : undefined,
+            machineName: d.machineName ? String(d.machineName) : undefined,
+            position: d.position ?? 1,
+            side: d.side || 'LEFT',
+            minRPM: Number(d.minRPM ?? d.minRpm ?? 700),
+            maxRPM: Number(d.maxRPM ?? d.maxRpm ?? 1000),
+            minRpm: Number(d.minRPM ?? d.minRpm ?? 700),
+            maxRpm: Number(d.maxRPM ?? d.maxRpm ?? 1000),
+            expectedRPM: Number(d.expectedRPM ?? 850),
+            assignedEmployeeId: assignedEmpId,
+            assignedEmployeeName: mappedName || (d.assignedEmployeeName ? String(d.assignedEmployeeName) : undefined),
+            lastSeen: d.lastSeen || new Date().toISOString()
+          };
+        });
 
         try {
           const db = await getIotDb();
@@ -651,7 +690,12 @@ export async function getIotDevicesMaster(): Promise<DeviceHealth[]> {
       .collection<DeviceHealth>(IOT_COLLECTIONS.DEVICES)
       .find({}, { projection: { _id: 0 } })
       .toArray();
-    if (list.length > 0) return list;
+    if (list.length > 0) {
+      return list.map(d => ({
+        ...d,
+        assignedEmployeeName: (d.assignedEmployeeId ? empNameMap.get(String(d.assignedEmployeeId).trim())?.employeeName : undefined) || d.assignedEmployeeName
+      }));
+    }
   } catch (_) {}
 
   return [];
@@ -667,6 +711,8 @@ export async function getIotEmployeeMetrics(filter?: {
   shiftName?: string;
   shiftId?: string;
 }): Promise<EmployeeMetric[]> {
+  const empNameMap = await getMappedEmployeeNameMap();
+
   // 1. Check local MongoDB iot_employee_performances first if date or shift filter is provided
   try {
     const db = await getIotDb();
@@ -705,24 +751,28 @@ export async function getIotEmployeeMetrics(filter?: {
           tapsByEmp.set(t.employeeId, list);
         }
 
-        return localDocs.map((emp: any) => ({
-          employeeId: String(emp.employeeId),
-          employeeName: emp.employeeName || null,
-          machineId: String(emp.machineId || ''),
-          roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
-          rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
-          expectedRounds: Number(emp.expectedRounds || 8),
-          avgGapMinutes: Number(emp.avgGapMinutes || 0),
-          longestGapMinutes: Number(emp.longestGapMinutes || 0),
-          activeStatus: 'ACTIVE',
-          idleMinutes: Number(emp.idleMinutes || 0),
-          performancePercent: Number(emp.performancePercent || 0),
-          lastActiveTime: 'Shift End',
-          taps: tapsByEmp.get(emp.employeeId) || (Array.isArray(emp.taps) ? emp.taps : []),
-          hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
-          date: emp.shiftDate || filter?.date,
-          shift: `Shift ${emp.shift || 1}`
-        }));
+        return localDocs.map((emp: any) => {
+          const eId = String(emp.employeeId || '').trim();
+          const mappedName = empNameMap.get(eId)?.employeeName;
+          return {
+            employeeId: eId,
+            employeeName: mappedName || emp.employeeName || null,
+            machineId: String(emp.machineId || ''),
+            roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+            rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+            expectedRounds: Number(emp.expectedRounds || 8),
+            avgGapMinutes: Number(emp.avgGapMinutes || 0),
+            longestGapMinutes: Number(emp.longestGapMinutes || 0),
+            activeStatus: 'ACTIVE',
+            idleMinutes: Number(emp.idleMinutes || 0),
+            performancePercent: Number(emp.performancePercent || 0),
+            lastActiveTime: 'Shift End',
+            taps: tapsByEmp.get(emp.employeeId) || (Array.isArray(emp.taps) ? emp.taps : []),
+            hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+            date: emp.shiftDate || filter?.date,
+            shift: `Shift ${emp.shift || 1}`
+          };
+        });
       }
     }
   } catch (_) {}
@@ -744,24 +794,28 @@ export async function getIotEmployeeMetrics(filter?: {
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        return json.data.map((emp: any, idx: number) => ({
-          employeeId: String(emp.employeeId || `EMP${idx + 1}`),
-          employeeName: emp.employeeName || null,
-          machineId: String(emp.machineId || ''),
-          roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
-          rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
-          expectedRounds: Number(emp.expectedRounds || 8),
-          avgGapMinutes: Number(emp.avgGapMinutes || 0),
-          longestGapMinutes: Number(emp.longestGapMinutes || 0),
-          activeStatus: 'ACTIVE',
-          idleMinutes: Number(emp.idleMinutes || 0),
-          performancePercent: Number(emp.performancePercent || 0),
-          lastActiveTime: 'Just now',
-          taps: Array.isArray(emp.taps) ? emp.taps : [],
-          hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
-          date: emp.date || filter?.date,
-          shift: emp.shift || filter?.shiftName
-        }));
+        return json.data.map((emp: any, idx: number) => {
+          const eId = String(emp.employeeId || `EMP${idx + 1}`).trim();
+          const mappedName = empNameMap.get(eId)?.employeeName;
+          return {
+            employeeId: eId,
+            employeeName: mappedName || emp.employeeName || null,
+            machineId: String(emp.machineId || ''),
+            roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+            rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+            expectedRounds: Number(emp.expectedRounds || 8),
+            avgGapMinutes: Number(emp.avgGapMinutes || 0),
+            longestGapMinutes: Number(emp.longestGapMinutes || 0),
+            activeStatus: 'ACTIVE',
+            idleMinutes: Number(emp.idleMinutes || 0),
+            performancePercent: Number(emp.performancePercent || 0),
+            lastActiveTime: 'Just now',
+            taps: Array.isArray(emp.taps) ? emp.taps : [],
+            hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+            date: emp.date || filter?.date,
+            shift: emp.shift || filter?.shiftName
+          };
+        });
       }
     }
   } catch (err) {
@@ -815,6 +869,14 @@ export async function getIotProductionEntries(filter?: {
   machineId?: string | null;
   employeeId?: string | null;
 }): Promise<ProductionReportRow[]> {
+  const empNameMap = await getMappedEmployeeNameMap();
+  const applyMappedNames = (rows: ProductionReportRow[]) =>
+    rows.map(r => {
+      const eId = r.employeeId ? String(r.employeeId).trim() : '';
+      const mapped = eId ? empNameMap.get(eId)?.employeeName : undefined;
+      return mapped ? { ...r, employeeName: mapped } : r;
+    });
+
   try {
     const params = new URLSearchParams();
     if (filter?.date) params.set('date', filter.date);
@@ -827,7 +889,7 @@ export async function getIotProductionEntries(filter?: {
     if (res.ok) {
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
-        return json.data;
+        return applyMappedNames(json.data);
       }
     }
   } catch (_) {}
@@ -838,7 +900,7 @@ export async function getIotProductionEntries(filter?: {
       .collection<ProductionReportRow>(IOT_COLLECTIONS.PRODUCTION_ENTRIES)
       .find({}, { projection: { _id: 0 } })
       .toArray();
-    if (list.length > 0) return list;
+    if (list.length > 0) return applyMappedNames(list);
   } catch (_) {}
   return [];
 }
@@ -1024,6 +1086,7 @@ export async function getIotCardTaps(filter?: {
 }): Promise<any[]> {
   try {
     const db = await getIotDb();
+    const empNameMap = await getMappedEmployeeNameMap(db);
     const query: any = {};
     if (filter?.date) query.shiftDate = filter.date;
     if (filter?.shift) query.shift = Number(filter.shift);
@@ -1031,12 +1094,17 @@ export async function getIotCardTaps(filter?: {
     if (filter?.deviceId) query.deviceId = filter.deviceId;
     if (filter?.machineId) query.machineId = filter.machineId;
 
-    return await db
+    const taps = await db
       .collection(IOT_COLLECTIONS.ACTIVITIES)
       .find(query, { projection: { _id: 0 } })
       .sort({ tapTime: -1 })
       .limit(filter?.limit || 500)
       .toArray();
+    return taps.map((t: any) => {
+      const eId = String(t.employeeId || '').trim();
+      const mapped = eId ? empNameMap.get(eId)?.employeeName : undefined;
+      return mapped ? { ...t, employeeName: mapped } : t;
+    });
   } catch (err) {
     console.error('Error fetching card taps:', err);
     return [];

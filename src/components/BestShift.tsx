@@ -9,9 +9,11 @@ interface BestShiftProps {
   workers: Sider[];
   rules: IncentiveRule[];
   isTvMode?: boolean;
+  shed?: string;
 }
 
-export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, isTvMode }) => {
+export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, isTvMode, shed }) => {
+  const shedLabel = (shed || report?.shed || 'Shed 1').toUpperCase();
   // Live ticking clock for TV view
   const [tickerTime, setTickerTime] = useState(new Date());
   useEffect(() => {
@@ -601,12 +603,12 @@ export const BestShift: React.FC<BestShiftProps> = ({ report, workers, rules, is
         <div className="absolute inset-0 border border-stone-200 pointer-events-none margin-2" />
 
         {/* Heading Header */}
-        <div className="text-center py-6 border-b-4 border-stone-950 uppercase tracking-tight">
-          <h1 className="text-4xl md:text-6xl font-black text-stone-900 tracking-tighter">
-            Best Shift Of the Day
+        <div className="text-center py-6 print:py-3 border-b-4 border-stone-950 uppercase tracking-tight">
+          <h1 className="text-4xl md:text-6xl print:text-3xl font-black text-stone-900 tracking-tighter">
+            {shedLabel} — Best Shift Of the Day
           </h1>
           <p className="text-xs font-black tracking-widest mt-2 text-stone-500 uppercase">
-            SpinMonitor Excellence Program • {report.date}
+            {shedLabel} • {report.date}
           </p>
         </div>
 

@@ -15,6 +15,7 @@ export interface SearchableWorkerSelectProps {
   priorityDeptFilter?: (w: Sider) => boolean;
   priorityLabel?: string;
   otherLabel?: string;
+  disabledOptionReason?: (w: Sider) => string | null | undefined;
 }
 
 export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
@@ -26,7 +27,8 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
   disabled = false,
   priorityDeptFilter,
   priorityLabel = 'Department Staff',
-  otherLabel = 'All Other Staff'
+  otherLabel = 'All Other Staff',
+  disabledOptionReason
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -209,26 +211,37 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
                     )}
                     {priorityMatches.map(w => {
                       const isSelected = selectedWorker?.id === w.id;
+                      const blockedReason = !isSelected && disabledOptionReason ? disabledOptionReason(w) : null;
                       return (
                         <button
                           key={w.id}
                           type="button"
-                          onClick={() => handleSelect(w.id)}
+                          disabled={Boolean(blockedReason)}
+                          onClick={() => !blockedReason && handleSelect(w.id)}
                           className={cn(
-                            "w-full px-2.5 py-1.5 text-left text-xs rounded-lg transition-colors flex items-center justify-between cursor-pointer group",
-                            isSelected
-                              ? "bg-emerald-600 text-white font-black"
-                              : "hover:bg-emerald-50/70 text-stone-800"
+                            "w-full px-2.5 py-1.5 text-left text-xs rounded-lg transition-colors flex items-center justify-between group",
+                            blockedReason
+                              ? "opacity-50 cursor-not-allowed bg-stone-50 text-stone-400"
+                              : isSelected
+                              ? "bg-emerald-600 text-white font-black cursor-pointer"
+                              : "hover:bg-emerald-50/70 text-stone-800 cursor-pointer"
                           )}
                         >
                           <div className="flex items-center gap-2 truncate">
                             <span className="font-bold truncate uppercase">{w.name}</span>
-                            <span className={cn(
-                              "text-[10px] font-mono px-1.5 py-0.2 rounded font-black",
-                              isSelected ? "bg-white/20 text-white" : "bg-stone-100 text-emerald-800 border border-emerald-200"
-                            )}>
-                              #{w.tNo}
-                            </span>
+                            {w.tNo && (
+                              <span className={cn(
+                                "text-[10px] font-mono px-1.5 py-0.2 rounded font-black",
+                                isSelected ? "bg-white/20 text-white" : "bg-stone-100 text-emerald-800 border border-emerald-200"
+                              )}>
+                                #{w.tNo}
+                              </span>
+                            )}
+                            {blockedReason && (
+                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+                                {blockedReason}
+                              </span>
+                            )}
                           </div>
                           {isSelected && <Check size={13} className="text-white shrink-0" />}
                         </button>
@@ -245,32 +258,43 @@ export const SearchableWorkerSelect: React.FC<SearchableWorkerSelectProps> = ({
                     </div>
                     {otherMatches.map(w => {
                       const isSelected = selectedWorker?.id === w.id;
+                      const blockedReason = !isSelected && disabledOptionReason ? disabledOptionReason(w) : null;
                       return (
                         <button
                           key={w.id}
                           type="button"
-                          onClick={() => handleSelect(w.id)}
+                          disabled={Boolean(blockedReason)}
+                          onClick={() => !blockedReason && handleSelect(w.id)}
                           className={cn(
-                            "w-full px-2.5 py-1.5 text-left text-xs rounded-lg transition-colors flex items-center justify-between cursor-pointer group",
-                            isSelected
-                              ? "bg-emerald-600 text-white font-black"
-                              : "hover:bg-stone-100 text-stone-800"
+                            "w-full px-2.5 py-1.5 text-left text-xs rounded-lg transition-colors flex items-center justify-between group",
+                            blockedReason
+                              ? "opacity-50 cursor-not-allowed bg-stone-50 text-stone-400"
+                              : isSelected
+                              ? "bg-emerald-600 text-white font-black cursor-pointer"
+                              : "hover:bg-stone-100 text-stone-800 cursor-pointer"
                           )}
                         >
                           <div className="flex items-center gap-2 truncate">
                             <span className="font-bold truncate uppercase">{w.name}</span>
-                            <span className={cn(
-                              "text-[10px] font-mono px-1.5 py-0.2 rounded font-black",
-                              isSelected ? "bg-white/20 text-white" : "bg-stone-100 text-stone-600 border border-stone-200"
-                            )}>
-                              #{w.tNo}
-                            </span>
+                            {w.tNo && (
+                              <span className={cn(
+                                "text-[10px] font-mono px-1.5 py-0.2 rounded font-black",
+                                isSelected ? "bg-white/20 text-white" : "bg-stone-100 text-stone-600 border border-stone-200"
+                              )}>
+                                #{w.tNo}
+                              </span>
+                            )}
                             {w.department && (
                               <span className={cn(
                                 "text-[9px] uppercase font-bold px-1 rounded",
                                 isSelected ? "text-emerald-100" : "text-stone-400"
                               )}>
                                 [{w.department}]
+                              </span>
+                            )}
+                            {blockedReason && (
+                              <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+                                {blockedReason}
                               </span>
                             )}
                           </div>

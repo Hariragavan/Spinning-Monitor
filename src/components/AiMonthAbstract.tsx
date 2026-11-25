@@ -20,6 +20,7 @@ interface AiMonthAbstractProps {
   onToggleFreezeMonth?: (month: number, year: number) => void;
   onMonthChange?: (month: number) => void;
   onYearChange?: (year: number) => void;
+  shed?: string;
 }
 
 export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
@@ -34,8 +35,10 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
   frozenMonths,
   onToggleFreezeMonth,
   onMonthChange,
-  onYearChange
+  onYearChange,
+  shed
 }) => {
+  const shedLabel = (shed || history[0]?.shed || 'KTTM').toUpperCase();
   const monthKey = getMonthKey(month, year);
   const frozenRecord = frozenMonths?.[monthKey];
   const isFrozen = !!frozenRecord;
@@ -291,7 +294,7 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
   };
 
   const handleExportToCSV = () => {
-    let csv = `KTTM SPINNING MILLS - AI LINKCONER INCENTIVE ABSTRACT (${reportMonthYear})\n\n`;
+    let csv = `SCM SPINNING MILLS (${shedLabel}) - AI LINKCONER INCENTIVE ABSTRACT (${reportMonthYear})\n\n`;
     csv += `S. NO,TK No,Operator Name,Days Worked,Duties Assigned,Incentive Payout (INR)\n`;
 
     aiTotals.forEach((row, idx) => {
@@ -325,7 +328,7 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
             AI Operator Monthly Performance Abstract
           </div>
           <h1 className="text-4xl md:text-5xl font-black uppercase tracking-wider text-stone-900 pb-2">
-            AI Monthly Incentive Abstract — {reportMonthYear}
+            AI Monthly Incentive Abstract — {shedLabel} ({reportMonthYear})
           </h1>
           <div className="bg-gradient-to-r from-transparent via-purple-600 to-transparent h-1.5 w-1/2 mx-auto rounded-full mt-2" />
         </div>
@@ -498,7 +501,7 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
         {/* Printable Title Block */}
         <div className="p-5 border-b border-stone-100 text-center">
           <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight text-stone-900">
-            AI Linkconer Monthly Incentive Abstract
+            AI Linkconer Monthly Incentive Abstract — {shedLabel}
           </h2>
           <p className="text-xs font-extrabold uppercase tracking-widest text-stone-400 mt-1">
             Month of {reportMonthYear} • Consolidated Payout Statement
@@ -594,13 +597,13 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
           <div className="print-page-break p-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between mb-8 text-black bg-white">
             <div>
               <div className="text-center pb-2 border-b-2 border-black mb-3">
-                <img
-                  src="/scm-logo-horizontal.png"
-                  alt="SCM Textile Spinners"
-                  className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
-                />
-                <h1 className="text-2xl font-black text-black uppercase tracking-tight">AI Linkconer Monthly Incentive Abstract</h1>
+                <h1 className="text-2xl font-black text-black uppercase tracking-tight">
+                  {shedLabel} — AI Linkconer Monthly Incentive Abstract
+                </h1>
                 <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-4">
+                  <span>
+                    Shed: <span className="text-black font-extrabold text-sm">{shedLabel}</span>
+                  </span>
                   <span>
                     Month: <span className="text-black font-extrabold text-sm">{reportMonthYear}</span>
                   </span>
@@ -687,10 +690,13 @@ export const AiMonthAbstract: React.FC<AiMonthAbstractProps> = ({
               <div key={`ai-worker-${item.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
-                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
-                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">AI LINKCONER OPERATOR INCENTIVE STATEMENT</h1>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">
+                      {shedLabel} · WORKER WISE HISTORY
+                    </span>
+                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">{shedLabel} — AI LINKCONER OPERATOR INCENTIVE STATEMENT</h1>
                     
                     <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
+                      <div>SHED: <span className="text-black font-extrabold text-[14px]">{shedLabel}</span></div>
                       <div>OPERATOR NAME: <span className="text-black font-extrabold text-[14px]">{item.name}</span></div>
                       <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{item.tNo || '—'}</span></div>
                       <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{reportMonthYear}</span></div>
