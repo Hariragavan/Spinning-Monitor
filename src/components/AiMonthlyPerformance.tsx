@@ -11,6 +11,7 @@ interface AiMonthlyPerformanceProps {
   isTvMode?: boolean;
   month?: number;
   year?: number;
+  shed?: string;
 }
 
 interface AiPerformanceRow {
@@ -27,8 +28,10 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
   rules,
   isTvMode: appIsTvMode = false,
   month,
-  year
+  year,
+  shed
 }) => {
+  const shedLabel = (shed || history[0]?.shed || 'KTTM').toUpperCase();
   const [localTvMode, setLocalTvMode] = useState<boolean>(false);
   const activeTv = appIsTvMode || localTvMode;
 
@@ -296,6 +299,15 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
         </div>
       )}
 
+      <div className="hidden print-only mb-4 border-b-2 border-black pb-2 text-center">
+        <h1 className="text-lg font-black uppercase tracking-tight text-black">
+          {shedLabel} — AI LINKCONER OPERATOR MONTHLY PERFORMANCE STATEMENT
+        </h1>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-700 mt-0.5">
+          {activeWorkerData?.worker ? `${activeWorkerData.worker.name} (${activeWorkerData.worker.tNo}) · ` : ''}{monthOptions.find(m => m.value === selectedMonth)?.label} {selectedYear}
+        </p>
+      </div>
+
       {/* TV VIEW */}
       {activeTv && currentTvWorker ? (
         <div className="bg-white text-stone-900 rounded-3xl p-8 border border-stone-200 shadow-xs animate-in fade-in duration-300">
@@ -507,10 +519,13 @@ export const AiMonthlyPerformance: React.FC<AiMonthlyPerformanceProps> = ({
               <div key={`print-worker-${workerItem.worker.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
-                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
-                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">AI LINKCONER OPERATOR MONTHLY PERFORMANCE STATEMENT</h1>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">
+                      {shedLabel} · WORKER WISE HISTORY
+                    </span>
+                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">{shedLabel} — AI LINKCONER OPERATOR MONTHLY PERFORMANCE STATEMENT</h1>
                     
                     <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
+                      <div>SHED: <span className="text-black font-extrabold text-[14px]">{shedLabel}</span></div>
                       <div>OPERATOR NAME: <span className="text-black font-extrabold text-[14px]">{workerItem.worker.name}</span></div>
                       <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{workerItem.worker.tNo || '—'}</span></div>
                       <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{monthOptions.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>

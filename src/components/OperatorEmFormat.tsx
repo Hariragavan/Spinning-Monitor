@@ -1748,7 +1748,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
               Sider Monthly EM Statement
             </span>
             <h1 className="text-4xl md:text-5xl font-serif italic text-stone-900">
-              Sider EM for the Month Of {monthsList[selectedMonth - 1].label} {selectedYear}
+              Sider EM for the Month Of {monthsList[selectedMonth - 1].label} {selectedYear} ({activeShedTab})
             </h1>
           </div>
           
@@ -2173,8 +2173,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm">
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format</span>
-                  <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Operator EM Ledger</h2>
+                  <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format · {activeShedTab}</span>
+                  <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Operator EM Ledger ({activeShedTab})</h2>
                 </div>
 
                 {/* Worker Selector */}
@@ -2371,8 +2371,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
             {/* Header control block */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm">
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format</span>
-                <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Operator EM Monthly Abstract</h2>
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format · {activeShedTab}</span>
+                <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Operator EM Monthly Abstract ({activeShedTab})</h2>
               </div>
 
               {/* Month/Year selector */}
@@ -2447,8 +2447,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
             {/* Header control block */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format</span>
-                <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Sider Monthly EM Statement</h2>
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format · {activeShedTab}</span>
+                <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Sider Monthly EM Statement ({activeShedTab})</h2>
               </div>
 
               {/* Controls */}
@@ -2579,8 +2579,8 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
             {/* Header control block */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-[2.5rem] border border-stone-200 shadow-sm">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format</span>
-                <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Daily EM Report Statement</h2>
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Operator EM Format · {activeShedTab}</span>
+                <h2 className="font-serif italic text-3xl tracking-tighter text-stone-900">Daily EM Report Statement ({activeShedTab})</h2>
               </div>
 
               {/* Controls */}
@@ -2688,7 +2688,7 @@ export const OperatorEmFormat: React.FC<OperatorEmFormatProps> = ({
             >
               {/* Report Header Title Block to match user's custom design request */}
               <div className="w-full max-w-4xl border-b border-stone-200 pb-6 mb-6 flex flex-col items-center text-center">
-                <h1 className="text-3xl font-serif italic text-stone-900 tracking-tight">Daily Em Report</h1>
+                <h1 className="text-3xl font-serif italic text-stone-900 tracking-tight">Daily Em Report ({activeShedTab})</h1>
                 <div className="text-lg font-mono font-bold text-stone-600 mt-2 bg-stone-50 px-4 py-1 rounded-full border border-stone-100 shadow-xs">
                   {selectedDailyEmDate || 'No Date Selected'}
                 </div>

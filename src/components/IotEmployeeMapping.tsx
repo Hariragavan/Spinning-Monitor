@@ -4,10 +4,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Search, Plus, Upload, Download, RefreshCw, Edit2, Trash2,
   CheckCircle2, AlertTriangle, Radio, Copy,
-  Check, FileJson, X, Clock, Activity, HardDrive, CheckCircle
+  Check, FileJson, X, Clock, Activity, HardDrive
 } from 'lucide-react';
 import { Sider } from '@/types';
 import { cn } from '@/lib/utils';
+import { SearchableWorkerSelect } from './SearchableWorkerSelect';
 
 export interface IotDeviceStatus {
   deviceId: string;
@@ -52,6 +53,12 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
   onRefreshWorkers
 }) => {
   const [employees, setEmployees] = useState<IotEmployeeRecord[]>([]);
+  const [registeredMappings, setRegisteredMappings] = useState<Array<{
+    employeeId: string;
+    employeeName: string;
+    workerId?: string | null;
+    tNo?: string | null;
+  }>>([]);
   const [devices, setDevices] = useState<IotDeviceStatus[]>([]);
   const [unmappedCards, setUnmappedCards] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,13 +66,10 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'all' | 'active' | 'inactive' | 'unregistered'>('all');
 
-  // Add / Edit Modal state
+  // Add / Edit Modal state (Strictly RFID No. + Operator from Worker Master)
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<IotEmployeeRecord | null>(null);
   const [formCardId, setFormCardId] = useState('');
-  const [formName, setFormName] = useState('');
-  const [formDept, setFormDept] = useState('Sider');
-  const [formActive, setFormActive] = useState(true);
   const [selectedMillWorkerId, setSelectedMillWorkerId] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [formSaving, setFormSaving] = useState(false);
@@ -123,6 +127,9 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
 
       if (empRes?.success && Array.isArray(empRes.data)) {
         setEmployees(empRes.data);
+        if (Array.isArray(empRes.registeredMappings)) {
+          setRegisteredMappings(empRes.registeredMappings);
+        }
         if (Array.isArray(empRes.unmappedCards)) {
           setUnmappedCards(empRes.unmappedCards);
         }
@@ -153,13 +160,28 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Check if a worker is already mapped to a different RFID card (enforces strict 1-to-1 mapping)
+  const getWorkerConflictingRfid = (worker: Sider, currentCardId?: string): string | null => {
+    const cleanCurrent = (currentCardId || '').trim();
+    const wId = (worker.id || '').trim();
+    const wTNo = (worker.tNo || '').trim();
+    const wBaseName = (worker.name || '').trim().toLowerCase();
+
+    for (const m of registeredMappings) {
+      if (!m.employeeId || m.employeeId === cleanCurrent) continue;
+      if (wId && m.workerId && m.workerId === wId) return m.employeeId;
+      const mTNo = (m.tNo || '').trim();
+      if (wTNo && mTNo && mTNo === wTNo) return m.employeeId;
+      const mBaseName = (m.employeeName || '').replace(/\([^)]*\)/g, '').trim().toLowerCase();
+      if (!wTNo && !mTNo && wBaseName && mBaseName && wBaseName === mBaseName) return m.employeeId;
+    }
+    return null;
+  };
+
   // Open Add Modal
   const openAddModal = (presetCardId?: string) => {
     setEditingEmployee(null);
     setFormCardId(presetCardId || (unmappedCards.length > 0 ? unmappedCards[0] : ''));
-    setFormName('');
-    setFormDept('Sider');
-    setFormActive(true);
     setSelectedMillWorkerId('');
     setFormError(null);
     setModalOpen(true);
@@ -169,48 +191,54 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
   const openEditModal = (emp: IotEmployeeRecord) => {
     setEditingEmployee(emp);
     setFormCardId(emp.employeeId);
-    setFormName(emp.employeeName);
-    setFormDept(emp.department || 'Sider');
-    setFormActive(emp.active !== false);
     setFormError(null);
 
     // Match worker in mill worker master
+    const baseEmpName = (emp.employeeName || '').replace(/\([^)]*\)/g, '').trim().toLowerCase();
     const matched = millWorkers.find(w =>
+      (emp as any).workerId && String(w.id) === String((emp as any).workerId)
+    ) || millWorkers.find(w =>
       (emp.tNo && String(w.tNo) === String(emp.tNo)) ||
-      (w.name && emp.employeeName.toLowerCase().includes(w.name.toLowerCase()))
+      (w.name && baseEmpName && w.name.trim().toLowerCase() === baseEmpName)
     );
     setSelectedMillWorkerId(matched ? matched.id : '');
     setModalOpen(true);
   };
 
-  // Quick pick mill worker in modal
-  const handleSelectMillWorker = (workerId: string) => {
-    setSelectedMillWorkerId(workerId);
-    const w = millWorkers.find(x => x.id === workerId);
-    if (w) {
-      const cleanName = w.name.trim();
-      const ticket = w.tNo ? `(${w.tNo})` : '';
-      setFormName(`${cleanName}${ticket}`);
-      if (w.department) setFormDept(w.department);
-    }
-  };
-
-  // Save single employee mapping
+  // Save single employee mapping (strictly 1 RFID <-> 1 Operator)
   const handleSaveEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
     const cleanCardId = formCardId.trim();
-    const cleanName = formName.trim();
-
     if (!cleanCardId) {
-      setFormError('RFID Card ID is required');
+      setFormError('RFID No. is required');
       return;
     }
-    if (!cleanName) {
-      setFormError('Employee name is required');
+
+    const chosenWorker = millWorkers.find(w => w.id === selectedMillWorkerId);
+    if (!chosenWorker) {
+      setFormError('Please select an Operator from Worker Master');
       return;
     }
+
+    if (!editingEmployee) {
+      const existingCard = registeredMappings.find(m => m.employeeId === cleanCardId);
+      if (existingCard) {
+        setFormError(`RFID "${cleanCardId}" is already mapped to ${existingCard.employeeName}. Please use Edit instead.`);
+        return;
+      }
+    }
+
+    const conflictRfid = getWorkerConflictingRfid(chosenWorker, cleanCardId);
+    if (conflictRfid) {
+      setFormError(`Operator "${chosenWorker.name}${chosenWorker.tNo ? ` (#${chosenWorker.tNo})` : ''}" is already mapped to RFID ${conflictRfid}. Only one operator can be mapped to one RFID.`);
+      return;
+    }
+
+    const cleanName = chosenWorker.name.trim();
+    const ticket = chosenWorker.tNo ? chosenWorker.tNo.trim() : '';
+    const displayName = ticket ? `${cleanName}(${ticket})` : cleanName;
 
     setFormSaving(true);
     try {
@@ -218,23 +246,25 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          mode: editingEmployee ? 'edit' : 'create',
           employeeId: cleanCardId,
-          employeeName: cleanName,
-          name: cleanName,
-          department: formDept,
-          active: formActive
+          employeeName: displayName,
+          name: displayName,
+          workerId: chosenWorker.id,
+          tNo: ticket || undefined,
+          department: chosenWorker.department || 'Sider'
         })
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Failed to save employee');
+        throw new Error(data.message || 'Failed to save mapping');
       }
 
       setModalOpen(false);
       await loadData(true);
       if (onRefreshWorkers) onRefreshWorkers();
     } catch (err: any) {
-      setFormError(err.message || 'Error saving employee');
+      setFormError(err.message || 'Error saving mapping');
     } finally {
       setFormSaving(false);
     }
@@ -258,24 +288,6 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
       alert(err.message || 'Failed to delete employee');
     } finally {
       setDeleting(false);
-    }
-  };
-
-  // Toggle active status directly
-  const handleToggleActive = async (emp: IotEmployeeRecord) => {
-    try {
-      await fetch('/api/iot/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: emp.employeeId,
-          employeeName: emp.employeeName,
-          active: !emp.active
-        })
-      });
-      setEmployees(prev => prev.map(item => item.employeeId === emp.employeeId ? { ...item, active: !item.active } : item));
-    } catch (err) {
-      console.error('Error toggling active status:', err);
     }
   };
 
@@ -652,10 +664,10 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-stone-50/80 border-b border-stone-200/80 text-[10px] font-black text-stone-500 uppercase tracking-wider">
-                <th className="py-3 px-4">RFID Card ID</th>
-                <th className="py-3 px-4">Employee Display Name</th>
-                <th className="py-3 px-4">Ticket / Role</th>
-                <th className="py-3 px-4">Detected Devices</th>
+                <th className="py-3 px-4">RFID No.</th>
+                <th className="py-3 px-4">Operator</th>
+                <th className="py-3 px-4">Token No. / Role</th>
+                <th className="py-3 px-4">Live Detected Devices</th>
                 <th className="py-3 px-4">Last Detected Tap</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -679,9 +691,8 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
               ) : (
                 filteredEmployees.map(emp => {
                   const isActive = emp.tapStatus === 'ACTIVE';
-                  const detectedDevs = emp.detectedDevices && emp.detectedDevices.length > 0
-                    ? emp.detectedDevices
-                    : (emp.lastDevice ? [emp.lastDevice] : []);
+                  // Show ONLY live detected devices (if D1 and D2 are both live tapped by this RFID, show both)
+                  const detectedDevs = Array.isArray(emp.detectedDevices) ? emp.detectedDevices : [];
 
                   return (
                     <tr key={emp.employeeId} className="hover:bg-stone-50/60 transition-colors">
@@ -773,7 +784,7 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
                         )}
                       </td>
 
-                      {/* Status (10-minute rule) */}
+                      {/* Status (Active / Inactive only) */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
                         <span className={cn(
                           "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border",
@@ -785,7 +796,7 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
                             "w-1.5 h-1.5 rounded-full",
                             isActive ? "bg-emerald-500 animate-pulse" : "bg-stone-400"
                           )} />
-                          {isActive ? 'Active (<= 10m)' : 'Inactive (> 10m)'}
+                          {isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
 
@@ -850,10 +861,10 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
                 </div>
               )}
 
-              {/* RFID Card ID Selector / Input */}
+              {/* RFID No. */}
               <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  RFID Card ID <span className="text-red-500">*</span>
+                  RFID No. <span className="text-red-500">*</span>
                 </label>
                 {!editingEmployee && unmappedCards.length > 0 ? (
                   <div className="space-y-2">
@@ -862,7 +873,7 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
                       onChange={e => setFormCardId(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-mono font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                     >
-                      <option value="">-- Choose Detected Unmapped Card --</option>
+                      <option value="">-- Choose Detected Unmapped RFID --</option>
                       {unmappedCards.map(cId => (
                         <option key={cId} value={cId}>
                           {cId} (Tapped on device)
@@ -890,115 +901,29 @@ export const IotEmployeeMapping: React.FC<IotEmployeeMappingProps> = ({
                 )}
               </div>
 
-              {/* Auto-detected devices & Last tap info in Edit mode */}
-              {editingEmployee && (
-                <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-stone-500 uppercase">Detected Devices (API):</span>
-                    <div className="flex items-center gap-1">
-                      {editingEmployee.detectedDevices && editingEmployee.detectedDevices.length > 0 ? (
-                        editingEmployee.detectedDevices.map(d => (
-                          <span key={d} className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-[10px] font-black">
-                            {d}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="font-mono text-stone-600">{editingEmployee.lastDevice || 'None'}</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-stone-500 uppercase">Last Tap Detected:</span>
-                    <span className="font-mono font-bold text-stone-800">
-                      {formatTapTime(editingEmployee.lastTapTime)}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Quick-Pick Mill Worker Helper */}
-              {millWorkers.length > 0 && (
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                    <span>Auto-Fill from Mill Worker Master</span>
-                    <span className="text-[10px] text-emerald-600 font-bold">Recommended</span>
-                  </label>
-                  <select
-                    value={selectedMillWorkerId}
-                    onChange={e => handleSelectMillWorker(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                  >
-                    <option value="">-- Choose a Spinning Sider --</option>
-                    {millWorkers.map(w => (
-                      <option key={w.id} value={w.id}>
-                        {w.name} {w.tNo ? `(TK #${w.tNo})` : ''} - {w.department || 'Sider'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Employee Display Name */}
+              {/* Operator (Searchable dropdown by Name or Token No. from Worker Master) */}
               <div>
-                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Display Name <span className="text-red-500">*</span>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>
+                    Operator <span className="text-red-500">*</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-bold normal-case">
+                    1 Operator per RFID · Search Name or Token No.
+                  </span>
                 </label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={e => setFormName(e.target.value)}
-                  placeholder="e.g. Sambari(24673) or Mangal(33786)"
-                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                  required
+                <SearchableWorkerSelect
+                  value={selectedMillWorkerId}
+                  onChange={(workerId) => {
+                    setSelectedMillWorkerId(workerId);
+                    setFormError(null);
+                  }}
+                  workers={millWorkers}
+                  placeholder="Select operator by name or token no..."
+                  disabledOptionReason={(w) => {
+                    const rfid = getWorkerConflictingRfid(w, formCardId);
+                    return rfid ? `Mapped: ${rfid}` : null;
+                  }}
                 />
-                <p className="text-[10px] text-stone-500 mt-1">
-                  Format: <code>Name(TicketNumber)</code> enables automatic ticket parsing across all reports.
-                </p>
-              </div>
-
-              {/* Department */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                    Department
-                  </label>
-                  <select
-                    value={formDept}
-                    onChange={e => setFormDept(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs font-semibold text-stone-900 focus:outline-none"
-                  >
-                    <option value="Sider">Sider</option>
-                    <option value="Gaiter">Gaiter</option>
-                    <option value="AI Linkconer">AI Linkconer</option>
-                    <option value="Fitter">Fitter</option>
-                    <option value="Oiler">Oiler</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                    Active Status
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setFormActive(!formActive)}
-                    className={cn(
-                      "w-full px-3.5 py-2.5 rounded-xl text-xs font-bold border flex items-center justify-center gap-2 transition-all cursor-pointer",
-                      formActive
-                        ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                        : "bg-stone-100 text-stone-500 border-stone-200"
-                    )}
-                  >
-                    <span className={cn("w-2 h-2 rounded-full", formActive ? "bg-emerald-500" : "bg-stone-400")} />
-                    {formActive ? 'Active in System' : 'Inactive'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-[11px] text-blue-800 flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <span>
-                  Hardware devices (IOT_D1, IOT_D2) and tap activities are automatically detected from the live telemetry API for each shift completed.
-                </span>
               </div>
 
               {/* Form Actions */}

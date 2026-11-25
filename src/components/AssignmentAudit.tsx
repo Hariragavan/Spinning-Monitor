@@ -159,6 +159,18 @@ export const AssignmentAudit: React.FC<AssignmentAuditProps> = ({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* Printable Sheet Header */}
+      <div className="hidden print-only mb-4 border-b-2 border-black pb-3 text-center">
+        <h1 className="text-xl font-black uppercase tracking-tight text-black">
+          {selectedShedTab.toUpperCase()} — DUPLICATE ASSIGNMENT &amp; CONFLICT AUDIT LEDGER
+        </h1>
+        <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{selectedShedTab.toUpperCase()}</strong></span>
+          <span>Period: <strong>{fromDate || 'All'} to {toDate || 'All'}</strong></span>
+          <span>Total Conflicts: <strong>{duplicateAllocations.length}</strong></span>
+        </div>
+      </div>
+
       {/* HEADER SECTION */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/80 shadow-xs no-print">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">

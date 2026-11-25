@@ -228,9 +228,11 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
-        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">KTTM SPINNING MILLS - UNIT 01</h1>
-        <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Incentive Amount Matrix Based in GPS</h2>
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {activeShed.toUpperCase()} — INCENTIVE AMOUNT MATRIX BASED IN GPS
+        </h1>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{activeShed.toUpperCase()}</strong></span>
           <span>Department: <strong>Ringframe Spinning</strong></span>
           <span>Standard Slots: <strong>₹60 to ₹120</strong></span>
           <span>Status: <strong>Active Matrix</strong></span>

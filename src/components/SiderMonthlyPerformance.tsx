@@ -16,6 +16,7 @@ interface SiderMonthlyPerformanceProps {
   machineEm?: MachineEmData;
   tvPageInterval?: number;
   emHighLimit?: number;
+  shed?: string;
 }
 
 interface SiderPerformanceRow {
@@ -38,7 +39,8 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
   year,
   machineEm,
   tvPageInterval,
-  emHighLimit = 4
+  emHighLimit = 4,
+  shed
 }) => {
   // We can let the user trigger a local TV simulation inside the page or rely on the parent isTvMode
   const [localTvMode, setLocalTvMode] = useState<boolean>(false);
@@ -327,9 +329,11 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
     <div className="bg-stone-50 min-h-screen text-stone-900 pb-16">
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
-        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">KTTM SPINNING MILLS - UNIT 01</h1>
-        <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Sider Monthly Performance Cycles</h2>
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — SIDER MONTHLY PERFORMANCE CYCLES
+        </h1>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{(shed || history[0]?.shed || 'Shed 1').toUpperCase()}</strong></span>
           <span>Month: <strong>{monthOptions.find(m => m.value === selectedMonth)?.label} {selectedYear}</strong></span>
           <span>Active Workers: <strong>{activeSidersWithData.length}</strong></span>
         </div>

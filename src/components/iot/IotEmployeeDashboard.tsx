@@ -171,8 +171,30 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
         }).catch(() => []),
         fetchSettingsAndOverview(selectedDate, shiftName)
       ]);
-      setEmployeeMetrics(metrics || []);
-      setProductionRows(prod || []);
+      // Enrich with latest mapped operator names from employees state / /api/iot/employees
+      let latestEmps = employees;
+      try {
+        const freshEmps = await iotApi.getEmployees();
+        if (freshEmps && freshEmps.length > 0) {
+          latestEmps = freshEmps;
+          setEmployees(freshEmps);
+        }
+      } catch (_) {}
+      const empNameMap = new Map(
+        (latestEmps || [])
+          .filter(e => e.employeeId && e.employeeName && e.employeeName !== e.employeeId)
+          .map(e => [String(e.employeeId).trim(), e.employeeName])
+      );
+      const enrichedMetrics = (metrics || []).map(m => {
+        const mapped = m.employeeId ? empNameMap.get(String(m.employeeId).trim()) : undefined;
+        return mapped ? { ...m, employeeName: mapped } : m;
+      });
+      const enrichedProd = (prod || []).map(r => {
+        const mapped = r.employeeId ? empNameMap.get(String(r.employeeId).trim()) : undefined;
+        return mapped ? { ...r, employeeName: mapped } : r;
+      });
+      setEmployeeMetrics(enrichedMetrics);
+      setProductionRows(enrichedProd);
     } catch (err) {
       console.error('Failed to refresh employee performance:', err);
     } finally {

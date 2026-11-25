@@ -11,6 +11,7 @@ interface FitterMonthlyPerformanceProps {
   month?: number;
   year?: number;
   onUpdateReport?: (updatedReport: DailyReport) => void;
+  shed?: string;
 }
 
 interface FitterDailyPerformanceRow {
@@ -28,8 +29,10 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
   isTvMode: appIsTvMode = false,
   month,
   year,
-  onUpdateReport
+  onUpdateReport,
+  shed
 }) => {
+  const shedLabel = (shed || history[0]?.shed || 'Shed 1').toUpperCase();
   const [localTvMode, setLocalTvMode] = useState<boolean>(false);
   const activeTv = appIsTvMode || localTvMode;
 
@@ -311,6 +314,15 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
         </div>
       )}
 
+      <div className="hidden print-only mb-4 border-b-2 border-black pb-2 text-center">
+        <h1 className="text-lg font-black uppercase tracking-tight text-black">
+          {shedLabel} — FITTER MONTHLY PERFORMANCE RECORD
+        </h1>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-700 mt-0.5">
+          {selectedWorkerObj ? `${selectedWorkerObj.name} (${selectedWorkerObj.tNo})` : 'All Plant Fitters'} · {reportMonthYear}
+        </p>
+      </div>
+
       {/* KPI METRICS CARDS */}
       <div className={cn(
         "grid grid-cols-2 md:grid-cols-4 no-print",
@@ -578,13 +590,13 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
           <div className="print-page-break p-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between mb-8 text-black bg-white">
             <div>
               <div className="text-center pb-2 border-b-2 border-black mb-3">
-                <img
-                  src="/scm-logo-horizontal.png"
-                  alt="SCM Textile Spinners"
-                  className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
-                />
-                <h1 className="text-2xl font-black text-black uppercase tracking-tight">Mill-Wide Fitter Monthly Performance Abstract</h1>
+                <h1 className="text-2xl font-black text-black uppercase tracking-tight">
+                  {shedLabel} — Fitter Monthly Performance Abstract
+                </h1>
                 <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-4">
+                  <span>
+                    Shed: <span className="text-black font-extrabold text-sm">{shedLabel}</span>
+                  </span>
                   <span>
                     Month: <span className="text-black font-extrabold text-sm">{reportMonthYear}</span>
                   </span>
@@ -687,10 +699,13 @@ export const FitterMonthlyPerformance: React.FC<FitterMonthlyPerformanceProps> =
               <div key={`print-fitter-${fitter.id}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg min-h-[250mm] flex flex-col justify-between text-black bg-white mb-8">
                 <div>
                   <div className="text-center pb-1.5 border-b border-black mb-2">
-                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">FITTER WISE HISTORY — PERFORMANCE &amp; MAINTENANCE AUDIT</span>
-                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">FITTER MONTHLY PERFORMANCE RECORD</h1>
+                    <span className="text-[11px] font-black uppercase tracking-widest text-stone-500 block mb-0.5">
+                      {shedLabel} · FITTER WISE HISTORY
+                    </span>
+                    <h1 className="text-lg md:text-xl font-black text-black uppercase tracking-tight">{shedLabel} — FITTER MONTHLY PERFORMANCE RECORD</h1>
                     
                     <div className="mt-1.5 flex justify-center gap-6 text-[13px] font-bold text-stone-600 uppercase tracking-wider">
+                      <div>SHED: <span className="text-black font-extrabold text-[14px]">{shedLabel}</span></div>
                       <div>FITTER NAME: <span className="text-black font-extrabold text-[14px]">{fitter.name}</span></div>
                       <div>TK. NO: <span className="text-black font-extrabold text-[14px]">{fitter.tNo || '—'}</span></div>
                       <div>PERIOD: <span className="text-black font-extrabold text-[14px]">{reportMonthYear}</span></div>

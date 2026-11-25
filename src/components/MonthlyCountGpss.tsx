@@ -368,6 +368,17 @@ export const MonthlyCountGpss: React.FC<MonthlyCountGpssProps> = ({
       "w-full transition-all duration-300 font-sans space-y-3.5",
       isTvMode ? "px-2 py-2 w-full max-w-none space-y-2.5" : "p-3 md:p-6 lg:p-7 max-w-7xl mx-auto"
     )}>
+      {/* Printable Sheet Header */}
+      <div className="hidden print-only mb-4 border-b-2 border-black pb-3 text-center">
+        <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
+          {(selectedShed || 'Shed 1').toUpperCase()} — RUNNING COUNT GPSS MONTHLY REPORT
+        </h1>
+        <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{(selectedShed || 'Shed 1').toUpperCase()}</strong></span>
+          <span>Month: <strong>{monthShortName} {selectedYear}</strong></span>
+        </div>
+      </div>
+
       {/* 1. TOP CONTROLS & UTILITY TOOLBAR (Exact layout as uploaded image, hidden on TV mode) */}
       {!isTvMode && (
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">

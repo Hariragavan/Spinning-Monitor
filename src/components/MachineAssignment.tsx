@@ -485,34 +485,20 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                     )}
                   </div>
 
-                  <div className="relative">
-                    <select
-                      value={currentSelected}
-                      onChange={(e) => assignAiCone(shift, [e.target.value || ''])}
-                      className="w-full px-3 py-2 bg-purple-950/90 border border-purple-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-purple-400 focus:outline-none cursor-pointer appearance-none"
-                    >
-                      <option value="" className="bg-stone-900 text-stone-400">-- No Linkconer Assigned --</option>
-                      {aiLinkconerWorkers.length > 0 && (
-                        <optgroup label="AI Linkconer Department" className="bg-stone-900 text-purple-300 font-bold">
-                          {aiLinkconerWorkers.map(w => (
-                            <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                              {w.name} ({w.tNo})
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label="All Other Workers" className="bg-stone-900 text-stone-400">
-                        {otherAiWorkers.map(w => (
-                          <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                            {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-purple-400">
-                      <Zap size={13} />
-                    </div>
-                  </div>
+                  <SearchableWorkerSelect
+                    value={currentSelected}
+                    onChange={(wId) => assignAiCone(shift, [wId || ''])}
+                    workers={workers}
+                    placeholder="-- No Linkconer Assigned --"
+                    className="bg-purple-950/90 border-purple-400/40 text-white hover:bg-purple-900/90 [&_span]:text-white [&_.text-stone-400]:text-purple-300"
+                    priorityDeptFilter={(w) => Boolean(
+                      w.department?.toLowerCase().includes('link') ||
+                      w.department?.toLowerCase().includes('cone') ||
+                      w.department?.toLowerCase().includes('ai')
+                    )}
+                    priorityLabel="AI Linkconer Department"
+                    otherLabel="All Other Workers"
+                  />
                 </div>
               );
             })}
@@ -591,46 +577,25 @@ export const MachineAssignment: React.FC<MachineAssignmentProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="relative">
-                            <select
-                              value={currentId}
-                              onChange={(e) => {
-                                const val = e.target.value || '';
-                                if (val && currentGaiterIds.some((gid, idx) => idx !== slotIdx && gid === val)) {
-                                  alert('This worker is already assigned to another gaiter slot in this shift.');
-                                  return;
-                                }
-                                const updated = [...currentGaiterIds];
-                                while (updated.length <= slotIdx) updated.push('');
-                                updated[slotIdx] = val;
-                                assignGaiter(shift, updated);
-                              }}
-                              className="w-full px-3 py-2 bg-amber-950/90 border border-amber-400/40 rounded-lg text-xs font-bold text-white focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer appearance-none"
-                            >
-                              <option value="" className="bg-stone-900 text-stone-400">
-                                -- Select Gaiter {slotIdx + 1} --
-                              </option>
-                              {gaiterDeptWorkers.length > 0 && (
-                                <optgroup label="Gaiter Department" className="bg-stone-900 text-amber-300 font-bold">
-                                  {gaiterDeptWorkers.map(w => (
-                                    <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                                      {w.name} ({w.tNo})
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )}
-                              <optgroup label="All Other Mill Staff" className="bg-stone-900 text-stone-400">
-                                {otherGaiterWorkers.map(w => (
-                                  <option key={w.id} value={w.id} className="bg-stone-900 text-white">
-                                    {w.name} ({w.tNo}) {w.department ? `[${w.department}]` : ''}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-amber-400">
-                              <Zap size={13} />
-                            </div>
-                          </div>
+                          <SearchableWorkerSelect
+                            value={currentId}
+                            onChange={(val) => {
+                              if (val && currentGaiterIds.some((gid, idx) => idx !== slotIdx && gid === val)) {
+                                alert('This worker is already assigned to another gaiter slot in this shift.');
+                                return;
+                              }
+                              const updated = [...currentGaiterIds];
+                              while (updated.length <= slotIdx) updated.push('');
+                              updated[slotIdx] = val || '';
+                              assignGaiter(shift, updated);
+                            }}
+                            workers={workers}
+                            placeholder={`-- Select Gaiter ${slotIdx + 1} --`}
+                            className="bg-amber-950/90 border-amber-400/40 text-white hover:bg-amber-900/90 [&_span]:text-white [&_.text-stone-400]:text-amber-300"
+                            priorityDeptFilter={(w) => Boolean(w.department?.toLowerCase().includes('gaiter'))}
+                            priorityLabel="Gaiter Department"
+                            otherLabel="All Other Mill Staff"
+                          />
                         </div>
                       );
                     })}

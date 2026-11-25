@@ -599,10 +599,10 @@ export const MachineDailyIncentive: React.FC<MachineDailyIncentiveProps> = ({
       {/* Printable Sheet Header */}
       <div className="hidden print-only mb-6 border-b-2 border-black pb-3 text-center">
         <h1 className="text-xl font-black uppercase tracking-tight text-black keep-size">
-          {(report.shed || shed || 'SPINNING MILLS').toUpperCase()}
+          {(shed || report.shed || 'Shed 1').toUpperCase()} — MACHINE WISE DAILY INCENTIVE STATEMENT
         </h1>
-        <h2 className="text-base font-extrabold uppercase tracking-wider text-black keep-size mt-0.5">Machine Wise Daily Incentive Statement</h2>
         <div className="flex justify-between items-center text-xs font-bold mt-2 pt-1 border-t border-stone-300 text-black">
+          <span>Shed: <strong>{(shed || report.shed || 'Shed 1').toUpperCase()}</strong></span>
           <span>Date: <strong>{report.date}</strong></span>
           <span>Shift I: <strong>₹{shiftTotals.I.toLocaleString()}</strong> | Shift II: <strong>₹{shiftTotals.II.toLocaleString()}</strong> | Shift III: <strong>₹{shiftTotals.III.toLocaleString()}</strong></span>
           <span>Total Payout: <strong>₹{grandTotal.toLocaleString()}</strong></span>

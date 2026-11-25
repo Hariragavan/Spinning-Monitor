@@ -772,20 +772,21 @@ export function getGaiterIncentive(
 }
 
 /**
- * Preserves exact fractional currency amounts (e.g. 57.5) without integer rounding,
- * trimming floating-point precision noise to 2 decimals.
+ * Rounds incentive amounts to the nearest 0.5 step (e.g. 57.5 stays 57.5,
+ * 41.25 -> 41.5, 43.125 -> 43), preventing multi-decimal fractions while
+ * never crossing over .5 to the next integer on /2 splits.
  */
 export function exactAmount(val: number): number {
   if (!Number.isFinite(val)) return 0;
-  return Math.round((val + Number.EPSILON) * 100) / 100;
+  return Math.round((val + Number.EPSILON) * 2) / 2;
 }
 
 /**
- * Formats an incentive amount cleanly (e.g. 57.5 -> "57.5", 115 -> "115").
+ * Formats an incentive amount cleanly at 0.5 precision (e.g. 57.5 -> "57.5", 115 -> "115").
  */
 export function formatIncentiveAmount(val: number): string {
   const clean = exactAmount(val);
-  return clean.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  return clean.toLocaleString('en-IN', { maximumFractionDigits: 1 });
 }
 
 /**

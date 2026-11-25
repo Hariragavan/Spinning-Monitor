@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry, MachineEmData, FrozenMonthRecord } from '../types';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate, formatIncentiveAmount } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate, exactAmount, formatIncentiveAmount } from '../lib/utils';
 import { Coins, Calendar, User, Search, Printer, FileText, ChevronRight, Download, Users, ArrowUpRight, BarChart3, Database, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -16,12 +16,16 @@ interface IncentiveLedgerReportProps {
   initialYear?: number;
   frozenMonths?: Record<string, FrozenMonthRecord>;
   onToggleFreezeMonth?: (month: number, year: number) => void;
+  shed?: string;
 }
 
 interface LedgerEntry {
   date: string;
   shift: Shift;
   frameNo: string;
+  machineDisplay?: string;
+  sideLabel?: string;
+  sidesCount?: number;
   count: string;
   gps: number;
   incentive: number;
@@ -36,6 +40,7 @@ export interface CombinedLedgerEntry {
   count: string;
   gps: string;
   em: string;
+  totalSides: number;
   incentiveText: string;
   incentiveTotal: number;
   role: 'OPERATOR' | 'GAITER';
@@ -63,12 +68,14 @@ export const combineLedgerEntriesByShift = (entries: LedgerEntry[]): CombinedLed
     const date = first.date;
     const shift = first.shift;
 
-    // 1. Frame numbers
+    // 1. Machine numbers with LH / RH / LH/RH
     let frameNo = '';
     if (role === 'GAITER') {
       frameNo = 'GAITER';
     } else {
-      frameNo = groupEntries.map(e => e.frameNo).join(', ');
+      frameNo = groupEntries
+        .map(e => e.machineDisplay || (e.sideLabel ? `${e.frameNo} (${e.sideLabel})` : e.frameNo))
+        .join(', ');
     }
 
     // 2. Count
@@ -82,21 +89,30 @@ export const combineLedgerEntriesByShift = (entries: LedgerEntry[]): CombinedLed
       count = '—';
     }
 
-    // 3. Achieved GPS
+    // 3. GPS
     const formatNum = (num: number) => {
       if (typeof num !== 'number' || isNaN(num)) return '0';
       return num % 1 === 0 ? num.toString() : parseFloat(num.toFixed(2)).toString();
     };
     const gps = groupEntries.map(e => formatNum(e.gps)).join(', ');
 
-    // 4. EM
-    const hasAnyEm = groupEntries.some(e => e.em !== undefined && e.em > 0);
+    // 4. EM -> Average of positive EMs across the shift (e.g. if 3 EMs -> average of the 3 EMs)
+    const validEms = groupEntries
+      .map(e => e.em)
+      .filter((v): v is number => typeof v === 'number' && !isNaN(v) && v > 0);
     let em = '—';
-    if (hasAnyEm) {
-      em = groupEntries.map(e => (e.em !== undefined && e.em > 0 ? parseFloat(e.em.toFixed(2)).toString() : '—')).join(', ');
+    if (validEms.length > 0) {
+      const avgEm = validEms.reduce((s, v) => s + v, 0) / validEms.length;
+      em = avgEm.toFixed(2);
     }
 
-    // 5. Incentive
+    // 5. Total sides worked in this shift
+    const totalSides = groupEntries.reduce(
+      (sum, e) => sum + (e.role === 'OPERATOR' ? (e.sidesCount ?? 1) : 0),
+      0
+    );
+
+    // 6. Incentive
     const incentiveTotal = groupEntries.reduce((sum, e) => sum + e.incentive, 0);
     let incentiveText = '';
     if (groupEntries.length > 1) {
@@ -113,6 +129,7 @@ export const combineLedgerEntriesByShift = (entries: LedgerEntry[]): CombinedLed
       count,
       gps,
       em,
+      totalSides,
       incentiveText,
       incentiveTotal,
       role,
@@ -121,6 +138,69 @@ export const combineLedgerEntriesByShift = (entries: LedgerEntry[]): CombinedLed
   });
 
   return combined;
+};
+
+export const OperatorClassicStatementTable: React.FC<{
+  rows: CombinedLedgerEntry[];
+  emAverage: number;
+  totalAmount: number;
+  compact?: boolean;
+}> = ({ rows, emAverage, totalAmount, compact = false }) => {
+  const totalSidesSum = rows.reduce((sum, r) => sum + r.totalSides, 0);
+  const padCell = compact ? 'px-1.5 py-1 text-[10.5px] leading-tight' : 'px-3 py-2 text-xs';
+
+  return (
+    <div className="w-full overflow-x-auto border-2 border-black bg-white text-black font-sans">
+      <table className="w-full border-collapse text-center">
+        <thead>
+          <tr className="bg-stone-100 border-b-2 border-black text-black font-black uppercase">
+            <th className={cn("border border-black w-12", padCell)}>S.NO</th>
+            <th className={cn("border border-black w-24", padCell)}>DATE</th>
+            <th className={cn("border border-black w-14", padCell)}>SHIFT</th>
+            <th className={cn("border border-black", padCell)}>MC NO</th>
+            <th className={cn("border border-black", padCell)}>COUNT</th>
+            <th className={cn("border border-black", padCell)}>GPS</th>
+            <th className={cn("border border-black w-20", padCell)}>EM</th>
+            <th className={cn("border border-black w-16", padCell)}>SIDES</th>
+            <th className={cn("border border-black w-28", padCell)}>INCENTIVE (RS)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, idx) => (
+            <tr key={`${row.date}-${row.shift}-${row.role}-${idx}`} className="border-b border-black font-bold hover:bg-stone-50/50">
+              <td className={cn("border border-black font-mono", padCell)}>{idx + 1}</td>
+              <td className={cn("border border-black font-mono whitespace-nowrap", padCell)}>{row.date}</td>
+              <td className={cn("border border-black font-black", padCell)}>{row.shift}</td>
+              <td className={cn("border border-black font-mono font-black", padCell)}>{row.frameNo}</td>
+              <td className={cn("border border-black font-bold", padCell)}>{row.count}</td>
+              <td className={cn("border border-black font-mono tabular-nums", padCell)}>{row.gps}</td>
+              <td className={cn("border border-black font-mono tabular-nums", padCell)}>{row.em}</td>
+              <td className={cn("border border-black font-mono tabular-nums font-black", padCell)}>{row.totalSides}</td>
+              <td className={cn("border border-black font-mono tabular-nums font-black whitespace-nowrap", padCell)}>
+                {row.incentiveText}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-stone-100 border-t-2 border-black font-black uppercase">
+            <td colSpan={6} className={cn("border border-black text-right", padCell)}>
+              Total ({rows.length} Shifts)
+            </td>
+            <td className={cn("border border-black font-mono", padCell)}>
+              {emAverage > 0 ? emAverage.toFixed(2) : '—'}
+            </td>
+            <td className={cn("border border-black font-mono font-black", padCell)}>
+              {totalSidesSum}
+            </td>
+            <td className={cn("border border-black font-mono font-black text-rose-700", padCell)}>
+              ₹{formatIncentiveAmount(totalAmount)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
 };
 
 export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({ 
@@ -132,7 +212,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
   initialMonth, 
   initialYear,
   frozenMonths,
-  onToggleFreezeMonth 
+  onToggleFreezeMonth,
+  shed
 }) => {
   // Navigation between the sub-views
   const [activeSubTab, setActiveSubTab] = useState<'individual' | 'consolidated' | 'monthlyProduction' | 'machineWiseProduction' | 'monthlyIncentiveAbstract'>('individual');
@@ -330,14 +411,23 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           if (hasDirectId || hasNameMatch || hasTNoMatch) {
             const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
             let incentive = 0;
-            for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+            let matchedLh = false;
+            let matchedRh = false;
+            let extraMatched = 0;
+            for (let sIdx = 0; sIdx < Math.min(4, Math.max(1, numSlots)); sIdx++) {
               const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
               if (!wId) continue;
               const wObj = resolveWorker(wId, entry.siderName, workers);
               if (wObj.id === targetWorker.id || wObj.tNo === targetWorker.tNo || (wObj.name && wObj.name.toLowerCase() === targetWorker.name.toLowerCase())) {
-                incentive += calculateSiderSlotIncentive(entry, sIdx, report, rules, workers);
+                if (sIdx === 0) matchedLh = true;
+                else if (sIdx === 1) matchedRh = true;
+                else extraMatched += 1;
+                incentive += calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, entry.shed || report.shed);
               }
             }
+            const sideLabel = (matchedLh && matchedRh) ? 'LH/RH' : matchedLh ? 'LH' : matchedRh ? 'RH' : (extraMatched > 0 ? `S${extraMatched + 2}` : '');
+            const sidesCount = (matchedLh ? 1 : 0) + (matchedRh ? 1 : 0) + extraMatched;
+            const machineDisplay = sideLabel ? `${entry.frameNo} (${sideLabel})` : entry.frameNo;
             const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
             let emValue = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
             if (emValue === undefined) {
@@ -347,9 +437,12 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
               date: report.date,
               shift: entry.shift,
               frameNo: entry.frameNo,
+              machineDisplay,
+              sideLabel,
+              sidesCount: sidesCount || 1,
               count: entry.count,
               gps: entry.gpsActual,
-              incentive: incentive,
+              incentive: exactAmount(incentive),
               role: 'OPERATOR',
               em: emValue
             });
@@ -555,14 +648,23 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           if (hasDirectId || hasNameMatch || hasTNoMatch) {
             const numSlots = entry.siderIds?.length || (entry.siderId ? 1 : 2);
             let incentive = 0;
-            for (let sIdx = 0; sIdx < Math.min(2, Math.max(1, numSlots)); sIdx++) {
+            let matchedLh = false;
+            let matchedRh = false;
+            let extraMatched = 0;
+            for (let sIdx = 0; sIdx < Math.min(4, Math.max(1, numSlots)); sIdx++) {
               const wId = entry.siderIds?.[sIdx] || (sIdx === 0 ? entry.siderId : '');
               if (!wId) continue;
               const wObj = resolveWorker(wId, entry.siderName, workers);
               if (wObj.id === targetWorker.id || wObj.tNo === targetWorker.tNo || (wObj.name && wObj.name.toLowerCase() === targetWorker.name.toLowerCase())) {
+                if (sIdx === 0) matchedLh = true;
+                else if (sIdx === 1) matchedRh = true;
+                else extraMatched += 1;
                 incentive += calculateSiderSlotIncentive(entry, sIdx, report, rules, workers, entry.shed || report.shed);
               }
             }
+            const sideLabel = (matchedLh && matchedRh) ? 'LH/RH' : matchedLh ? 'LH' : matchedRh ? 'RH' : (extraMatched > 0 ? `S${extraMatched + 2}` : '');
+            const sidesCount = (matchedLh ? 1 : 0) + (matchedRh ? 1 : 0) + extraMatched;
+            const machineDisplay = sideLabel ? `${entry.frameNo} (${sideLabel})` : entry.frameNo;
             const shiftNum = entry.shift === 'I' ? 1 : entry.shift === 'II' ? 2 : 3;
             let emValue = machineEm?.[report.date]?.[entry.frameNo]?.[shiftNum];
             if (emValue === undefined) {
@@ -572,9 +674,12 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
               date: report.date,
               shift: entry.shift || 'I',
               frameNo: entry.frameNo || '—',
+              machineDisplay: entry.frameNo ? machineDisplay : '—',
+              sideLabel,
+              sidesCount: sidesCount || 1,
               count: entry.count || '—',
               gps: entry.gpsActual || 0,
-              incentive: incentive,
+              incentive: exactAmount(incentive),
               role: 'OPERATOR',
               em: emValue
             });
@@ -839,8 +944,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
     const chunks: any[][] = [];
     if (remaining.length === 0) return chunks;
 
-    const M_nf = 28; // Max rows on non-final page to pack the page without leaving blank gap
-    const M_f = 22;  // Max rows on final page (leaving room for Accounts Consolidation & Signatures)
+    const M_nf = 32; // Max rows on non-final page to pack the page without leaving blank gap
+    const M_f = 24;  // Max rows on final page (leaving room for Accounts Consolidation & Signatures)
 
     // 1. Determine the number of pages P
     let P = 1;
@@ -1590,8 +1695,12 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
               <div className="space-y-8 print:space-y-2">
                 {/* Screen layout header */}
                 <div className="text-center pb-6 border-b-4 border-stone-950/15 print:hidden">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">Worker Wise History — Supporting Documents for Payout</span>
-                  <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">Sider Incentive Ledger Statement</h1>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">
+                    {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} · Worker Wise History
+                  </span>
+                  <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">
+                    {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Sider Incentive Statement
+                  </h1>
                   
                   {/* Detailed specs of selected worker card */}
                   {(() => {
@@ -1603,6 +1712,8 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                     const displayTo = tParts.length === 3 ? `${tParts[2]}/${tParts[1]}/${tParts[0]}` : toDate;
                     return (
                       <div className="mt-6 flex flex-wrap justify-center gap-8 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
+                        <div>Shed: <span className="text-stone-950 font-black text-sm">{(shed || history[0]?.shed || 'Shed 1').toUpperCase()}</span></div>
+                        <div className="w-1.5 h-1.5 rounded-full bg-stone-300 self-center" />
                         <div>Sider Name: <span className="text-stone-950 font-black text-sm">{detail.name}</span></div>
                         <div className="w-1.5 h-1.5 rounded-full bg-stone-300 self-center" />
                         <div>TK. No: <span className="text-stone-950 font-black text-sm">{detail.tNo || '—'}</span></div>
@@ -1613,7 +1724,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                   })()}
                 </div>
 
-                {/* Print Only Header (matching Image 4) */}
+                {/* Print Only Header */}
                 {(() => {
                   const detail = getWorkerDetails(selectedWorkerId);
                   if (!detail) return null;
@@ -1621,135 +1732,78 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                   const tParts = toDate.split('-');
                   const displayFrom = fParts.length === 3 ? `${fParts[2]}/${fParts[1]}/${fParts[0]}` : fromDate;
                   const displayTo = tParts.length === 3 ? `${tParts[2]}/${tParts[1]}/${tParts[0]}` : toDate;
+                  const shedName = (shed || history[0]?.shed || 'Shed 1').toUpperCase();
                   return (
-                    <div className="hidden print:block text-center mb-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
-                      <div className="border border-black py-1 my-1 w-full text-center">
-                        <h1 className="text-base font-black text-black uppercase tracking-widest">SIDER INCENTIVE STATEMENT</h1>
+                    <div className="hidden print:block text-center mb-1.5">
+                      <div className="border-2 border-black py-1 w-full text-center bg-stone-50">
+                        <h1 className="text-base font-black text-black uppercase tracking-widest">
+                          {shedName} — SIDER INCENTIVE STATEMENT
+                        </h1>
                       </div>
-                      <div className="mt-1 flex justify-center gap-8 text-[12px] font-black text-black uppercase tracking-wider">
-                        <div>SIDER NAME: <span className="font-extrabold">{detail.name}</span></div>
-                        <div>TK. NO: <span className="font-extrabold">{detail.tNo || '—'}</span></div>
-                        <div>PERIOD: <span className="font-extrabold">{displayFrom} to {displayTo}</span></div>
+                      <div className="mt-1 flex justify-center gap-6 text-[11px] font-black text-black uppercase tracking-wider">
+                        <span>SIDER NAME: {detail.name}</span>
+                        <span>TK. NO: {detail.tNo || '—'}</span>
+                        <span>PERIOD: {displayFrom} to {displayTo}</span>
                       </div>
                     </div>
                   );
                 })()}
 
                 {/* Ledger Data Table */}
-                {combinedIndividualLedger.length > 0 ? (
-                  <div className="space-y-8 print:space-y-2">
-                    {/* Main transaction ledger table */}
-                    <div className="overflow-x-auto rounded-2xl border-2 border-stone-900/10 mb-6 print:border print:border-black print:rounded-none print:mb-2">
-                      <table className="w-full text-center border-collapse print:border print:border-black">
-                        <thead>
-                          <tr className="bg-stone-50 border-b border-stone-900/10 print:bg-white print:border-b print:border-black print:text-[11px] print:text-black">
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-12">S. NO</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-left print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-24">Date</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-14">Shift</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-28">MC No</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">Count</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-36">Achieved GPS</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-20">EM</th>
-                            <th className="px-6 py-4 text-xs font-black text-stone-500 uppercase tracking-wider text-right print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:w-32">Incentive (Rs)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {combinedIndividualLedger.map((item, idx) => {
-                            const isRowDup = duplicateAllocations.some(
-                              d => d.date === item.date && (d.workerId === selectedWorkerId || d.tNo === selectedWorkerId)
-                            );
-                            return (
-                              <tr 
-                                key={idx} 
-                                className={cn(
-                                  "border-b last:border-b-0 border-stone-100 hover:bg-stone-50/50 transition-colors print:border-b print:border-black print:text-[11px] print:text-black",
-                                  isRowDup && "bg-red-50 hover:bg-red-100/50"
-                                )}
-                              >
-                                <td className="px-6 py-4 text-xs text-stone-400 font-bold text-left print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black print:font-bold">{idx + 1}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 text-left font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
-                                  <div className="flex items-center gap-2 print:justify-center">
-                                    <span>{formatDisplayDate(item.date)}</span>
-                                    {isRowDup && (
-                                      <span className="bg-red-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded tracking-wider uppercase shrink-0 no-print">
-                                        ⚠️ DUP
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-950 print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
-                                  <span className="px-2 py-1 bg-stone-100 text-stone-800 rounded font-bold print:bg-transparent print:p-0 print:text-black">{item.shift}</span>
-                                </td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-700 print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
-                                  {item.role === 'GAITER' ? (
-                                    <span className="text-emerald-700 text-xs font-extrabold tracking-widest bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full uppercase print:border-0 print:bg-transparent print:text-black">Gaiter Duty</span>
-                                  ) : (
-                                    item.frameNo
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 text-sm font-bold text-stone-600 font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">{item.count}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">{item.gps}</td>
-                                <td className="px-6 py-4 text-sm font-black text-stone-900 tabular-nums font-mono print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">{item.em}</td>
-                                <td className="px-6 py-4 text-right print:border print:border-black print:px-1.5 print:py-1 print:text-center print:text-black">
-                                  <div className="font-mono font-black text-emerald-800 inline-block text-right print:text-black print:text-center print:w-full">
-                                    <span className="hidden print:inline text-xs font-black font-mono">{item.incentiveText}</span>
-                                    <span className="print:hidden">
-                                      {item.incentiveText.includes('=') ? (
-                                        <div className="flex flex-col items-end">
-                                          <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
-                                          <span className="text-[10.5px] text-stone-400 font-mono font-medium">{item.incentiveText.split('=')[0]}</span>
-                                        </div>
-                                      ) : (
-                                        <span className="text-lg font-black font-mono">₹{item.incentiveTotal}</span>
-                                      )}
-                                    </span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                {(() => {
+                  const detail = getWorkerDetails(selectedWorkerId);
+                  if (!detail) return null;
 
-                    {/* Summary aggregates with stamp-payout box style */}
-                    <div className="flex flex-col sm:flex-row items-center justify-between p-8 bg-stone-50 rounded-3xl border-2 border-stone-100 relative">
-                      <div className="text-left mb-4 sm:mb-0">
-                        <span className="text-[9px] font-black tracking-widest text-stone-400 uppercase">Payout Calculation Summary</span>
-                        <div className="text-stone-900 font-black uppercase text-xl mt-1">Payable Incentive Record</div>
-                        <p className="text-[10px] font-bold text-stone-400 uppercase mt-1 leading-relaxed">
-                          Includes {combinedIndividualLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {combinedIndividualLedger.filter(i => i.role === 'GAITER').length} Gaiter duties under active frameworks
-                        </p>
+                  if (combinedIndividualLedger.length === 0) {
+                    return (
+                      <div className="py-16 text-center bg-stone-50 rounded-2xl border-2 border-dashed border-stone-200">
+                        <FileText size={40} className="mx-auto text-stone-300 mb-4" />
+                        <h3 className="text-lg font-black text-stone-800 uppercase">No Data Found</h3>
+                        <p className="text-stone-400 text-sm font-bold mt-1 uppercase tracking-wider">No assignments or gaiter entries were found for this operator in selected dates</p>
                       </div>
-                      
-                      <div className="flex gap-10 items-center">
-                        <div className="bg-white border border-stone-200 px-6 py-4 rounded-2xl text-center shadow-sm">
-                          <span className="block text-[8px] font-black text-stone-400 uppercase tracking-widest">EM Average</span>
-                          <span className="text-2xl font-black text-stone-800 font-mono tabular-nums">
-                            {individualEmAverage > 0 ? individualEmAverage.toFixed(2) : '—'}
-                          </span>
-                        </div>
+                    );
+                  }
 
-                        <div className="bg-white border border-stone-200 px-6 py-4 rounded-2xl text-center shadow-sm">
-                          <span className="block text-[8px] font-black text-stone-400 uppercase tracking-widest">Total Duties</span>
-                          <span className="text-2xl font-black text-stone-800 font-mono tabular-nums">{combinedIndividualLedger.length}</span>
+                  return (
+                    <div className="space-y-6 print:space-y-2">
+                      <OperatorClassicStatementTable
+                        rows={combinedIndividualLedger}
+                        emAverage={individualEmAverage}
+                        totalAmount={individualTotal}
+                      />
+
+                      {/* Summary aggregates with stamp-payout box style */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between p-6 print:p-2 bg-stone-50 rounded-2xl border-2 border-stone-100 print:border-black print:rounded-none relative">
+                        <div className="text-left mb-3 sm:mb-0">
+                          <span className="text-[9px] font-black tracking-widest text-stone-400 uppercase">Payout Calculation Summary</span>
+                          <div className="text-stone-900 font-black uppercase text-lg print:text-xs mt-0.5">Payable Incentive Record</div>
+                          <p className="text-[10px] font-bold text-stone-400 uppercase mt-0.5 leading-relaxed">
+                            Includes {combinedIndividualLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {combinedIndividualLedger.filter(i => i.role === 'GAITER').length} Gaiter duties
+                          </p>
                         </div>
                         
-                        <div className="bg-emerald-900 px-8 py-5 rounded-2xl text-center text-white shadow-xl shadow-emerald-950/20">
-                          <span className="block text-[8px] font-black text-emerald-300 uppercase tracking-widest">Total Amount</span>
-                          <span className="text-4xl font-extrabold font-mono tabular-nums">₹{individualTotal}</span>
+                        <div className="flex gap-8 print:gap-4 items-center">
+                          <div className="bg-white border border-stone-200 print:border-black px-5 py-3 print:px-2 print:py-1 rounded-xl text-center shadow-sm">
+                            <span className="block text-[8px] font-black text-stone-400 uppercase tracking-widest">EM Average</span>
+                            <span className="text-xl print:text-xs font-black text-stone-800 font-mono tabular-nums">
+                              {individualEmAverage > 0 ? individualEmAverage.toFixed(2) : '—'}
+                            </span>
+                          </div>
+
+                          <div className="bg-white border border-stone-200 print:border-black px-5 py-3 print:px-2 print:py-1 rounded-xl text-center shadow-sm">
+                            <span className="block text-[8px] font-black text-stone-400 uppercase tracking-widest">Total Duties</span>
+                            <span className="text-xl print:text-xs font-black text-stone-800 font-mono tabular-nums">{combinedIndividualLedger.length}</span>
+                          </div>
+                          
+                          <div className="bg-emerald-900 print:bg-black px-6 py-4 print:px-3 print:py-1 rounded-xl text-center text-white shadow-xl shadow-emerald-950/20">
+                            <span className="block text-[8px] font-black text-emerald-300 uppercase tracking-widest">Total Amount</span>
+                            <span className="text-3xl print:text-sm font-extrabold font-mono tabular-nums">₹{formatIncentiveAmount(individualTotal)}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="py-16 text-center bg-stone-50 rounded-2xl border-2 border-dashed border-stone-200">
-                    <FileText size={40} className="mx-auto text-stone-300 mb-4" />
-                    <h3 className="text-lg font-black text-stone-800 uppercase">No Data Found</h3>
-                    <p className="text-stone-400 text-sm font-bold mt-1 uppercase tracking-wider">No assignments or gaiter entries were found for this operator in selected dates</p>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             ) : (
               <div className="py-24 text-center">
@@ -1832,13 +1886,11 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             <div className="space-y-8">
               {/* Report Header */}
               <div className="text-center pb-6 border-b-4 border-stone-950/15">
-                <img
-                  src="/scm-logo-horizontal.png"
-                  alt="SCM Textile Spinners"
-                  className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs mx-auto mb-3"
-                />
-                <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">Operator Incentive Abstract</h1>
+                <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight">
+                  {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Operator Incentive Abstract
+                </h1>
                 <div className="mt-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
+                  Shed: <span className="text-stone-950 font-black text-sm mr-4">{(shed || history[0]?.shed || 'Shed 1').toUpperCase()}</span>
                   Month: <span className="text-stone-950 font-black text-sm">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span>
                 </div>
               </div>
@@ -2042,17 +2094,12 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
 
           <div className="bg-white p-10 rounded-[3rem] border border-stone-200 shadow-sm relative overflow-hidden">
             <div className="space-y-8">
-              {/* SCM TEXTILE SPINNERS Report Header Layout */}
+              {/* Report Header Layout */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-4 border-stone-950/15 gap-6">
-                <div className="flex items-center gap-5">
-                  <img
-                    src="/scm-logo-horizontal.png"
-                    alt="SCM Textile Spinners"
-                    className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs"
-                  />
-                  <div className="border-l-2 border-stone-300 pl-4">
-                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">Ringframe Production Report</h2>
-                  </div>
+                <div>
+                  <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-900 uppercase">
+                    {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Ringframe Production Report
+                  </h2>
                 </div>
 
                 <div className="flex sm:flex-col sm:items-end justify-between text-sm font-bold text-stone-700 uppercase tracking-wider print:mt-0">
@@ -2232,15 +2279,10 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             <div className="space-y-8">
               {/* Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b-4 border-stone-950/15 gap-6">
-                <div className="flex items-center gap-5">
-                  <img
-                    src="/scm-logo-horizontal.png"
-                    alt="SCM Textile Spinners"
-                    className="h-14 w-auto max-w-[260px] object-contain drop-shadow-2xs"
-                  />
-                  <div className="border-l-2 border-stone-300 pl-4">
-                    <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-800">Ringframe Machine Wise Production Report</h2>
-                  </div>
+                <div>
+                  <h2 className="text-lg md:text-xl font-sans font-extrabold tracking-tight text-stone-900 uppercase">
+                    {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Ringframe Machine Wise Production Report
+                  </h2>
                 </div>
 
                 <div className="flex sm:flex-col sm:items-end justify-between text-sm font-bold text-stone-700 uppercase tracking-wider print:mt-0">
@@ -2386,7 +2428,9 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             {/* Header for printing */}
             <div className="text-center pb-6 border-b-4 border-stone-950/15">
               <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 block mb-1">Cross-Reference supporting statement</span>
-              <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight font-sans">Sider Duty &amp; Machine Allocation Register</h1>
+              <h1 className="text-3xl font-black text-stone-900 uppercase tracking-tight font-sans">
+                {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Sider Duty &amp; Machine Allocation Register
+              </h1>
               <div className="mt-3 text-[11px] font-bold text-stone-500 uppercase tracking-wider font-mono">
                 Cross-Checking Dates: <span className="text-stone-950 font-black text-sm font-sans">
                   {fromDate ? fDateStr(fromDate) : '—'} to {toDate ? fDateStr(toDate) : '—'}
@@ -2555,6 +2599,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             year={selectedYear}
             frozenMonths={frozenMonths}
             onToggleFreezeMonth={onToggleFreezeMonth}
+            shed={shed}
           />
         </div>
       )}
@@ -2588,19 +2633,19 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
       {(isPrintingAll || isPrintingAbstract) && (
         <div className="print-all-container hidden print:block text-black bg-white font-sans w-full p-0">
           
-          {/* PAGES: KTTM RING FRAME OPERATOR INCENTIVE ABSTRACT */}
+          {/* PAGES: RING FRAME OPERATOR INCENTIVE ABSTRACT */}
           {abstractChunks.map((chunk, chunkIdx) => (
-            <div key={`abstract-chunk-${chunkIdx}`} className="print-page-break p-5 border-2 border-black rounded-lg flex flex-col justify-between mb-8 text-black bg-white" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
-              <div className="text-center pb-2 border-b-2 border-black mb-3">
-                <img
-                  src="/scm-logo-horizontal.png"
-                  alt="SCM Textile Spinners"
-                  className="h-9 w-auto max-w-[180px] object-contain mx-auto mb-1.5"
-                />
-                <h1 className="text-2xl font-black text-black uppercase tracking-tight">Operator Incentive Abstract</h1>
-                <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-4">
+            <div key={`abstract-chunk-${chunkIdx}`} className="print-page-break p-3 border-2 border-black flex flex-col gap-3 mb-0 text-black bg-white" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
+              <div className="text-center pb-2 border-b-2 border-black mb-2">
+                <h1 className="text-lg font-black text-black uppercase tracking-tight">
+                  {(shed || history[0]?.shed || 'Shed 1').toUpperCase()} — Operator Incentive Abstract
+                </h1>
+                <div className="mt-1 text-[10px] font-black text-stone-600 uppercase tracking-wider flex justify-between items-center px-3">
                   <span>
-                    Month: <span className="text-black font-extrabold text-sm">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span>
+                    Shed: <span className="text-black font-extrabold text-xs">{(shed || history[0]?.shed || 'Shed 1').toUpperCase()}</span>
+                  </span>
+                  <span>
+                    Month: <span className="text-black font-extrabold text-xs">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span>
                   </span>
                   <span className="text-stone-700 font-extrabold">
                     Page {chunkIdx + 1} of {abstractChunks.length}
@@ -2608,15 +2653,15 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                 </div>
               </div>
 
-              <table className="w-full text-center border-collapse border border-black mb-3">
+              <table className="w-full text-center border-collapse border border-black mb-2">
                 <thead>
                   <tr className="bg-stone-100 border-b-2 border-black text-black text-xs font-black uppercase">
-                    <th className="border border-black px-3 py-1.5 text-left">S. NO</th>
-                    <th className="border border-black px-3 py-1.5 text-left">TNo</th>
-                    <th className="border border-black px-3 py-1.5 text-left">Operator / Sider Name</th>
-                    <th className="border border-black px-3 py-1.5">Days Worked</th>
-                    <th className="border border-black px-3 py-1.5">EM Value</th>
-                    <th className="border border-black px-3 py-1.5 text-right font-black">Incentive Payout (INR)</th>
+                    <th className="border border-black px-2 py-1 text-left">S. NO</th>
+                    <th className="border border-black px-2 py-1 text-left">TNo</th>
+                    <th className="border border-black px-2 py-1 text-left">Operator / Sider Name</th>
+                    <th className="border border-black px-2 py-1">Days Worked</th>
+                    <th className="border border-black px-2 py-1">EM Value</th>
+                    <th className="border border-black px-2 py-1 text-right font-black">Incentive Payout (INR)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2625,12 +2670,12 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                     const absoluteIdx = previousCount + idx + 1;
                     return (
                       <tr key={`${row.workerId}-${row.tNo || idx}-${idx}`} className="border-b border-black text-xs">
-                        <td className="border border-black px-3 py-1.5 text-left font-bold">{absoluteIdx}</td>
-                        <td className="border border-black px-3 py-1.5 text-left font-mono font-black">{row.tNo || '—'}</td>
-                        <td className="border border-black px-3 py-1.5 text-left uppercase font-bold">{row.name}</td>
-                        <td className="border border-black px-3 py-1.5 font-bold">{row.workingDays}</td>
-                        <td className="border border-black px-3 py-1.5 font-bold">{row.avgEm > 0 ? row.avgEm.toFixed(2) : '—'}</td>
-                        <td className="border border-black px-3 py-1.5 text-right font-mono font-black">₹{row.totalIncentive}</td>
+                        <td className="border border-black px-2 py-1 text-left font-bold">{absoluteIdx}</td>
+                        <td className="border border-black px-2 py-1 text-left font-mono font-black">{row.tNo || '—'}</td>
+                        <td className="border border-black px-2 py-1 text-left uppercase font-bold">{row.name}</td>
+                        <td className="border border-black px-2 py-1 font-bold">{row.workingDays}</td>
+                        <td className="border border-black px-2 py-1 font-bold">{row.avgEm > 0 ? row.avgEm.toFixed(2) : '—'}</td>
+                        <td className="border border-black px-2 py-1 text-right font-mono font-black">₹{formatIncentiveAmount(row.totalIncentive)}</td>
                       </tr>
                     );
                   })}
@@ -2639,30 +2684,30 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
 
               {/* Account Summary block and Signatures block are only shown on the very last page of the abstract */}
               {chunkIdx === abstractChunks.length - 1 && (
-                <>
+                <div className="space-y-3 mt-1">
                   {/* Account Summary block */}
-                  <div className="p-3 border-2 border-black bg-stone-50 rounded-lg flex items-center justify-between mb-3">
+                  <div className="p-2.5 border-2 border-black bg-stone-50 flex items-center justify-between">
                     <div className="text-left">
                       <span className="text-[9px] font-black tracking-widest text-stone-500 uppercase">Accounts Consolidation Total</span>
-                      <div className="text-black font-black uppercase text-base mt-0.5">Monthly Payroll Allocation</div>
+                      <div className="text-black font-black uppercase text-sm mt-0.5">Monthly Payroll Allocation</div>
                       <p className="text-[9px] font-bold text-stone-500 uppercase mt-0.5">
                         Total payout computation of all ({printedAbstract.length}) operators registered in the selected schedule.
                       </p>
                     </div>
-                    <div className="flex gap-6 items-center">
+                    <div className="flex gap-5 items-center">
                       <div className="text-center">
                         <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">Active Operators</span>
-                        <span className="text-lg font-black text-black">{printedAbstract.filter(c => c.totalIncentive > 0).length}</span>
+                        <span className="text-base font-black text-black">{printedAbstract.filter(c => c.totalIncentive > 0).length}</span>
                       </div>
-                      <div className="bg-black text-white px-4 py-2 rounded text-center">
+                      <div className="bg-black text-white px-3.5 py-1.5 text-center">
                         <span className="block text-[8px] font-black text-stone-300 uppercase tracking-widest">Total Payout Release</span>
-                        <span className="text-xl font-extrabold font-mono">₹{printedTotalIncentive}</span>
+                        <span className="text-lg font-extrabold font-mono">₹{formatIncentiveAmount(printedTotalIncentive)}</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Signatures block at bottom of final abstract page */}
-                  <div className="mt-auto pt-2 grid grid-cols-3 gap-6 text-center text-xs font-bold uppercase tracking-wider text-stone-700">
+                  {/* Signatures block right below summary without giant empty gap */}
+                  <div className="pt-4 grid grid-cols-3 gap-6 text-center text-xs font-bold uppercase tracking-wider text-stone-700">
                     <div>
                       <div className="border-t border-black pt-1">AM/AM</div>
                     </div>
@@ -2673,7 +2718,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
                       <div className="border-t border-black pt-1">DIRECTOR</div>
                     </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
           ))}
@@ -2681,103 +2726,46 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           {/* PAGES 2+: INDIVIDUAL OPERATOR LEDGERS */}
           {isPrintingAll && printedAbstract.map((workerRow, idx) => {
             const rawLedger = getWorkerLedgerForMonth(workerRow.workerId, selectedMonth, selectedYear);
-            const workerLedger = combineLedgerEntriesByShift(rawLedger);
+            const combinedRows = combineLedgerEntriesByShift(rawLedger);
             const workerTotal = rawLedger.reduce((sum, item) => sum + item.incentive, 0);
             const emEntries = rawLedger.filter(item => item.em !== undefined && item.em > 0);
             const emAverage = emEntries.length > 0
               ? emEntries.reduce((sum, item) => sum + item.em!, 0) / emEntries.length
               : 0;
+            const shedName = (shed || history[0]?.shed || 'Shed 1').toUpperCase();
+            const monthLabelStr = `${monthsList.find(m => m.value === selectedMonth)?.label || ''} ${selectedYear}`;
 
             return (
-              <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-4 px-5 border-2 border-black rounded-lg text-black bg-white flex flex-col justify-between mb-8" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
-                <div>
-                  <div className="text-center mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-black block mb-1">WORKER WISE HISTORY — SUPPORTING DOCUMENTS FOR PAYOUT</span>
-                    <div className="border border-black py-1 my-1 w-full text-center">
-                      <h1 className="text-base font-black text-black uppercase tracking-widest">SIDER INCENTIVE STATEMENT</h1>
-                    </div>
-                    
-                    <div className="mt-1 flex justify-center gap-8 text-[12px] font-black text-black uppercase tracking-wider">
-                      <div>SIDER NAME: <span className="font-extrabold">{workerRow.name}</span></div>
-                      <div>TK. NO: <span className="font-extrabold">{workerRow.tNo || '—'}</span></div>
-                      <div>PERIOD: <span className="font-extrabold">{monthsList.find(m => m.value === selectedMonth)?.label} {selectedYear}</span></div>
-                    </div>
+              <div key={`${workerRow.workerId}-${workerRow.tNo || idx}-${idx}`} className="print-page-break p-3 border-2 border-black text-black bg-white flex flex-col gap-2 mb-0" style={{ pageBreakAfter: 'always', breakAfter: 'page' }}>
+                <div className="text-center">
+                  <div className="border-2 border-black py-1 w-full text-center bg-stone-50">
+                    <h1 className="text-base font-black text-black uppercase tracking-widest">
+                      {shedName} — SIDER INCENTIVE STATEMENT
+                    </h1>
                   </div>
-
-                  <table className="w-full text-center border-collapse border border-black mb-2">
-                    <thead>
-                      <tr className="bg-white border-b border-black text-[11px] font-black uppercase text-black">
-                        <th className="border border-black px-1.5 py-1 text-center w-12">S.NO</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-24">DATE</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-14">SHIFT</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-28">MC NO</th>
-                        <th className="border border-black px-1.5 py-1 text-center">COUNT</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-36">ACHIEVED GPS</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-20">EM</th>
-                        <th className="border border-black px-1.5 py-1 text-center w-32">INCENTIVE (RS)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {workerLedger.map((item, rowIdx) => (
-                        <tr key={rowIdx} className="border-b border-black text-[11px] leading-tight font-bold text-black">
-                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{rowIdx + 1}</td>
-                          <td className="border border-black px-1.5 py-1 text-center font-mono font-bold text-black">{formatDisplayDate(item.date)}</td>
-                          <td className="border border-black px-1.5 py-1 text-center font-bold text-black">{item.shift}</td>
-                          <td className="border border-black px-1.5 py-1 text-center text-black font-bold">{item.frameNo}</td>
-                          <td className="border border-black px-1.5 py-1 text-center text-black font-bold">{item.count}</td>
-                          <td className="border border-black px-1.5 py-1 text-center font-mono text-black font-bold">{item.gps}</td>
-                          <td className="border border-black px-1.5 py-1 text-center font-mono text-black font-bold">{item.em}</td>
-                          <td className="border border-black px-1.5 py-1 text-center font-mono font-black text-black">{item.incentiveText}</td>
-                        </tr>
-                      ))}
-                      {workerLedger.length === 0 && (
-                        <tr>
-                          <td colSpan={8} className="border border-black text-center py-2 text-[11px] text-stone-500 font-bold uppercase tracking-wider">
-                            No shift duties found for this period
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                  <div className="mt-1 flex justify-center gap-6 text-[11px] font-black text-black uppercase tracking-wider">
+                    <span>SIDER NAME: {workerRow.name}</span>
+                    <span>TK. NO: {workerRow.tNo || '—'}</span>
+                    <span>PERIOD: {monthLabelStr}</span>
+                  </div>
                 </div>
 
-                <div>
-                  {/* Individual Summary block */}
-                  <div className="p-1.5 px-3 border border-black bg-stone-50 rounded flex justify-between items-center mb-1.5">
-                    <div className="text-left">
-                      <span className="text-[9px] font-black tracking-widest text-stone-500 uppercase">Payout Summary</span>
-                      <div className="text-black font-black uppercase text-[11px] leading-tight">Payable Incentive Record</div>
-                      <p className="text-[9.5px] font-semibold text-stone-500 uppercase leading-tight">
-                        Includes {rawLedger.filter(i => i.role === 'OPERATOR').length} Operator shifts &amp; {rawLedger.filter(i => i.role === 'GAITER').length} Gaiter duties.
-                      </p>
-                    </div>
-                    <div className="flex gap-4 items-center">
-                      <div className="text-center">
-                        <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">EM Average</span>
-                        <span className="text-[12px] font-black text-black">{emAverage > 0 ? emAverage.toFixed(2) : '—'}</span>
-                      </div>
-                      <div className="text-center">
-                        <span className="block text-[8px] font-black text-stone-500 uppercase tracking-widest">Total Duties</span>
-                        <span className="text-[12px] font-black text-black">{workerLedger.length}</span>
-                      </div>
-                      <div className="border border-black px-2 py-0.5 bg-black text-white text-center rounded">
-                        <span className="block text-[8px] font-black text-stone-300 uppercase tracking-widest">Total Amount</span>
-                        <span className="text-[14px] font-black font-mono">₹{workerTotal}</span>
-                      </div>
-                    </div>
-                  </div>
+                <OperatorClassicStatementTable
+                  rows={combinedRows}
+                  emAverage={emAverage}
+                  totalAmount={workerTotal}
+                  compact
+                />
 
-                  {/* Signatures block for operator sheet */}
-                  <div className="pt-1 border-t border-black grid grid-cols-3 gap-6 text-center text-[10px] font-bold uppercase tracking-wider text-stone-700">
-                    <div>
-                      <div className="pt-0.5">AM/AM</div>
-                    </div>
-                    <div>
-                      <div className="pt-0.5">GM</div>
-                    </div>
-                    <div>
-                      <div className="pt-0.5">DIRECTOR</div>
-                    </div>
+                <div className="pt-3 grid grid-cols-3 gap-6 text-center text-[10px] font-bold uppercase tracking-wider text-stone-700">
+                  <div>
+                    <div className="border-t border-black pt-0.5">AM/AM</div>
+                  </div>
+                  <div>
+                    <div className="border-t border-black pt-0.5">GM</div>
+                  </div>
+                  <div>
+                    <div className="border-t border-black pt-0.5">DIRECTOR</div>
                   </div>
                 </div>
               </div>
@@ -2815,7 +2803,9 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
             break-after: page !important;
             display: flex !important;
             flex-direction: column !important;
-            min-height: 238mm !important; /* Allow exact A4 height but expand if content overflows naturally */
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
             box-sizing: border-box !important;
             background: white !important;
             color: black !important;
@@ -2826,7 +2816,7 @@ export const IncentiveLedgerReport: React.FC<IncentiveLedgerReportProps> = ({
           }
           @page {
             size: A4 portrait !important;
-            margin: 12mm 10mm 12mm 10mm !important;
+            margin: 7mm 6mm 7mm 6mm !important;
           }
         }
       `}} />
