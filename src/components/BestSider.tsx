@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule } from '../types';
 import { Trophy, Award, Coins, Calendar, Star, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts, formatIncentiveAmount } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
 
 interface BestSiderProps {
@@ -362,7 +362,7 @@ export const BestSider: React.FC<BestSiderProps> = ({
                       isTvMode ? "text-2xl xl:text-3xl" : "text-xl",
                       config.amtText
                     )}>
-                      ₹{Math.round(performer.amount).toLocaleString()}
+                      ₹{formatIncentiveAmount(performer.amount)}
                     </span>
                   </div>
                 </div>

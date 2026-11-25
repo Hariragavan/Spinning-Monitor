@@ -5,7 +5,7 @@ import {
   Coins, ArrowUpDown, ChevronDown, CheckCircle, AlertTriangle,
   Layers, Users, Gauge, FileText, Check, Sparkles, Printer, FileSpreadsheet
 } from 'lucide-react';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, isCountNameMatching } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, isCountNameMatching, exactAmount } from '../lib/utils';
 import * as XLSX from 'xlsx';
 import { CalendarDatePicker } from './CalendarPickers';
 import { CountSummary } from './CountSummary';
@@ -126,7 +126,7 @@ export const MasterDataTable: React.FC<MasterDataTableProps> = ({
         actual: Math.round(totalActual),
         eff: avgEff,
         avgGps,
-        totalIncentive: Math.round(totalIncentive),
+        totalIncentive: exactAmount(totalIncentive),
         shifts: shiftData
       };
     });

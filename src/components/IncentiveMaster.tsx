@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Bookmark, Layers, Plus, Edit2, Trash2, Save, X, 
   ArrowRight, Check, AlertCircle, Sparkles, Unlock, Lock,
-  ShieldAlert, Coins
+  ShieldAlert, Coins, Percent
 } from 'lucide-react';
 import { IncentiveRule, IncentivePayout, CountConversion, FrozenMonthRecord } from '../types';
 import { cn, isCountNameMatching, normalizeCountName, normalizeShed } from '../lib/utils';
@@ -14,6 +14,20 @@ interface BuilderSlotItem {
   fromGps: number | string;
   toGps: string; // string so it can hold "GPSS Target" or number as string
 }
+
+interface AiBuilderSlotItem {
+  id: string;
+  operator: '<' | '=' | '>=';
+  percentage: number | string;
+  amount: number | string;
+}
+
+const DEFAULT_KTTM_AI_SLOTS: AiBuilderSlotItem[] = [
+  { id: 'ai-1', operator: '<', percentage: 94, amount: 0 },
+  { id: 'ai-2', operator: '=', percentage: 94, amount: 80 },
+  { id: 'ai-3', operator: '=', percentage: 95, amount: 90 },
+  { id: 'ai-4', operator: '>=', percentage: 96, amount: 100 },
+];
 
 interface IncentiveMasterProps {
   rules: IncentiveRule[];
@@ -63,6 +77,153 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
   const [newCountInput, setNewCountInput] = useState('');
   const [newCountShed, setNewCountShed] = useState<string>('Shed 1');
   const [newCountError, setNewCountError] = useState<string | null>(null);
+
+  // KTTM Only AI Linkconer Builder State
+  const [aiSlots, setAiSlots] = useState<AiBuilderSlotItem[]>(DEFAULT_KTTM_AI_SLOTS);
+  const [aiSaveSuccess, setAiSaveSuccess] = useState(false);
+
+  // Active KTTM AI Linkconer rule from saved rules
+  const kttmAiRule = React.useMemo(() => {
+    const aiRules = rules.filter(r => r && r.department === 'AI Linkconer');
+    return aiRules.find(r => normalizeShed(r.shed || '') === 'KTTM') || null;
+  }, [rules]);
+
+  // Sync KTTM AI Linkconer slots when rules load/change
+  useEffect(() => {
+    if (kttmAiRule && Array.isArray(kttmAiRule.payouts) && kttmAiRule.payouts.length > 0) {
+      const parsed: AiBuilderSlotItem[] = kttmAiRule.payouts.map((p, idx) => {
+        const cond = (p.conditionText || p.ruleText || '').trim();
+        let op: '<' | '=' | '>=' = '=';
+        let pct = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
+
+        if (cond.startsWith('<') || cond.includes('94 >') || cond.toLowerCase().includes('below') || (p.gpsThreshold === 0 && (p.toGps || 0) > 0)) {
+          op = '<';
+          pct = p.toGps !== undefined ? p.toGps : (pct || 94);
+        } else if (cond.startsWith('>=') || cond.includes('<=') || cond.toLowerCase().includes('above') || idx === 0 && kttmAiRule.payouts.every(x => (x.gpsThreshold ?? 0) <= (p.gpsThreshold ?? 0))) {
+          op = '>=';
+          pct = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
+        } else {
+          op = '=';
+          pct = p.fromGps !== undefined ? p.fromGps : p.gpsThreshold;
+        }
+
+        return {
+          id: `ai-slot-${idx}-${Date.now()}`,
+          operator: op,
+          percentage: pct,
+          amount: p.amount
+        };
+      });
+
+      // Order logically: '<' first, then ascending percentage
+      parsed.sort((a, b) => {
+        if (a.operator === '<' && b.operator !== '<') return -1;
+        if (b.operator === '<' && a.operator !== '<') return 1;
+        return Number(a.percentage) - Number(b.percentage);
+      });
+      setAiSlots(parsed);
+    } else {
+      setAiSlots(DEFAULT_KTTM_AI_SLOTS.map(s => ({ ...s })));
+    }
+  }, [kttmAiRule]);
+
+  const handleUpdateAiSlot = (idx: number, field: keyof AiBuilderSlotItem, value: any) => {
+    setAiSlots(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+  };
+
+  const handleAddAiSlot = () => {
+    const nonBelow = aiSlots.filter(s => s.operator !== '<');
+    const maxPct = nonBelow.length > 0 ? Math.max(...nonBelow.map(s => Number(s.percentage) || 94)) : 96;
+    const maxAmt = nonBelow.length > 0 ? Math.max(...nonBelow.map(s => Number(s.amount) || 0)) : 100;
+    setAiSlots(prev => [
+      ...prev,
+      {
+        id: `ai-slot-${prev.length + 1}-${Date.now()}`,
+        operator: '>=',
+        percentage: maxPct + 1,
+        amount: maxAmt + 10
+      }
+    ]);
+  };
+
+  const handleDeleteAiSlot = (idx: number) => {
+    if (aiSlots.length <= 1) {
+      alert('AI Linkconer rule must have at least 1 slot.');
+      return;
+    }
+    setAiSlots(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const getAiFormatLabel = (slot: AiBuilderSlotItem) => {
+    const pct = Number(slot.percentage) || 0;
+    const amt = Number(slot.amount) || 0;
+    if (slot.operator === '<') return `${pct} > ${amt}`;
+    if (slot.operator === '>=') return `${pct} <= ${amt}`;
+    return `${pct} = ${amt}`;
+  };
+
+  const getAiConditionText = (slot: AiBuilderSlotItem) => {
+    const pct = Number(slot.percentage) || 0;
+    if (slot.operator === '<') return `< ${pct}%`;
+    if (slot.operator === '>=') return `>= ${pct}%`;
+    return `= ${pct}%`;
+  };
+
+  const handleSaveAiRule = (slotsOverride?: AiBuilderSlotItem[]) => {
+    const sourceSlots = slotsOverride || aiSlots;
+    const payouts: IncentivePayout[] = sourceSlots.map(slot => {
+      const pctNum = parseFloat(String(slot.percentage)) || 0;
+      const amtNum = parseFloat(String(slot.amount)) || 0;
+
+      if (slot.operator === '<') {
+        return {
+          gpsThreshold: 0,
+          amount: amtNum,
+          fromGps: 0,
+          toGps: pctNum,
+          conditionText: `< ${pctNum}%`,
+          ruleText: `${pctNum} > ${amtNum}`
+        };
+      } else if (slot.operator === '>=') {
+        return {
+          gpsThreshold: pctNum,
+          amount: amtNum,
+          fromGps: pctNum,
+          toGps: 100,
+          conditionText: `>= ${pctNum}%`,
+          ruleText: `${pctNum} <= ${amtNum}`
+        };
+      } else {
+        return {
+          gpsThreshold: pctNum,
+          amount: amtNum,
+          fromGps: pctNum,
+          toGps: pctNum,
+          conditionText: `= ${pctNum}%`,
+          ruleText: `${pctNum} = ${amtNum}`
+        };
+      }
+    });
+
+    // Sort descending by gpsThreshold so calculation finds highest matched % first
+    payouts.sort((a, b) => b.gpsThreshold - a.gpsThreshold);
+
+    const newAiRule: IncentiveRule = {
+      count: 'AI LINKCONER',
+      department: 'AI Linkconer',
+      shed: 'KTTM',
+      payouts
+    };
+
+    const updatedRules = [
+      ...rules.filter(r => !(r.department === 'AI Linkconer')),
+      newAiRule
+    ];
+
+    onUpdate(updatedRules);
+    setAiSaveSuccess(true);
+    setTimeout(() => setAiSaveSuccess(false), 2500);
+  };
 
   // Sync selectedShedTab when top navigation currentShed changes
   useEffect(() => {
@@ -867,6 +1028,293 @@ export const IncentiveMaster: React.FC<IncentiveMasterProps> = ({
 
 
       </div>
+
+      {/* KTTM ONLY: AI LINKCONER SEPARATE INCENTIVE SECTION (LIKE COUNT SECTION) */}
+      {(selectedShedTab === 'KTTM' || selectedShedTab === 'All Sheds') && (
+        <div className="space-y-6 pt-6 border-t-2 border-purple-200">
+          {/* AI Linkconer Banner */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-gradient-to-r from-purple-50 via-white to-purple-50/40 p-6 rounded-2xl border-2 border-purple-200 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-purple-700 text-white flex items-center justify-center shadow-sm shrink-0">
+                <Percent size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl font-black text-purple-950 uppercase tracking-tight">
+                    AI Linkconer Incentive Master
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full bg-purple-700 text-white text-[10px] font-black uppercase tracking-wider">
+                    KTTM Shed Only
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-purple-700/80 mt-0.5 uppercase tracking-wider">
+                  Separate Utilization % Incentive Slab Configuration for AI Linkconer (KTTM Only)
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleAddAiSlot}
+                className="flex items-center gap-1.5 px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-xs cursor-pointer transition-all"
+              >
+                <Plus size={14} />
+                <span>Add Extra Slot Rule</span>
+              </button>
+            </div>
+          </div>
+
+          {/* TWO COLUMN GRID MATCHING COUNT SECTION */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full">
+            {/* LEFT COLUMN: AI LINKCONER % SLOT BUILDER */}
+            <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-purple-200 shadow-2xs">
+              <div className="flex items-center justify-between pb-3 border-b border-purple-100 mb-4">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={18} className="text-purple-700" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-purple-950">
+                    AI LINKCONER % BUILDER ({aiSlots.length} SLOTS)
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddAiSlot}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200 rounded-lg text-xs font-black transition-colors cursor-pointer"
+                >
+                  <Plus size={13} />
+                  <span>Add Slot</span>
+                </button>
+              </div>
+
+              {/* LOCKED SHED INDICATOR */}
+              <div className="mb-4 px-3.5 py-2.5 bg-purple-50/70 border border-purple-200 rounded-xl flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-purple-800">
+                  TARGET SHED
+                </span>
+                <span className="text-xs font-mono font-black text-purple-950 bg-white px-2.5 py-0.5 rounded-md border border-purple-200">
+                  KTTM ONLY
+                </span>
+              </div>
+
+              {/* HEADER */}
+              <div className="grid grid-cols-12 gap-2 text-[10px] font-black uppercase tracking-wider text-stone-400 pb-2 border-b border-stone-100 px-1">
+                <div className="col-span-2">SLOT</div>
+                <div className="col-span-4">CONDITION</div>
+                <div className="col-span-2">UTIL %</div>
+                <div className="col-span-3">RS (₹) *</div>
+                <div className="col-span-1"></div>
+              </div>
+
+              {/* SLOTS LIST */}
+              <div className="divide-y divide-stone-100 space-y-2 pt-2">
+                {aiSlots.map((slot, idx) => (
+                  <div key={slot.id} className="pt-2 pb-2">
+                    <div className="grid grid-cols-12 gap-2 items-center">
+                      {/* SLOT BADGE */}
+                      <div className="col-span-2">
+                        <span className="w-8 py-1 rounded-md bg-purple-900 text-white font-mono font-bold text-[11px] flex items-center justify-center">
+                          A{idx + 1}
+                        </span>
+                      </div>
+
+                      {/* OPERATOR SELECTOR */}
+                      <div className="col-span-4">
+                        <select
+                          value={slot.operator}
+                          onChange={(e) => handleUpdateAiSlot(idx, 'operator', e.target.value as '<' | '=' | '>=')}
+                          className="w-full px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-[11px] font-bold text-stone-900 focus:bg-white focus:border-purple-500 outline-none cursor-pointer"
+                        >
+                          <option value="<">Below (&lt;)</option>
+                          <option value="=">Equal (=)</option>
+                          <option value=">=">Above (&gt;=)</option>
+                        </select>
+                      </div>
+
+                      {/* PERCENTAGE INPUT */}
+                      <div className="col-span-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={slot.percentage === '' ? '' : slot.percentage}
+                          onChange={(e) => handleUpdateAiSlot(idx, 'percentage', e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full px-2 py-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono font-bold text-stone-900 focus:bg-white focus:border-purple-500 outline-none text-center"
+                        />
+                      </div>
+
+                      {/* AMOUNT INPUT */}
+                      <div className="col-span-3">
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold text-stone-400">
+                            ₹
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={slot.amount === '' ? '' : slot.amount}
+                            onChange={(e) => handleUpdateAiSlot(idx, 'amount', e.target.value === '' ? '' : Number(e.target.value))}
+                            className="w-full pl-5 pr-2 py-1.5 bg-purple-50/40 border border-purple-200 rounded-lg text-xs font-mono font-black text-purple-950 focus:bg-white focus:border-purple-600 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* DELETE */}
+                      <div className="col-span-1 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAiSlot(idx)}
+                          className="text-stone-300 hover:text-red-500 p-1 transition-colors cursor-pointer"
+                          title="Delete AI Linkconer Slot"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] text-stone-400 font-mono mt-1 px-1">
+                      <span>Rule Format:</span>
+                      <span className="text-purple-800 font-bold">
+                        {getAiFormatLabel(slot)} ({getAiConditionText(slot)} &rarr; ₹{Number(slot.amount) || 0})
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 space-y-2 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={handleAddAiSlot}
+                  className="w-full py-2.5 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50/40 hover:bg-purple-50 text-purple-800 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Plus size={14} />
+                  <span>+ ADD EXTRA SLOT (SLOT #{aiSlots.length + 1})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveAiRule()}
+                  className="w-full py-3 bg-purple-900 hover:bg-purple-950 text-white font-black rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
+                >
+                  <Save size={15} />
+                  <span>SAVE {aiSlots.length} AI LINKCONER SLOTS (KTTM)</span>
+                </button>
+
+                {aiSaveSuccess && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">
+                    <Check size={14} />
+                    <span>AI Linkconer KTTM rules saved &amp; synced to Database!</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: AI LINKCONER ACTIVE RULE CARD */}
+            <div className="lg:col-span-7">
+              <div className="bg-white rounded-2xl p-5 border-2 border-purple-300 ring-2 ring-purple-50 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-purple-100 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <Bookmark size={18} className="text-purple-700 shrink-0" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-purple-950 tracking-tight font-mono">
+                          AI LINKCONER
+                        </h3>
+                        <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-md text-[10px] font-bold font-mono">
+                          KTTM Only
+                        </span>
+                        {!kttmAiRule && (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold">
+                            Unsaved Default — Click Save to Persist
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] font-mono text-stone-500 font-medium">
+                        {aiSlots.length} Percentage Slots · Separate Incentive for KTTM AI Linkconer
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={handleAddAiSlot}
+                      className="px-2.5 py-1 bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      + Add Slot
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAiRule()}
+                      className="px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                    >
+                      <Save size={12} />
+                      <span>Save Changes</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* EDITABLE SLOTS TABLE */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="text-[10px] font-black uppercase tracking-wider text-stone-400 border-b border-stone-100">
+                        <th className="py-2 px-3">SLOT</th>
+                        <th className="py-2 px-3">PERCENTAGE (%)</th>
+                        <th className="py-2 px-3">INCENTIVE AMOUNT (EDITABLE)</th>
+                        <th className="py-2 px-3">RULE DISPLAY</th>
+                        <th className="py-2 px-3 text-right">ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 font-mono">
+                      {aiSlots.map((slot, idx) => (
+                        <tr key={`ai-card-${slot.id}`} className="hover:bg-purple-50/40 transition-colors">
+                          <td className="py-2.5 px-3 font-bold text-stone-500">
+                            Slot {idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3 font-black text-purple-950">
+                            {getAiConditionText(slot)}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="inline-flex items-center gap-1 bg-purple-50/70 border border-purple-200 rounded-lg px-2 py-1">
+                              <span className="text-purple-700 font-bold">₹</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={slot.amount === '' ? '' : slot.amount}
+                                onChange={(e) => handleUpdateAiSlot(idx, 'amount', e.target.value === '' ? '' : Number(e.target.value))}
+                                className="w-16 bg-transparent font-mono font-black text-purple-900 outline-none text-xs"
+                              />
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-stone-700">
+                            <span className="px-2 py-0.5 rounded bg-stone-100 border border-stone-200 text-stone-800">
+                              {getAiFormatLabel(slot)}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteAiSlot(idx)}
+                              className="text-stone-300 hover:text-red-500 transition-colors cursor-pointer"
+                              title="Delete Slot"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* NEW COUNT RULE MODAL */}
       {newCountModalOpen && (

@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, MachineEmData } from '../types';
 import { Trophy, Calendar, Coins, Star, Award, Zap, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
-import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts, parseUniversalDate, computeOperatorShiftEm, getMachineEmValue } from '../lib/utils';
+import { cn, resolveWorker, calculateIncentive, calculateSiderSlotIncentive, parseUniversalDateParts, parseUniversalDate, computeOperatorShiftEm, getMachineEmValue, formatIncentiveAmount } from '../lib/utils';
 import { CalendarMonthPicker } from './CalendarPickers';
 
 interface BestOperatorsEmProps {
@@ -362,7 +362,7 @@ export const BestOperatorsEm: React.FC<BestOperatorsEmProps> = ({
                       <div className="text-left">
                         <p className={cn("font-bold uppercase tracking-widest text-stone-500 mb-1", isTvMode ? "text-lg" : "text-[10px]")}>Payout</p>
                         <p className={cn("font-black leading-none tabular-nums text-emerald-600", isTvMode ? "text-5xl" : "text-lg")}>
-                          ₹{Math.round(operator.amount).toLocaleString()}
+                          ₹{formatIncentiveAmount(operator.amount)}
                         </p>
                       </div>
                     </div>
@@ -437,7 +437,7 @@ export const BestOperatorsEm: React.FC<BestOperatorsEmProps> = ({
                                 )}
                               </td>
                               <td className="text-right font-mono font-black text-emerald-600 py-1">
-                                {duty.incentive > 0 ? `₹${Math.round(duty.incentive)}` : '-'}
+                                {duty.incentive > 0 ? `₹${formatIncentiveAmount(duty.incentive)}` : '-'}
                               </td>
                             </tr>
                           );

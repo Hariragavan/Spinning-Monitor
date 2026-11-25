@@ -772,6 +772,23 @@ export function getGaiterIncentive(
 }
 
 /**
+ * Preserves exact fractional currency amounts (e.g. 57.5) without integer rounding,
+ * trimming floating-point precision noise to 2 decimals.
+ */
+export function exactAmount(val: number): number {
+  if (!Number.isFinite(val)) return 0;
+  return Math.round((val + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Formats an incentive amount cleanly (e.g. 57.5 -> "57.5", 115 -> "115").
+ */
+export function formatIncentiveAmount(val: number): string {
+  const clean = exactAmount(val);
+  return clean.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+/**
  * Universal UUID generator that safely runs in all environments,
  * including non-secure HTTP contexts (e.g. LAN access over IP http://192.168.x.x)
  * where modern browsers disable crypto.randomUUID.
@@ -885,9 +902,9 @@ export function calculateSiderSlotIncentive(
     }
 
     if (sidesOnThisMachine === 1) {
-      return Math.round(baseIncentive * 0.5);
+      return exactAmount(baseIncentive * 0.5);
     }
-    return Math.round(baseIncentive / 2);
+    return exactAmount(baseIncentive / 2);
   }
 
   // SHED 1, 2, 3 RULE:
@@ -945,17 +962,11 @@ export function calculateSiderSlotIncentive(
   if (sidesOnThisMachine === 2) {
     const isFirstTwoSide = twoSideMachines.length > 0 && twoSideMachines[0].frameNo === entry.frameNo;
     if (isFirstTwoSide) {
-      // (3) or (4) sides: 75% from 1st 2-side machine (split across 2 slots)
-      const totalMachineInc = Math.round(baseIncentive * 0.75);
-      return slotIdx === 0 
-        ? Math.floor(totalMachineInc / 2) 
-        : (totalMachineInc - Math.floor(totalMachineInc / 2));
+      // (3) or (4) sides: 75% from 1st 2-side machine (split evenly across 2 slots without integer rounding)
+      return exactAmount((baseIncentive * 0.75) / 2);
     } else {
-      // (4) sides: 2nd 2-side machine (3rd and 4th sides): 50% from 2nd machine
-      const totalMachineInc = Math.round(baseIncentive * 0.5);
-      return slotIdx === 0 
-        ? Math.floor(totalMachineInc / 2) 
-        : (totalMachineInc - Math.floor(totalMachineInc / 2));
+      // (4) sides: 2nd 2-side machine (3rd and 4th sides): 50% from 2nd machine (split evenly across 2 slots)
+      return exactAmount((baseIncentive * 0.5) / 2);
     }
   }
 
@@ -963,11 +974,11 @@ export function calculateSiderSlotIncentive(
   // (3) sides: 25% from 3rd side machine
   // (4) sides: 25% each from 3rd and 4th side machines (total 50%)
   if (totalSidesInShift === 3) {
-    return Math.round(baseIncentive * 0.25);
+    return exactAmount(baseIncentive * 0.25);
   }
 
   if (totalSidesInShift >= 4) {
-    return Math.round(baseIncentive * 0.25);
+    return exactAmount(baseIncentive * 0.25);
   }
 
   return 0;

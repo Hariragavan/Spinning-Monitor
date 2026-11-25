@@ -47,7 +47,7 @@ import { TelegramSettings } from '@/components/TelegramSettings';
 
 import { DailyReport, Sider, IncentiveRule, Shift, CountConversion, SystemSettings, ProductionEntry, FrameDailySummary, MachineEmData, FrozenMonthRecord, MachineMasterItem, Shed } from '@/types';
 import { getMonthKey, computeFrozenMonthRecord } from '@/lib/frozenMonths';
-import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, isSameShed, calculateUpdatedAllocationPeriods } from '@/lib/utils';
+import { cn, mergeDuplicateWorkers, calculateIncentive, calculateSiderSlotIncentive, getGaiterIncentive, resolveWorker, parseUniversalDate, parseUniversalDateParts, normalizeToCanonicalDate, generateUUID, normalizeCountName, normalizeShed, isSameShed, calculateUpdatedAllocationPeriods, formatIncentiveAmount } from '@/lib/utils';
 import { apiClient } from '@/lib/api';
 import { ensureSixMachines, mockData, createDefaultReportForShed, getTodayUniversalDate, getYesterdayUniversalDate, shiftUniversalDate, parseExcelReport } from '@/lib/parser';
 import { isCountNameMatching, extractCountNumber } from '@/lib/utils';
@@ -298,15 +298,16 @@ const DEFAULT_INCENTIVE_RULES: IncentiveRule[] = [
     ]
   },
 
-  // Universal AI Linkconer Rule
+  // KTTM AI Linkconer Rule
   {
     count: 'AI LINKCONER',
     department: 'AI Linkconer',
-    shed: 'All Sheds',
+    shed: 'KTTM',
     payouts: [
-      { gpsThreshold: 100, amount: 100, fromGps: 100, toGps: 100, conditionText: 'for GPSS 100', ruleText: 'Rs 100 for GPSS 100' },
-      { gpsThreshold: 90, amount: 90, fromGps: 90, toGps: 100, conditionText: 'for 90 to 100', ruleText: 'Rs 90 for 90 to 100' },
-      { gpsThreshold: 80, amount: 80, fromGps: 80, toGps: 90, conditionText: 'for 80 to 90', ruleText: 'Rs 80 for 80 to 90' }
+      { gpsThreshold: 96, amount: 100, fromGps: 96, toGps: 100, conditionText: '>= 96%', ruleText: 'Rs 100 for 96% <= 100%' },
+      { gpsThreshold: 95, amount: 90, fromGps: 95, toGps: 95, conditionText: '= 95%', ruleText: 'Rs 90 for 95%' },
+      { gpsThreshold: 94, amount: 80, fromGps: 94, toGps: 94, conditionText: '= 94%', ruleText: 'Rs 80 for 94%' },
+      { gpsThreshold: 0, amount: 0, fromGps: 0, toGps: 93, conditionText: '< 94%', ruleText: 'Rs 0 for < 94%' }
     ]
   }
 ];
@@ -713,12 +714,14 @@ export default function Home() {
       }
 
       let localSiderCounts: Record<string, number> = {};
+      let localGaiterCounts: Partial<Record<Shift, number>> = {};
       if (typeof window !== 'undefined') {
         try {
           const localSaved = localStorage.getItem('spinning_settings');
           if (localSaved) {
             const parsed = JSON.parse(localSaved);
             if (parsed.machineSiderCounts) localSiderCounts = parsed.machineSiderCounts;
+            if (parsed.gaiterCounts) localGaiterCounts = parsed.gaiterCounts;
           }
         } catch (e) {}
       }
@@ -731,13 +734,23 @@ export default function Home() {
             ? data.settings.machineSiderCounts
             : (Object.keys(localSiderCounts).length > 0 ? localSiderCounts : (data.settings.machineSiderCounts || {})),
           gaiterCounts: {
-            I: data.settings.gaiterCounts?.I ?? 1,
-            II: data.settings.gaiterCounts?.II ?? 1,
-            III: 1
+            I: data.settings.gaiterCounts?.I ?? localGaiterCounts.I ?? 1,
+            II: data.settings.gaiterCounts?.II ?? localGaiterCounts.II ?? 1,
+            III: data.settings.gaiterCounts?.III ?? localGaiterCounts.III ?? 1
           }
         }));
-      } else if (Object.keys(localSiderCounts).length > 0) {
-        setSettings(prev => ({ ...prev, machineSiderCounts: localSiderCounts }));
+      } else if (Object.keys(localSiderCounts).length > 0 || Object.keys(localGaiterCounts).length > 0) {
+        setSettings(prev => ({
+          ...prev,
+          ...(Object.keys(localSiderCounts).length > 0 ? { machineSiderCounts: localSiderCounts } : {}),
+          ...(Object.keys(localGaiterCounts).length > 0 ? {
+            gaiterCounts: {
+              I: localGaiterCounts.I ?? prev.gaiterCounts?.I ?? 1,
+              II: localGaiterCounts.II ?? prev.gaiterCounts?.II ?? 1,
+              III: localGaiterCounts.III ?? prev.gaiterCounts?.III ?? 1
+            }
+          } : {})
+        }));
       }
       if (data.frozenMonths) setFrozenMonths(data.frozenMonths);
       setIsSystemReady(true);
@@ -1103,9 +1116,9 @@ export default function Home() {
         const item = workerIncentives[key];
         const cappedAmount = Math.min(120, item.amount);
         totalPayout += cappedAmount;
-        text += `• *T.No ${item.tNo}* - ${item.name} (${item.roles.join('/')}): *₹${Math.round(cappedAmount)}*\n`;
+        text += `• *T.No ${item.tNo}* - ${item.name} (${item.roles.join('/')}): *₹${formatIncentiveAmount(cappedAmount)}*\n`;
       });
-      text += `\n*Total Daily Payout:* *₹${Math.round(totalPayout)}*\n`;
+      text += `\n*Total Daily Payout:* *₹${formatIncentiveAmount(totalPayout)}*\n`;
     } else {
       text += `No incentives earned for this date.\n`;
     }
@@ -3498,14 +3511,27 @@ export default function Home() {
 
                       <div className="flex items-center justify-between gap-4 py-2">
                         <button
+                          type="button"
                           onClick={() => {
                             if (currentCount > 0) {
-                              const updated = {
-                                ...settings,
-                                gaiterCounts: { ...settings.gaiterCounts, [shift]: currentCount - 1 }
-                              };
-                              setSettings(updated);
-                              apiClient.saveSettings(updated).catch(() => {});
+                              const nextCount = currentCount - 1;
+                              setSettings(prev => {
+                                const updated = {
+                                  ...prev,
+                                  gaiterCounts: { ...(prev.gaiterCounts || { I: 1, II: 1, III: 1 }), [shift]: nextCount }
+                                };
+                                lastRefreshTimeRef.current = Date.now();
+                                if (typeof window !== 'undefined') {
+                                  localStorage.setItem('spinning_settings', JSON.stringify(updated));
+                                }
+                                apiClient.saveSettings(updated).then(ok => {
+                                  if (ok) {
+                                    setRefreshToast(`Shift ${shift} gaiters saved (${nextCount})`);
+                                    setTimeout(() => setRefreshToast(null), 2000);
+                                  }
+                                }).catch(() => {});
+                                return updated;
+                              });
                             }
                           }}
                           disabled={currentCount <= 0}
@@ -3521,29 +3547,67 @@ export default function Home() {
                         </button>
 
                         <div className="text-center">
-                          <span className="text-3xl sm:text-4xl font-black text-stone-900 tabular-nums block leading-none">
-                            {currentCount}
-                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={10}
+                            value={currentCount}
+                            onChange={(e) => {
+                              const parsed = parseInt(e.target.value, 10);
+                              const nextCount = isNaN(parsed) ? 0 : Math.max(0, Math.min(10, parsed));
+                              setSettings(prev => {
+                                const updated = {
+                                  ...prev,
+                                  gaiterCounts: { ...(prev.gaiterCounts || { I: 1, II: 1, III: 1 }), [shift]: nextCount }
+                                };
+                                lastRefreshTimeRef.current = Date.now();
+                                if (typeof window !== 'undefined') {
+                                  localStorage.setItem('spinning_settings', JSON.stringify(updated));
+                                }
+                                apiClient.saveSettings(updated).then(ok => {
+                                  if (ok) {
+                                    setRefreshToast(`Shift ${shift} gaiters saved (${nextCount})`);
+                                    setTimeout(() => setRefreshToast(null), 2000);
+                                  }
+                                }).catch(() => {});
+                                return updated;
+                              });
+                            }}
+                            className="w-16 text-center text-3xl sm:text-4xl font-black text-stone-900 tabular-nums block leading-none bg-transparent border-b-2 border-transparent focus:border-amber-500 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
                           <span className="text-[10px] font-black uppercase tracking-widest text-stone-400 mt-1 block">
                             Allocated
                           </span>
                         </div>
 
                         <button
+                          type="button"
                           onClick={() => {
-                            if (currentCount < 6) {
-                              const updated = {
-                                ...settings,
-                                gaiterCounts: { ...settings.gaiterCounts, [shift]: currentCount + 1 }
-                              };
-                              setSettings(updated);
-                              apiClient.saveSettings(updated).catch(() => {});
+                            if (currentCount < 10) {
+                              const nextCount = currentCount + 1;
+                              setSettings(prev => {
+                                const updated = {
+                                  ...prev,
+                                  gaiterCounts: { ...(prev.gaiterCounts || { I: 1, II: 1, III: 1 }), [shift]: nextCount }
+                                };
+                                lastRefreshTimeRef.current = Date.now();
+                                if (typeof window !== 'undefined') {
+                                  localStorage.setItem('spinning_settings', JSON.stringify(updated));
+                                }
+                                apiClient.saveSettings(updated).then(ok => {
+                                  if (ok) {
+                                    setRefreshToast(`Shift ${shift} gaiters saved (${nextCount})`);
+                                    setTimeout(() => setRefreshToast(null), 2000);
+                                  }
+                                }).catch(() => {});
+                                return updated;
+                              });
                             }
                           }}
-                          disabled={currentCount >= 6}
+                          disabled={currentCount >= 10}
                           className={cn(
                             "w-11 h-11 rounded-2xl flex items-center justify-center font-black text-lg transition-all",
-                            currentCount >= 6
+                            currentCount >= 10
                               ? "bg-stone-100 text-stone-300 border border-stone-200 cursor-not-allowed"
                               : "bg-amber-600 hover:bg-amber-700 text-white border border-amber-600 active:scale-95 cursor-pointer shadow-sm shadow-amber-600/30"
                           )}

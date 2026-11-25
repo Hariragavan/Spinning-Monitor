@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry, MachineEmData } from '../types';
-import { calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate, formatIncentiveAmount } from '../lib/utils';
 import { Calendar, User, Search, Printer, Coins, Tv, Monitor, ChevronRight, Activity, Award, Download, FileSpreadsheet } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -415,7 +415,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                 ) : (
                   activeSidersWithData.map(d => (
                     <option key={d.worker.id} value={d.worker.id}>
-                      [{d.worker.tNo}] {d.worker.name.toUpperCase()} — {d.workingDays} Duties (Total: ₹{Math.round(d.total).toLocaleString()})
+                      [{d.worker.tNo}] {d.worker.name.toUpperCase()} — {d.workingDays} Duties (Total: ₹{formatIncentiveAmount(d.total)})
                     </option>
                   ))
                 )}
@@ -505,7 +505,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                     <div className="text-center">
                       <p style={{ fontSize: '14px' }} className="font-black uppercase text-stone-500 tracking-wider">Accumulated Payout</p>
                       <p style={{ fontSize: '36px' }} className="font-black text-emerald-800 tabular-nums">
-                        ₹{Math.round(currentPair.sider1.total).toLocaleString()}
+                        ₹{formatIncentiveAmount(currentPair.sider1.total)}
                       </p>
                       <p style={{ fontSize: '14px' }} className="font-bold text-stone-600 uppercase tracking-tighter">
                         {currentPair.sider1.workingDays} active days logged
@@ -540,10 +540,10 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                               {row.em !== undefined && row.em > (emHighLimit - 0.5) ? (
                                 <div className="inline-block relative px-2.5 py-1">
                                   <span className="absolute inset-0 border-2 border-red-600 rounded-[50%/50%] pointer-events-none transform scale-y-95 scale-x-105" />
-                                  <span className="relative z-10 text-red-600">₹{Math.round(row.incentive).toLocaleString()}</span>
+                                  <span className="relative z-10 text-red-600">₹{formatIncentiveAmount(row.incentive)}</span>
                                 </div>
                               ) : (
-                                `₹${Math.round(row.incentive).toLocaleString()}`
+                                `₹${formatIncentiveAmount(row.incentive)}`
                               )}
                             </td>
                           </tr>
@@ -563,7 +563,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                               GRAND TOTAL (ACTUAL MONTH PAYOUT):
                             </td>
                             <td style={{ fontSize: '20px' }} className="px-4 py-3 rounded-br-3xl font-black text-center font-mono text-emerald-400">
-                              ₹{Math.round(currentPair.sider1.total).toLocaleString()}
+                              ₹{formatIncentiveAmount(currentPair.sider1.total)}
                             </td>
                           </tr>
                         </tfoot>
@@ -607,7 +607,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                     <div className="text-center">
                       <p style={{ fontSize: '12px' }} className="font-black uppercase text-stone-500 tracking-wider">Accumulated Payout</p>
                       <p style={{ fontSize: '35px' }} className="font-black text-emerald-800 tabular-nums">
-                        ₹{Math.round(currentPair.sider2.total).toLocaleString()}
+                        ₹{formatIncentiveAmount(currentPair.sider2.total)}
                       </p>
                       <p style={{ fontSize: '13px' }} className="font-bold text-stone-600 uppercase tracking-tighter">
                         {currentPair.sider2.workingDays} active days logged
@@ -642,10 +642,10 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                               {row.em !== undefined && row.em > (emHighLimit - 0.5) ? (
                                 <div className="inline-block relative px-2.5 py-1">
                                   <span className="absolute inset-0 border-2 border-red-600 rounded-[50%/50%] pointer-events-none transform scale-y-95 scale-x-105" />
-                                  <span className="relative z-10 text-red-600">₹{Math.round(row.incentive).toLocaleString()}</span>
+                                  <span className="relative z-10 text-red-600">₹{formatIncentiveAmount(row.incentive)}</span>
                                 </div>
                               ) : (
-                                `₹${Math.round(row.incentive).toLocaleString()}`
+                                `₹${formatIncentiveAmount(row.incentive)}`
                               )}
                             </td>
                           </tr>
@@ -665,7 +665,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                               GRAND TOTAL (ACTUAL MONTH PAYOUT):
                             </td>
                             <td style={{ fontSize: '20px' }} className="px-4 py-3 rounded-br-3xl font-black text-center font-mono text-emerald-400">
-                              ₹{Math.round(currentPair.sider2.total).toLocaleString()}
+                              ₹{formatIncentiveAmount(currentPair.sider2.total)}
                             </td>
                           </tr>
                         </tfoot>
@@ -751,7 +751,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                   </div>
                   <div className="bg-emerald-50/50 p-4 rounded-2xl flex flex-col items-center">
                     <span className="text-[10px] text-stone-500 uppercase font-bold tracking-wider">Total Amount</span>
-                    <span className="text-2xl font-black text-emerald-800 mt-1.5 font-mono">₹{Math.round(activeWorkerData.total).toLocaleString()}</span>
+                    <span className="text-2xl font-black text-emerald-800 mt-1.5 font-mono">₹{formatIncentiveAmount(activeWorkerData.total)}</span>
                   </div>
                 </div>
 
@@ -811,10 +811,10 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                             {row.em !== undefined && row.em > (emHighLimit - 0.5) ? (
                               <div className="inline-block relative px-2 py-0.5">
                                 <span className="absolute inset-0 border-2 border-red-600 rounded-[50%/50%] pointer-events-none transform scale-y-95 scale-x-105" />
-                                <span className="relative z-10 text-red-600">₹{Math.round(row.incentive).toLocaleString()}</span>
+                                <span className="relative z-10 text-red-600">₹{formatIncentiveAmount(row.incentive)}</span>
                               </div>
                             ) : (
-                              `₹${Math.round(row.incentive).toLocaleString()}`
+                              `₹${formatIncentiveAmount(row.incentive)}`
                             )}
                           </td>
                         </tr>
@@ -836,7 +836,7 @@ export const SiderMonthlyPerformance: React.FC<SiderMonthlyPerformanceProps> = (
                             GRAND TOTAL SPECIFIC PAYOUT:
                           </td>
                           <td className="px-4 py-4 rounded-br-3xl font-black text-center font-mono text-lg text-emerald-400">
-                            ₹{Math.round(activeWorkerData.total).toLocaleString()}
+                            ₹{formatIncentiveAmount(activeWorkerData.total)}
                           </td>
                         </tr>
                       </tfoot>

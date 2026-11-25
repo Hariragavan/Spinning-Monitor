@@ -169,30 +169,37 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
     return [80, 85, 95, 100, 110];
   }, [sortedStandardRules]);
 
-  // AI Linkconer always uses the same rules statically (no count filtering)
+  // AI Linkconer applies strictly to KTTM shed
+  const isKttmShed = activeShed === 'KTTM';
+
   const sortedAiRules = React.useMemo(() => {
+    if (!isKttmShed) return [];
     return (rules || [])
-      .filter(r => r && r.department === 'AI Linkconer' && ((r.shed || 'All Sheds') === activeShed || r.shed === 'All Sheds'))
+      .filter(r => r && r.department === 'AI Linkconer' && ((r.shed || '').toLowerCase() === 'kttm' || r.shed === 'All Sheds'))
       .sort((a, b) => getNumericValue(a?.count) - getNumericValue(b?.count));
-  }, [rules, activeShed]);
+  }, [rules, isKttmShed]);
 
   // Define AI Linkconer columns dynamically from active AI rules
   const aiLinkconerPayoutColumns = React.useMemo(() => {
     if (sortedAiRules.length > 0) {
       const amounts = Array.from(new Set(
         sortedAiRules.flatMap(r => getRulePayouts(r).map(p => p?.amount).filter((amt): amt is number => typeof amt === 'number' && !isNaN(amt)))
-      )).sort((a, b) => b - a);
+      )).sort((a, b) => a - b);
       if (amounts.length > 0) return amounts;
     }
-    return [100, 90, 80];
+    return [0, 80, 90, 100];
   }, [sortedAiRules]);
 
-  // Helper to get GPS threshold for a static payout amount from a rule
+  // Helper to get GPS threshold or formatted condition for a payout amount from a rule
   const getGpsThreshold = (rule: any, targetAmount: number) => {
     if (!rule || rule.isPlaceholder) return null;
     const payouts = getRulePayouts(rule);
     const match = payouts.find((p: any) => p && p.amount === targetAmount);
-    return match ? (match.gpsThreshold ?? match.fromGps ?? null) : null;
+    if (!match) return null;
+    if (rule.department === 'AI Linkconer' && match.conditionText) {
+      return match.conditionText;
+    }
+    return match.gpsThreshold ?? match.fromGps ?? null;
   };
 
   const handlePrint = () => {
@@ -416,81 +423,86 @@ export const RunningCountIncentives: React.FC<RunningCountIncentivesProps> = ({
             </table>
           </div>
 
-          {/* AI Linkconer Section */}
-          <div className="mt-8 text-center mb-4">
-            <h2 className="text-xl font-black text-purple-950 uppercase tracking-wider leading-none pb-2 inline-block">
-              AI Linkconer Incentive Master
-            </h2>
-            <div className="bg-gradient-to-r from-transparent via-purple-600 to-transparent h-1 w-64 mx-auto rounded-full mt-0.5" />
-          </div>
+          {/* AI Linkconer Section (KTTM Only) */}
+          {isKttmShed && (
+            <>
+              <div className="mt-8 text-center mb-4">
+                <h2 className="text-xl font-black text-purple-950 uppercase tracking-wider leading-none pb-2 inline-block">
+                  AI Linkconer Incentive Master (KTTM Only)
+                </h2>
+                <div className="bg-gradient-to-r from-transparent via-purple-600 to-transparent h-1 w-64 mx-auto rounded-full mt-0.5" />
+              </div>
 
-          <div className="overflow-x-auto rounded-xl border-2 border-purple-950 shadow-md mb-6">
-            <table className="w-full text-center border-collapse table-fixed">
-              <thead>
-                <tr className="bg-purple-950 text-white border-b-2 border-purple-950 h-14">
-                  {/* First cell with the split content */}
-                  <th className="w-44 px-3 border-r border-purple-900 bg-purple-900 text-white">
-                    <div className="text-amber-300 tracking-wider uppercase text-[11px] font-black leading-tight">Incentive Amount</div>
-                    <div className="text-purple-100 uppercase tracking-wider text-[9px] font-bold">(in Rupees / Rs)</div>
-                  </th>
-                  {aiLinkconerPayoutColumns.map(amount => (
-                    <th key={amount} className="px-3 border-r border-purple-900 bg-purple-950 text-white last:border-r-0">
-                      <div className="flex flex-col items-center justify-center">
-                        <span className="text-lg md:text-xl font-black tabular-nums tracking-tight text-amber-300">₹{amount}</span>
-                        <span className="text-[9px] font-bold text-purple-200 uppercase tracking-wider">Payout Amt</span>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedAiRules.map((rule, idx) => {
-                  const displayCount = (rule?.count && typeof rule.count === 'string' && rule.count.toLowerCase() !== 'all') ? rule.count : 'AI LINKCONER';
-                  return (
-                    <tr key={`ai-rule-${rule?.count || 'ai'}-${idx}`} className="border-b last:border-b-0 border-purple-950/80 h-12 hover:bg-purple-50/20 transition-colors">
-                      {/* Count Name Column */}
-                      <td className="px-3 py-2 text-xs md:text-sm font-black text-white border-r border-purple-950 bg-purple-900 sticky left-0 z-10 font-mono text-left uppercase">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full shrink-0 bg-purple-400" />
-                            <span>{displayCount}</span>
+              <div className="overflow-x-auto rounded-xl border-2 border-purple-950 shadow-md mb-6">
+                <table className="w-full text-center border-collapse table-fixed">
+                  <thead>
+                    <tr className="bg-purple-950 text-white border-b-2 border-purple-950 h-14">
+                      {/* First cell with the split content */}
+                      <th className="w-44 px-3 border-r border-purple-900 bg-purple-900 text-white">
+                        <div className="text-amber-300 tracking-wider uppercase text-[11px] font-black leading-tight">Incentive Amount</div>
+                        <div className="text-purple-100 uppercase tracking-wider text-[9px] font-bold">(in Rupees / Rs)</div>
+                      </th>
+                      {aiLinkconerPayoutColumns.map(amount => (
+                        <th key={amount} className="px-3 border-r border-purple-900 bg-purple-950 text-white last:border-r-0">
+                          <div className="flex flex-col items-center justify-center">
+                            <span className="text-lg md:text-xl font-black tabular-nums tracking-tight text-amber-300">₹{amount}</span>
+                            <span className="text-[9px] font-bold text-purple-200 uppercase tracking-wider">Payout Amt</span>
                           </div>
-                        </div>
-                      </td>
-
-                      {/* Threshold cells */}
-                      {aiLinkconerPayoutColumns.map(amount => {
-                        const threshold = getGpsThreshold(rule, amount);
-                        
-                        return (
-                          <td 
-                            key={amount} 
-                            className="px-2 py-2 text-xs font-bold text-stone-900 border-r border-purple-200/60 last:border-r-0 bg-white tabular-nums font-mono"
-                          >
-                            {threshold !== null ? (
-                              <div className="flex flex-col items-center justify-center">
-                                <span className="text-sm md:text-base font-black text-purple-950 tracking-tight">{threshold}%</span>
-                                <span className="text-[8px] font-bold tracking-wider text-purple-700 uppercase">Util Min</span>
-                              </div>
-                            ) : (
-                              <span className="text-stone-300 font-bold text-sm">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
+                        </th>
+                      ))}
                     </tr>
-                  );
-                })}
-                {sortedAiRules.length === 0 && (
-                  <tr>
-                    <td colSpan={aiLinkconerPayoutColumns.length + 1} className="py-8 text-stone-400 font-bold uppercase text-xs tracking-wider bg-stone-50/50 italic">
-                      No AI Linkconer rules defined in Incentive Master.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {sortedAiRules.map((rule, idx) => {
+                      const displayCount = (rule?.count && typeof rule.count === 'string' && rule.count.toLowerCase() !== 'all') ? rule.count : 'AI LINKCONER';
+                      return (
+                        <tr key={`ai-rule-${rule?.count || 'ai'}-${idx}`} className="border-b last:border-b-0 border-purple-950/80 h-12 hover:bg-purple-50/20 transition-colors">
+                          {/* Count Name Column */}
+                          <td className="px-3 py-2 text-xs md:text-sm font-black text-white border-r border-purple-950 bg-purple-900 sticky left-0 z-10 font-mono text-left uppercase">
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full shrink-0 bg-purple-400" />
+                                <span>{displayCount}</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Threshold cells */}
+                          {aiLinkconerPayoutColumns.map(amount => {
+                            const threshold = getGpsThreshold(rule, amount);
+                            const thresholdText = threshold !== null ? (String(threshold).includes('%') ? String(threshold) : `${threshold}%`) : null;
+
+                            return (
+                              <td 
+                                key={amount} 
+                                className="px-2 py-2 text-xs font-bold text-stone-900 border-r border-purple-200/60 last:border-r-0 bg-white tabular-nums font-mono"
+                              >
+                                {thresholdText !== null ? (
+                                  <div className="flex flex-col items-center justify-center">
+                                    <span className="text-sm md:text-base font-black text-purple-950 tracking-tight">{thresholdText}</span>
+                                    <span className="text-[8px] font-bold tracking-wider text-purple-700 uppercase">Util %</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-stone-300 font-bold text-sm">—</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                    {sortedAiRules.length === 0 && (
+                      <tr>
+                        <td colSpan={aiLinkconerPayoutColumns.length + 1} className="py-8 text-stone-400 font-bold uppercase text-xs tracking-wider bg-stone-50/50 italic">
+                          No AI Linkconer rules defined in Incentive Master.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
 
           {/* Reference guidelines */}
           <div className="mt-14 bg-stone-50 rounded-3xl p-8 border border-stone-200">

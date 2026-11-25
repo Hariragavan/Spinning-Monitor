@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, MachineEmData, FrozenMonthRecord } from '../types';
 import { Calendar, LayoutGrid, Target, ArrowRight, Printer, ArrowUpDown, ArrowUp, ArrowDown, Sparkles, ChevronRight, Lock, Unlock, Download, FileSpreadsheet } from 'lucide-react';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, getGaiterIncentive, parseUniversalDateParts, exactAmount, formatIncentiveAmount } from '../lib/utils';
 import { motion } from 'motion/react';
 import { getMonthKey } from '../lib/frozenMonths';
 import * as XLSX from 'xlsx';
@@ -705,10 +705,10 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                             metricType === 'incentive' && hasHighEm ? (
                               <div className="inline-block relative px-2.5 py-1">
                                 <span className="absolute inset-0 border-2 border-red-600 rounded-[50%/50%] pointer-events-none transform scale-y-90 scale-x-110" />
-                                <span className="relative z-10 text-red-600 font-black">₹{Math.round(val)}</span>
+                                <span className="relative z-10 text-red-600 font-black">₹{formatIncentiveAmount(val)}</span>
                               </div>
                             ) : (
-                              <span className="text-stone-700">₹{Math.round(val)}</span>
+                              <span className="text-stone-700">₹{formatIncentiveAmount(val)}</span>
                             )
                           ) : '-'}
                         </td>
@@ -718,7 +718,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                       {row.averageEm > 0 ? row.averageEm.toFixed(2) : '-'}
                     </td>
                     <td className="px-4 text-right text-[20px] font-black text-emerald-950 font-mono bg-emerald-50">
-                      {row.total > 0 ? `₹${Math.round(row.total).toLocaleString()}` : '-'}
+                      {row.total > 0 ? `₹${formatIncentiveAmount(row.total)}` : '-'}
                     </td>
                   </motion.tr>
                 ))}
@@ -747,7 +747,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                     }, 0);
                     return (
                       <td key={`total-${day}`} className="px-1 text-center text-[19px] font-black font-mono border-r border-emerald-700/50 text-emerald-800">
-                        {dayTotal > 0 ? `₹${Math.round(dayTotal)}` : '-'}
+                        {dayTotal > 0 ? `₹${formatIncentiveAmount(dayTotal)}` : '-'}
                       </td>
                     );
                   })}
@@ -761,7 +761,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                     })()}
                   </td>
                   <td className="px-4 text-right text-[20px] font-black text-amber-800 font-mono bg-amber-50">
-                    ₹{Math.round(currentTvPageItems.reduce((acc, row) => acc + row.total, 0)).toLocaleString()}
+                    ₹{formatIncentiveAmount(currentTvPageItems.reduce((acc, row) => acc + row.total, 0))}
                   </td>
                 </tr>
               </tbody>
@@ -906,10 +906,10 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                     };
                     displayedDays.forEach(day => {
                       const val = getMetricByDay(day, row.id, row.id, row.tNo, row.type === 'worker' ? row.label : undefined);
-                      obj[`Day ${day}`] = val ? Math.round(val) : '';
+                      obj[`Day ${day}`] = val ? exactAmount(val) : '';
                     });
                     obj['Avg EM'] = row.averageEm > 0 ? parseFloat(row.averageEm.toFixed(2)) : '';
-                    obj['Total Payout (INR)'] = Math.round(row.total);
+                    obj['Total Payout (INR)'] = exactAmount(row.total);
                     return obj;
                   });
 
@@ -931,9 +931,9 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                   rowsWithTotals.forEach(row => {
                     const dayValues = displayedDays.map(day => {
                       const val = getMetricByDay(day, row.id, row.id, row.tNo, row.type === 'worker' ? row.label : undefined);
-                      return val ? Math.round(val) : '';
+                      return val ? exactAmount(val) : '';
                     }).join(',');
-                    csv += `"${row.tNo || ''}","${row.label}",${dayValues},${row.averageEm > 0 ? row.averageEm.toFixed(2) : ''},${Math.round(row.total)}\n`;
+                    csv += `"${row.tNo || ''}","${row.label}",${dayValues},${row.averageEm > 0 ? row.averageEm.toFixed(2) : ''},${exactAmount(row.total)}\n`;
                   });
 
                   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1113,10 +1113,10 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                             metricType === 'incentive' && hasHighEm ? (
                               <div className="inline-block relative px-2.5 py-1">
                                 <span className="absolute inset-0 border-2 border-red-600 rounded-[50%/50%] pointer-events-none transform scale-y-90 scale-x-110" />
-                                <span className="relative z-10 text-red-600 font-extrabold">{Math.round(val)}</span>
+                                <span className="relative z-10 text-red-600 font-extrabold">{formatIncentiveAmount(val)}</span>
                               </div>
                             ) : (
-                              <span className="text-stone-700">{Math.round(val)}</span>
+                              <span className="text-stone-700">{formatIncentiveAmount(val)}</span>
                             )
                           ) : ''}
                         </td>
@@ -1126,7 +1126,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                       {row.averageEm > 0 ? row.averageEm.toFixed(2) : ''}
                     </td>
                     <td className="px-2 py-0.5 text-[16px] font-bold text-rose-600 bg-white sticky right-0 z-10 border-l border-green-800 tabular-nums">
-                      {row.total > 0 ? Math.round(row.total).toLocaleString() : ''}
+                      {row.total > 0 ? formatIncentiveAmount(row.total) : ''}
                     </td>
                   </tr>
                 );
@@ -1144,7 +1144,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                   }, 0);
                   return (
                     <td key={`total-${day}`} className="px-0.5 py-1 text-[16px] font-bold text-rose-600 border-r border-green-800 tabular-nums">
-                      {dayTotal > 0 ? Math.round(dayTotal) : ''}
+                      {dayTotal > 0 ? formatIncentiveAmount(dayTotal) : ''}
                     </td>
                   );
                 })}
@@ -1158,7 +1158,7 @@ export const MonthlyGrid: React.FC<MonthlyGridProps> = ({
                   })()}
                 </td>
                 <td className="px-2 py-1 text-[16px] font-black text-rose-600 bg-white sticky right-0 z-20 border-l border-green-800 tabular-nums">
-                  {Math.round(rowsWithTotals.reduce((acc, row) => acc + row.total, 0)).toLocaleString()}
+                  {formatIncentiveAmount(rowsWithTotals.reduce((acc, row) => acc + row.total, 0))}
                 </td>
               </tr>
             </tbody>

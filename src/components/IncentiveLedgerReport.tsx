@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, Shift, ProductionEntry, MachineEmData, FrozenMonthRecord } from '../types';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts, parseUniversalDate, formatIncentiveAmount } from '../lib/utils';
 import { Coins, Calendar, User, Search, Printer, FileText, ChevronRight, Download, Users, ArrowUpRight, BarChart3, Database, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -100,10 +100,10 @@ export const combineLedgerEntriesByShift = (entries: LedgerEntry[]): CombinedLed
     const incentiveTotal = groupEntries.reduce((sum, e) => sum + e.incentive, 0);
     let incentiveText = '';
     if (groupEntries.length > 1) {
-      const parts = groupEntries.map(e => Math.round(e.incentive));
-      incentiveText = `(${parts.join('+')})=${Math.round(incentiveTotal)}`;
+      const parts = groupEntries.map(e => formatIncentiveAmount(e.incentive));
+      incentiveText = `(${parts.join('+')})=${formatIncentiveAmount(incentiveTotal)}`;
     } else {
-      incentiveText = `${Math.round(incentiveTotal)}`;
+      incentiveText = `${formatIncentiveAmount(incentiveTotal)}`;
     }
 
     combined.push({

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { DailyReport, Sider, IncentiveRule, ProductionEntry, Shift, FrozenMonthRecord } from '../types';
-import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts } from '../lib/utils';
+import { cn, calculateIncentive, calculateSiderSlotIncentive, resolveWorker, findDuplicatesInReport, getGaiterIncentive, parseUniversalDateParts, exactAmount, formatIncentiveAmount } from '../lib/utils';
 import { Printer, TrendingUp, Sparkles, ChevronRight, Download, Lock, Unlock } from 'lucide-react';
 import { motion } from 'motion/react';
 import * as XLSX from 'xlsx';
@@ -430,7 +430,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
                           </span>
                         )}
                       </td>
-                      <td className="px-6 text-right text-[22px] font-black text-stone-950 font-mono">₹{Math.round(item.amount).toLocaleString()}</td>
+                      <td className="px-6 text-right text-[22px] font-black text-stone-950 font-mono">₹{formatIncentiveAmount(item.amount)}</td>
                     </motion.tr>
                   );
                 })}
@@ -504,7 +504,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
                           </span>
                         )}
                       </td>
-                      <td className="px-6 text-right text-[22px] font-black text-stone-950 font-mono">₹{Math.round(item.amount).toLocaleString()}</td>
+                      <td className="px-6 text-right text-[22px] font-black text-stone-950 font-mono">₹{formatIncentiveAmount(item.amount)}</td>
                     </motion.tr>
                   );
                 })}
@@ -691,7 +691,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-2 text-base text-right font-black tabular-nums">{Math.round(item.amount).toLocaleString()}</td>
+                    <td className="px-6 py-2 text-base text-right font-black tabular-nums">{formatIncentiveAmount(item.amount)}</td>
                   </tr>
                 );
               })}
@@ -739,7 +739,7 @@ export const MonthAbstract: React.FC<MonthAbstractProps> = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-2 text-base text-right font-black tabular-nums">{Math.round(item.amount).toLocaleString()}</td>
+                    <td className="px-6 py-2 text-base text-right font-black tabular-nums">{formatIncentiveAmount(item.amount)}</td>
                   </tr>
                 );
               })}
