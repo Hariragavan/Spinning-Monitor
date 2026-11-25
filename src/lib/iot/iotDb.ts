@@ -45,12 +45,10 @@ export const IOT_COLLECTIONS = {
 
 export const REMOTE_IOT_API =
   process.env.IOT_REMOTE_API ||
-  process.env.NEXT_PUBLIC_IOT_REMOTE_API ||
   'https://iot-machine-backend-production.up.railway.app/api';
 
 export const IOT_COMMON_API_URL =
   process.env.IOT_COMMON_API ||
-  process.env.NEXT_PUBLIC_IOT_COMMON_API ||
   'https://iot-machine-backend-production.up.railway.app/api/common';
 
 // Memory cache for sub-second responses keyed by shift & date

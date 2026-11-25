@@ -46,15 +46,10 @@ function setStored<T>(key: string, value: T): void {
   } catch { }
 }
 
-export const IOT_REMOTE_API_BASE =
-  process.env.NEXT_PUBLIC_IOT_REMOTE_API ||
-  process.env.IOT_REMOTE_API ||
-  'https://iot-machine-backend-production.up.railway.app/api';
-
-export const IOT_COMMON_API_URL =
-  process.env.NEXT_PUBLIC_IOT_COMMON_API ||
-  process.env.IOT_COMMON_API ||
-  'https://iot-machine-backend-production.up.railway.app/api/common';
+// All browser requests stay on same-origin Next.js server routes (/api/iot/*)
+// so external backend URLs are never exposed in client Network logs.
+export const IOT_REMOTE_API_BASE = '/api/iot';
+export const IOT_COMMON_API_URL = '/api/iot/common';
 
 async function fetchWithFallback<T>(url: string, init?: RequestInit, fallback?: T): Promise<T> {
   try {
@@ -113,17 +108,17 @@ async function fetchLiveCommonPayload(filter?: {
     return null;
   };
 
-  // 1. Direct GET call to https://iot-machine-backend-production.up.railway.app/api/common
+  // 1. Same-origin Next.js proxy GET call to /api/iot/common
   try {
-    const url = new URL(IOT_COMMON_API_URL);
-    url.searchParams.set('limit', '100');
-    if (shiftNum !== undefined) url.searchParams.set('shift', String(shiftNum));
-    if (targetDate) url.searchParams.set('shiftDate', targetDate);
-    url.searchParams.set('_t', String(Date.now()));
+    const sp = new URLSearchParams();
+    sp.set('limit', '100');
+    if (shiftNum !== undefined) sp.set('shift', String(shiftNum));
+    if (targetDate) sp.set('shiftDate', targetDate);
+    sp.set('_t', String(Date.now()));
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
-    const res = await fetch(url.toString(), {
+    const res = await fetch(`${IOT_COMMON_API_URL}?${sp.toString()}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       cache: 'no-store',
@@ -136,32 +131,8 @@ async function fetchLiveCommonPayload(filter?: {
       if (rec) return rec;
     }
   } catch (err) {
-    console.warn('Direct fetch from Railway common API failed:', err);
+    console.warn('Fetch from /api/iot/common failed:', err);
   }
-
-  // 2. Fallback: if unfiltered is needed (no specific shift/date requested) or to check broader pool
-  try {
-    const url = new URL(IOT_COMMON_API_URL);
-    url.searchParams.set('limit', '100');
-    if (targetDate && shiftNum === undefined) url.searchParams.set('shiftDate', targetDate);
-    if (shiftNum !== undefined && !targetDate) url.searchParams.set('shift', String(shiftNum));
-    url.searchParams.set('_t', String(Date.now()));
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
-    const res = await fetch(url.toString(), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const json = await res.json();
-      const rec = tryParseRecord(json);
-      if (rec) return rec;
-    }
-  } catch { }
 
   return null;
 }
@@ -170,7 +141,7 @@ export const iotApi = {
   baseUrl: IOT_REMOTE_API_BASE,
   commonApiUrl: IOT_COMMON_API_URL,
 
-  // 1. MAG SPinFO Common API Overview & Machine Details (https://iot-machine-backend-production.up.railway.app/api/common)
+  // 1. SPinFO Overview & Machine Details (served strictly via Next.js server /api/iot)
   async getSpinfoOverview(filter?: {
     fromDate?: string;
     toDate?: string;
@@ -186,23 +157,6 @@ export const iotApi = {
 
     const fallback = getSampleSpinfoOverview();
 
-    // 1. Direct browser fetch to live MAG SPinFO Common API (https://iot-machine-backend-production.up.railway.app/api/common)
-    try {
-      const liveCommon = await fetchLiveCommonPayload({
-        fromDate: filter?.fromDate,
-        toDate: filter?.toDate,
-        shift: filter?.shift
-      });
-      if (liveCommon && Array.isArray(liveCommon.machines) && liveCommon.machines.length > 0) {
-        // Sync payload to Next.js / MongoDB in the background without blocking the UI
-        this.syncLivePayloadToDb(liveCommon).catch(() => {});
-        return transformCommonToOverview(liveCommon);
-      }
-    } catch (remoteErr) {
-      console.warn('Direct live fetch from Railway common API failed, falling back to Next.js route:', remoteErr);
-    }
-
-    // 2. Next.js API route fallback (reads from MongoDB Atlas or server-side cached fallback)
     try {
       const res = await fetchWithFallback<{ success: boolean; data: SpinfoOverviewResponse }>(
         `/api/iot/spinfo/overview?${params.toString()}`,
@@ -235,19 +189,6 @@ export const iotApi = {
 
     const fallback: SpinfoMachineDetailResponse = getSampleMachineDetail(machineId);
 
-    // 1. Direct browser fetch to live MAG SPinFO Common API
-    try {
-      const liveCommon = await fetchLiveCommonPayload({
-        fromDate: filter?.fromDate,
-        toDate: filter?.toDate,
-        shift: filter?.shift
-      });
-      if (liveCommon && Array.isArray(liveCommon.machines)) {
-        return buildMachineDetailFromCommon(machineId, liveCommon);
-      }
-    } catch (_) {}
-
-    // 2. Next.js API route fallback
     try {
       const res = await fetchWithFallback<{ success: boolean; data: SpinfoMachineDetailResponse }>(
         `/api/iot/spinfo/machine/${encodeURIComponent(machineId)}?${params.toString()}`,

@@ -334,7 +334,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       const limit = parseInt(searchParams.get('limit') || '10', 10);
       const shiftNum = shift ? parseInt(shift.replace(/\D/g, ''), 10) || undefined : undefined;
       const doc = await fetchLiveRenderStream(limit, shiftNum, shiftDate);
-      if (doc) return NextResponse.json({ success: true, sourceApi: IOT_COMMON_API_URL, data: Array.isArray(doc) ? doc : [doc] });
+      if (doc) return NextResponse.json({ success: true, data: Array.isArray(doc) ? doc : [doc] });
       try {
         const db = await getIotDb();
         const q: any = {};
@@ -485,6 +485,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       return NextResponse.json(result);
     }
 
+    try {
+      const remoteRes = await fetch(`${REMOTE_IOT_API}/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (remoteRes.ok) {
+        const json = await remoteRes.json();
+        return NextResponse.json(json);
+      }
+    } catch {}
+
     return NextResponse.json({ success: true, data: body });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'IoT API post failed' }, { status: 500 });
@@ -523,6 +535,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug
       return NextResponse.json({ success: true, data: saved });
     }
 
+    try {
+      const remoteRes = await fetch(`${REMOTE_IOT_API}/${path}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (remoteRes.ok) {
+        const json = await remoteRes.json();
+        return NextResponse.json(json);
+      }
+    } catch {}
+
     return NextResponse.json({ success: true, data: body });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error?.message || 'IoT API put failed' }, { status: 500 });
@@ -558,6 +582,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ s
       const ok = await deleteIotShift(id);
       return NextResponse.json({ success: ok });
     }
+
+    try {
+      const remoteRes = await fetch(`${REMOTE_IOT_API}/${path}`, {
+        method: 'DELETE'
+      });
+      if (remoteRes.ok) {
+        const json = await remoteRes.json();
+        return NextResponse.json(json);
+      }
+    } catch {}
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

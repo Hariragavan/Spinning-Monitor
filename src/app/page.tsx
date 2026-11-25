@@ -19,7 +19,6 @@ import { MachineAssignment } from '@/components/MachineAssignment';
 import { IncentiveMaster } from '@/components/IncentiveMaster';
 import { RunningCountIncentives } from '@/components/RunningCountIncentives';
 import { IncentiveLedgerReport } from '@/components/IncentiveLedgerReport';
-import { AssignmentAudit } from '@/components/AssignmentAudit';
 import { SiderMonthlyPerformance } from '@/components/SiderMonthlyPerformance';
 import { AiMonthlyGrid } from '@/components/AiMonthlyGrid';
 import { AiMonthAbstract } from '@/components/AiMonthAbstract';
@@ -342,7 +341,7 @@ export default function Home() {
     }
 
     if (newTab !== prevTab) {
-      if (newTab === 'assignment') {
+      if (newTab === 'assignments') {
         // Pause periodic background auto-refresh while editing on Allocation page
         isAutoRefreshPausedRef.current = true;
         setIsAutoRefreshPaused(true);
@@ -803,7 +802,7 @@ export default function Home() {
     refreshAllData({ isInitial: true });
 
     const shouldPauseBackgroundSync = () =>
-      !isTvModeRef.current && (isAutoRefreshPausedRef.current || activeTabRef.current === 'assignment');
+      !isTvModeRef.current && (isAutoRefreshPausedRef.current || activeTabRef.current === 'assignments');
 
     // 2. 5-Minute Periodic Auto-Refresh (300,000 ms)
     const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
@@ -1471,7 +1470,7 @@ export default function Home() {
     if (!newDate) return;
     if (options?.resumeAutoRefresh) {
       manualPinnedDateRef.current = null;
-      if (activeTabRef.current !== 'assignment') {
+      if (activeTabRef.current !== 'assignments') {
         isAutoRefreshPausedRef.current = false;
         setIsAutoRefreshPaused(false);
       }
@@ -1502,7 +1501,7 @@ export default function Home() {
       if (currentToday !== calendarDayRef.current) {
         console.log(`[Midnight Rollover] Calendar day changed from ${calendarDayRef.current} to ${currentToday}. Silently checking for newly uploaded data...`);
         calendarDayRef.current = currentToday;
-        if (!isTvModeRef.current && (isAutoRefreshPausedRef.current || activeTabRef.current === 'assignment')) {
+        if (!isTvModeRef.current && (isAutoRefreshPausedRef.current || activeTabRef.current === 'assignments')) {
           return;
         }
         refreshAllData({ silent: true, preserveDate: true });
@@ -2306,7 +2305,6 @@ export default function Home() {
     { id: 'daily-incentive', icon: Coins, label: 'Daily Incentive' },
     { id: 'daily-incentive-machine', icon: Grid3X3, label: 'Daily Incentive - Machine Wise' },
     { id: 'assignments', icon: UserCheck, label: 'Assignments' },
-    { id: 'assignment-audit', icon: AlertTriangle, label: 'Assignment Audit' },
     { id: 'reports', icon: TrendingUp, label: 'Daily Statement' },
     { id: 'month-view', icon: Calendar, label: 'Monthly Incentive' },
     { id: 'month-abstract', icon: BarChart3, label: 'Monthly Abstract' },
@@ -2612,22 +2610,6 @@ export default function Home() {
             onChangeReportDate={changeReportDate}
             isSupervisorMode={isSupervisorMode}
             shed={selectedShed}
-          />
-        );
-
-      case 'assignment-audit':
-        return (
-          <AssignmentAudit
-            history={reportHistory}
-            workers={workers}
-            currentShed={selectedShed}
-            onSelectShed={(s) => setSelectedShed(s as Shed)}
-            initialMonth={selectedMonth}
-            initialYear={selectedYear}
-            onEditDate={(date) => {
-              handleTopDateChange(date);
-              setActiveTab('assignments');
-            }}
           />
         );
 
@@ -4128,7 +4110,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (activeTab !== 'assignment') {
+                        if (activeTab !== 'assignments') {
                           isAutoRefreshPausedRef.current = false;
                           setIsAutoRefreshPaused(false);
                         }

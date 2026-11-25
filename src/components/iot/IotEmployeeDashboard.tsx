@@ -94,9 +94,9 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
       if (ovRes?.machines?.length) {
         setOverview(ovRes);
       } else {
-        // Fallback directly to Railway common API to ensure live telemetry is always active
+        // Fallback via same-origin server common proxy
         try {
-          const cRes = await fetch('https://iot-machine-backend-production.up.railway.app/api/common?limit=10');
+          const cRes = await fetch(`/api/iot/common?limit=10&_t=${Date.now()}`);
           if (cRes.ok) {
             const cJson = await cRes.json();
             const rec = Array.isArray(cJson) ? cJson[0] : (cJson.data?.[0] || cJson.data);

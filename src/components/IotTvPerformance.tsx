@@ -253,7 +253,7 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
         ? '02:00 PM – 10:00 PM'
         : '10:00 PM – 06:00 AM';
 
-      // Local + Railway employee metrics for target date & shift (merges MongoDB RFID mapped names):
+      // Employee metrics for target date & shift strictly via same-origin server API (merges MongoDB RFID mapped names)
       const fetchRailwayEmployeeData = async (dStr: string, sName?: string) => {
         try {
           let localUrl = `/api/iot/dashboard/employee?date=${encodeURIComponent(dStr)}&_t=${Date.now()}`;
@@ -266,22 +266,9 @@ export const IotTvPerformance: React.FC<IotTvPerformanceProps> = ({
             }
           }
         } catch (_) {}
-        try {
-          let url = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
-          if (sName) {
-            url += `&shiftName=${encodeURIComponent(sName)}`;
-          }
-          const res = await fetch(url, { cache: 'no-store' });
-          if (res.ok) {
-            const json = await res.json();
-            if (Array.isArray(json?.data) && json.data.length > 0) {
-              return json.data;
-            }
-          }
-        } catch (_) {}
         if (sName) {
           try {
-            const url2 = `https://iot-machine-backend-production.up.railway.app/api/dashboard/employee?date=${dStr}&_t=${Date.now()}`;
+            const url2 = `/api/iot/dashboard/employee?date=${encodeURIComponent(dStr)}&_t=${Date.now()}`;
             const res2 = await fetch(url2, { cache: 'no-store' });
             if (res2.ok) {
               const json2 = await res2.json();

@@ -36,7 +36,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'all-data', label: 'All Data Master Table', icon: Table },
       { id: 'assignments', label: 'Machine Allocation', icon: UserCheck },
-      { id: 'assignment-audit', label: 'Assignment Audit', icon: AlertTriangle },
       { id: 'reports', label: 'Daily Statement', icon: TrendingUp },
       { id: 'daily-incentive', label: 'Daily Incentive', icon: Coins },
     ]

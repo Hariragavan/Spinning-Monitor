@@ -7,7 +7,7 @@ import {
   SpinfoMachineDetailResponse,
   Shift
 } from '@/types/iot';
-import { iotApi, IOT_COMMON_API_URL } from '@/lib/iot/iotApi';
+import { iotApi } from '@/lib/iot/iotApi';
 import { getSampleSpinfoOverview, buildMachineDetailFromCommon } from '@/lib/iot/sampleIotData';
 import { getTodayDateString, parseUniversalDateParts } from '@/lib/utils';
 import { FourSpindleRollAnimation } from '@/components/CountWiseFrames';
@@ -508,7 +508,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
           </div>
           <h1 className="title">Machine Telemetry Intelligence</h1>
           <p className="subtitle">
-            Live telemetry bound from <code style={{ fontSize: '0.75rem', color: '#2563eb' }}>{IOT_COMMON_API_URL}</code> · Data Time: <strong suppressHydrationWarning>{overview.dataTime}</strong>
+            Live Telemetry Feed · Data Time: <strong suppressHydrationWarning>{overview.dataTime}</strong>
           </p>
         </div>
 
@@ -685,7 +685,7 @@ export const IotMachineDashboard: React.FC<IotMachineDashboardProps> = ({ select
           </button>
 
           {mounted && lastRefreshedAt && (
-            <div className="sync-indicator" title={`Synced with ${IOT_COMMON_API_URL} (5-min telemetry)`}>
+            <div className="sync-indicator" title="Live telemetry synced via server proxy (5-min telemetry)">
               <span className="pulse-dot"></span>
               <span className="sync-text" suppressHydrationWarning>Live: {lastRefreshedAt.toLocaleTimeString()}</span>
             </div>
