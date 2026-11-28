@@ -126,6 +126,7 @@ export interface EmployeeTapDetail {
   gapMinutes?: number;
   interval?: number;
   tapNumber?: number;
+  spindleBreaks?: number;
 }
 
 export interface EmployeeHourlyMetric {
@@ -133,6 +134,30 @@ export interface EmployeeHourlyMetric {
   rounds: number;
   avgGapMinutes: number;
   taps?: EmployeeTapDetail[];
+  spindleBreaks?: number;
+  em?: number;
+}
+
+export interface EmployeeBreakHourBucket {
+  hourStartMs: number;
+  hourIso: string;
+  emLeft: number;
+  emRight: number;
+  breaksLeft: number;
+  breaksRight: number;
+}
+
+export interface EmployeeMachineTelemetry {
+  machine: string;
+  leftBreakTimes: number[];
+  rightBreakTimes: number[];
+  leftTotalBreaks: number;
+  rightTotalBreaks: number;
+  avgEmLeft: number;
+  avgEmRight: number;
+  latestEmLeft: number;
+  latestEmRight: number;
+  hourly: Record<string, EmployeeBreakHourBucket>;
 }
 
 export interface EmployeeMetric {

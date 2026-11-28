@@ -2852,19 +2852,40 @@
    ========================================================================== */
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.15rem;
+}
+
+@media (max-width: 1180px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .kpi-card {
-  padding: 1.35rem 1.5rem;
+  padding: 1.25rem 1.35rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
   text-align: left;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
 }
 
 .kpi-card::before {
@@ -2876,11 +2897,11 @@
   height: 4px;
 }
 
-.kpi-cyan::before { background: #06b6d4; }
-.kpi-emerald::before { background: #10b981; }
-.kpi-amber::before { background: #f59e0b; }
-.kpi-purple::before { background: #8b5cf6; }
-.kpi-rose::before { background: #ef4444; }
+.kpi-cyan::before { background: linear-gradient(90deg, #06b6d4, #0284c7); }
+.kpi-emerald::before { background: linear-gradient(90deg, #10b981, #059669); }
+.kpi-amber::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+.kpi-purple::before { background: linear-gradient(90deg, #8b5cf6, #6d28d9); }
+.kpi-rose::before { background: linear-gradient(90deg, #ef4444, #e11d48); }
 
 .kpi-top {
   display: flex;
@@ -3327,12 +3348,12 @@
 .hourly-chips-flow {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.45rem;
 }
 
 .hourly-chip {
-  padding: 0.2rem 0.45rem;
-  border-radius: 6px;
+  padding: 0.35rem 0.6rem;
+  border-radius: 10px;
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   color: #1e293b;
@@ -3340,13 +3361,62 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 82px;
+  text-align: left;
 }
 
 .hourly-chip:hover {
-  background: #2563eb;
+  background: #eff6ff;
   border-color: #2563eb;
-  color: #ffffff;
+  color: #1e3a8a;
   transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.12);
+}
+
+.hourly-chip-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.02em;
+}
+
+.hourly-chip-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.hourly-chip-rounds {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.hourly-chip-breaks {
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 0.08rem 0.35rem;
+  border-radius: 5px;
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+  white-space: nowrap;
+}
+
+.hourly-chip-breaks.zero {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
 }
 
 .text-dim {
@@ -3426,12 +3496,12 @@
 }
 
 .modal-content.tap-modal {
-  width: min(880px, 100%);
-  max-height: calc(100vh - 3rem);
+  width: min(980px, 100%);
+  max-height: calc(100vh - 2.5rem);
   background: #ffffff;
-  border-radius: 18px;
+  border-radius: 20px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.28);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3512,8 +3582,14 @@
 
 .tap-summary-tiles {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .tap-summary-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 600px) {
@@ -3532,6 +3608,16 @@
   gap: 0.2rem;
 }
 
+.summary-tile.tile-breaks {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.summary-tile.tile-em {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
 .summary-tile .tile-label {
   font-size: 0.65rem;
   font-weight: 800;
@@ -3545,10 +3631,85 @@
   color: #0f172a;
 }
 
+.summary-tile .tile-sub {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.hour-group-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.hour-group-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.1rem;
+  background: linear-gradient(90deg, #f8fafc 0%, #eff6ff 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.hour-group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.hour-ordinal-badge {
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: #1e40af;
+  padding: 0.22rem 0.65rem;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+}
+
+.hour-window-text {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.hour-group-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.hour-stat-pill {
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0.22rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+}
+
+.hour-stat-pill.breaks {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #c2410c;
+}
+
+.hour-stat-pill.em {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
 .modal-table-wrap {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  max-height: 320px;
+  max-height: 460px;
   overflow-y: auto;
 }
 
@@ -5325,3 +5486,142 @@
   max-width: none !important;
   flex: 0 0 auto !important;
 }
+
+/* ==========================================================================
+   Scoped Employee Dashboard & Tap Modal Overrides
+   (Prevents global .card / .modal-body / .modal-footer cascade conflicts)
+   ========================================================================== */
+.emp-dash .kpi-card {
+  padding: 1rem 1.2rem !important;
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.emp-dash .kpi-top {
+  margin-bottom: 0.55rem !important;
+}
+
+.emp-dash .kpi-main {
+  margin-bottom: 0.6rem !important;
+}
+
+.emp-dash .kpi-figure strong {
+  font-size: 1.6rem !important;
+}
+
+.emp-dash .kpi-card.kpi-action-card {
+  border-color: #fecaca !important;
+}
+
+.emp-dash .table-panel {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.emp-dash .panel-header {
+  padding: 1.1rem 1.35rem !important;
+}
+
+.emp-dash .refined-table th {
+  padding: 0.7rem 0.75rem !important;
+  font-size: 0.68rem !important;
+}
+
+.emp-dash .refined-table td {
+  padding: 0.8rem 0.75rem !important;
+}
+
+.emp-dash .refined-table th:first-child,
+.emp-dash .refined-table td:first-child {
+  padding-left: 1.15rem !important;
+}
+
+.emp-dash .refined-table th:last-child,
+.emp-dash .refined-table td:last-child {
+  padding-right: 1.15rem !important;
+}
+
+.emp-dash .perf-wrapper {
+  min-width: 105px !important;
+  gap: 0.45rem !important;
+}
+
+.emp-dash .hourly-chips-flow {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)) !important;
+  gap: 0.35rem !important;
+  min-width: 245px !important;
+  max-width: 340px !important;
+}
+
+.emp-dash .hourly-chip {
+  min-width: 0 !important;
+  width: 100% !important;
+  padding: 0.28rem 0.45rem !important;
+  border-radius: 8px !important;
+}
+
+.tap-modal .modal-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  padding: 1.2rem 1.5rem !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  flex-shrink: 0 !important;
+}
+
+.tap-modal .modal-body {
+  padding: 1.25rem 1.5rem !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1rem !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+}
+
+.tap-modal .modal-hours-scroll {
+  display: block !important;
+  overflow-y: auto !important;
+  max-height: 430px !important;
+  padding-right: 0.25rem !important;
+}
+
+.tap-modal .hour-group-section {
+  display: block !important;
+  flex-shrink: 0 !important;
+  margin-bottom: 0.85rem !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+}
+
+.tap-modal .hour-group-section:last-child {
+  margin-bottom: 0 !important;
+}
+
+.tap-modal .modal-table th {
+  padding: 0.55rem 0.85rem !important;
+  font-size: 0.66rem !important;
+}
+
+.tap-modal .modal-table td {
+  padding: 0.6rem 0.85rem !important;
+  font-size: 0.82rem !important;
+}
+
+.tap-modal .modal-footer {
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  margin-top: 0 !important;
+  padding: 0.9rem 1.5rem !important;
+  border-top: 1px solid #f1f5f9 !important;
+  background: #ffffff !important;
+  flex-shrink: 0 !important;
+}
+

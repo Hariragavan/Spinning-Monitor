@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Employee,
   Machine,
   Shift,
   EmployeeMetric,
   EmployeeTapDetail,
+  EmployeeHourlyMetric,
+  EmployeeMachineTelemetry,
+  DeviceHealth,
   ProductionReportRow,
   MachineMapping,
   SpinfoOverviewResponse
@@ -19,13 +22,165 @@ import {
 } from '@/lib/iot/employeeDisplay';
 import { getTodayDateString, parseUniversalDateParts, resolveEffectiveMappingForDate } from '@/lib/utils';
 
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function getIstHourStartMs(epochMs: number): number {
+  return Math.floor((epochMs + IST_OFFSET_MS) / 3600000) * 3600000 - IST_OFFSET_MS;
+}
+
+function formatIstTime(raw: string | Date | null | undefined, withSeconds = false): string {
+  if (!raw) return '—';
+  const d = raw instanceof Date ? raw : new Date(raw);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+    hour12: true
+  });
+}
+
+function getOrdinalLabel(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+function getShiftOrdinalFromHourStart(
+  hourStartMs: number,
+  shiftLabel?: string,
+  fallbackIndex?: number
+): { index: number; label: string; timeRange: string; shortTime: string } {
+  const istDate = new Date(hourStartMs + IST_OFFSET_MS);
+  const istHour = istDate.getUTCHours(); // 0..23
+  const endHour = (istHour + 1) % 24;
+  const fmtHr = (h: number) => {
+    const suffix = h >= 12 ? 'pm' : 'am';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${String(h12).padStart(2, '0')}:00 ${suffix}`;
+  };
+  const shortTime = `${String(istHour).padStart(2, '0')}:00`;
+  const timeRange = `${fmtHr(istHour)} – ${fmtHr(endHour)}`;
+
+  const sMatch = shiftLabel ? String(shiftLabel).match(/\d+/) : null;
+  let shiftNum = sMatch ? Number(sMatch[0]) : 0;
+  if (!shiftNum) {
+    if (istHour >= 6 && istHour < 14) shiftNum = 1;
+    else if (istHour >= 14 && istHour < 22) shiftNum = 2;
+    else shiftNum = 3;
+  }
+
+  let idx = fallbackIndex ?? 1;
+  if (shiftNum === 1 && istHour >= 6 && istHour < 14) idx = istHour - 6 + 1;
+  else if (shiftNum === 2 && istHour >= 14 && istHour < 22) idx = istHour - 14 + 1;
+  else if (shiftNum === 3 && (istHour >= 22 || istHour < 6)) idx = istHour >= 22 ? istHour - 22 + 1 : istHour + 2 + 1;
+
+  return {
+    index: idx,
+    label: `${getOrdinalLabel(idx)} Hour`,
+    timeRange,
+    shortTime
+  };
+}
+
+function getIstClockHour(hourStartMs: number): number {
+  return new Date(hourStartMs + IST_OFFSET_MS).getUTCHours();
+}
+
+function resolveHourOrdinals(
+  sortedHourStartMs: number[],
+  shiftFilter?: string,
+  empShift?: string
+): Map<number, { index: number; label: string; timeRange: string; shortTime: string }> {
+  const result = new Map<number, { index: number; label: string; timeRange: string; shortTime: string }>();
+  if (!sortedHourStartMs.length) return result;
+
+  const sFilterMatch = shiftFilter ? String(shiftFilter).match(/\d+/) : null;
+  const sEmpMatch = empShift ? String(empShift).match(/\d+/) : null;
+  const explicitShift = sFilterMatch ? Number(sFilterMatch[0]) : sEmpMatch ? Number(sEmpMatch[0]) : 0;
+
+  // Detect whether hours fit within a single shift window
+  const detectedShifts = new Set<1 | 2 | 3>(
+    sortedHourStartMs.map(ms => {
+      const h = getIstClockHour(ms);
+      if (h >= 6 && h < 14) return 1;
+      if (h >= 14 && h < 22) return 2;
+      return 3;
+    })
+  );
+
+  const singleShift =
+    (explicitShift === 1 || explicitShift === 2 || explicitShift === 3) &&
+    detectedShifts.size === 1 &&
+    detectedShifts.has(explicitShift)
+      ? explicitShift
+      : detectedShifts.size === 1
+      ? Array.from(detectedShifts)[0]
+      : 0;
+
+  sortedHourStartMs.forEach((hMs, idx) => {
+    const info = getShiftOrdinalFromHourStart(
+      hMs,
+      singleShift ? `Shift ${singleShift}` : undefined,
+      idx + 1
+    );
+    if (!singleShift) {
+      // Multi-shift / all-shift duty: keep strict sequential 1st, 2nd, 3rd... across active hours
+      const seqIdx = idx + 1;
+      result.set(hMs, {
+        ...info,
+        index: seqIdx,
+        label: `${getOrdinalLabel(seqIdx)} Hour`
+      });
+    } else {
+      result.set(hMs, info);
+    }
+  });
+
+  return result;
+}
+
+function countSortedInWindow(sortedMs: number[], startMs: number, endMs: number): number {
+  if (!sortedMs.length || endMs <= startMs) return 0;
+  let count = 0;
+  for (let i = 0; i < sortedMs.length; i++) {
+    const t = sortedMs[i];
+    if (t >= endMs) break;
+    if (t >= startMs) count++;
+  }
+  return count;
+}
+
+export interface EnrichedTapRow extends EmployeeTapDetail {
+  spindleBreaks: number;
+  resolvedDeviceId: string;
+  nextTapTime?: string | null;
+}
+
+export interface TapHourGroup {
+  hourStartMs: number;
+  hourIso: string;
+  ordinalLabel: string;
+  timeRange: string;
+  shortTime: string;
+  taps: EnrichedTapRow[];
+  spindleBreaks: number;
+  em: number;
+}
+
 export interface TapModalState {
   employeeId: string;
   employeeName?: string | null;
   machineId: string;
+  sideLabel: string;
+  sideShort: string;
   hourLabel?: string;
-  taps: EmployeeTapDetail[];
+  taps: EnrichedTapRow[];
+  hourGroups: TapHourGroup[];
   avgGap: number;
+  totalSpindleBreaks: number;
+  avgEm: number;
   startTime?: string | Date | null;
   endTime?: string | Date | null;
 }
@@ -41,8 +196,10 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
   const [employeeMetrics, setEmployeeMetrics] = useState<EmployeeMetric[]>([]);
   const [productionRows, setProductionRows] = useState<ProductionReportRow[]>([]);
   const [mappings, setMappings] = useState<MachineMapping[]>([]);
+  const [devices, setDevices] = useState<DeviceHealth[]>([]);
   const [settings, setSettings] = useState<any>(null);
   const [overview, setOverview] = useState<SpinfoOverviewResponse | null>(null);
+  const [breakTelemetry, setBreakTelemetry] = useState<Record<string, EmployeeMachineTelemetry>>({});
 
   const [employeeId, setEmployeeId] = useState('');
   const [machineId, setMachineId] = useState('');
@@ -71,9 +228,6 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     }
   }, [propDate]);
 
-  // Tap Details Modal
-  const [selectedTapModal, setSelectedTapModal] = useState<TapModalState | null>(null);
-
   // Production Report Dialog
   const [productionReportOpen, setProductionReportOpen] = useState(false);
   const [reportDate, setReportDate] = useState(() => todayStr);
@@ -87,14 +241,14 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     try {
       const [stRes, ovRes] = await Promise.all([
         fetch('/api/settings').then(r => r.ok ? r.json() : null).catch(() => null),
-        iotApi.getSpinfoOverview({ fromDate: targetDate, shift: targetShift }).catch(() => null)
+        iotApi.getSpinfoOverview({ fromDate: targetDate, toDate: targetDate, shift: targetShift }).catch(() => null)
       ]);
       const safeSettings = stRes?.data || stRes;
       if (safeSettings) setSettings(safeSettings);
       if (ovRes?.machines?.length) {
         setOverview(ovRes);
-      } else {
-        // Fallback via same-origin server common proxy
+      } else if (targetDate === todayStr) {
+        // Fallback via same-origin server common proxy only for Today live view
         try {
           const cRes = await fetch(`/api/iot/common?limit=10&_t=${Date.now()}`);
           if (cRes.ok) {
@@ -102,6 +256,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             const rec = Array.isArray(cJson) ? cJson[0] : (cJson.data?.[0] || cJson.data);
             if (rec?.machines) {
               setOverview({
+                shiftDate: rec.shiftDate,
                 machines: rec.machines.map((m: any) => ({
                   machineId: m.machine || m.machineId,
                   runStatus: m.runStatus || 'STOP',
@@ -123,37 +278,64 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             }
           }
         } catch (_) {}
+      } else {
+        setOverview(null);
       }
     } catch (_) {}
   }, []);
 
   const loadMasters = async () => {
     try {
-      const [emps, machs, shfs, maps] = await Promise.all([
+      const [emps, machs, shfs, maps, devs] = await Promise.all([
         iotApi.getEmployees(),
         iotApi.getMachines(),
         iotApi.getShifts(),
-        iotApi.getMachineMappings().catch(() => [])
+        iotApi.getMachineMappings().catch(() => []),
+        iotApi.getDevices().catch(() => [])
       ]);
       setEmployees(emps || []);
       setMachines(machs || []);
       setShifts(shfs || []);
       setMappings(maps || []);
+      setDevices(devs || []);
       await fetchSettingsAndOverview(selectedDate, shiftName);
     } catch (err) {
       console.error('Failed to load masters:', err);
     }
   };
 
+  const refreshSeqRef = useRef(0);
+  const lastFilterKeyRef = useRef('');
+
   const refresh = async (showLoading: boolean = false) => {
     const selectedShift = shifts.find(s => (s.name || s.shiftName) === shiftName);
     const resolvedShiftId = selectedShift?.shiftId || '';
     setShiftId(resolvedShiftId);
 
+    const filterKey = `${selectedDate}__${shiftName}`;
+    if (lastFilterKeyRef.current !== filterKey) {
+      lastFilterKeyRef.current = filterKey;
+      setBreakTelemetry({});
+    }
+    const seq = ++refreshSeqRef.current;
+
     if (showLoading) setLoading(true);
     try {
       const isBackendDeviceId = machines.some(m => m.machineId === machineId);
       const backendMachineFilter = isBackendDeviceId ? machineId : undefined;
+
+      // Kick off break + EM telemetry aggregation in parallel cleanly (discarding stale requests on date/shift switch)
+      iotApi
+        .getEmployeeBreakTelemetry({ date: selectedDate, shift: shiftName || undefined })
+        .then(telMap => {
+          if (seq !== refreshSeqRef.current) return;
+          if (telMap && Object.keys(telMap).length > 0) {
+            setBreakTelemetry(telMap);
+          } else {
+            setBreakTelemetry({});
+          }
+        })
+        .catch(() => {});
 
       const [metrics, prod] = await Promise.all([
         iotApi.getEmployeePerformance({
@@ -202,6 +384,9 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     }
   };
 
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
   useEffect(() => {
     loadMasters();
   }, []);
@@ -210,14 +395,15 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     refresh(true);
   }, [employeeId, machineId, shiftName, selectedDate]);
 
-  // Periodic 5-Minute Auto-Refresh (300,000 ms)
+  // Live auto-refresh: every 45s when viewing today for live EM & spindle breaks, every 5m on historical dates
   useEffect(() => {
-    const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const isTodayView = selectedDate === todayStr;
+    const AUTO_REFRESH_INTERVAL_MS = isTodayView ? 45 * 1000 : 5 * 60 * 1000;
     const timer = setInterval(() => {
-      refresh(false);
+      refreshRef.current(false);
     }, AUTO_REFRESH_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [employeeId, machineId, shiftName, selectedDate]);
+  }, [employeeId, machineId, shiftName, selectedDate, todayStr]);
 
   // Calculations for KPIs
   const totalRounds = useMemo(() => {
@@ -547,47 +733,290 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
     });
   }, [employeeMetrics, searchQuery, machineId, resolveMachineInfo]);
 
+  // Tap Details Modal Target (reactive to live breakTelemetry updates)
+  const [tapModalTarget, setTapModalTarget] = useState<{
+    metric: EmployeeMetric;
+    hourIso?: string;
+    hourlyFallback?: { hour: string; rounds: number; avgGapMinutes: number; taps?: EmployeeTapDetail[] };
+  } | null>(null);
+
+  const deviceToStationMap = useMemo(() => {
+    const map = new Map<string, string>();
+    devices.forEach(d => {
+      const devId = String(d.deviceId || '').trim().toUpperCase();
+      const machId = String(d.machineId || '').trim().toUpperCase();
+      if (devId && machId) map.set(devId, machId);
+      else if (devId) map.set(devId, devId);
+    });
+    return map;
+  }, [devices]);
+
+  const resolveTapStationNode = useCallback(
+    (rawTapDeviceId?: string, operatorMachineId?: string, singleDistinctRawNode?: boolean): string => {
+      const devClean = String(rawTapDeviceId || '').trim().toUpperCase();
+      const opClean = String(operatorMachineId || '').trim().toUpperCase();
+      if (singleDistinctRawNode && /^IOT_D\d+$/i.test(opClean)) {
+        return opClean;
+      }
+      if (devClean) {
+        const mapped = deviceToStationMap.get(devClean);
+        if (mapped && /^IOT_D/i.test(mapped)) return mapped;
+        if (/^IOT_D/i.test(devClean)) return devClean;
+        if (devClean.startsWith('IOT_M')) {
+          if (mapped) return mapped;
+          return devClean.replace(/^IOT_M(\d+)$/i, 'IOT_D$1');
+        }
+        return mapped || devClean;
+      }
+      return opClean || '—';
+    },
+    [deviceToStationMap]
+  );
+
+  const getOperatorSideTelemetry = useCallback(
+    (m: EmployeeMetric) => {
+      const info = resolveMachineInfo(m.machineId);
+      const rfKey = (info.rfNo || '').toUpperCase();
+      const side = info.side; // 'LH' | 'RH' | ''
+      const tel = rfKey ? breakTelemetry[rfKey] : undefined;
+
+      // Live overview snapshot only matches selectedDate (or Today live mode)
+      const isTodayView = selectedDate === todayStr;
+      const ovDate = overview?.shiftDate ? String(overview.shiftDate).slice(0, 10) : '';
+      const overviewMatchesSelected = isTodayView || (!!ovDate && ovDate === selectedDate);
+
+      // Side-specific timestamped breaks (ms)
+      let sideBreakTimes: number[] = [];
+      let totalSideBreaks = 0;
+      let avgSideEm = 0;
+
+      if (tel) {
+        if (side === 'LH') {
+          sideBreakTimes = tel.leftBreakTimes || [];
+          totalSideBreaks = tel.leftTotalBreaks || sideBreakTimes.length;
+          avgSideEm = isTodayView ? (tel.latestEmLeft || tel.avgEmLeft || 0) : (tel.avgEmLeft || tel.latestEmLeft || 0);
+        } else if (side === 'RH') {
+          sideBreakTimes = tel.rightBreakTimes || [];
+          totalSideBreaks = tel.rightTotalBreaks || sideBreakTimes.length;
+          avgSideEm = isTodayView ? (tel.latestEmRight || tel.avgEmRight || 0) : (tel.avgEmRight || tel.latestEmRight || 0);
+        } else {
+          sideBreakTimes = [...(tel.leftBreakTimes || []), ...(tel.rightBreakTimes || [])].sort((a, b) => a - b);
+          totalSideBreaks = (tel.leftTotalBreaks || 0) + (tel.rightTotalBreaks || 0);
+          avgSideEm = Number(
+            (tel.avgEmLeft > 0 && tel.avgEmRight > 0
+              ? (tel.avgEmLeft + tel.avgEmRight) / 2
+              : tel.avgEmLeft || tel.avgEmRight || 0
+            ).toFixed(2)
+          );
+        }
+      } else if (overviewMatchesSelected && info.telemetry?.sides) {
+        const sideL = info.telemetry.sides.find((s: any) => String(s.side).toUpperCase() === 'L');
+        const sideR = info.telemetry.sides.find((s: any) => String(s.side).toUpperCase() === 'R');
+        if (side === 'LH' && sideL) {
+          totalSideBreaks = Number(sideL.endBreakCount || 0);
+          avgSideEm = Number(sideL.endMendingTime || 0);
+        } else if (side === 'RH' && sideR) {
+          totalSideBreaks = Number(sideR.endBreakCount || 0);
+          avgSideEm = Number(sideR.endMendingTime || 0);
+        } else {
+          totalSideBreaks = Number(info.breaks || 0);
+          const lEm = Number(sideL?.endMendingTime || 0);
+          const rEm = Number(sideR?.endMendingTime || 0);
+          avgSideEm = lEm > 0 && rEm > 0 ? Number(((lEm + rEm) / 2).toFixed(2)) : lEm || rEm || 0;
+        }
+      }
+
+      const getHourStats = (hourIso: string) => {
+        const hMs = Date.parse(hourIso);
+        const hKey = !isNaN(hMs) ? new Date(getIstHourStartMs(hMs)).toISOString() : hourIso;
+        const hBucket = tel?.hourly?.[hKey];
+        if (!hBucket) {
+          // Count directly from sideBreakTimes if available
+          const cnt = !isNaN(hMs) ? countSortedInWindow(sideBreakTimes, hMs, hMs + 3600000) : 0;
+          return { breaks: cnt, em: avgSideEm };
+        }
+        if (side === 'LH') return { breaks: hBucket.breaksLeft, em: hBucket.emLeft };
+        if (side === 'RH') return { breaks: hBucket.breaksRight, em: hBucket.emRight };
+        const bothEm =
+          hBucket.emLeft > 0 && hBucket.emRight > 0
+            ? Number(((hBucket.emLeft + hBucket.emRight) / 2).toFixed(2))
+            : hBucket.emLeft || hBucket.emRight || avgSideEm;
+        return { breaks: hBucket.breaksLeft + hBucket.breaksRight, em: bothEm };
+      };
+
+      return {
+        info,
+        side,
+        sideLabel: side === 'LH' ? 'LH (Left)' : side === 'RH' ? 'RH (Right)' : 'All Sides',
+        sideShort: side || 'L/R',
+        sideBreakTimes,
+        totalSideBreaks,
+        avgSideEm,
+        getHourStats,
+        tel
+      };
+    },
+    [resolveMachineInfo, breakTelemetry, overview?.shiftDate, selectedDate, todayStr]
+  );
+
   // Open Tap Modal
   const openTapDetailsModal = (
     m: EmployeeMetric,
     hourlyItem?: { hour: string; rounds: number; avgGapMinutes: number; taps?: EmployeeTapDetail[] }
   ) => {
-    let taps: EmployeeTapDetail[] = [];
-    let hourLabel: string | undefined = undefined;
-    let gap = 0;
-
-    if (hourlyItem) {
-      taps = hourlyItem.taps || [];
-      const dateObj = new Date(hourlyItem.hour);
-      hourLabel = isNaN(dateObj.getTime())
-        ? hourlyItem.hour
-        : dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      gap = hourlyItem.avgGapMinutes || 0;
-    } else {
-      taps = m.taps || [];
-      if (!taps.length && m.hourly?.length) {
-        taps = m.hourly.flatMap(h => h.taps || []);
-      }
-      gap = m.avgGapMinutes || 0;
-    }
-
-    const startTime = taps.length ? taps[0].time : null;
-    const endTime = taps.length ? taps[taps.length - 1].time : null;
-
-    const info = resolveMachineInfo(m.machineId);
-    setSelectedTapModal({
-      employeeId: m.employeeId,
-      employeeName: m.employeeName,
-      machineId: info.frameNo ? `${info.frameNo} (${info.rfNo || m.machineId})${info.side ? ' · ' + info.side + ' Side' : ''}` : m.machineId,
-      hourLabel,
-      taps,
-      avgGap: gap,
-      startTime,
-      endTime
+    setTapModalTarget({
+      metric: m,
+      hourIso: hourlyItem?.hour,
+      hourlyFallback: hourlyItem
     });
   };
 
-  const closeTapModal = () => setSelectedTapModal(null);
+  const closeTapModal = () => setTapModalTarget(null);
+
+  const selectedTapModal: TapModalState | null = useMemo(() => {
+    if (!tapModalTarget) return null;
+    const { metric: m, hourIso, hourlyFallback } = tapModalTarget;
+    const { info, side, sideLabel, sideShort, sideBreakTimes, totalSideBreaks, avgSideEm, getHourStats } =
+      getOperatorSideTelemetry(m);
+
+    // Build chronological deduplicated tap list across the operator's duty so next-tap break windows stay accurate even inside 1-hour view
+    let rawAllTaps: EmployeeTapDetail[] = m.taps ? [...m.taps] : [];
+    if (!rawAllTaps.length && m.hourly?.length) {
+      rawAllTaps = m.hourly.flatMap(h => h.taps || []);
+    }
+    if (hourlyFallback?.taps?.length && !rawAllTaps.length) {
+      rawAllTaps = [...hourlyFallback.taps];
+    }
+
+    const tapSeen = new Set<string>();
+    const dedupedRaw = rawAllTaps.filter(t => {
+      const key = `${t.time || ''}|${t.tapNumber ?? ''}|${t.deviceId || ''}`;
+      if (tapSeen.has(key)) return false;
+      tapSeen.add(key);
+      return true;
+    });
+
+    const sortedAll = [...dedupedRaw].sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+    const distinctRawNodes = new Set(
+      sortedAll.map(t => String(t.deviceId || '').trim().toUpperCase()).filter(Boolean)
+    );
+    const singleDistinctRawNode = distinctRawNodes.size <= 1;
+    const allHourStarts = Array.from(
+      new Set(
+        sortedAll
+          .map(t => Date.parse(t.time))
+          .filter(ms => !isNaN(ms))
+          .map(ms => getIstHourStartMs(ms))
+      )
+    ).sort((a, b) => a - b);
+    const ordinalMap = resolveHourOrdinals(allHourStarts, shiftName, m.shift);
+
+    const enrichedAll: EnrichedTapRow[] = sortedAll.map((tap, idx) => {
+      const tapMs = Date.parse(tap.time);
+      const nextTap = idx < sortedAll.length - 1 ? sortedAll[idx + 1] : null;
+      const nextTapMs = nextTap ? Date.parse(nextTap.time) : NaN;
+      // After tap time until next tap recorded (or end of shift / last recorded break + 1ms)
+      const lastRecordedBreakEnd = sideBreakTimes.length
+        ? sideBreakTimes[sideBreakTimes.length - 1] + 1000
+        : tapMs + 3600000;
+      const windowEndMs = !isNaN(nextTapMs) && nextTapMs > tapMs ? nextTapMs : Math.max(tapMs + 1, lastRecordedBreakEnd);
+      const spindleBreaks = !isNaN(tapMs) ? countSortedInWindow(sideBreakTimes, tapMs, windowEndMs) : 0;
+      return {
+        ...tap,
+        spindleBreaks,
+        resolvedDeviceId: resolveTapStationNode(tap.deviceId, m.machineId, singleDistinctRawNode),
+        nextTapTime: nextTap?.time || null
+      };
+    });
+
+    let activeTaps = enrichedAll;
+    let hourLabel: string | undefined = undefined;
+    let avgGap = m.avgGapMinutes || 0;
+    let modalTotalBreaks = totalSideBreaks;
+    let modalAvgEm = avgSideEm;
+
+    if (hourIso) {
+      const targetHourMs = Date.parse(hourIso);
+      const normTargetStart = !isNaN(targetHourMs) ? getIstHourStartMs(targetHourMs) : NaN;
+      if (!isNaN(normTargetStart)) {
+        activeTaps = enrichedAll.filter(t => getIstHourStartMs(Date.parse(t.time)) === normTargetStart);
+      } else if (hourlyFallback?.taps) {
+        activeTaps = hourlyFallback.taps.map(ht => {
+          const match = enrichedAll.find(et => et.time === ht.time && et.tapNumber === ht.tapNumber);
+          return (
+            match || {
+              ...ht,
+              spindleBreaks: 0,
+              resolvedDeviceId: resolveTapStationNode(ht.deviceId, m.machineId),
+              nextTapTime: null
+            }
+          );
+        });
+      }
+      const ord = !isNaN(normTargetStart)
+        ? ordinalMap.get(normTargetStart) || getShiftOrdinalFromHourStart(normTargetStart, shiftName || m.shift)
+        : null;
+      hourLabel = ord ? `${ord.label} (${ord.timeRange})` : hourIso;
+      avgGap = hourlyFallback?.avgGapMinutes ?? avgGap;
+      const hStats = getHourStats(hourIso);
+      modalTotalBreaks = hStats.breaks;
+      modalAvgEm = hStats.em;
+    } else if (sideBreakTimes.length > 0 && modalTotalBreaks === 0) {
+      modalTotalBreaks = sideBreakTimes.length;
+    }
+
+    // Group activeTaps by hour bucket (segregated 1st Hour, 2nd Hour, ...)
+    const groupMap = new Map<number, EnrichedTapRow[]>();
+    activeTaps.forEach(t => {
+      const ms = Date.parse(t.time);
+      const hStart = !isNaN(ms) ? getIstHourStartMs(ms) : 0;
+      const list = groupMap.get(hStart) || [];
+      list.push(t);
+      groupMap.set(hStart, list);
+    });
+
+    const sortedGroupKeys = Array.from(groupMap.keys()).sort((a, b) => a - b);
+    const hourGroups: TapHourGroup[] = sortedGroupKeys.map((hStartMs, idx) => {
+      const hIso = hStartMs > 0 ? new Date(hStartMs).toISOString() : '';
+      const ord =
+        hStartMs > 0
+          ? ordinalMap.get(hStartMs) || getShiftOrdinalFromHourStart(hStartMs, shiftName || m.shift, idx + 1)
+          : { index: idx + 1, label: `${getOrdinalLabel(idx + 1)} Hour`, timeRange: '—', shortTime: '—' };
+      const hStats = hIso ? getHourStats(hIso) : { breaks: 0, em: modalAvgEm };
+      return {
+        hourStartMs: hStartMs,
+        hourIso: hIso,
+        ordinalLabel: ord.label,
+        timeRange: ord.timeRange,
+        shortTime: ord.shortTime,
+        taps: groupMap.get(hStartMs) || [],
+        spindleBreaks: hStats.breaks,
+        em: hStats.em
+      };
+    });
+
+    // Keep full shift EM (avgSideEm / live EM) in full Inspect Taps view rather than replacing with only the tapped hour's EM.
+    const startTime = activeTaps.length ? activeTaps[0].time : null;
+    const endTime = activeTaps.length ? activeTaps[activeTaps.length - 1].time : null;
+
+    return {
+      employeeId: m.employeeId,
+      employeeName: m.employeeName,
+      machineId: info.frameNo
+        ? `${info.frameNo} (${info.rfNo || m.machineId})${info.side ? ' · ' + info.side + ' Side' : ''}`
+        : m.machineId,
+      sideLabel,
+      sideShort: side || sideShort || 'Side',
+      hourLabel,
+      taps: activeTaps,
+      hourGroups,
+      avgGap,
+      totalSpindleBreaks: modalTotalBreaks,
+      avgEm: modalAvgEm,
+      startTime,
+      endTime
+    };
+  }, [tapModalTarget, getOperatorSideTelemetry, resolveTapStationNode, shiftName]);
 
   // Load Production Report Dialog
   const openProductionReportDialog = async () => {
@@ -617,15 +1046,19 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
   };
 
   return (
-    <div className="content w-full">
+    <div className="content emp-dash w-full">
       {/* Top Bar / Executive Control Header */}
       <header className="topbar">
         <div className="topbar-brand">
           <div className="brand-eyebrow">
             <span className="live-pulse-dot" />
-            <span className="eyebrow-text">RFID REAL-TIME TELEMETRY</span>
+            <span className="eyebrow-text">
+              {selectedDate === todayStr ? 'RFID REAL-TIME TELEMETRY' : `HISTORICAL VIEW · ${selectedDate}`}
+            </span>
             <span className="eyebrow-divider">/</span>
-            <span className="eyebrow-sub">WORKFORCE INTELLIGENCE</span>
+            <span className="eyebrow-sub">
+              {overview?.dataTime ? `SYNCED ${overview.dataTime}` : 'WORKFORCE INTELLIGENCE'}
+            </span>
           </div>
           <h1 className="title">Employee Productivity Dashboard</h1>
           <p className="subtitle">
@@ -734,7 +1167,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
         </div>
       </header>
 
-      {/* KPI Summary Cards */}
+      {/* KPI Summary Cards - Redesigned Executive Grid */}
       <section className="kpi-grid">
         {/* KPI 1: Total Rounds */}
         <div className="card kpi-card kpi-emerald">
@@ -754,13 +1187,14 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             </div>
             <div className="kpi-indicator positive">
               <span className="dot-indicator" />
-              <span>Card tap increments</span>
+              <span>{employeeMetrics.length} Active {employeeMetrics.length === 1 ? 'Operator' : 'Operators'}</span>
             </div>
           </div>
           <div className="kpi-meta-row">
-            <span>
-              Avg per Operator: <strong>{employeeMetrics.length ? (totalRounds / employeeMetrics.length).toFixed(1) : 0}</strong>
-            </span>
+            <span>Avg / Operator</span>
+            <strong className="num-tabular text-slate-900">
+              {employeeMetrics.length ? (totalRounds / employeeMetrics.length).toFixed(1) : '0.0'} rounds
+            </strong>
           </div>
         </div>
 
@@ -782,13 +1216,14 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             </div>
             <div className={`kpi-indicator ${avgGap <= 5 ? 'positive' : 'warning'}`}>
               <span className="dot-indicator" />
-              <span>{avgGap <= 5 ? 'Optimal pacing (≤ 5 mins)' : 'Extended pacing (> 5 mins)'}</span>
+              <span>{avgGap <= 5 ? 'Optimal pacing (≤ 5m)' : 'Extended pacing (> 5m)'}</span>
             </div>
           </div>
           <div className="kpi-meta-row">
-            <span>
-              Operators in Target: <strong>{optimalGapsCount} / {employeeMetrics.length}</strong>
-            </span>
+            <span>Within Target (≤ 5m)</span>
+            <strong className="num-tabular text-slate-900">
+              {optimalGapsCount} / {employeeMetrics.length} Ops
+            </strong>
           </div>
         </div>
 
@@ -804,16 +1239,32 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             </div>
           </div>
           <div className="kpi-main">
-            <div className="kpi-figure num-tabular">
-              <strong>{avgPerformance}%</strong>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="kpi-figure num-tabular">
+                <strong>{avgPerformance}%</strong>
+              </div>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold ${
+                  avgPerformance >= 75
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}
+              >
+                {avgPerformance >= 75 ? 'On Target' : 'Needs Focus'}
+              </span>
             </div>
-            <div className={`kpi-indicator ${avgPerformance >= 75 ? 'positive' : 'warning'}`}>
-              <span className="dot-indicator" />
-              <span>{avgPerformance >= 75 ? 'Shift target achieved' : 'Below shift target (< 75%)'}</span>
+            <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mt-2">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  avgPerformance >= 75 ? 'bg-emerald-500' : avgPerformance >= 40 ? 'bg-amber-500' : 'bg-rose-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, avgPerformance))}%` }}
+              />
             </div>
           </div>
           <div className="kpi-meta-row">
-            <span>Shift Target: <strong>75% Baseline</strong></span>
+            <span>Shift Baseline Target</span>
+            <strong className="num-tabular text-slate-900">75%</strong>
           </div>
         </div>
 
@@ -835,23 +1286,31 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
             </div>
           </div>
           <div className="kpi-main">
-            <div className="kpi-figure num-tabular">
-              <strong>{totalLiveProduction.toLocaleString()}</strong>
-              <span className="unit">kg</span>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="kpi-figure num-tabular">
+                <strong>{totalLiveProduction.toLocaleString()}</strong>
+                <span className="unit">kg</span>
+              </div>
+              {totalAssignedTarget > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200 num-tabular">
+                  {avgAssignedYield}% Yield
+                </span>
+              )}
             </div>
             <div className="kpi-indicator positive">
               <span className="dot-indicator" />
-              <span>
+              <span className="truncate">
                 {assignedMachinesLabel
-                  ? `Live output · ${assignedMachinesLabel}`
-                  : `${productionRows.length} hourly entries recorded`}
+                  ? `Live · ${assignedMachinesLabel}`
+                  : `${productionRows.length} hourly entries`}
               </span>
             </div>
           </div>
           <div className="kpi-meta-row action-meta-row">
-            <span className="action-text">
-              {totalAssignedTarget > 0 ? `Target: ${totalAssignedTarget} kg · Yield: ${avgAssignedYield}%` : 'View Detailed Report →'}
+            <span>
+              {totalAssignedTarget > 0 ? `Target: ${totalAssignedTarget} kg` : 'Detailed Hourly View'}
             </span>
+            <span className="action-text">Open Report →</span>
           </div>
         </button>
       </section>
@@ -860,10 +1319,15 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
       <section className="card table-panel">
         <div className="panel-header">
           <div>
-            <span className="panel-eyebrow">WORKFORCE ROUND BREAKDOWN</span>
-            <h3 className="panel-title">Employee Duty &amp; Round Activity</h3>
+            <span className="panel-eyebrow">WORKFORCE ROUND &amp; SIDE TELEMETRY BREAKDOWN</span>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h3 className="panel-title">Employee Duty &amp; Round Activity</h3>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-blue-50 text-blue-700 border border-blue-200 num-tabular">
+                {filteredMetrics.length} {filteredMetrics.length === 1 ? 'Record' : 'Records'}
+              </span>
+            </div>
             <p className="panel-subtitle">
-              RFID activity logs, card tap frequency, average gap duration &amp; shift performance score
+              RFID activity logs, card tap frequency, side-wise hourly spindle breaks, EM &amp; shift performance score
             </p>
           </div>
 
@@ -902,111 +1366,107 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
           <table className="refined-table">
             <thead>
               <tr>
-                <th>Operator Profile</th>
-                <th>Assigned Machine</th>
-                <th>Rounds Completed</th>
-                <th>Avg Gap Duration</th>
-                <th>Shift Target Performance</th>
-                <th>Hourly Tap Sequence</th>
+                <th>Operator</th>
+                <th>Machine &amp; Side Telemetry</th>
+                <th>Rounds</th>
+                <th>Avg Gap</th>
+                <th>Target Perf.</th>
+                <th>Hourly Taps &amp; Side Breaks</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredMetrics.map((m) => {
+              {filteredMetrics.map((m, mIdx) => {
                 const rounds = m.roundsCompleted ?? m.rounds ?? 0;
                 const gapVal = m.avgGapMinutes ?? 0;
                 const perfVal = m.performancePercent ?? 0;
                 const perfClass = perfVal >= 80 ? 'high' : perfVal >= 50 ? 'medium' : 'low';
                 const perfTextClass = perfVal >= 80 ? 'high-text' : perfVal < 50 ? 'low-text' : '';
+                const sideTel = getOperatorSideTelemetry(m);
+                const { info } = sideTel;
+                const rowHourStarts = (m.hourly || [])
+                  .map(h => Date.parse(h.hour))
+                  .filter(ms => !isNaN(ms))
+                  .map(ms => getIstHourStartMs(ms))
+                  .sort((a, b) => a - b);
+                const rowOrdinalMap = resolveHourOrdinals(rowHourStarts, shiftName, m.shift);
 
                 return (
-                  <tr key={`${m.employeeId}-${m.machineId}`}>
+                  <tr key={`${m.employeeId}-${m.machineId}-${m.shift || mIdx}`}>
                     <td>
                       <div className="emp-profile">
                         <div className="avatar">{employeeInitials(m.employeeId, m.employeeName)}</div>
-                        <div className="emp-names">
-                          <strong className="emp-name">
+                        <div className="emp-names min-w-0">
+                          <strong className="emp-name whitespace-nowrap">
                             {employeeDisplayName(m.employeeId, m.employeeName)}
                           </strong>
-                          <span className="emp-id-badge num-tabular">Badge #{m.employeeId}</span>
+                          <span className="emp-id-badge num-tabular whitespace-nowrap">Badge #{m.employeeId}</span>
                         </div>
                       </div>
                     </td>
                     <td>
-                      {(() => {
-                        const info = resolveMachineInfo(m.machineId);
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                              <span
-                                className="machine-tag num-tabular"
-                                style={{
-                                  fontWeight: 800,
-                                  color: '#0F172A',
-                                  background: '#E2E8F0',
-                                  fontSize: '0.86rem',
-                                  padding: '0.15rem 0.55rem',
-                                  borderRadius: '6px'
-                                }}
-                              >
-                                {info.frameNo || m.machineId}
-                              </span>
-                              {info.rfNo && (
-                                <span
-                                  style={{
-                                    fontSize: '0.74rem',
-                                    fontWeight: 800,
-                                    color: '#0F766E',
-                                    background: '#E6FFFA',
-                                    padding: '0.12rem 0.45rem',
-                                    borderRadius: '6px',
-                                    border: '1px solid rgba(20, 184, 166, 0.35)'
-                                  }}
-                                  title={`Live IoT Telemetry Device: ${info.rfNo}`}
-                                >
-                                  {info.rfNo}
-                                </span>
-                              )}
-                              {info.side && (
-                                <span
-                                  style={{
-                                    fontSize: '0.72rem',
-                                    fontWeight: 800,
-                                    color: info.side === 'LH' ? '#2563eb' : '#7c3aed',
-                                    background: '#F1F5F9',
-                                    padding: '0.1rem 0.4rem',
-                                    borderRadius: '4px'
-                                  }}
-                                >
-                                  {info.side} Side
-                                </span>
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.74rem' }}>
-                              <span
-                                style={{
-                                  width: '6.5px',
-                                  height: '6.5px',
-                                  borderRadius: '50%',
-                                  background: info.runStatus === 'RUN' ? '#10B981' : info.runStatus === 'DOFF' ? '#f59e0b' : '#ef4444'
-                                }}
-                              />
-                              <span style={{ fontWeight: 800, color: '#0F172A' }}>
-                                {info.liveProduction > 0 ? `${info.liveProduction} kg` : info.runStatus}
-                              </span>
-                              {info.count && <span style={{ color: '#64748B', fontWeight: 700 }}>· {info.count}</span>}
-                              <span style={{ color: '#94a3b8', fontSize: '0.68rem' }} title={`Raw Station Node: ${m.machineId}`}>
-                                ({m.machineId})
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                      <div className="flex flex-col gap-1.5 min-w-[205px]">
+                        <div className="flex items-center gap-1.5 flex-nowrap whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-900 font-extrabold text-xs num-tabular">
+                            {info.frameNo || m.machineId}
+                          </span>
+                          {info.rfNo && (
+                            <span
+                              className="px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 font-extrabold text-xs num-tabular"
+                              title={`Live IoT Telemetry Device: ${info.rfNo}`}
+                            >
+                              {info.rfNo}
+                            </span>
+                          )}
+                          {info.side && (
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold border ${
+                                info.side === 'LH'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-violet-50 text-violet-700 border-violet-200'
+                              }`}
+                            >
+                              {info.side} Side
+                            </span>
+                          )}
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[11px] font-bold border border-slate-200"
+                            title={`Station Node: ${m.machineId}`}
+                          >
+                            {m.machineId}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+                          <span
+                            className="inline-block w-2 h-2 rounded-full shrink-0"
+                            style={{
+                              background:
+                                info.runStatus === 'RUN'
+                                  ? '#10B981'
+                                  : info.runStatus === 'DOFF'
+                                  ? '#f59e0b'
+                                  : '#ef4444'
+                            }}
+                          />
+                          <span className="font-extrabold text-slate-900 num-tabular">
+                            {info.liveProduction > 0 ? `${info.liveProduction} kg` : info.runStatus}
+                          </span>
+                          {info.count && <span className="text-slate-500 font-semibold">· {info.count}</span>}
+                          <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 text-[11px] font-bold num-tabular">
+                            {sideTel.sideShort} Brk: {sideTel.totalSideBreaks}
+                          </span>
+                          {sideTel.avgSideEm > 0 && (
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold num-tabular">
+                              {sideTel.side || sideTel.sideShort} EM: {sideTel.avgSideEm.toFixed(2)}m
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td>
                       <button
                         type="button"
-                        className="btn-inspect-rounds num-tabular cursor-pointer"
+                        className="btn-inspect-rounds num-tabular cursor-pointer whitespace-nowrap"
                         onClick={() => openTapDetailsModal(m)}
                         title={`Inspect all ${rounds} RFID card taps`}
                       >
@@ -1016,7 +1476,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                       </button>
                     </td>
                     <td>
-                      <span className={`gap-chip num-tabular ${gapVal <= 5 ? 'gap-optimal' : 'gap-extended'}`}>
+                      <span className={`gap-chip num-tabular whitespace-nowrap ${gapVal <= 5 ? 'gap-optimal' : 'gap-extended'}`}>
                         <span className="chip-dot" />
                         {gapVal.toFixed(1)} mins
                       </span>
@@ -1040,17 +1500,34 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                     <td>
                       <div className="hourly-chips-flow">
                         {m.hourly && m.hourly.length > 0 ? (
-                          m.hourly.map((h, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              className="hourly-chip num-tabular cursor-pointer"
-                              onClick={() => openTapDetailsModal(m, h)}
-                              title={`Hour ${h.hour}: ${h.rounds} rounds, ${(h.avgGapMinutes || 0).toFixed(1)}m avg gap`}
-                            >
-                              <span className="chip-rounds">{h.rounds}r</span>
-                            </button>
-                          ))
+                          m.hourly.map((h, i) => {
+                            const hMs = Date.parse(h.hour);
+                            const hStart = !isNaN(hMs) ? getIstHourStartMs(hMs) : 0;
+                            const ord = hStart
+                              ? rowOrdinalMap.get(hStart) || getShiftOrdinalFromHourStart(hStart, shiftName || m.shift, i + 1)
+                              : { index: i + 1, label: `${getOrdinalLabel(i + 1)} Hr`, timeRange: h.hour, shortTime: h.hour };
+                            const hStats = sideTel.getHourStats(h.hour);
+                            return (
+                              <button
+                                key={i}
+                                type="button"
+                                className="hourly-chip num-tabular cursor-pointer"
+                                onClick={() => openTapDetailsModal(m, h)}
+                                title={`${ord.label} (${ord.timeRange}): ${h.rounds} rounds · ${hStats.breaks} spindle breaks (${sideTel.sideShort}) · EM ${hStats.em.toFixed(2)}m`}
+                              >
+                                <div className="hourly-chip-top">
+                                  <span>{getOrdinalLabel(ord.index)} Hr</span>
+                                  <span>{ord.shortTime}</span>
+                                </div>
+                                <div className="hourly-chip-stats">
+                                  <span className="hourly-chip-rounds">{h.rounds}r</span>
+                                  <span className={`hourly-chip-breaks ${hStats.breaks === 0 ? 'zero' : ''}`}>
+                                    {hStats.breaks} {sideTel.side ? sideTel.side : ''} brk
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
                         ) : (
                           <span className="text-dim text-xs">No hourly logs</span>
                         )}
@@ -1059,7 +1536,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                     <td className="text-right">
                       <button
                         type="button"
-                        className="btn-view-taps cursor-pointer"
+                        className="btn-view-taps cursor-pointer whitespace-nowrap"
                         onClick={() => openTapDetailsModal(m)}
                       >
                         <span>Inspect Taps</span>
@@ -1097,7 +1574,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
         </div>
       </section>
 
-      {/* Tap Details Breakdown Modal Popup */}
+      {/* Tap Details Breakdown Modal Popup - Segregated by Hours with Spindle Breaks & EM */}
       {selectedTapModal && (
         <div className="modal-backdrop" onClick={closeTapModal}>
           <div className="modal-content tap-modal" onClick={(e) => e.stopPropagation()}>
@@ -1105,7 +1582,7 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
               <div>
                 <div className="modal-eyebrow">
                   <span className="modal-dot" />
-                  <span>RFID CARD TAP BREAKDOWN</span>
+                  <span>RFID CARD TAP &amp; SPINDLE BREAKDOWN</span>
                 </div>
                 <h3 className="modal-title">
                   {employeeDisplayName(selectedTapModal.employeeId, selectedTapModal.employeeName)}
@@ -1133,73 +1610,121 @@ export const IotEmployeeDashboard: React.FC<IotEmployeeDashboardProps> = ({ sele
                 <div className="summary-tile">
                   <span className="tile-label">TOTAL TAPS / ROUNDS</span>
                   <strong className="tile-val num-tabular">{selectedTapModal.taps.length}</strong>
+                  <span className="tile-sub">{selectedTapModal.hourLabel ? 'Selected Hour' : 'Shift Duty Total'}</span>
+                </div>
+                <div className="summary-tile tile-breaks">
+                  <span className="tile-label">TOTAL SPINDLE BREAKS</span>
+                  <strong className="tile-val num-tabular text-orange-700">{selectedTapModal.totalSpindleBreaks}</strong>
+                  <span className="tile-sub">{selectedTapModal.sideLabel}</span>
+                </div>
+                <div className="summary-tile tile-em">
+                  <span className="tile-label">{selectedTapModal.sideShort} SIDE EM</span>
+                  <strong className="tile-val num-tabular text-blue-700">
+                    {selectedTapModal.avgEm > 0 ? `${selectedTapModal.avgEm.toFixed(2)} min` : '0.00 min'}
+                  </strong>
+                  <span className="tile-sub">{selectedTapModal.sideLabel} only</span>
                 </div>
                 <div className="summary-tile">
                   <span className="tile-label">AVG GAP DURATION</span>
                   <strong className="tile-val num-tabular">{selectedTapModal.avgGap.toFixed(1)} mins</strong>
+                  <span className="tile-sub">Between taps</span>
                 </div>
                 <div className="summary-tile">
                   <span className="tile-label">ACTIVITY WINDOW</span>
-                  <strong className="tile-val num-tabular">
-                    {selectedTapModal.startTime
-                      ? new Date(selectedTapModal.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : '—'}{' '}
-                    –{' '}
-                    {selectedTapModal.endTime
-                      ? new Date(selectedTapModal.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : '—'}
+                  <strong className="tile-val num-tabular text-sm">
+                    {formatIstTime(selectedTapModal.startTime)} – {formatIstTime(selectedTapModal.endTime)}
                   </strong>
+                  <span className="tile-sub">First to last tap (IST)</span>
                 </div>
               </div>
 
-              <div className="table-container modal-table-wrap">
-                <table className="refined-table modal-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: '110px' }}>Tap Sequence</th>
-                      <th>Timestamp</th>
-                      <th>Sensor / Station Node</th>
-                      <th>Card Tap ID</th>
-                      <th>Interval Gap Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedTapModal.taps.map((tap, idx) => (
-                      <tr key={idx}>
-                        <td>
-                          <span className="tap-badge-pill num-tabular">Tap #{tap.tapNumber ?? idx + 1}</span>
-                        </td>
-                        <td>
-                          <strong className="time-text num-tabular">
-                            {tap.time ? new Date(tap.time).toLocaleTimeString() : '—'}
-                          </strong>
-                        </td>
-                        <td>
-                          <span className="device-tag-pill num-tabular">{tap.deviceId}</span>
-                        </td>
-                        <td>
-                          <span className="card-id-text num-tabular">{tap.cardTap ?? '—'}</span>
-                        </td>
-                        <td>
-                          {tap.gapMinutes && tap.gapMinutes > 0 ? (
-                            <span className={`gap-badge ${tap.gapMinutes > 5 ? 'gap-warn' : ''}`}>
-                              ⏱️ {tap.gapMinutes.toFixed(1)} min gap
-                            </span>
-                          ) : (
-                            <span className="first-tap-badge">🏁 Initial Tap</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {!selectedTapModal.taps.length && (
-                      <tr>
-                        <td colSpan={5} className="empty-table-cell">
-                          No detailed RFID tap logs recorded for this selection.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="modal-hours-scroll">
+                {selectedTapModal.hourGroups.map((grp) => (
+                  <div key={grp.hourStartMs || grp.ordinalLabel} className="hour-group-section">
+                    <div className="hour-group-header">
+                      <div className="hour-group-title">
+                        <span className="hour-ordinal-badge">{grp.ordinalLabel}</span>
+                        <span className="hour-window-text num-tabular">{grp.timeRange}</span>
+                      </div>
+                      <div className="hour-group-pills num-tabular">
+                        <span className="hour-stat-pill">{grp.taps.length} {grp.taps.length === 1 ? 'Tap' : 'Taps'}</span>
+                        <span className="hour-stat-pill breaks">
+                          Spindle Breaks ({selectedTapModal.sideShort}): {grp.spindleBreaks}
+                        </span>
+                        <span className="hour-stat-pill em">
+                          {selectedTapModal.sideShort} EM: {grp.em > 0 ? `${grp.em.toFixed(2)} min` : '0.00 min'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <table className="refined-table modal-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '115px' }}>Tap Sequence</th>
+                          <th>Timestamp</th>
+                          <th>Sensor / Station Node</th>
+                          <th>Spindle Breaks (Until Next Tap)</th>
+                          <th>Interval Gap Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grp.taps.map((tap, idx) => (
+                          <tr key={`${tap.tapNumber ?? idx}-${tap.time}`}>
+                            <td>
+                              <span className="tap-badge-pill num-tabular">Tap #{tap.tapNumber ?? idx + 1}</span>
+                            </td>
+                            <td>
+                              <strong className="time-text num-tabular">
+                                {formatIstTime(tap.time, true)}
+                              </strong>
+                            </td>
+                            <td>
+                              <span className="device-tag-pill num-tabular">{tap.resolvedDeviceId}</span>
+                            </td>
+                            <td>
+                              <div className="flex flex-col items-start gap-0.5">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-extrabold num-tabular ${
+                                    tap.spindleBreaks > 0
+                                      ? 'bg-orange-50 text-orange-700 border border-orange-200'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  }`}
+                                  title={
+                                    tap.nextTapTime
+                                      ? `Breaks from ${formatIstTime(tap.time, true)} until ${formatIstTime(tap.nextTapTime, true)}`
+                                      : `Breaks recorded after ${formatIstTime(tap.time, true)} through ongoing shift`
+                                  }
+                                >
+                                  {tap.spindleBreaks} {tap.spindleBreaks === 1 ? 'Break' : 'Breaks'}
+                                </span>
+                                <span className="text-[10px] font-semibold text-slate-500 num-tabular">
+                                  {tap.nextTapTime
+                                    ? `→ ${formatIstTime(tap.nextTapTime)}`
+                                    : '→ ongoing'}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              {tap.gapMinutes && tap.gapMinutes > 0 ? (
+                                <span className={`gap-badge ${tap.gapMinutes > 5 ? 'gap-warn' : ''}`}>
+                                  ⏱️ {tap.gapMinutes.toFixed(1)} min gap
+                                </span>
+                              ) : (
+                                <span className="first-tap-badge">🏁 Initial Tap</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+
+                {!selectedTapModal.taps.length && (
+                  <div className="empty-table-cell border border-slate-200 rounded-xl">
+                    No detailed RFID tap logs recorded for this selection.
+                  </div>
+                )}
               </div>
             </div>
 

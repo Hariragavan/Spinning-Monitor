@@ -17,6 +17,7 @@ import {
   getIotMappings,
   saveIotMapping,
   getIotEmployeeMetrics,
+  getIotEmployeeBreakTelemetry,
   getIotCardTaps,
   getMappedEmployeeNameMap,
   syncShiftEndNonMachineIotData,
@@ -178,6 +179,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
       return NextResponse.json({
         success: true,
         data: metrics
+      }, {
+        headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+      });
+    }
+
+    // 5b. Employee Hourly & Inter-Tap Spindle Break + EM Telemetry
+    if (path === 'employee-telemetry') {
+      const date = searchParams.get('date') || undefined;
+      const shift = searchParams.get('shiftName') || searchParams.get('shift') || undefined;
+      const machine = searchParams.get('machine') || undefined;
+      const telemetryMap = await getIotEmployeeBreakTelemetry({ date, shift, machine });
+      return NextResponse.json({
+        success: true,
+        data: telemetryMap
       }, {
         headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
       });
