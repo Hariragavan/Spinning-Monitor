@@ -1322,9 +1322,14 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
 
     const settings = await db.collection('settings').findOne({ _id: 'system_settings' as any }).catch(() => null);
     const mapping = settings?.machineToMachineMapping || settings?.iotMachineMapping || {};
-    const iotToSpinning: Record<string, string> = {};
+    const iotToSpinningList = new Map<string, string[]>();
     for (const [spin, iot] of Object.entries(mapping)) {
-      if (iot) iotToSpinning[String(iot).toUpperCase().trim()] = String(spin).trim();
+      if (iot) {
+        const key = String(iot).toUpperCase().trim();
+        const arr = iotToSpinningList.get(key) || [];
+        arr.push(String(spin).trim());
+        iotToSpinningList.set(key, arr);
+      }
     }
 
     // Normalize targetDate to YYYY-MM-DD
@@ -1344,7 +1349,7 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
     const dateSet = new Set<string>();
     let totalSyncedMachines = 0;
 
-    // Helper to fetch from Railway with an 8000ms timeout
+    // Helper to fetch from Railway with a 12000ms timeout
     const fetchRailway = async (params: Record<string, string>): Promise<any[]> => {
       try {
         const url = new URL(IOT_COMMON_API_URL);
@@ -1354,7 +1359,7 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
         url.searchParams.set('_t', String(Date.now()));
 
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
+        const timeout = setTimeout(() => controller.abort(), 20000);
         const res = await fetch(url.toString(), {
           headers: { Accept: 'application/json' },
           cache: 'no-store',
@@ -1365,14 +1370,22 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
         if (!res.ok) return [];
         const json = await res.json();
         const docs = Array.isArray(json) ? json : (json.data || []);
-        return Array.isArray(docs) ? docs : [];
+        if (!Array.isArray(docs)) return [];
+        return docs.filter((doc: any) => {
+          if (!doc) return false;
+          if (params.shiftDate && doc.shiftDate && String(doc.shiftDate) !== params.shiftDate) return false;
+          if (params.shift && doc.shift !== undefined && Number(doc.shift) !== Number(params.shift)) return false;
+          return true;
+        });
       } catch (err) {
         return [];
       }
     };
 
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const yesterdayIso = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const todayIso = istNow.toISOString().slice(0, 10);
+    const yesterdayIso = new Date(istNow.getTime() - 86400000).toISOString().slice(0, 10);
+    const currentIstHour = istNow.getUTCHours();
     const datesToPoll = normalizedDate ? [normalizedDate] : [todayIso, yesterdayIso];
     const allRawDocs: any[] = [];
 
@@ -1393,20 +1406,20 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
       }
     }
 
-    // If today is not in allRawDocs from remote, fall back to local live snapshot in iot_spinfo_lives
+    // If today is not in allRawDocs from remote, fall back ONLY for today's active live snapshot (not explicit past targetDate)
     const hasTodayInRaw = allRawDocs.some(d => d && (d.shiftDate === todayIso || (d.dataTime && d.dataTime.slice(0, 10) === todayIso)));
-    if (!hasTodayInRaw) {
+    if (!hasTodayInRaw && (!normalizedDate || normalizedDate === todayIso)) {
       const liveSnapshot = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
       if (liveSnapshot && Array.isArray(liveSnapshot.machines) && liveSnapshot.machines.length > 0) {
-        for (const s of [1, 2, 3]) {
-          allRawDocs.push({
-            ...liveSnapshot,
-            shiftDate: todayIso,
-            shift: s,
-            recordType: 'LIVE'
-          });
-          syncedShifts.push(s);
-        }
+        const liveShift = Number(liveSnapshot.shift || (currentIstHour >= 6 && currentIstHour < 14 ? 1 : currentIstHour >= 14 && currentIstHour < 22 ? 2 : 3));
+        const liveDate = String(liveSnapshot.shiftDate || todayIso);
+        allRawDocs.push({
+          ...liveSnapshot,
+          shiftDate: liveDate,
+          shift: liveShift,
+          recordType: 'LIVE'
+        });
+        syncedShifts.push(liveShift);
       }
     }
 
@@ -1434,15 +1447,13 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
       dateSet.add(sDate);
 
       const isPastDate = sDate < todayIso;
-      const currentHour = new Date().getHours();
       const isShiftEnd = (
-        isPastDate ||
+        (shift === 3 ? (sDate < yesterdayIso || (sDate === yesterdayIso && currentIstHour >= 6)) : isPastDate) ||
         base.recordType === 'SHIFT_END' ||
         String(base.msgId || '').toUpperCase().endsWith('-END') ||
         packetList.some((pkt: any) => pkt.recordType === 'SHIFT_END' || String(pkt.msgId || '').toUpperCase().endsWith('-END')) ||
-        (shift === 1 && currentHour >= 14) ||
-        (shift === 2 && currentHour >= 22) ||
-        (shift === 3 && (currentHour >= 6 && currentHour < 14))
+        (sDate === todayIso && shift === 1 && currentIstHour >= 14) ||
+        (sDate === todayIso && shift === 2 && currentIstHour >= 22)
       );
 
       const machineMap = new Map<string, any>();
@@ -1485,13 +1496,26 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
         } catch (_) {}
       }
 
-      // 2. Prepare machine EM bulk upsert into iot_em (all keys: RF ID, SP ID, frame numbers)
+      // 2. Prepare machine EM bulk upsert into iot_em (all keys: RF ID, all mapped SP IDs, frame numbers)
       for (const m of machines) {
         const iotId = String(m.machine || m.machineId || 'RF01').toUpperCase().trim();
-        const spinId = iotToSpinning[iotId] || iotId;
-        const digits = spinId.match(/\d+/);
-        const rawNum = digits ? String(parseInt(digits[0], 10)) : '';
-        const p3 = digits ? digits[0].padStart(3, '0') : '';
+        const mappedSpins = iotToSpinningList.get(iotId) || [];
+        const machineKeys = new Set<string>([iotId]);
+        for (const spinId of mappedSpins) {
+          machineKeys.add(spinId);
+          const digits = spinId.match(/\d+/);
+          if (digits) {
+            machineKeys.add(String(parseInt(digits[0], 10)));
+            machineKeys.add(digits[0].padStart(3, '0'));
+          }
+        }
+        if (mappedSpins.length === 0) {
+          const digits = iotId.match(/\d+/);
+          if (digits) {
+            machineKeys.add(String(parseInt(digits[0], 10)));
+            machineKeys.add(digits[0].padStart(3, '0'));
+          }
+        }
 
         const sideL = (m.sides || []).find((s: any) => s.side === 'L');
         const sideR = (m.sides || []).find((s: any) => s.side === 'R');
@@ -1502,8 +1526,6 @@ export async function fetchAndSyncAllShiftsFromRailway(targetDate?: string): Pro
         const endBreakCountLeft = Number(sideL?.endBreakCount || 0);
         const endBreakCountRight = Number(sideR?.endBreakCount || 0);
         const totalEndBreaks = Number(m.shiftEndBreaks || m.totalEndBreakCount || (endBreakCountLeft + endBreakCountRight));
-
-        const machineKeys = new Set([iotId, spinId, p3, rawNum].filter(Boolean));
 
         for (const mKey of machineKeys) {
           emBulkOps.push({

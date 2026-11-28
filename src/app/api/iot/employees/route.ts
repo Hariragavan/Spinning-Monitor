@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
       .toArray();
 
     // 2b. Also merge real-time live taps from REMOTE_IOT_API for today (so D1/D2 live taps appear immediately)
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const liveMergedActs: any[] = [...recentActivities];
     try {
       const controller = new AbortController();

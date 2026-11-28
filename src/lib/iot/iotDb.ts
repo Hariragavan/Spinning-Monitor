@@ -19,6 +19,8 @@ import {
   MachineMapping,
   ProductionReportRow,
   EmployeeMetric,
+  EmployeeMachineTelemetry,
+  EmployeeBreakHourBucket,
   DeviceHealth
 } from '@/types/iot';
 
@@ -337,10 +339,9 @@ export async function fetchLiveRenderStream(
 ): Promise<any[]> {
   const queryParams = {
     limit: limit || 50,
-    sort: 'createdAt',
+    sort: '_id',
     order: 'desc',
     shiftDate: date || undefined,
-    date: date || undefined,
     shift: shiftNum !== undefined ? shiftNum : undefined
   };
 
@@ -352,7 +353,7 @@ export async function fetchLiveRenderStream(
   for (const url of urlsToTry) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
+      const timeout = setTimeout(() => controller.abort(), 15000);
       const res = await fetch(url, {
         headers: { Accept: 'application/json', 'X-Company-Slug': 'scm' },
         cache: 'no-store',
@@ -396,12 +397,12 @@ export async function getIotOverview(
     return cached.data;
   }
 
-  // 1. Pull live telemetry from remote stream (pass shiftNum and targetDate)
-  const liveRecords = await fetchLiveRenderStream(50, shiftNum, targetDate);
+  // 1. Pull live/historical telemetry from remote stream (use small limit for fast ~1s resolution)
+  const liveRecords = await fetchLiveRenderStream(5, shiftNum, targetDate);
   if (liveRecords.length > 0) {
     const { record, availableDates, availableShifts } = selectAndMergeCommonRecord(liveRecords, {
       fromDate,
-      toDate,
+      toDate: toDate || fromDate,
       shiftDate: targetDate,
       shift: shiftNum !== undefined ? shiftNum : shiftFilter
     });
@@ -710,12 +711,80 @@ export async function getIotEmployeeMetrics(filter?: {
   shiftId?: string;
 }): Promise<EmployeeMetric[]> {
   const empNameMap = await getMappedEmployeeNameMap();
+  const targetDate = filter?.date ? normalizeTelemetryDate(filter.date) : '';
+  const todayIso = normalizeTelemetryDate();
+  const isLiveOrToday = !targetDate || targetDate >= todayIso;
 
-  // 1. Check local MongoDB iot_employee_performances first if date or shift filter is provided
+  const dedupeTaps = (rawTaps: any[]) => {
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const t of rawTaps || []) {
+      const key = `${String(t.time || t.tapTime || '')}|${t.tapNumber ?? ''}|${String(t.deviceId || '')}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+    return out.sort((a, b) => Date.parse(a.time || a.tapTime || '') - Date.parse(b.time || b.tapTime || ''));
+  };
+
+  const fetchRemote = async (): Promise<EmployeeMetric[]> => {
+    try {
+      const params = new URLSearchParams();
+      if (filter?.date) params.set('date', filter.date);
+      if (filter?.shiftName) params.set('shiftName', filter.shiftName);
+      if (filter?.shiftId) params.set('shiftId', filter.shiftId);
+      if (filter?.machineId) params.set('machineId', filter.machineId);
+      if (filter?.employeeId) params.set('employeeId', filter.employeeId);
+      params.set('_t', String(Date.now()));
+
+      const res = await fetch(`${REMOTE_IOT_API}/dashboard/employee?${params.toString()}`, {
+        cache: 'no-store'
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          return json.data.map((emp: any, idx: number) => {
+            const eId = String(emp.employeeId || `EMP${idx + 1}`).trim();
+            const mappedName = empNameMap.get(eId)?.employeeName;
+            return {
+              employeeId: eId,
+              employeeName: mappedName || emp.employeeName || null,
+              machineId: String(emp.machineId || ''),
+              roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+              rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+              expectedRounds: Number(emp.expectedRounds || 8),
+              avgGapMinutes: Number(emp.avgGapMinutes || 0),
+              longestGapMinutes: Number(emp.longestGapMinutes || 0),
+              activeStatus: 'ACTIVE',
+              idleMinutes: Number(emp.idleMinutes || 0),
+              performancePercent: Number(emp.performancePercent || 0),
+              lastActiveTime: 'Just now',
+              taps: dedupeTaps(Array.isArray(emp.taps) ? emp.taps : []),
+              hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+              date: emp.date || filter?.date,
+              shift: emp.shift || filter?.shiftName
+            };
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('[IoT DB] getIotEmployeeMetrics fetch error:', err);
+    }
+    return [];
+  };
+
+  // Always prioritize remote dashboard/employee API first (has complete multi-device rounds & hourly taps
+  // for both live today and historical dates like 2026-11-23..2026-11-26), falling back to local DB only if empty/offline
+  const remoteData = await fetchRemote();
+  if (remoteData.length > 0) return remoteData;
+
+  // Fallback to local MongoDB iot_employee_performances if remote is unavailable or returned empty
   try {
     const db = await getIotDb();
     const query: any = {};
-    if (filter?.date) query.shiftDate = filter.date;
+    if (targetDate) query.shiftDate = targetDate;
+    else if (filter?.date) query.shiftDate = filter.date;
     if (filter?.employeeId) query.employeeId = filter.employeeId;
     if (filter?.machineId) query.machineId = filter.machineId;
 
@@ -728,17 +797,16 @@ export async function getIotEmployeeMetrics(filter?: {
     if (Object.keys(query).length > 0) {
       const localDocs = await db.collection(IOT_COLLECTIONS.PERFORMANCES).find(query).toArray();
       if (localDocs.length > 0) {
-        // Also fetch taps from iot_employee_activities for these employees
-        const tapsQuery: any = { ...query };
         const localTaps = await db
           .collection(IOT_COLLECTIONS.ACTIVITIES)
-          .find(tapsQuery)
+          .find(query)
           .sort({ tapTime: 1 })
           .toArray();
 
-        const tapsByEmp = new Map<string, any[]>();
+        const tapsByKey = new Map<string, any[]>();
         for (const t of localTaps) {
-          const list = tapsByEmp.get(t.employeeId) || [];
+          const key = `${String(t.employeeId || '').trim()}__${String(t.machineId || '').trim()}__${Number(t.shift || 1)}`;
+          const list = tapsByKey.get(key) || [];
           list.push({
             tapNumber: t.tapNumber ?? 0,
             time: t.tapTime,
@@ -746,80 +814,61 @@ export async function getIotEmployeeMetrics(filter?: {
             cardTap: t.cardTap ?? 1,
             gapMinutes: t.gapMinutes ?? 0
           });
-          tapsByEmp.set(t.employeeId, list);
+          tapsByKey.set(key, list);
         }
 
-        return localDocs.map((emp: any) => {
+        // Merge duplicate shift rows if an unfiltered sync wrote identical tap streams across shifts
+        const mergedByEmpMach = new Map<string, EmployeeMetric>();
+        for (const emp of localDocs) {
           const eId = String(emp.employeeId || '').trim();
+          const mId = String(emp.machineId || '').trim();
+          const sNum = Number(emp.shift || 1);
           const mappedName = empNameMap.get(eId)?.employeeName;
-          return {
-            employeeId: eId,
-            employeeName: mappedName || emp.employeeName || null,
-            machineId: String(emp.machineId || ''),
-            roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
-            rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
-            expectedRounds: Number(emp.expectedRounds || 8),
-            avgGapMinutes: Number(emp.avgGapMinutes || 0),
-            longestGapMinutes: Number(emp.longestGapMinutes || 0),
-            activeStatus: 'ACTIVE',
-            idleMinutes: Number(emp.idleMinutes || 0),
-            performancePercent: Number(emp.performancePercent || 0),
-            lastActiveTime: 'Shift End',
-            taps: tapsByEmp.get(emp.employeeId) || (Array.isArray(emp.taps) ? emp.taps : []),
-            hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
-            date: emp.shiftDate || filter?.date,
-            shift: `Shift ${emp.shift || 1}`
-          };
-        });
+          const tapKey = `${eId}__${mId}__${sNum}`;
+          const empTaps = dedupeTaps(
+            tapsByKey.get(tapKey) || (Array.isArray(emp.taps) ? emp.taps : [])
+          );
+
+          const rowKey = filter?.shiftName || filter?.shiftId ? `${eId}__${mId}__${sNum}` : `${eId}__${mId}`;
+          const existing = mergedByEmpMach.get(rowKey);
+          if (!existing) {
+            mergedByEmpMach.set(rowKey, {
+              employeeId: eId,
+              employeeName: mappedName || emp.employeeName || null,
+              machineId: mId,
+              roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
+              rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
+              expectedRounds: Number(emp.expectedRounds || 8),
+              avgGapMinutes: Number(emp.avgGapMinutes || 0),
+              longestGapMinutes: Number(emp.longestGapMinutes || 0),
+              activeStatus: 'ACTIVE',
+              idleMinutes: Number(emp.idleMinutes || 0),
+              performancePercent: Number(emp.performancePercent || 0),
+              lastActiveTime: 'Shift End',
+              taps: empTaps,
+              hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
+              date: emp.shiftDate || filter?.date,
+              shift: `Shift ${sNum}`
+            });
+          } else {
+            // Merge distinct taps from multiple shifts for the same employee+machine when viewing All shifts
+            const combinedTaps = dedupeTaps([...(existing.taps || []), ...empTaps]);
+            const oldTapSig = (existing.taps || []).map(t => `${t.time}|${t.tapNumber}`).join(',');
+            const newTapSig = empTaps.map(t => `${t.time}|${t.tapNumber}`).join(',');
+            if (oldTapSig !== newTapSig) {
+              existing.taps = combinedTaps;
+              existing.rounds = (existing.rounds || 0) + Number(emp.rounds ?? emp.roundsCompleted ?? 0);
+              existing.roundsCompleted = existing.rounds;
+            }
+          }
+        }
+        return Array.from(mergedByEmpMach.values());
       }
     }
   } catch (_) {}
 
-  // 2. Fetch live metrics from REMOTE_IOT_API
-  try {
-    const params = new URLSearchParams();
-    if (filter?.date) params.set('date', filter.date);
-    if (filter?.shiftName) params.set('shiftName', filter.shiftName);
-    if (filter?.shiftId) params.set('shiftId', filter.shiftId);
-    if (filter?.machineId) params.set('machineId', filter.machineId);
-    if (filter?.employeeId) params.set('employeeId', filter.employeeId);
-    params.set('_t', String(Date.now()));
-
-    const res = await fetch(`${REMOTE_IOT_API}/dashboard/employee?${params.toString()}`, {
-      cache: 'no-store'
-    });
-
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        return json.data.map((emp: any, idx: number) => {
-          const eId = String(emp.employeeId || `EMP${idx + 1}`).trim();
-          const mappedName = empNameMap.get(eId)?.employeeName;
-          return {
-            employeeId: eId,
-            employeeName: mappedName || emp.employeeName || null,
-            machineId: String(emp.machineId || ''),
-            roundsCompleted: Number(emp.roundsCompleted ?? emp.rounds ?? 0),
-            rounds: Number(emp.rounds ?? emp.roundsCompleted ?? 0),
-            expectedRounds: Number(emp.expectedRounds || 8),
-            avgGapMinutes: Number(emp.avgGapMinutes || 0),
-            longestGapMinutes: Number(emp.longestGapMinutes || 0),
-            activeStatus: 'ACTIVE',
-            idleMinutes: Number(emp.idleMinutes || 0),
-            performancePercent: Number(emp.performancePercent || 0),
-            lastActiveTime: 'Just now',
-            taps: Array.isArray(emp.taps) ? emp.taps : [],
-            hourly: Array.isArray(emp.hourly) ? emp.hourly : [],
-            date: emp.date || filter?.date,
-            shift: emp.shift || filter?.shiftName
-          };
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('[IoT DB] getIotEmployeeMetrics fetch error:', err);
-  }
-
+  // Past dates: fallback already tried above; nothing else left
+  void isLiveOrToday;
   return [];
 }
 
@@ -1240,7 +1289,7 @@ export async function syncShiftEndNonMachineIotData(
 
     // 4. Sync Employee Performance & Card Taps for this shift from REMOTE_IOT_API
     try {
-      const pUrl = `${REMOTE_IOT_API}/dashboard/employee?date=${encodeURIComponent(sDate)}&shift=${sNum}&_t=${Date.now()}`;
+      const pUrl = `${REMOTE_IOT_API}/dashboard/employee?date=${encodeURIComponent(sDate)}&shiftName=${encodeURIComponent(`Shift ${sNum}`)}&_t=${Date.now()}`;
       const perfRes = await fetch(pUrl, { cache: 'no-store' });
       if (perfRes.ok) {
         const perfJson = await perfRes.json();
@@ -1253,6 +1302,7 @@ export async function syncShiftEndNonMachineIotData(
           for (const emp of empList) {
             const eId = String(emp.employeeId || emp.id || '');
             if (!eId) continue;
+            const mId = String(emp.machineId || '');
 
             const roundsCompleted = Number(emp.roundsCompleted ?? emp.rounds ?? 0);
             const expectedRounds = Number(emp.expectedRounds || 8);
@@ -1261,15 +1311,16 @@ export async function syncShiftEndNonMachineIotData(
             const idleMinutes = Number(emp.idleMinutes || 0);
             const performancePercent = Number(emp.performancePercent || 0);
             const hourly = Array.isArray(emp.hourly) ? emp.hourly : [];
+            const taps = Array.isArray(emp.taps) ? emp.taps : [];
 
             perfBulk.push({
               updateOne: {
-                filter: { employeeId: eId, shiftDate: sDate, shift: sNum },
+                filter: { employeeId: eId, machineId: mId, shiftDate: sDate, shift: sNum },
                 update: {
                   $set: {
                     employeeId: eId,
                     employeeName: String(emp.employeeName || eId),
-                    machineId: String(emp.machineId || ''),
+                    machineId: mId,
                     shiftDate: sDate,
                     shift: sNum,
                     roundsCompleted,
@@ -1279,6 +1330,7 @@ export async function syncShiftEndNonMachineIotData(
                     longestGapMinutes,
                     idleMinutes,
                     performancePercent,
+                    taps,
                     hourly,
                     updatedAt: new Date()
                   },
@@ -1289,17 +1341,18 @@ export async function syncShiftEndNonMachineIotData(
             });
 
             // Extract each individual card tap
-            for (const tap of (emp.taps || [])) {
+            for (const tap of taps) {
               const tapTime = tap.time || tap.timestamp || new Date().toISOString();
+              const tapMachId = String(mId || tap.deviceId || '');
               tapBulk.push({
                 updateOne: {
-                  filter: { employeeId: eId, tapTime, shiftDate: sDate, shift: sNum },
+                  filter: { employeeId: eId, machineId: tapMachId, tapTime, shiftDate: sDate, shift: sNum },
                   update: {
                     $set: {
                       employeeId: eId,
                       employeeName: String(emp.employeeName || eId),
-                      deviceId: String(tap.deviceId || emp.machineId || ''),
-                      machineId: String(emp.machineId || tap.deviceId || ''),
+                      deviceId: String(tap.deviceId || mId || ''),
+                      machineId: tapMachId,
                       cardTap: tap.cardTap ?? 1,
                       tapNumber: Number(tap.tapNumber ?? 0),
                       gapMinutes: Number(tap.gapMinutes ?? 0),
@@ -1354,4 +1407,393 @@ export async function syncShiftEndNonMachineIotData(
     };
   }
 }
+
+// -------------------------------------------------------------
+// Employee Hourly & Inter-Tap Spindle Break + EM Telemetry Aggregation
+// -------------------------------------------------------------
+const empBreakTelemetryCache = new Map<
+  string,
+  { data: Record<string, EmployeeMachineTelemetry>; timestamp: number }
+>();
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+function parseIotTimestampMs(raw: any): number {
+  if (!raw) return NaN;
+  const s = String(raw).trim();
+  if (!s) return NaN;
+  if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    const iso = s.replace(' ', 'T') + (s.length <= 16 ? ':00' : '') + '+05:30';
+    return Date.parse(iso);
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    return Date.parse(s + '+05:30');
+  }
+  return Date.parse(s);
+}
+
+function getIstHourStartMs(epochMs: number): number {
+  return Math.floor((epochMs + IST_OFFSET_MS) / 3600000) * 3600000 - IST_OFFSET_MS;
+}
+
+function normalizeTelemetryDate(rawDate?: string): string {
+  if (!rawDate) {
+    const nowIst = new Date(Date.now() + IST_OFFSET_MS);
+    return nowIst.toISOString().slice(0, 10);
+  }
+  const s = rawDate.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.includes('/')) {
+    const p = s.split('/');
+    if (p[2]?.length === 4) return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+  }
+  if (s.includes('-')) {
+    const p = s.split('-');
+    if (p[0]?.length === 2 && p[2]?.length === 4) return `${p[2]}-${p[1].padStart(2, '0')}-${p[0].padStart(2, '0')}`;
+  }
+  return s;
+}
+
+interface MachineAccum {
+  leftMap: Map<string, number>;
+  rightMap: Map<string, number>;
+  maxLeftCount: number;
+  maxRightCount: number;
+  latestLeftCount: number;
+  latestRightCount: number;
+  latestPacketMs: number;
+  latestEmLeft: number;
+  latestEmRight: number;
+  hourlyEmSnap: Map<number, { snapMs: number; emLeft: number; emRight: number }>;
+  perShiftStats: Map<number, { brkLeft: number; brkRight: number; emLeft: number; emRight: number }>;
+}
+
+const rollingTelemetryAccStore = new Map<
+  string,
+  { accMap: Map<string, MachineAccum>; hasBackfill: boolean }
+>();
+
+/**
+ * Aggregates unique timestamped spindle breaks (L/R sides) and hourly EM snapshots
+ * per machine for a given shiftDate/shift from Railway /api/common + local MongoDB.
+ */
+export async function getIotEmployeeBreakTelemetry(filter?: {
+  date?: string;
+  shift?: string;
+  machine?: string;
+}): Promise<Record<string, EmployeeMachineTelemetry>> {
+  const targetDate = normalizeTelemetryDate(filter?.date);
+  const shiftMatch = filter?.shift && filter.shift !== 'All shifts' && filter.shift !== 'All Shifts'
+    ? String(filter.shift).match(/\d+/)
+    : null;
+  const shiftNum = shiftMatch ? Number(shiftMatch[0]) : undefined;
+  const targetMachine = filter?.machine ? String(filter.machine).trim().toUpperCase() : undefined;
+
+  const cacheKey = `${targetDate}_${shiftNum ?? 'all'}_${targetMachine ?? 'all'}`;
+  const cached = empBreakTelemetryCache.get(cacheKey);
+  const todayIso = normalizeTelemetryDate();
+  const isToday = targetDate === todayIso;
+  const ttlMs = isToday ? 20_000 : 300_000;
+  if (cached && Date.now() - cached.timestamp < ttlMs) {
+    return cached.data;
+  }
+
+  let accStore = rollingTelemetryAccStore.get(cacheKey);
+  if (!accStore) {
+    accStore = { accMap: new Map<string, MachineAccum>(), hasBackfill: false };
+    rollingTelemetryAccStore.set(cacheKey, accStore);
+  }
+  const accMap = accStore.accMap;
+
+  const getOrCreate = (mKey: string): MachineAccum => {
+    let a = accMap.get(mKey);
+    if (!a) {
+      a = {
+        leftMap: new Map(),
+        rightMap: new Map(),
+        maxLeftCount: 0,
+        maxRightCount: 0,
+        latestLeftCount: 0,
+        latestRightCount: 0,
+        latestPacketMs: -1,
+        latestEmLeft: 0,
+        latestEmRight: 0,
+        hourlyEmSnap: new Map(),
+        perShiftStats: new Map()
+      };
+      accMap.set(mKey, a);
+    }
+    return a;
+  };
+
+  const packets: any[] = [];
+
+  // 1. Fetch minute-by-minute common telemetry packets for this shiftDate (has full endBreaks[] timestamps)
+  try {
+    const fetchPackets = async (limitVal: number, timeoutMs: number, latestSort = false) => {
+      const sp = new URLSearchParams();
+      sp.set('shiftDate', targetDate);
+      if (shiftNum !== undefined) sp.set('shift', String(shiftNum));
+      sp.set('limit', String(limitVal));
+      if (latestSort) {
+        sp.set('sort', '_id');
+        sp.set('order', 'desc');
+      }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${IOT_COMMON_API_URL}?${sp.toString()}`, {
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const json = await res.json();
+          return extractCommonRecords(json);
+        }
+      } catch (err) {
+        clearTimeout(timer);
+        throw err;
+      }
+      return [];
+    };
+
+    if (isToday && accStore.hasBackfill) {
+      // Steady-state live poll: only fetch latest ~45 packets (~1-2s!) and merge into accumulator
+      const recentPkts = await fetchPackets(45, 10000, true).catch(() => []);
+      packets.push(...recentPkts);
+    } else {
+      try {
+        const fullPkts = await fetchPackets(shiftNum !== undefined ? 600 : 1200, 24000);
+        packets.push(...fullPkts);
+        if (fullPkts.length > 0) accStore.hasBackfill = true;
+      } catch {
+        const smallPkts = await fetchPackets(200, 12000, true).catch(() => []);
+        packets.push(...smallPkts);
+      }
+    }
+  } catch (err) {
+    console.warn('[IoT Telemetry] Railway common fetch failed:', err);
+  }
+
+  // 2. Supplement with MongoDB shiftwise & live snapshot & iot_em for offline/historical resiliency
+  let emDbRecords: any[] = [];
+  try {
+    const db = await getIotDb();
+    const shiftQuery: any = { shiftDate: targetDate };
+    if (shiftNum !== undefined) shiftQuery.shift = shiftNum;
+    const shiftDocs = await db.collection(IOT_COLLECTIONS.SHIFTWISE).find(shiftQuery).toArray();
+    packets.push(...extractCommonRecords(shiftDocs));
+
+    const liveDoc = await db.collection(IOT_COLLECTIONS.SPINFO_LIVES).findOne({});
+    if (liveDoc && liveDoc.shiftDate === targetDate && (!shiftNum || Number(liveDoc.shift) === shiftNum)) {
+      packets.push(liveDoc);
+    }
+
+    const dDay = parseInt(targetDate.slice(8, 10), 10);
+    const dMonth = parseInt(targetDate.slice(5, 7), 10);
+    const dYear = targetDate.slice(0, 4);
+    const slashPadded = `${targetDate.slice(8, 10)}/${targetDate.slice(5, 7)}/${dYear}`;
+    const slashUnpadded = `${dDay}/${dMonth}/${dYear}`;
+    const emQuery: any = { date: { $in: Array.from(new Set([targetDate, slashPadded, slashUnpadded])) } };
+    if (shiftNum !== undefined) emQuery.shift = shiftNum;
+    emDbRecords = await db.collection(IOT_COLLECTIONS.EM).find(emQuery).toArray();
+  } catch (_) {}
+
+  // Shift 1 day window starts at 06:00 IST on targetDate; exclude leftover pre-06:00 Shift 3 breaks from Shift 1 packets
+  const targetDayStartMs = Date.parse(`${targetDate}T00:00:00+05:30`);
+  const shift1StartMs = targetDayStartMs + 6 * 3600000;
+
+  for (const pkt of packets) {
+    if (!pkt || !Array.isArray(pkt.machines)) continue;
+    const pktShift = Number(pkt.shift || 1);
+    const pktMs = parseIotTimestampMs(pkt.dataTime || pkt.updatedAt || pkt.createdAt);
+    const pktHourStart = !isNaN(pktMs) ? getIstHourStartMs(pktMs) : NaN;
+    const minBreakMs = pktShift === 1 ? shift1StartMs : targetDayStartMs;
+
+    for (const m of pkt.machines) {
+      const mKey = String(m.machine || m.machineId || '').trim().toUpperCase();
+      if (!mKey) continue;
+      if (targetMachine && mKey !== targetMachine) continue;
+
+      const acc = getOrCreate(mKey);
+      const sides: any[] = Array.isArray(m.sides) ? m.sides : [];
+      const sideL = sides.find(s => String(s.side).toUpperCase() === 'L');
+      const sideR = sides.find(s => String(s.side).toUpperCase() === 'R');
+
+      const emL = Number(sideL?.endMendingTime ?? 0);
+      const emR = Number(sideR?.endMendingTime ?? 0);
+      const cntL = Number(sideL?.endBreakCount ?? 0);
+      const cntR = Number(sideR?.endBreakCount ?? 0);
+
+      if (cntL > acc.maxLeftCount) acc.maxLeftCount = cntL;
+      if (cntR > acc.maxRightCount) acc.maxRightCount = cntR;
+
+      const sStat = acc.perShiftStats.get(pktShift) || { brkLeft: 0, brkRight: 0, emLeft: 0, emRight: 0 };
+      if (cntL > sStat.brkLeft) sStat.brkLeft = cntL;
+      if (cntR > sStat.brkRight) sStat.brkRight = cntR;
+      if (emL > 0) sStat.emLeft = emL;
+      if (emR > 0) sStat.emRight = emR;
+      acc.perShiftStats.set(pktShift, sStat);
+
+      if (!isNaN(pktMs) && pktMs >= acc.latestPacketMs) {
+        acc.latestPacketMs = pktMs;
+        acc.latestEmLeft = emL;
+        acc.latestEmRight = emR;
+        acc.latestLeftCount = cntL;
+        acc.latestRightCount = cntR;
+      }
+
+      if (!isNaN(pktHourStart) && pktHourStart >= minBreakMs) {
+        const prev = acc.hourlyEmSnap.get(pktHourStart);
+        if (!prev || pktMs >= prev.snapMs) {
+          acc.hourlyEmSnap.set(pktHourStart, { snapMs: pktMs, emLeft: emL, emRight: emR });
+        }
+      }
+
+      for (const eb of sideL?.endBreaks || []) {
+        const bMs = parseIotTimestampMs(eb.createdTime || eb.timestamp || pkt.dataTime);
+        if (isNaN(bMs) || bMs < minBreakMs) continue;
+        const key = `${eb.spindleNo ?? ''}|${eb.createdTime || bMs}`;
+        if (!acc.leftMap.has(key)) acc.leftMap.set(key, bMs);
+      }
+      for (const eb of sideR?.endBreaks || []) {
+        const bMs = parseIotTimestampMs(eb.createdTime || eb.timestamp || pkt.dataTime);
+        if (isNaN(bMs) || bMs < minBreakMs) continue;
+        const key = `${eb.spindleNo ?? ''}|${eb.createdTime || bMs}`;
+        if (!acc.rightMap.has(key)) acc.rightMap.set(key, bMs);
+      }
+    }
+  }
+
+  // Merge iot_em records (covers shift-level totals even when em.hour is omitted on historical dates)
+  for (const em of emDbRecords) {
+    const mKey = String(em.machineNo || '').trim().toUpperCase();
+    if (!mKey) continue;
+    if (targetMachine && mKey !== targetMachine) continue;
+    const acc = getOrCreate(mKey);
+    const sNum = Number(em.shift || 1);
+    const emL = Number(em.emLeft || 0);
+    const emR = Number(em.emRight || 0);
+    const cntL = Number(em.endBreakCountLeft || 0);
+    const cntR = Number(em.endBreakCountRight || 0);
+    if (acc.latestEmLeft === 0 && emL > 0) acc.latestEmLeft = emL;
+    if (acc.latestEmRight === 0 && emR > 0) acc.latestEmRight = emR;
+    if (cntL > acc.maxLeftCount) acc.maxLeftCount = cntL;
+    if (cntR > acc.maxRightCount) acc.maxRightCount = cntR;
+
+    const sStat = acc.perShiftStats.get(sNum) || { brkLeft: 0, brkRight: 0, emLeft: 0, emRight: 0 };
+    if (cntL > sStat.brkLeft) sStat.brkLeft = cntL;
+    if (cntR > sStat.brkRight) sStat.brkRight = cntR;
+    if (sStat.emLeft === 0 && emL > 0) sStat.emLeft = emL;
+    if (sStat.emRight === 0 && emR > 0) sStat.emRight = emR;
+    acc.perShiftStats.set(sNum, sStat);
+
+    if (em.hour && em.shift) {
+      const hrIdx = Math.min(8, Math.max(1, Number(em.hour)));
+      const baseHour = sNum === 1 ? 6 : sNum === 2 ? 14 : 22;
+      const clockHr = (baseHour + hrIdx - 1) % 24;
+      const dayOffset = sNum === 3 && clockHr < 6 ? 1 : 0;
+      const baseDateMs = Date.parse(`${targetDate}T00:00:00+05:30`);
+      const hStart = baseDateMs + dayOffset * 86400000 + clockHr * 3600000;
+      if (!acc.hourlyEmSnap.has(hStart)) {
+        acc.hourlyEmSnap.set(hStart, { snapMs: hStart, emLeft: emL, emRight: emR });
+      }
+    }
+  }
+
+  const result: Record<string, EmployeeMachineTelemetry> = {};
+
+  for (const [mKey, acc] of accMap.entries()) {
+    const leftBreakTimes = Array.from(acc.leftMap.values()).sort((a, b) => a - b);
+    const rightBreakTimes = Array.from(acc.rightMap.values()).sort((a, b) => a - b);
+
+    const hourly: Record<string, EmployeeBreakHourBucket> = {};
+    const hourKeys = new Set<number>(acc.hourlyEmSnap.keys());
+    for (const ms of leftBreakTimes) hourKeys.add(getIstHourStartMs(ms));
+    for (const ms of rightBreakTimes) hourKeys.add(getIstHourStartMs(ms));
+
+    const leftByHour = new Map<number, number>();
+    const rightByHour = new Map<number, number>();
+    for (const ms of leftBreakTimes) {
+      const h = getIstHourStartMs(ms);
+      leftByHour.set(h, (leftByHour.get(h) || 0) + 1);
+    }
+    for (const ms of rightBreakTimes) {
+      const h = getIstHourStartMs(ms);
+      rightByHour.set(h, (rightByHour.get(h) || 0) + 1);
+    }
+
+    const sortedHours = Array.from(hourKeys).sort((a, b) => a - b);
+    let emLeftSum = 0;
+    let emLeftCnt = 0;
+    let emRightSum = 0;
+    let emRightCnt = 0;
+
+    for (const hMs of sortedHours) {
+      const hIso = new Date(hMs).toISOString();
+      const emSnap = acc.hourlyEmSnap.get(hMs);
+      const emLeft = emSnap ? Number(emSnap.emLeft.toFixed(2)) : 0;
+      const emRight = emSnap ? Number(emSnap.emRight.toFixed(2)) : 0;
+      if (emSnap && emLeft > 0) {
+        emLeftSum += emLeft;
+        emLeftCnt++;
+      }
+      if (emSnap && emRight > 0) {
+        emRightSum += emRight;
+        emRightCnt++;
+      }
+      hourly[hIso] = {
+        hourStartMs: hMs,
+        hourIso: hIso,
+        emLeft,
+        emRight,
+        breaksLeft: leftByHour.get(hMs) || 0,
+        breaksRight: rightByHour.get(hMs) || 0
+      };
+    }
+
+    // Also compute shift-level average EM & summed shift breaks when hourly packets aren't retained on old dates
+    let shiftEmLSum = 0, shiftEmLCnt = 0, shiftEmRSum = 0, shiftEmRCnt = 0;
+    let sumShiftBrkL = 0, sumShiftBrkR = 0;
+    for (const sVal of acc.perShiftStats.values()) {
+      sumShiftBrkL += sVal.brkLeft;
+      sumShiftBrkR += sVal.brkRight;
+      if (sVal.emLeft > 0) { shiftEmLSum += sVal.emLeft; shiftEmLCnt++; }
+      if (sVal.emRight > 0) { shiftEmRSum += sVal.emRight; shiftEmRCnt++; }
+    }
+
+    const avgEmLeft =
+      emLeftCnt > 0
+        ? Number((emLeftSum / emLeftCnt).toFixed(2))
+        : shiftEmLCnt > 0
+        ? Number((shiftEmLSum / shiftEmLCnt).toFixed(2))
+        : acc.latestEmLeft;
+    const avgEmRight =
+      emRightCnt > 0
+        ? Number((emRightSum / emRightCnt).toFixed(2))
+        : shiftEmRCnt > 0
+        ? Number((shiftEmRSum / shiftEmRCnt).toFixed(2))
+        : acc.latestEmRight;
+
+    result[mKey] = {
+      machine: mKey,
+      leftBreakTimes,
+      rightBreakTimes,
+      leftTotalBreaks: Math.max(leftBreakTimes.length, sumShiftBrkL, acc.latestLeftCount),
+      rightTotalBreaks: Math.max(rightBreakTimes.length, sumShiftBrkR, acc.latestRightCount),
+      avgEmLeft,
+      avgEmRight,
+      latestEmLeft: acc.latestEmLeft,
+      latestEmRight: acc.latestEmRight,
+      hourly
+    };
+  }
+
+  if (Object.keys(result).length > 0) {
+    empBreakTelemetryCache.set(cacheKey, { data: result, timestamp: Date.now() });
+  }
+  return result;
+}
+
 

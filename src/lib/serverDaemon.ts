@@ -152,9 +152,10 @@ export async function run5mSyncCycle(): Promise<{ success: boolean; message: str
   const start = Date.now();
 
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    const currentHour = new Date().getHours();
+    const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const today = istNow.toISOString().slice(0, 10);
+    const yesterday = new Date(istNow.getTime() - 86400000).toISOString().slice(0, 10);
+    const currentHour = istNow.getUTCHours();
     const currentShift = currentHour >= 6 && currentHour < 14 ? 1 : currentHour >= 14 && currentHour < 22 ? 2 : 3;
 
     // 1. Shift Watchdog: Ensure all completed shifts today and yesterday are finalized in DB
@@ -197,11 +198,22 @@ export async function run5mSyncCycle(): Promise<{ success: boolean; message: str
  * Initializes and starts the background server daemon.
  * Idempotent: Can be safely called multiple times without creating duplicate loops.
  */
+declare global {
+  // eslint-disable-next-line no-var
+  var __scm_daemon_handlers__: { run45s: () => Promise<any>; run5m: () => Promise<any> } | undefined;
+}
+
 export function startServerDaemon(): void {
   if (typeof window !== 'undefined') {
     // Only runs on the server (Node.js runtime)
     return;
   }
+
+  // Always point interval handlers to the latest loaded module version across hot reloads
+  globalThis.__scm_daemon_handlers__ = {
+    run45s: run45sSyncCycle,
+    run5m: run5mSyncCycle
+  };
 
   const state = getDaemonState();
   if (state.isRunning) {
@@ -214,17 +226,17 @@ export function startServerDaemon(): void {
 
   // Trigger initial cycles after a short delay (to let server finish bootstrapping)
   setTimeout(() => {
-    run45sSyncCycle().catch(() => {});
-    run5mSyncCycle().catch(() => {});
+    globalThis.__scm_daemon_handlers__?.run45s().catch(() => {});
+    globalThis.__scm_daemon_handlers__?.run5m().catch(() => {});
   }, 3000);
 
   // Set recurring intervals
   state.fastTimer = setInterval(() => {
-    run45sSyncCycle().catch(() => {});
+    globalThis.__scm_daemon_handlers__?.run45s().catch(() => {});
   }, FAST_INTERVAL_MS);
 
   state.slowTimer = setInterval(() => {
-    run5mSyncCycle().catch(() => {});
+    globalThis.__scm_daemon_handlers__?.run5m().catch(() => {});
   }, SLOW_INTERVAL_MS);
 
   // Ensure timers do not block clean process shutdown if needed

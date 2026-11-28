@@ -15,7 +15,8 @@ import {
   ProductionReportRow,
   ProductionReportFilter,
   MachineRoundPerformance,
-  IotDailyProductionResponse
+  IotDailyProductionResponse,
+  EmployeeMachineTelemetry
 } from '@/types/iot';
 import {
   getSampleSpinfoOverview,
@@ -284,6 +285,34 @@ export const iotApi = {
     } catch { }
 
     return list;
+  },
+
+  async getEmployeeBreakTelemetry(filter?: {
+    date?: string;
+    shift?: string;
+    machine?: string;
+  }): Promise<Record<string, EmployeeMachineTelemetry>> {
+    const params = new URLSearchParams();
+    if (filter?.date) params.set('date', filter.date);
+    if (filter?.shift && filter.shift !== 'All shifts') params.set('shift', filter.shift);
+    if (filter?.machine) params.set('machine', filter.machine);
+    params.set('_t', String(Date.now()));
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+      const res = await fetch(`/api/iot/employee-telemetry?${params.toString()}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (!res.ok) return {};
+      const json = await res.json();
+      return json?.data || {};
+    } catch {
+      return {};
+    }
   },
 
   // 3. Machines & Mappings (https://iot-machine-backend.onrender.com/api)
